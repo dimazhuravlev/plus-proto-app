@@ -16,13 +16,22 @@ struct ShowcaseHeader: View {
         ZStack(alignment: .topLeading) {
             Color.clear
 
-            Text(headline.text)
-                .plusHeadline()
-                .foregroundStyle(
-                    LinearGradient.horizontal(.white, .white.opacity(0.6))
-                )
-                .frame(width: 354, alignment: .leading)
-                .offset(x: PlusMetrics.screenMargin, y: 1.21)
+            FigmaText(
+                text: headline.text,
+                family: PlusFont.displaySemibold,
+                size: 32,
+                lineHeight: 36,
+                tracking: -0.2
+            )
+            .foregroundStyle(
+                LinearGradient.horizontal(.white, .white.opacity(0.6))
+            )
+            .lineLimit(nil)
+            .frame(width: 354, alignment: .topLeading)
+            // Бокс заголовка в макете ниже трёх строк — без fixedSize текст усекается
+            // многоточием вместо того, чтобы выйти за него.
+            .fixedSize(horizontal: false, vertical: true)
+            .offset(x: PlusMetrics.screenMargin, y: 1.21)
 
             ForEach(headline.chips) { chip in
                 chipView(chip)

@@ -21,12 +21,49 @@ private struct FigmaTextStyle: ViewModifier {
 
     func body(content: Content) -> some View {
         let natural = (UIFont(name: family, size: size) ?? .systemFont(ofSize: size)).lineHeight
-        let delta = max(0, lineHeight - natural)
+        // Дельта бывает отрицательной: у YS натуральный интервал 1.172em, то есть на 32pt
+        // это 37.5 против макетных 36. Обрезать её нулём нельзя — на трёх строках заголовка
+        // набегает 4.5pt, и весь блок уезжает вниз относительно макета.
+        let delta = lineHeight - natural
         return content
             .font(.custom(family, size: size))
             .tracking(tracking)
             .lineSpacing(delta)
             .padding(.vertical, delta / 2)
+    }
+}
+
+/// Многострочный текст с межстрочным интервалом ровно как в макете.
+///
+/// У YS натуральный интервал 1.172em — на кегле 32 это 37.5pt против макетных 36,
+/// и на трёх строках заголовка набегает 4.5pt. Ни один штатный способ этого не лечит:
+/// `lineSpacing` умеет только прибавлять, а `paragraphStyle` в `AttributedString`
+/// SwiftUI игнорирует (замер дал шаг 37.6 вместо 36).
+///
+/// Поэтому строки набираются отдельными `Text` в стеке с точным — при необходимости
+/// отрицательным — зазором. Переносы задаёт сам текст через `\n`: в макете они
+/// расставлены под врезки между словами, автоперенос их бы не повторил.
+struct FigmaText: View {
+    let text: String
+    let family: String
+    let size: CGFloat
+    let lineHeight: CGFloat
+    let tracking: CGFloat
+
+    private var lineGap: CGFloat {
+        let natural = (UIFont(name: family, size: size) ?? .systemFont(ofSize: size)).lineHeight
+        return lineHeight - natural
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: lineGap) {
+            ForEach(Array(text.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.custom(family, size: size))
+                    .tracking(tracking)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
