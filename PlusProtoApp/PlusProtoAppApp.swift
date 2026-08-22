@@ -6,74 +6,52 @@ struct PlusProtoAppApp: App {
     init() {
         FontManager.registerFonts()
         UIWindow.appearance().backgroundColor = .black
+        #if DEBUG
+        Self.parseDebugLaunchArguments()
+        #endif
     }
+
+    #if DEBUG
+    /// Аргументы simctl launch → UserDefaults для скриншотной верификации без тапов.
+    /// Ключи сбрасываются, если аргумент в **этом** запуске не передан — иначе после
+    /// simctl обычный Run из Xcode остаётся в debug-режиме (чёрный экран / скрытый каталог).
+    ///   xcrun simctl launch booted com.dima.PlusProtoApp -debugTab plus -debugActionBar music
+    private static func parseDebugLaunchArguments() {
+        let args = ProcessInfo.processInfo.arguments
+
+        if !args.contains("-debugTab") {
+            UserDefaults.standard.removeObject(forKey: "debugTab")
+        }
+        if !args.contains("-debugActionBar") {
+            UserDefaults.standard.removeObject(forKey: "debugActionBar")
+        }
+        if !args.contains("-debugSearchFocus") {
+            UserDefaults.standard.removeObject(forKey: "debugSearchFocus")
+        }
+
+        var index = 0
+        while index < args.count {
+            switch args[index] {
+            case "-debugTab" where index + 1 < args.count:
+                UserDefaults.standard.set(args[index + 1], forKey: "debugTab")
+                index += 2
+            case "-debugActionBar" where index + 1 < args.count:
+                UserDefaults.standard.set(args[index + 1], forKey: "debugActionBar")
+                index += 2
+            case "-debugSearchFocus":
+                UserDefaults.standard.set(true, forKey: "debugSearchFocus")
+                index += 1
+            default:
+                index += 1
+            }
+        }
+    }
+    #endif
 
     var body: some Scene {
         WindowGroup {
             AppRootView()
                 .preferredColorScheme(.dark)
-        }
-    }
-}
-
-/// Композиционный корень: здесь живут глобальные состояния и фиксированный хром.
-struct AppRootView: View {
-    @State private var activeTab: AppTab = .plus
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            // Контент таба. Переключение мгновенное — анимируется только таббар.
-            switch activeTab {
-            case .plus:
-                ShowcaseScreen()
-            case .music, .kinopoisk, .books, .alisa:
-                ServiceStubScreen(tab: activeTab)
-            }
-        }
-    }
-}
-
-/// Пять сервисов супераппа. Порядок — как в макете (слева направо).
-enum AppTab: Int, CaseIterable, Identifiable {
-    case plus, music, kinopoisk, books, alisa
-
-    var id: Int { rawValue }
-
-    var title: String {
-        switch self {
-        case .plus: "Плюс"
-        case .music: "Музыка"
-        case .kinopoisk: "Кинопоиск"
-        case .books: "Книги"
-        case .alisa: "Алиса"
-        }
-    }
-}
-
-/// Заглушка сервисного таба — внутренние разделы сервисов пока не проектируем.
-struct ServiceStubScreen: View {
-    let tab: AppTab
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            Text(tab.title)
-                .plusHeadline()
-                .foregroundStyle(Color.fillSix)
-        }
-    }
-}
-
-/// Витрина «Плюс» — кросс-сервисная лента. Пока каркас, наполняется на этапе 5.
-struct ShowcaseScreen: View {
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            Text("Витрина Плюс")
-                .plusHeadline()
-                .foregroundStyle(Color.fillOne)
         }
     }
 }

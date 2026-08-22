@@ -81,7 +81,7 @@ enum PlusMetrics {
     static let hairline: CGFloat = 0.66
     /// Блюр подложки пилюль
     static let glassBlur: CGFloat = 35
-    /// Блюр круглых кнопок
+    /// Блюр круглых кнопок и стеклянных блоков
     static let buttonBlur: CGFloat = 20
     /// Блюр ambilight-ореола за обложкой
     static let ambilightBlur: CGFloat = 28
