@@ -19,7 +19,7 @@ enum PlusChromeMetrics {
 
     /// Радиус прогрессивного блюра под нижним хромом. В Figma слой блюра есть, но выставлен
     /// в 0 — значение взято из `BottomBarV2` MusicPlayer, где та же полоса поверх ленты.
-    static let underlayBlurRadius: CGFloat = 12
+    static let underlayBlurRadius: CGFloat = 10
 
     /// Высота слоя блюра — **ниже градиента**: размытие должно начинаться примерно
     /// с середины action bar, иначе лента мылится ещё до того, как заедет под хром.
