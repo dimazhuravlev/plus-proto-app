@@ -17,6 +17,18 @@ struct AppRootView: View {
                 // и до запушенных экранов — `safeAreaInset` снаружи через NavigationStack
                 // не пробивается (проверено на симуляторе).
                 .contentMargins(.bottom, PlusChromeMetrics.contentBottomInset, for: .scrollContent)
+
+            // Подложка нижнего хрома — своим слоем на всю высоту экрана, чтобы уйти
+            // под home indicator: изнутри `overlay` ниже safe area она не пробивается.
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                TabBarUnderlay()
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+        .overlay(alignment: .top) {
+            TopScrim()
         }
         .overlay(alignment: .bottom) {
             BottomChrome()
