@@ -16,6 +16,14 @@ enum ActionBarMotion {
     static let ellipsisInterval: Duration = .milliseconds(500)
     /// Вращение обложки при воспроизведении — как MiniPlayerV2 MusicPlayer.
     static let coverDegreesPerSecond: Double = 18
+
+    /// Смена типа плеера (музыка ↔ книга ↔ кино) — кроссфейд с блюром.
+    /// Числа взяты из нативного `BlurReplaceTransition(.downUp)`: opacity 0, blur 7,
+    /// scale 0.9, anchor .center. Сам `.transition(.blurReplace)` здесь не годится —
+    /// он удаляет вью из дерева, а уходящий плеер обязан продолжать сжиматься
+    /// вместе с зоной, иначе замирает на своей ширине и наезжает на поле поиска.
+    static let swapBlurRadius: CGFloat = 7
+    static let swapScale: CGFloat = 0.9
 }
 
 // MARK: - Geometry
@@ -146,7 +154,9 @@ private struct ActionBarLayout: Equatable {
             trailingWidth = 0
             trailingEscaped = true
             // Слои остаются в дереве, чтобы уехать, а не мигнуть исчезновением.
-            showMiniPlayer = hasMusic
+            // Мини-плеер только в своих режимах: иначе в .book/.movie он оказывался
+            // активным одновременно с чипом и проявлялся из блюра прямо во время уезда.
+            showMiniPlayer = hasMusic && (mode == .music || mode == .search)
             showBookChip = mode == .book
             showMovieChip = mode == .movie
             placeholderOpacity = 0
@@ -240,8 +250,13 @@ private struct SearchPill: View {
     @Binding var query: String
 
     var body: some View {
-        HStack(spacing: 8) {
+        // Зазоры навешены на элементы, а не заданы общим `spacing`: в компактном круге
+        // контент — это 60 − 18 − 18 = 24pt, ровно бокс иконки. Общий spacing 8 не
+        // схлопывался вместе с полем, HStack переполнялся на 8 и центрировал содержимое —
+        // лупа уезжала на 4pt влево (замер: 15.67 вместо 20.0).
+        HStack(spacing: 0) {
             searchIcon
+                .padding(.trailing, layout.searchIconOnly ? 0 : 8)
 
             ZStack(alignment: .leading) {
                 if !layout.searchIconOnly {
@@ -256,6 +271,7 @@ private struct SearchPill: View {
 
             if isSearchFocused {
                 clearButton
+                    .padding(.leading, 8)
                     .transition(.opacity)
             }
         }
@@ -398,17 +414,17 @@ private struct TrailingSlot: View {
                     isPlaying: actionBar.isMusicPlaying,
                     isLiked: actionBar.isMusicLiked
                 )
-                .opacity(layout.showMiniPlayer ? 1 : 0)
+                .blurReplaceLayer(layout.showMiniPlayer)
             }
 
             if let book = actionBar.book {
                 BookChip(cover: book.cover)
-                    .opacity(layout.showBookChip ? 1 : 0)
+                    .blurReplaceLayer(layout.showBookChip)
             }
 
             if let movie = actionBar.movie {
                 MovieChip(still: movie.still)
-                    .opacity(layout.showMovieChip ? 1 : 0)
+                    .blurReplaceLayer(layout.showMovieChip)
             }
         }
         .frame(maxWidth: layout.trailingWidth == nil ? .infinity : nil)
@@ -600,6 +616,32 @@ private struct MovieChip: View {
         )
         .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
         .frame(width: ActionBarGeometry.movieChipAABBWidth, height: PlusMetrics.actionBarHeight)
+    }
+}
+
+// MARK: - Смена типа плеера
+
+/// Слой одного из плееров: активный виден, остальные размыты и утоплены.
+/// Повторяет нативный `BlurReplaceTransition`, но не удаляет вью из дерева —
+/// ширина зоны продолжает морфиться на живом слое.
+/// Порядок модификаторов взят из нативной реализации и переставлять его нельзя.
+private struct BlurReplaceLayer: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isActive ? 1 : 0)
+            .blur(radius: isActive ? 0 : ActionBarMotion.swapBlurRadius, opaque: false)
+            .scaleEffect(isActive ? 1 : ActionBarMotion.swapScale, anchor: .center)
+            // Слой с нулевой прозрачностью всё ещё ловит тапы — гасим явно.
+            .allowsHitTesting(isActive)
+            .accessibilityHidden(!isActive)
+    }
+}
+
+private extension View {
+    func blurReplaceLayer(_ isActive: Bool) -> some View {
+        modifier(BlurReplaceLayer(isActive: isActive))
     }
 }
 
