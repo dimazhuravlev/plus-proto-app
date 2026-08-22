@@ -31,6 +31,9 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugMorphCycle") {
             UserDefaults.standard.removeObject(forKey: "debugMorphCycle")
         }
+        if !args.contains("-debugScrollTo") {
+            UserDefaults.standard.removeObject(forKey: "debugScrollTo")
+        }
 
         var index = 0
         while index < args.count {
@@ -47,6 +50,9 @@ struct PlusProtoAppApp: App {
             case "-debugMorphCycle":
                 UserDefaults.standard.set(true, forKey: "debugMorphCycle")
                 index += 1
+            case "-debugScrollTo" where index + 1 < args.count:
+                UserDefaults.standard.set(Double(args[index + 1]) ?? 0, forKey: "debugScrollTo")
+                index += 2
             default:
                 index += 1
             }

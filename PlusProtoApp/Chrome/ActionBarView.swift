@@ -57,7 +57,9 @@ struct ActionBarView: View {
             isSearchFocused: actionBar.isSearchFocused
         )
 
-        HStack(spacing: PlusMetrics.actionBarGap) {
+        // Зазор нужен, только когда справа что-то есть: в пустом состоянии поиск
+        // занимает бар целиком.
+        HStack(spacing: layout.trailingWidth == 0 ? 0 : PlusMetrics.actionBarGap) {
             SearchPill(
                 layout: layout,
                 isSearchFocused: actionBar.isSearchFocused,
@@ -138,7 +140,9 @@ private struct ActionBarLayout: Equatable {
             // Поиск гибкий, свёрнутый плеер — фиксированный круг. В макете это 284 + 60
             // при контенте 352; гибкая зона даёт ту же картинку и переживает любую ширину экрана.
             searchWidth = nil
-            trailingWidth = hasMusic ? compact : nil
+            // Без музыки правой зоны нет вовсе: обе гибкие поделили бы бар пополам
+            // и обрезали плейсхолдер.
+            trailingWidth = hasMusic ? compact : 0
 
         case .music:
             showMiniPlayer = hasMusic
@@ -153,7 +157,7 @@ private struct ActionBarLayout: Equatable {
                 miniPlayerExpanded = false
                 placeholderOpacity = 1
                 searchWidth = nil
-                trailingWidth = hasMusic ? compact : nil
+                trailingWidth = hasMusic ? compact : 0
             } else {
                 // Зеркало режима search: теперь фиксирован поиск, а плеер занимает остаток.
                 searchIconOnly = true
@@ -517,27 +521,6 @@ private struct MovieChip: View {
         )
         .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
         .frame(width: ActionBarGeometry.movieChipAABBWidth, height: PlusMetrics.actionBarHeight)
-    }
-}
-
-// MARK: - Artwork
-
-private struct ArtworkImage: View {
-    let source: ArtworkSource
-
-    var body: some View {
-        switch source {
-        case .asset(let name):
-            Image(name).resizable()
-        case .remote(let url):
-            AsyncImage(url: url) { phase in
-                if let image = phase.image {
-                    image.resizable()
-                } else {
-                    Color.buttonsPrimary
-                }
-            }
-        }
     }
 }
 
