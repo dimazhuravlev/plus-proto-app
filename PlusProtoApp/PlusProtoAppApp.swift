@@ -28,6 +28,9 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugSearchFocus") {
             UserDefaults.standard.removeObject(forKey: "debugSearchFocus")
         }
+        if !args.contains("-debugMorphCycle") {
+            UserDefaults.standard.removeObject(forKey: "debugMorphCycle")
+        }
 
         var index = 0
         while index < args.count {
@@ -40,6 +43,9 @@ struct PlusProtoAppApp: App {
                 index += 2
             case "-debugSearchFocus":
                 UserDefaults.standard.set(true, forKey: "debugSearchFocus")
+                index += 1
+            case "-debugMorphCycle":
+                UserDefaults.standard.set(true, forKey: "debugMorphCycle")
                 index += 1
             default:
                 index += 1

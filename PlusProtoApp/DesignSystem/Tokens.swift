@@ -25,6 +25,10 @@ extension Color {
     static let navbarDarkBlur = Color(red: 20 / 255, green: 20 / 255, blue: 20 / 255).opacity(0.7) // #141414B2
     /// Плейсхолдер в поле поиска
     static let searchPlaceholder = Color.white.opacity(0.3)
+    /// Лупа в поле поиска — приглушена, ярче плейсхолдера, но не белая.
+    /// Замер по изолированному рендеру `2001:110987` на фоне канваса #444:
+    /// глиф (171,171,171) поверх пилюли (87,87,87) → альфа 0.50.
+    static let searchIcon = Color.white.opacity(0.5)
 }
 
 // MARK: - Геометрия

@@ -83,6 +83,15 @@ struct ActionBarView: View {
                 }
             }
         }
+        .task {
+            // `-debugMorphCycle` — прогон всех четырёх режимов по кругу, чтобы снять
+            // морф на видео: тапнуть по бару из шелла симулятора нельзя.
+            guard UserDefaults.standard.bool(forKey: "debugMorphCycle") else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(1600))
+                actionBar.cycleDebugMode()
+            }
+        }
         #endif
     }
 }
@@ -220,7 +229,7 @@ private struct SearchPill: View {
             .renderingMode(.template)
             .resizable()
             .frame(width: glyph.width, height: glyph.height)
-            .foregroundStyle(Color.fillOne)
+            .foregroundStyle(Color.searchIcon)
             .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
     }
 
@@ -350,27 +359,33 @@ private struct MiniPlayerPill: View {
     @State private var spinBaseDegrees: Double = 0
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            MiniPlayerProgressFill(progress: progress, opacity: progressOpacity)
-
-            HStack(spacing: ActionBarGeometry.miniPlayerContentGap) {
-                cover
-                trackInfo
-                    .opacity(trackInfoOpacity)
-                actions
-                    .opacity(trackInfoOpacity)
-                    .layoutPriority(1)
+        // Ширину пилюли задаёт родитель. Контент лежит в overlay, а не внутри —
+        // иначе при сжатии до круга 60pt он распирал бы пилюлю изнутри
+        // (обложка + подписи + кнопки требуют ~150pt), и клип резал бы её прямоугольником.
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: PlusMetrics.actionBarHeight)
+            .glassPill()
+            .overlay(alignment: .leading) {
+                MiniPlayerProgressFill(progress: progress, opacity: progressOpacity)
             }
-            .padding(.leading, ActionBarGeometry.miniPlayerPaddingLeading)
-            .padding(.trailing, ActionBarGeometry.miniPlayerPaddingTrailing)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .leading) { content }
+            .clipShape(Capsule(style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(item.title), \(item.artist)")
+    }
+
+    private var content: some View {
+        HStack(spacing: ActionBarGeometry.miniPlayerContentGap) {
+            cover
+            trackInfo
+                .opacity(trackInfoOpacity)
+            actions
+                .opacity(trackInfoOpacity)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: PlusMetrics.actionBarHeight)
-        .glassPill()
-        .clipShape(Capsule(style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.title), \(item.artist)")
+        .padding(.leading, ActionBarGeometry.miniPlayerPaddingLeading)
+        .padding(.trailing, ActionBarGeometry.miniPlayerPaddingTrailing)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var cover: some View {
