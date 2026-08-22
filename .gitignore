@@ -1,0 +1,11 @@
+# Секреты — никогда не коммитим
+PlusProtoApp/APIKeys.swift
+_secrets/
+
+# Xcode
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+.DS_Store
+_assets/
