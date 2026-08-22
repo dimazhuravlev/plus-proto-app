@@ -97,6 +97,23 @@ final class ActionBarState {
     func resetToSearch() {
         mode = .search
     }
+
+    /// Открыть плеер сущности с витрины. Повторный тап по той же карточке в музыке
+    /// работает как пауза — иначе плеер нечем остановить, пока нет полноэкранного.
+    func open(_ target: ShowcasePlayerTarget) {
+        switch target {
+        case .music(let item):
+            if mode == .music, music?.id == item.id {
+                isMusicPlaying.toggle()
+            } else {
+                startMusic(item)
+            }
+        case .movie(let item):
+            resumeMovie(item)
+        case .book(let item):
+            resumeBook(item)
+        }
+    }
 }
 
 #if DEBUG

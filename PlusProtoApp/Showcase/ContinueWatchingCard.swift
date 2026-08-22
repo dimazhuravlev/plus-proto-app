@@ -311,6 +311,7 @@ private final class PlayerLayerView: UIView {
     ScrollView {
         ContinueWatchingCard(block: WatchingBlock(
             id: "yura",
+            title: "Здесь был Юра",
             still: .asset("mockVideoStill"),
             clip: "yura",
             logo: .asset("mockLogoYura"),

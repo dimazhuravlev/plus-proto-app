@@ -179,7 +179,8 @@ struct MyVibeCard: View {
         MyVibeCard(block: VibeBlock(
             id: "my-vibe",
             title: "Моя Волна",
-            subtitle: "Атмосферный постпанк, когда внутри пасмурно"
+            subtitle: "Атмосферный постпанк, когда внутри пасмурно",
+            cover: .asset("mockPlayerCover")
         ))
     }
     .background(Color.black)

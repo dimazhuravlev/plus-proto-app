@@ -64,6 +64,26 @@ enum ShowcaseBlock: Identifiable {
         }
     }
 
+    /// Что открывает тап по карточке. Витрина кросс-сервисная, поэтому плеер выбирается
+    /// по типу сущности, а не по активному табу: карточка кино включает кино-плеер,
+    /// альбом и «Моя Волна» — музыкальный, книги — книжный.
+    var player: ShowcasePlayerTarget {
+        switch self {
+        case .movie(let b):
+            .movie(MovieInProgress(id: b.id, still: b.poster, title: b.title))
+        case .album(let b):
+            .music(MusicNowPlaying(id: b.id, cover: b.cover, title: b.title, artist: b.subtitle))
+        case .book(let b):
+            .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
+        case .vibe(let b):
+            .music(MusicNowPlaying(id: b.id, cover: b.cover, title: b.title, artist: b.subtitle))
+        case .reading(let b):
+            .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
+        case .watching(let b):
+            .movie(MovieInProgress(id: b.id, still: b.still, title: b.title))
+        }
+    }
+
     /// Вертикальный слот блока в кадре витрины — см. `ShowcaseLayout`.
     var slot: ShowcaseLayout.Slot {
         switch self {
@@ -77,10 +97,18 @@ enum ShowcaseBlock: Identifiable {
     }
 }
 
+/// Плеер, который открывает карточка, вместе с тем, что в нём показать.
+enum ShowcasePlayerTarget {
+    case music(MusicNowPlaying)
+    case movie(MovieInProgress)
+    case book(BookInProgress)
+}
+
 // MARK: - Payload'ы блоков
 
 struct MovieBlock {
     let id: String
+    let title: String
     let poster: ArtworkSource
     /// Однострочная редакционная подпись. У Кинопоиска это поле `shortDescription`.
     let caption: String
@@ -97,8 +125,11 @@ struct AlbumBlock {
 
 struct BookBlock {
     let id: String
+    let title: String
     /// Изометрическая книга — плоский PNG: пять слоёв со skew в SwiftUI не окупаются.
     let render: ArtworkSource
+    /// Плоская обложка для чипа в action bar: изометрический рендер туда не годится.
+    let cover: ArtworkSource
     let caption: String
     let captionTint: Color
 }
@@ -107,10 +138,13 @@ struct VibeBlock {
     let id: String
     let title: String
     let subtitle: String
+    /// Обложка для мини-плеера: у волны нет своей, берём заглушку трека.
+    let cover: ArtworkSource
 }
 
 struct ReadingBlock {
     let id: String
+    let title: String
     let cover: ArtworkSource
     /// Фрагмент книги. Живой текст берётся из Викитеки, иначе мок (решение 2026-08-22).
     let excerpt: String
@@ -121,6 +155,7 @@ struct ReadingBlock {
 
 struct WatchingBlock {
     let id: String
+    let title: String
     /// Кадр-постер, который показывается, пока не начнёт играть видео.
     let still: ArtworkSource
     /// Имя забандленного клипа без расширения; играет, только когда карточка видима.
@@ -220,6 +255,7 @@ extension ShowcaseFeed {
         blocks: [
             .movie(MovieBlock(
                 id: "perfect-days",
+                title: "Идеальные дни",
                 poster: .asset("mockMoviePoster"),
                 caption: "Обыкновенный уборщик ищет красоту в каждом мгновении. Шедевр Вима Вендерса о магии жизни",
                 captionTint: Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
@@ -232,17 +268,21 @@ extension ShowcaseFeed {
             )),
             .book(BookBlock(
                 id: "technofeudalism",
+                title: "Технофеодализм",
                 render: .asset("mockBookIsometric"),
+                cover: .asset("mockBookTechno"),
                 caption: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
             .vibe(VibeBlock(
                 id: "my-vibe",
                 title: "Моя Волна",
-                subtitle: "Атмосферный постпанк, когда внутри пасмурно"
+                subtitle: "Атмосферный постпанк, когда внутри пасмурно",
+                cover: .asset("mockPlayerCover")
             )),
             .reading(ReadingBlock(
                 id: "bullshit-jobs",
+                title: "Бредовая работа",
                 cover: .asset("mockBookMini"),
                 excerpt: """
                 Пиль предполагал, что у рабочих не было другого выбора, кроме как продавать свой труд, \
@@ -257,6 +297,7 @@ extension ShowcaseFeed {
             )),
             .watching(WatchingBlock(
                 id: "yura",
+                title: "Здесь был Юра",
                 still: .asset("mockVideoStill"),
                 clip: "yura",
                 logo: .asset("mockLogoYura"),

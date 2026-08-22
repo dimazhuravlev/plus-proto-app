@@ -11,6 +11,13 @@ enum ShowcaseMotion {
     /// Доля карточки в кадре, с которой она считается показанной.
     static let appearThreshold: Double = 0.05
 
+    /// Нажатие на карточку: подсаживаем её чуть слабее, чем кнопки хрома —
+    /// у карточки большая площадь, и скейл 0.92 читался бы как прыжок.
+    static let pressedScale: CGFloat = 0.97
+    static let pressDuration: Double = 0.15
+    /// Хаптика тапа — та же карта, что у табов (nav-chrome §11).
+    static let tapHapticIntensity: CGFloat = 0.7
+
     /// Глубина параллакса по слоям, pt смещения на весь проход через экран.
     /// Эффект намеренно едва заметный: «лёгкий параллакс» из решения 2026-08-22.
     enum Depth {
@@ -32,6 +39,7 @@ enum ShowcaseMotion {
 /// экрана. Каждый блок знает свой слот — см. `ShowcaseLayout`.
 struct ShowcaseFeedView: View {
     let feed: ShowcaseFeed
+    @Environment(ActionBarState.self) private var actionBar
     @State private var scrollPosition = ScrollPosition()
 
     var body: some View {
@@ -43,16 +51,21 @@ struct ShowcaseFeedView: View {
                     .showcaseAppear()
 
                 ForEach(Array(feed.blocks.enumerated()), id: \.element.id) { index, block in
-                    blockView(block)
-                        .frame(
-                            width: ShowcaseLayout.designWidth,
-                            height: block.slot.height,
-                            alignment: .topLeading
-                        )
-                        .padding(.top, gap(before: index))
-                        // Наезжающая карточка должна лечь поверх предыдущей, как в макете.
-                        .zIndex(Double(index))
-                        .showcaseAppear()
+                    Button {
+                        open(block)
+                    } label: {
+                        blockView(block)
+                            .frame(
+                                width: ShowcaseLayout.designWidth,
+                                height: block.slot.height,
+                                alignment: .topLeading
+                            )
+                    }
+                    .buttonStyle(ShowcaseCardButtonStyle())
+                    .padding(.top, gap(before: index))
+                    // Наезжающая карточка должна лечь поверх предыдущей, как в макете.
+                    .zIndex(Double(index))
+                    .showcaseAppear()
                 }
             }
             .frame(width: ShowcaseLayout.designWidth)
@@ -71,10 +84,25 @@ struct ShowcaseFeedView: View {
             // `-debugScrollTo <pt>` — стартовая прокрутка: свайпнуть симулятор из шелла нечем,
             // а карточки ниже сгиба иначе не сверить с макетом.
             let offset = UserDefaults.standard.double(forKey: "debugScrollTo")
-            guard offset > 0 else { return }
-            scrollPosition.scrollTo(y: offset)
+            if offset > 0 { scrollPosition.scrollTo(y: offset) }
+
+            // `-debugTapBlock <n>` — повторяет тап по n-й карточке: тапнуть по симулятору
+            // из шелла нечем, а связь «карточка → плеер» иначе не проверить.
+            let tapIndex = UserDefaults.standard.integer(forKey: "debugTapBlock")
+            if tapIndex > 0, tapIndex <= feed.blocks.count {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    actionBar.open(feed.blocks[tapIndex - 1].player)
+                }
+            }
         }
         #endif
+    }
+
+    /// Тап по карточке открывает плеер её сервиса — action bar переезжает в нужный режим.
+    private func open(_ block: ShowcaseBlock) {
+        UIImpactFeedbackGenerator(style: .medium)
+            .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+        actionBar.open(block.player)
     }
 
     /// Зазор над блоком: для первого — от заголовка, дальше — от низа предыдущего.
@@ -93,6 +121,17 @@ struct ShowcaseFeedView: View {
         case .reading(let item): ContinueReadingCard(block: item)
         case .watching(let item): ContinueWatchingCard(block: item)
         }
+    }
+}
+
+/// Нажатие на карточку витрины. Отдельный стиль, а не `PressScaleButtonStyle` хрома:
+/// у карточки другой масштаб, и `.plain` нужен, чтобы SwiftUI не красил её содержимое
+/// в акцентный цвет и не подсвечивал прямоугольником.
+private struct ShowcaseCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? ShowcaseMotion.pressedScale : 1)
+            .animation(.smooth(duration: ShowcaseMotion.pressDuration), value: configuration.isPressed)
     }
 }
 

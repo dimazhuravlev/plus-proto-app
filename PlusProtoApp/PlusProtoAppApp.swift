@@ -34,6 +34,9 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugScrollTo") {
             UserDefaults.standard.removeObject(forKey: "debugScrollTo")
         }
+        if !args.contains("-debugTapBlock") {
+            UserDefaults.standard.removeObject(forKey: "debugTapBlock")
+        }
 
         var index = 0
         while index < args.count {
@@ -52,6 +55,9 @@ struct PlusProtoAppApp: App {
                 index += 1
             case "-debugScrollTo" where index + 1 < args.count:
                 UserDefaults.standard.set(Double(args[index + 1]) ?? 0, forKey: "debugScrollTo")
+                index += 2
+            case "-debugTapBlock" where index + 1 < args.count:
+                UserDefaults.standard.set(Int(args[index + 1]) ?? 0, forKey: "debugTapBlock")
                 index += 2
             default:
                 index += 1
