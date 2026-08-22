@@ -21,6 +21,23 @@ enum PlusChromeMetrics {
     /// в 0 — значение взято из `BottomBarV2` MusicPlayer, где та же полоса поверх ленты.
     static let underlayBlurRadius: CGFloat = 12
 
+    /// Высота слоя блюра — **ниже градиента**: размытие должно начинаться примерно
+    /// с середины action bar, иначе лента мылится ещё до того, как заедет под хром.
+    /// Считается от физического низа: safe area + ряд табов + зазор + половина бара.
+    static var underlayBlurHeight: CGFloat {
+        bottomSafeArea + tabsRowHeight + actionBarToTabsGap + PlusMetrics.actionBarHeight / 2
+    }
+
+    /// Нижняя безопасная зона — блюр отмеряется от физического низа экрана,
+    /// а высота home indicator зависит от устройства.
+    static var bottomSafeArea: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets.bottom ?? 0
+    }
+
     // MARK: - Верхний скрим
 
     /// Высота верхнего скрима от физического верха экрана — `overlay bg` навбара
@@ -103,7 +120,7 @@ struct TabBarUnderlay: View {
                 maxBlurRadius: PlusChromeMetrics.underlayBlurRadius,
                 direction: .blurredBottomClearTop
             )
-            .frame(height: PlusMetrics.tabBarUnderlayHeight)
+            .frame(height: PlusChromeMetrics.underlayBlurHeight)
 
             PlusGradient.tabBarUnderlay
                 .frame(height: PlusMetrics.tabBarUnderlayHeight)
