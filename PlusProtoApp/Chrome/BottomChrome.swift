@@ -21,6 +21,9 @@ enum PlusChromeMetrics {
     /// в 0 — значение взято из `BottomBarV2` MusicPlayer, где та же полоса поверх ленты.
     static let underlayBlurRadius: CGFloat = 10
 
+    /// Отступ от клавиатуры до низа action bar при фокусе поиска (`2021:11248`).
+    static let focusKeyboardGap: CGFloat = 12
+
     /// Высота слоя блюра — **ниже градиента**: размытие должно начинаться примерно
     /// с середины action bar, иначе лента мылится ещё до того, как заедет под хром.
     /// Считается от физического низа: safe area + ряд табов + зазор + половина бара.
@@ -89,14 +92,29 @@ struct BottomChrome: View {
 
     var body: some View {
         VStack(spacing: PlusChromeMetrics.actionBarToTabsGap) {
+            // Поднимается только бар. Таббар остаётся на своём месте и уходит
+            // под клавиатуру — гасить его не нужно (решение пользователя 2026-08-23).
             ActionBarView()
+                .offset(y: focusedOffset)
+                .animation(.smooth(duration: 0.25), value: focusedOffset)
+
             TabBarView()
-                .opacity(actionBar.isSearchFocused ? 0 : 1)
                 .allowsHitTesting(!actionBar.isSearchFocused)
         }
         .animation(ActionBarMotion.morph, value: actionBar.isSearchFocused)
-        .offset(y: actionBar.isSearchFocused ? -keyboard.height : 0)
-        .animation(.smooth(duration: 0.25), value: keyboard.height)
+        // Системный подъём над клавиатурой выключен: SwiftUI поднял бы весь хром
+        // вместе с таббаром, да ещё и сложился бы с нашим сдвигом — бар улетал вдвое выше.
+        .ignoresSafeArea(.keyboard)
+    }
+
+    /// Подъём хрома при фокусе поиска: низ бара встаёт на 12pt над клавиатурой
+    /// (`2021:11248` — бар 775..835 при клавиатуре с 847).
+    private var focusedOffset: CGFloat {
+        guard actionBar.isSearchFocused, keyboard.overlap > 0 else { return 0 }
+        let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
+            + PlusChromeMetrics.tabsRowHeight
+            + PlusChromeMetrics.actionBarToTabsGap
+        return -(keyboard.overlap + PlusChromeMetrics.focusKeyboardGap - barBottomFromScreenBottom)
     }
 }
 
@@ -129,10 +147,12 @@ struct TabBarUnderlay: View {
     }
 }
 
-/// Высота клавиатуры над home indicator — поднимает нижний хром при фокусе поиска.
+/// Клавиатура: насколько она перекрывает экран снизу. Хром при фокусе поиска встаёт
+/// над ней, поэтому нужна **полная** высота перекрытия от нижней кромки экрана,
+/// а не остаток над safe area — отступ до бара отмеряется от верха клавиатуры.
 @Observable
 final class KeyboardObserver {
-    private(set) var height: CGFloat = 0
+    private(set) var overlap: CGFloat = 0
     private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -148,11 +168,9 @@ final class KeyboardObserver {
                     let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
                 else { return }
                 let screenHeight = UIScreen.main.bounds.height
-                let overlap = max(0, screenHeight - frame.origin.y)
-                let bottomInset = Self.bottomSafeAreaInset
-                let next = overlap > 0 ? max(0, overlap - bottomInset) : 0
+                let next = max(0, screenHeight - frame.origin.y)
                 withAnimation(.smooth(duration: duration)) {
-                    self?.height = next
+                    self?.overlap = next
                 }
             }
         )
@@ -163,7 +181,7 @@ final class KeyboardObserver {
                 queue: .main
             ) { [weak self] _ in
                 withAnimation(.smooth(duration: 0.25)) {
-                    self?.height = 0
+                    self?.overlap = 0
                 }
             }
         )
@@ -173,11 +191,4 @@ final class KeyboardObserver {
         observers.forEach(NotificationCenter.default.removeObserver)
     }
 
-    private static var bottomSafeAreaInset: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets.bottom ?? 0
-    }
 }

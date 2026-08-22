@@ -33,6 +33,10 @@ struct AppRootView: View {
         .overlay(alignment: .bottom) {
             BottomChrome()
         }
+        // Системное поднятие над клавиатурой отключаем на корне: иначе SwiftUI поднимает
+        // весь overlay с хромом целиком (включая таббар), и это складывается с ручным
+        // сдвигом бара — он улетал вдвое выше клавиатуры. Отступ считает `BottomChrome`.
+        .ignoresSafeArea(.keyboard)
         .environment(navigation)
         .environment(actionBar)
         .environment(keyboard)

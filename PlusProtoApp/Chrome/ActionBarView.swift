@@ -39,6 +39,10 @@ private enum ActionBarGeometry {
     static let movieFrameSize = CGSize(width: 80, height: 46)
     static let movieChipAABBWidth: CGFloat = 91.552
     static let chipRotation: Double = 4
+    /// Поля бара в фокусе — поле поиска расширяется на 8pt с каждой стороны
+    static let focusedScreenMargin: CGFloat = 16
+    /// На сколько плеер уезжает вправо, скрываясь за кромкой экрана
+    static let trailingEscape: CGFloat = 120
 }
 
 // MARK: - Root
@@ -49,6 +53,7 @@ private enum ActionBarGeometry {
 struct ActionBarView: View {
     @Environment(ActionBarState.self) private var actionBar
     @FocusState private var searchFocused: Bool
+    @State private var query = ""
 
     var body: some View {
         let layout = ActionBarLayout(
@@ -63,14 +68,19 @@ struct ActionBarView: View {
             SearchPill(
                 layout: layout,
                 isSearchFocused: actionBar.isSearchFocused,
-                searchFocused: $searchFocused
+                searchFocused: $searchFocused,
+                query: $query
             )
 
             TrailingSlot(layout: layout)
         }
         .animation(ActionBarMotion.morph, value: layout.animationKey)
         .frame(height: PlusMetrics.actionBarHeight)
-        .padding(.horizontal, PlusMetrics.screenMargin)
+        // При фокусе поле расширяется — поля экрана ужимаются с 24 до 16 (`2021:11283`:
+        // search лежит на x=16 шириной 370 при ширине бара 402).
+        .padding(.horizontal, actionBar.isSearchFocused
+                 ? ActionBarGeometry.focusedScreenMargin
+                 : PlusMetrics.screenMargin)
         .onChange(of: searchFocused) { _, focused in
             actionBar.isSearchFocused = focused
         }
@@ -118,13 +128,38 @@ private struct ActionBarLayout: Equatable {
     let trackInfoOpacity: Double
     let progressOpacity: Double
     let clipTrailing: Bool
+    /// Плеер уезжает за правый край экрана — так фокус поиска освобождает бар целиком.
+    let trailingEscaped: Bool
 
     var animationKey: String {
-        "\(searchWidth ?? -1)-\(trailingWidth ?? -1)-\(showMiniPlayer)-\(showBookChip)-\(showMovieChip)-\(searchIconOnly)-\(miniPlayerExpanded)-\(placeholderOpacity)-\(trackInfoOpacity)-\(clipTrailing)"
+        "\(searchWidth ?? -1)-\(trailingWidth ?? -1)-\(showMiniPlayer)-\(showBookChip)-\(showMovieChip)-\(searchIconOnly)-\(miniPlayerExpanded)-\(placeholderOpacity)-\(trackInfoOpacity)-\(clipTrailing)-\(trailingEscaped)"
     }
 
     init(mode: ActionBarMode, hasMusic: Bool, isSearchFocused: Bool) {
         let compact = PlusMetrics.actionBarCompact
+
+        // Фокус поиска перекрывает режим: поле занимает бар целиком, плейсхолдер гаснет,
+        // а плеер уезжает вправо за кромку экрана (`2021:11248` — в баре остаётся
+        // только поле 370pt при полях 16).
+        if isSearchFocused {
+            searchWidth = nil
+            trailingWidth = 0
+            trailingEscaped = true
+            // Слои остаются в дереве, чтобы уехать, а не мигнуть исчезновением.
+            showMiniPlayer = hasMusic
+            showBookChip = mode == .book
+            showMovieChip = mode == .movie
+            placeholderOpacity = 0
+            searchIconOnly = false
+            miniPlayerExpanded = false
+            trackInfoOpacity = 0
+            progressOpacity = 0
+            // Без клипа: иначе нулевая зона срежет уезжающий плеер на первом же кадре.
+            clipTrailing = false
+            return
+        }
+
+        trailingEscaped = false
 
         switch mode {
         case .search:
@@ -202,13 +237,26 @@ private struct SearchPill: View {
     let layout: ActionBarLayout
     let isSearchFocused: Bool
     @FocusState.Binding var searchFocused: Bool
+    @Binding var query: String
 
     var body: some View {
         HStack(spacing: 8) {
             searchIcon
-            if !layout.searchIconOnly {
-                placeholderStack
-                    .opacity(layout.placeholderOpacity)
+
+            ZStack(alignment: .leading) {
+                if !layout.searchIconOnly {
+                    placeholderStack
+                        .opacity(layout.placeholderOpacity)
+                }
+                // Поле ввода живёт всегда, но до фокуса невидимо: пересоздавать его
+                // по условию — значит терять фокус и каретку на первом же кадре.
+                input
+                    .opacity(isSearchFocused ? 1 : 0)
+            }
+
+            if isSearchFocused {
+                clearButton
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, ActionBarGeometry.searchPaddingH)
@@ -219,12 +267,39 @@ private struct SearchPill: View {
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
         .onTapGesture { searchFocused = true }
-        .overlay {
-            TextField("", text: .constant(""))
-                .focused($searchFocused)
-                .opacity(0.02)
-                .accessibilityHidden(true)
+    }
+
+    /// Настоящее поле ввода: даёт системную каретку, которой в макете отмечено
+    /// место сразу за лупой (`2021:11248`, каретка на x=50).
+    private var input: some View {
+        TextField("", text: $query)
+            .focused($searchFocused)
+            .textFieldStyle(.plain)
+            .tint(Color.fillOne)
+            .foregroundStyle(Color.fillOne)
+            .plusTitleL()
+            .submitLabel(.search)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Крест справа: снимает фокус и опускает клавиатуру. В макете 24×24 с полем 18
+    /// от правого края поля — то есть на месте общего внутреннего отступа пилюли.
+    private var clearButton: some View {
+        let glyph = glyphSize(of: "iconClose", box: ActionBarGeometry.searchIconBox)
+        return Button {
+            query = ""
+            searchFocused = false
+        } label: {
+            Image("iconClose")
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: glyph.width, height: glyph.height)
+                .foregroundStyle(Color.searchIcon)
+                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+                .contentShape(.rect)
         }
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel("Очистить поиск")
     }
 
     private var searchIcon: some View {
@@ -339,6 +414,10 @@ private struct TrailingSlot: View {
         .frame(maxWidth: layout.trailingWidth == nil ? .infinity : nil)
         .frame(width: layout.trailingWidth)
         .frame(height: PlusMetrics.actionBarHeight)
+        // Уезд вправо за кромку экрана при фокусе поиска — плеер не исчезает рывком,
+        // а уходит из бара; opacity добивает хвост, чтобы он не мелькал за краем.
+        .offset(x: layout.trailingEscaped ? ActionBarGeometry.trailingEscape : 0)
+        .opacity(layout.trailingEscaped ? 0 : 1)
         .if(layout.clipTrailing) { view in
             view.clipped()
         }
