@@ -66,6 +66,13 @@ extension MovieDetails {
     /// Ширина логотипа в пикселях: макетные 188pt на ×3.
     private static let logoPixelWidth = 564
 
+    /// Сколько персон и похожих тайтлов доезжает до экрана. Не приватные: по этим же
+    /// числам `MoviePool` обрезает запись перед записью на диск — хранить состав,
+    /// который карточка никогда не покажет, незачем.
+    static let castLimit = 12
+    static let directorLimit = 2
+    static let similarLimit = 9
+
     init(movie: KinopoiskMovie) {
         id = movie.id
         title = movie.displayTitle
@@ -95,9 +102,15 @@ extension MovieDetails {
     /// Лид: редакционная строка Кинопоиска, иначе первое предложение описания,
     /// иначе слоган. Совсем пусто — название, как было до живых данных.
     private static func lead(_ movie: KinopoiskMovie) -> String {
-        if let short = movie.shortDescription?.flattened, !short.isEmpty { return short }
-        if let sentence = movie.description?.flattened.firstSentence, !sentence.isEmpty { return sentence }
-        if let slogan = movie.slogan?.flattened, !slogan.isEmpty { return slogan }
+        if let short = movie.shortDescription?.flattened, !short.isEmpty {
+            return short.withoutTrailingPeriod
+        }
+        if let sentence = movie.description?.flattened.firstSentence, !sentence.isEmpty {
+            return sentence.withoutTrailingPeriod
+        }
+        if let slogan = movie.slogan?.flattened, !slogan.isEmpty {
+            return slogan.withoutTrailingPeriod
+        }
         return movie.displayTitle
     }
 
@@ -111,11 +124,16 @@ extension MovieDetails {
         return items
     }
 
-    /// Абзацы описания. У Кинопоиска это сплошной текст, а макет рассчитан
-    /// на 1–3 абзаца примерно по 150 символов — режем по границам предложений.
+    /// Абзацы описания. У Кинопоиска это сплошной текст — режем по границам
+    /// предложений примерно по 150 символов.
+    ///
+    /// Отдаём **все** абзацы, а не первые три: раньше лишние просто выбрасывались,
+    /// и описание обрывалось на полуслове без всякого признака, что оно продолжается.
+    /// Сколько показать и где поставить многоточие, решает вью — она же умеет
+    /// раскрыть текст целиком по нажатию.
     private static func synopsis(_ movie: KinopoiskMovie) -> [String] {
         guard let full = movie.description?.flattened, !full.isEmpty else { return [] }
-        return full.paragraphs(targetLength: 150, limit: 3)
+        return full.paragraphs(targetLength: 150).map(\.withoutTrailingPeriod)
     }
 
     private static func rows(_ movie: KinopoiskMovie) -> [MovieDetailRow] {
@@ -141,7 +159,7 @@ extension MovieDetails {
         let directors = movie.persons?
             .filter { $0.enProfession == "director" }
             .compactMap(\.displayName)
-            .prefix(2) ?? []
+            .prefix(directorLimit) ?? []
         if !directors.isEmpty {
             rows.append(MovieDetailRow(label: "Режиссёр", value: directors.joined(separator: ", "), note: nil))
         }
@@ -168,7 +186,7 @@ extension MovieDetails {
 
     private static func cast(_ movie: KinopoiskMovie) -> [MovieCastMember] {
         let actors = movie.persons?.filter { $0.enProfession == "actor" } ?? []
-        return actors.prefix(12).enumerated().compactMap { index, person in
+        return actors.prefix(castLimit).enumerated().compactMap { index, person in
             guard let name = person.displayName, !name.isEmpty else { return nil }
             return MovieCastMember(
                 // У эпизодических персон `id` бывает пустым, а список обязан быть
@@ -182,7 +200,7 @@ extension MovieDetails {
     }
 
     private static func similar(_ movie: KinopoiskMovie) -> [MovieSimilarTitle] {
-        (movie.similarMovies ?? []).prefix(9).compactMap { item in
+        (movie.similarMovies ?? []).prefix(similarLimit).compactMap { item in
             let title = item.displayTitle
             guard !title.isEmpty else { return nil }
             return MovieSimilarTitle(
@@ -309,7 +327,17 @@ private extension String {
     /// Режет сплошной текст на абзацы по границам предложений, набирая примерно
     /// `targetLength` символов на абзац. Предложение не разрывается: макет ставит
     /// абзацы в шахматном порядке, и обрыв на полуслове там читается опечаткой.
-    func paragraphs(targetLength: Int, limit: Int) -> [String] {
+    /// Точка в конце фразы: в макете её нет ни у аргумента, ни у абзацев описания.
+    /// Восклицательный и вопросительный знаки — часть интонации, их оставляем.
+    var withoutTrailingPeriod: String {
+        var trimmed = trimmingCharacters(in: .whitespaces)
+        while trimmed.hasSuffix(".") {
+            trimmed.removeLast()
+        }
+        return trimmed
+    }
+
+    func paragraphs(targetLength: Int) -> [String] {
         var sentences: [String] = []
         var current = ""
         for character in self {
@@ -327,15 +355,14 @@ private extension String {
         for sentence in sentences {
             if buffer.isEmpty {
                 buffer = sentence
-            } else if buffer.count + 1 + sentence.count <= targetLength || result.count == limit - 1 {
+            } else if buffer.count + 1 + sentence.count <= targetLength {
                 buffer += " " + sentence
             } else {
                 result.append(buffer)
-                if result.count == limit { return result }
                 buffer = sentence
             }
         }
-        if !buffer.isEmpty, result.count < limit { result.append(buffer) }
+        if !buffer.isEmpty { result.append(buffer) }
         return result
     }
 }

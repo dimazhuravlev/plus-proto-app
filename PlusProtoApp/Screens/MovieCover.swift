@@ -84,21 +84,40 @@ struct MovieTitleLogo: View {
 
 // MARK: - Кавер с трейлером
 
-/// Кавер карточки тайтла: постер, поверх которого автоматически запускается
-/// зацикленный беззвучный ролик (макет §5.4 — «зацикливаем воспроизведение трейлера»).
+/// Кавер карточки тайтла: неподвижный кадр, из которого ролик разворачивается **по тапу**
+/// и по повторному тапу сворачивается обратно.
+///
+/// Само́ зацикливание — из макета (§5.4 «зацикливаем воспроизведение трейлера»),
+/// а вот старт по тапу — нет: раньше ролик запускался сам, и верхний блок экрана
+/// всё время шевелился, ничего об этом не спрашивая.
+///
+/// **Статичный кадр — `backdrop`, а не постер.** В Кинопоиске из трёх картинок тайтла
+/// чистая ровно одна: `poster` (600×900) идёт с нанесённым названием, `logo` — это
+/// само название и есть, а `backdrop` (1344×756) — кадр без надписей. Названию на кавере
+/// не место дважды: логотип рисует шапка.
 ///
 /// Настоящий трейлер Кинопоиска сюда не доезжает: API отдаёт не файл, а страницу своего
 /// плеера, и подписанный поток внутри неё закрыт для сторонних клиентов (см.
-/// `KinopoiskVideo`). Поэтому движущаяся картинка — забандленный клип, а из API живут
-/// имя ролика и его кадр. Как только `trailer.stream` окажется непустым, играть будет он:
+/// `KinopoiskVideo`). Поэтому движущаяся картинка — забандленный клип, а из API живёт
+/// имя ролика. Как только `trailer.stream` окажется непустым, играть будет он:
 /// ветка одна, мёртвого кода нет.
 struct MovieTrailerCover: View {
-    /// Постер сущности: с него же собран зум-переход с витрины, подменять нельзя.
+    /// Постер сущности: с него собран зум-переход с витрины, поэтому первым кадром
+    /// экрана стоит именно он — подменять картинку в момент перехода нельзя.
     let poster: ArtworkSource
+    /// Чистый кадр тайтла из API (`backdrop`) — без нанесённого названия и логотипа.
+    /// Приезжает вместе с деталями, то есть уже после перехода, и мягко сменяет постер.
+    let backdrop: URL?
     let trailer: MovieTrailer?
 
     @State private var playback = LoopingVideoPlayback()
+    /// Пользователь включил ролик тапом. Единственный источник правды: и плеер,
+    /// и видимость слоя, и возврат из фона смотрят сюда.
+    @State private var isPlaying = false
     @State private var isVideoReady = false
+    /// Чистый кадр грузится вручную, а не через `ArtworkImage`: тот на время загрузки
+    /// рисует плейсхолдер-заливку, и она перекрыла бы постер серым прямоугольником.
+    @State private var clean: Image?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
@@ -106,40 +125,100 @@ struct MovieTrailerCover: View {
         ZStack {
             ArtworkImage(source: poster)
                 .scaledToFill()
+                .overlay(Color(red: 0, green: 0, blue: 1).opacity(0.45))
 
-            if reduceMotion {
-                // Движение выключено — вместо ролика его собственный кадр из API.
-                if let frame = trailer?.poster {
-                    ArtworkImage(source: .remote(frame))
-                        .scaledToFill()
-                }
-            } else {
-                LoopingVideoLayer(player: playback.queue) { isVideoReady = true }
-                    .opacity(isVideoReady ? 1 : 0)
-                    // Постер уступает место видео мягко: жёсткая подмена читается щелчком.
-                    .animation(.easeInOut(duration: MovieCoverMotion.videoFadeIn), value: isVideoReady)
-                    .allowsHitTesting(false)
+            if let clean {
+                clean
+                    .resizable()
+                    .scaledToFill()
+                    .transition(.opacity)
+                    .overlay(Color(red: 1, green: 1, blue: 0).opacity(0.45))
             }
+
+            LoopingVideoLayer(player: playback.queue) { isVideoReady = true }
+                .opacity(isPlaying && isVideoReady ? 1 : 0)
+                .animation(fade(MovieCoverMotion.videoFadeIn), value: isPlaying && isVideoReady)
+                .allowsHitTesting(false)
         }
-        .task(id: trailer?.stream) { start() }
+        // Кадр целиком — одна кнопка. `contentShape` обязателен: без него тап ловят
+        // только непрозрачные пиксели, а слои здесь появляются и исчезают.
+        .contentShape(Rectangle())
+        .onTapGesture { isPlaying.toggle() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(trailer?.name ?? "Трейлер")
+        .accessibilityValue(isPlaying ? "Играет" : "Остановлен")
+        // Ролик заряжается заранее, но не играет: к моменту тапа он уже разобран,
+        // и проявление начинается сразу, а не после разбора файла.
+        .task(id: trailer?.stream) { prepare() }
+        .task(id: backdrop) { await loadClean() }
+        #if DEBUG
+        // `-debugTapCover` — тап по каверу и повторный тап: снять оба состояния
+        // из шелла иначе нечем.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugTapCover") else { return }
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            isPlaying = true
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            isPlaying = false
+        }
+        #endif
+        .onChange(of: isPlaying) { _, playing in
+            playing ? start() : playback.pause()
+        }
         .onDisappear { playback.pause() }
         // Экран ушёл в фон — клип обязан встать, иначе он крутится вхолостую.
+        // Вернулись: продолжаем только если пользователь его и включал.
         .onChange(of: scenePhase) { _, phase in
+            guard isPlaying else { return }
             phase == .active ? start() : playback.pause()
         }
     }
 
+    /// Проявление без анимации при «уменьшении движения». Само воспроизведение при
+    /// этом не запрещено: раньше ролик стартовал сам и был фоновым движением — теперь
+    /// он трогается только по тапу, а это уже осознанное действие пользователя.
+    private func fade(_ duration: Double) -> Animation? {
+        reduceMotion ? nil : .easeInOut(duration: duration)
+    }
+
+    private func prepare() {
+        if let stream = trailer?.stream {
+            playback.prepare(url: stream)
+        } else {
+            playback.prepare(bundled: ShowcaseSeeds.trailerClip)
+        }
+    }
+
     private func start() {
-        guard !reduceMotion else { return }
         if let stream = trailer?.stream {
             playback.start(url: stream)
         } else {
             playback.start(bundled: ShowcaseSeeds.trailerClip)
         }
     }
+
+    private func loadClean() async {
+        guard let backdrop else {
+            clean = nil
+            return
+        }
+        if let hit = ArtworkLoader.shared.cached(backdrop) {
+            clean = Image(uiImage: hit)
+            return
+        }
+        guard let loaded = await ArtworkLoader.shared.image(for: backdrop) else { return }
+        withAnimation(fade(MovieCoverMotion.cleanFade)) {
+            clean = Image(uiImage: loaded)
+        }
+    }
 }
 
 enum MovieCoverMotion {
-    /// Проявление видео поверх постера
+    /// Проявление и уход видео по тапу
     static let videoFadeIn: Double = 0.4
+    /// Подмена постера сущности чистым кадром из API, когда он доехал
+    static let cleanFade: Double = 0.35
 }

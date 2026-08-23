@@ -28,6 +28,19 @@ final class MovieDetailsStore {
             return
         }
 
+        // Запас витрины приносит и содержимое карточки: тем же запросом, которым
+        // набирается пул, приезжают состав, похожие и ролики (см. `KinopoiskService.movieFields`).
+        // Поэтому открытие карточки фильма с витрины не стоит ни одного запроса из квоты,
+        // а сеть остаётся только тайтлам не из запаса — то есть `-debugMovieId`.
+        if let pooled = await MoviePool.shared.details(id: id) {
+            let parsed = MovieDetails(movie: pooled)
+            Self.cache[id] = parsed
+            details = parsed
+            failure = nil
+            preloadArtwork(parsed)
+            return
+        }
+
         isLoading = true
         defer { isLoading = false }
 

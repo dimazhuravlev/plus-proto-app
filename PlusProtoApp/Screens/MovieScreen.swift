@@ -268,7 +268,11 @@ struct MovieScreen: View {
             // Кадр задаёт распорка, а картинка его заполняет: `aspectRatio` в скролле
             // считает высоту от идеального размера картинки, а не от пропорции макета.
             .overlay {
-                MovieTrailerCover(poster: entity.artwork, trailer: details.trailer)
+                MovieTrailerCover(
+                    poster: entity.artwork,
+                    backdrop: details.backdrop,
+                    trailer: details.trailer
+                )
             }
             .clipped()
             .overlay(alignment: .bottom) { coverFade }

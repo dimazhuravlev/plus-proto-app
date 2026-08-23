@@ -27,10 +27,18 @@ actor KinopoiskService {
     static let shared = KinopoiskService()
 
     /// Поля, которые умеет разобрать `KinopoiskMovie`, — сужаем ответ через `selectFields`.
+    ///
+    /// Набор покрывает не только витрину, но и карточку тайтла целиком: `persons`,
+    /// `similarMovies` и `videos` списочный роут отдаёт наравне с `/movie/{id}`
+    /// (замер — см. `KinopoiskMovie`). Благодаря этому пул фильмов кормит карточку
+    /// с диска, и на её открытие не уходит ни одного запроса из суточных двухсот.
+    /// Цена — вес ответа: около 22 КБ на тайтл вместо 2 КБ, то есть ~5 МБ на пачку
+    /// в 250 фильмов. Это один запрос в неделю, трафик здесь дешевле квоты.
     static let movieFields = [
         "id", "name", "alternativeName", "year", "description", "shortDescription",
-        "movieLength", "isSeries", "ageRating", "genres", "countries",
-        "rating", "poster", "backdrop", "logo"
+        "slogan", "movieLength", "isSeries", "ageRating", "ratingMpaa",
+        "genres", "countries", "rating", "votes", "top250",
+        "poster", "backdrop", "logo", "videos", "persons", "similarMovies"
     ]
 
     /// `api.kinopoisk.dev` отдаёт 301 сюда — ходим сразу на конечный домен, экономим редирект.

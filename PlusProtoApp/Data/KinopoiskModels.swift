@@ -174,9 +174,12 @@ struct KinopoiskVideos: Codable {
 /// Фильм/сериал. Почти всё опционально: у части каталога нет ни `logo`, ни `backdrop`,
 /// ни `shortDescription`, а у зарубежных релизов иногда пусто русское `name`.
 ///
-/// **Полнота ответа зависит от роута.** Списочный `/v1.4/movie` на бесплатном тарифе
-/// отдаёт урезанный набор (без `videos`, `persons`, `similarMovies`) и `selectFields`
-/// его не расширяет; всё перечисленное приезжает только с `/v1.4/movie/{id}`.
+/// **Полнота списочного ответа задаётся `selectFields`.** Замер 2026-08-23 по
+/// `/v1.4/movie?lists=hd-must-see&limit=250`: с явным `selectFields` списочный роут
+/// отдаёт и `persons` (в среднем 74 на тайтл), и `similarMovies`, и `videos` — то есть
+/// всё, что показывает карточка. Отдельный поход на `/v1.4/movie/{id}` нужен только
+/// тайтлам не из витрины. Вложенные поля (`persons.name`) `selectFields` не понимает —
+/// секция приходит целиком.
 struct KinopoiskMovie: Codable, Identifiable {
     let id: Int
     let name: String?
@@ -200,9 +203,11 @@ struct KinopoiskMovie: Codable, Identifiable {
     let poster: KinopoiskImage?
     let backdrop: KinopoiskImage?
     let logo: KinopoiskImage?
-    let videos: KinopoiskVideos?
-    let persons: [KinopoiskPerson]?
-    let similarMovies: [KinopoiskSimilarMovie]?
+    // Три секции карточки изменяемые: `MoviePool` держит запись в двух видах —
+    // лёгком для витрины (эти поля обнулены) и обрезанном для карточки.
+    var videos: KinopoiskVideos?
+    var persons: [KinopoiskPerson]?
+    var similarMovies: [KinopoiskSimilarMovie]?
 
     /// Заголовок для UI: русское название, иначе оригинальное.
     var displayTitle: String {

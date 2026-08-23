@@ -29,6 +29,9 @@ struct MovieSectionHeader: View {
 struct MovieSynopsisSection: View {
     let paragraphs: [String]
 
+    /// Описание раскрыто целиком. Свёрнутое состояние — по умолчанию.
+    @State private var isExpanded = false
+
     private enum Layout {
         /// `pl 24 / pr 48 / pt 16 / pb 8` у первого абзаца, зеркально — у второго.
         /// Прежняя спека (`2101:22593`) давала первому 16 — это другой файл макета.
@@ -38,16 +41,26 @@ struct MovieSynopsisSection: View {
         static let far: CGFloat = 48
         /// Правое поле сдвинутого абзаца — общее поле секции
         static let edge: CGFloat = 16
+        /// Сколько описания показываем свёрнутым. Считается по всей длине, а не
+        /// по числу абзацев: важно, сколько текста на экране, а не на сколько кусков
+        /// его разбило нарезание по предложениям.
+        static let collapsedLimit = 500
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, text in
+            ForEach(Array(shown.enumerated()), id: \.offset) { index, text in
                 let shifted = index.isMultiple(of: 2) == false
 
                 Text(text)
                     .plusMovieCardText()
                     .foregroundStyle(Color.fillOne)
+                    // Абзац обязан занять свою полную высоту. Без этого он ужимается
+                    // под высоту, предложенную снаружи, и SwiftUI режет его многоточием
+                    // по месту — так описание обрывалось на полуслове в каждом абзаце,
+                    // хотя в исходнике оно целое (замер по ответу API: 414 символов,
+                    // одно многоточие, и то авторское, в самом конце).
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, shifted ? Layout.far : Layout.near)
                     .padding(.trailing, shifted ? Layout.edge : Layout.far)
@@ -55,8 +68,56 @@ struct MovieSynopsisSection: View {
                     .padding(.bottom, Layout.bottom)
             }
         }
+        // Нажатие по всему блоку, а не по кнопке «Ещё»: в макете такой кнопки нет,
+        // а текст — единственное, что здесь есть.
+        .contentShape(.rect)
+        .onTapGesture {
+            guard isTruncated || isExpanded else { return }
+            withAnimation(.snappy(duration: 0.28)) { isExpanded.toggle() }
+        }
+        .accessibilityAddTraits(isTruncated || isExpanded ? .isButton : [])
+        .accessibilityHint(isExpanded ? "Свернуть описание" : "Показать описание целиком")
+    }
+
+    /// Что показываем сейчас. Свёрнутым — абзацы, пока их суммарная длина не перевалит
+    /// за предел; последний влезший обрывается многоточием, остальные не показываются
+    /// вовсе. Обрывается **только последний**: раньше многоточие получал каждый абзац,
+    /// и текст читался как набор обрубков.
+    private var shown: [String] {
+        guard !isExpanded, isTruncated else { return paragraphs }
+
+        var result: [String] = []
+        var used = 0
+        for paragraph in paragraphs {
+            let room = Layout.collapsedLimit - used
+            if paragraph.count <= room {
+                result.append(paragraph)
+                used += paragraph.count
+            } else {
+                result.append(paragraph.clipped(to: room))
+                break
+            }
+        }
+        return result
+    }
+
+    /// Есть ли что раскрывать.
+    private var isTruncated: Bool {
+        paragraphs.reduce(0) { $0 + $1.count } > Layout.collapsedLimit
     }
 }
+
+private extension String {
+    /// Обрезает по границе слова и ставит многоточие. Точка перед ним не нужна:
+    /// её и так нет в конце абзацев.
+    func clipped(to limit: Int) -> String {
+        guard limit > 0, count > limit else { return self }
+        let head = prefix(limit)
+        guard let space = head.lastIndex(of: " ") else { return String(head) + "…" }
+        return String(head[..<space]) + "…"
+    }
+}
+
 
 // MARK: - Детали
 

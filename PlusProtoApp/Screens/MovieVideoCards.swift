@@ -113,7 +113,7 @@ struct MovieVideoSection: View {
         // карточки ложился поверх предыдущей. Поджать вынос не помогло бы: `blur`
         // размазывает копию далеко за её кадр независимо от отступов.
         ZStack(alignment: .top) {
-            rows { index, _ in glow(index) }
+            rows(isGlowLayer: true) { index, _ in glow(index) }
             rows { index, card in cardView(index, card) }
         }
         .padding(.top, Layout.top)
@@ -135,6 +135,7 @@ struct MovieVideoSection: View {
     /// поэтому высоты совпадают сами и повторять их числом не приходится.
     @ViewBuilder
     private func rows<Row: View>(
+        isGlowLayer: Bool = false,
         @ViewBuilder row: @escaping (Int, MovieVideoCardMock) -> Row
     ) -> some View {
         VStack(alignment: .leading, spacing: Layout.gap) {
@@ -145,6 +146,11 @@ struct MovieVideoSection: View {
                 if index + 1 == Layout.textAfter, !paragraphs.isEmpty {
                     MovieSynopsisSection(paragraphs: paragraphs)
                         .padding(.vertical, Layout.textBlockVertical)
+                        // В слое свечений это распорка, а не текст: `hidden` сохраняет
+                        // кадр, поэтому слои не разъезжаются, а описание рисуется
+                        // и нажимается ровно один раз.
+                        .opacity(isGlowLayer ? 0 : 1)
+                        .allowsHitTesting(!isGlowLayer)
                 }
             }
         }
