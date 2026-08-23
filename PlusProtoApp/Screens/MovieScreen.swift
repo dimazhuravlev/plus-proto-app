@@ -16,21 +16,23 @@ enum MovieLayout {
     /// BACKGROUND_BLUR 10 в панели Figma = 5 в единицах проекта (см. GlassSurface)
     static let coverFadeBlur: CGFloat = 5
 
-    /// Высота кавера. В макете это ровно 3:4 (536 на нашей ширине), но там под экраном
-    /// нет хрома приложения: action bar и таббар съедают 164pt снизу, и на 3:4 инфо-блок
-    /// уезжает под панель действий. Поэтому берём минимум из макетной пропорции и того,
-    /// что остаётся над панелью при сохранённом зазоре «трейлер → кнопки» из макета.
-    /// Высота зависит от длины лида: он не режется, а инфо-блок стоит под кавером.
+    /// Высота кавера — макетные 3:4, если инфо-блок под ним успевает закончиться
+    /// **над градиентом** панели действий; иначе кавер ужимается ровно настолько,
+    /// чтобы он там поместился.
+    ///
+    /// Расходимся именно с градиентом, а не с рядом кнопок: в макете пилюля «Смотреть
+    /// трейлер» яркая и читается целиком, а пик скрима 0.92 съедает её больше чем
+    /// наполовину (замер: пик текста падал 255 → 117). Экран прототипа выше макетного,
+    /// и лишнюю высоту правильнее отдать каверу до его макетных 3:4, а не задвинуть
+    /// инфо-блок под панель.
     static func coverHeight(lead: String) -> CGFloat {
         min(
             PlusMetrics.designWidth / coverAspect,
-            panelRowTop - trailerToPanelGap - infoHeight(lead: lead) + infoOverlap
+            panelRowTop - panelLead - infoHeight(lead: lead) + infoOverlap
         )
     }
 
     // Шапка `I3806:11014;6787:11641`
-    static let headerScrimHeight: CGFloat = 240
-    static let headerScrimPeak: Double = 0.56
 
     // Инфо-блок `I3806:11014;6787:11640`
     /// Отрицательный gap: инфо наезжает на кавер
@@ -84,10 +86,10 @@ enum MovieLayout {
 
     /// Верх ряда кнопок панели от верха экрана. Экран — константа устройства,
     /// а не замер вью: читать размер вью, от которого зависит её же раскладка, запрещено.
+    /// Хрома приложения под панелью на этом экране нет, поэтому его высота не вычитается.
     static var panelRowTop: CGFloat {
         UIScreen.main.bounds.height
             - PlusChromeMetrics.bottomSafeArea
-            - PlusChromeMetrics.contentBottomInset
             - panelBottom
             - buttonHeight
     }
@@ -124,28 +126,6 @@ enum MovieScrim {
     }
 }
 
-/// Пороги появления навбара. Считаются от высоты кавера на ширине макета прототипа —
-/// это константа, а не замер вью: читать собственный размер здесь запрещено (DECISIONS).
-enum MovieScreenMotion {
-    /// Верх лида: кавер − наезд + лейбл (20) + зазор
-    static func leadTop(lead: String) -> CGFloat {
-        MovieLayout.coverHeight(lead: lead) - MovieLayout.infoOverlap + 20 + MovieLayout.infoSpacing
-    }
-    /// Нижняя кромка кнопок навбара: вырез iPhone 17 Pro + круг 40
-    static let navBarBottom: CGFloat = 62 + EntityNavBarGeometry.controlSize
-
-    /// Подложка навбара приезжает, пока уезжает градиент шапки; название — только когда
-    /// лид уйдёт под бар, иначе название экрана какое-то время видно дважды.
-    static func navBar(lead: String) -> EntityNavBarThresholds {
-        EntityNavBarThresholds(
-            backgroundStart: 200,
-            backgroundRamp: 120,
-            titleStart: leadTop(lead: lead) - navBarBottom,
-            titleRamp: 60
-        )
-    }
-}
-
 // MARK: - Экран
 
 /// Карточка фильма: кавер с зацикленным роликом, инфо-блок с фирменной «ступенькой»
@@ -155,14 +135,18 @@ enum MovieScreenMotion {
 /// (см. `MovieDetailsStore`). Пока ответ едет и для моковой витрины экран показывает
 /// `MovieDetails.placeholder`.
 ///
+/// Навигация у экрана своя (`MovieHeader`), а не общий `EntityNavBar`: кнопки «назад»
+/// в макете нет, вместо неё крестик справа, а слева — логотип тайтла.
+///
 /// Сознательно не делаем (спека §7): индикатор звука трейлера, скелетоны входа,
-/// все состояния кнопок кроме дефолтного, схлопывание шапки 240 → 166 при скролле
-/// (вместо него по скроллу проявляется общий `EntityNavBar`).
+/// все состояния кнопок кроме дефолтного.
 struct MovieScreen: View {
     let entity: EntityRef
     @State private var store = MovieDetailsStore()
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
+    /// Крестик шапки — единственный выход с экрана: кнопки «назад» здесь нет.
+    @Environment(\.dismiss) private var dismiss
 
     /// Что показывать прямо сейчас: живые детали, иначе заглушка по названию.
     private var details: MovieDetails {
@@ -193,9 +177,8 @@ struct MovieScreen: View {
                     if !details.similar.isEmpty {
                         MovieSimilarSection(titles: details.similar)
                     }
-                    // Панель действий висит поверх ленты, а хром приложения поджимает
-                    // её сам (`contentMargins` из AppRootView) — распоркой добираем
-                    // только высоту самой панели.
+                    // Хром приложения на этом экране спрятан, поэтому весь клиренс под
+                    // прибитой панелью действий экран добирает сам.
                     Color.clear.frame(height: MovieLayout.panelClearance)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -209,20 +192,32 @@ struct MovieScreen: View {
             #if DEBUG
             // `-debugScrollTo <pt>`: тапнуть и проскроллить экран из шелла нечем,
             // а секции под панелью иначе не сверить с макетом.
-            .task {
+            //
+            // Прокрутка повторяется, а не делается один раз: на первом кадре лента —
+            // это один кавер, прокручивать нечего, и `scrollTo` уходит в пустоту.
+            // Секции дорастают по мере ответа `/v1.4/movie/{id}`, а ждать конкретно
+            // его нельзя — на моках он не приходит вовсе. Три попытки покрывают оба
+            // случая и стоят полторы секунды отладочного запуска.
+            //
+            // `id:` — чтобы попытки пошли заново, когда детали доехали: приход ответа
+            // перестраивает ленту и сбрасывает позицию в ноль, так что прокрутка,
+            // сделанная до него, пропадает.
+            .task(id: store.details == nil) {
                 let offset = UserDefaults.standard.double(forKey: "debugScrollTo")
                 guard offset > 0 else { return }
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !Task.isCancelled else { return }
-                scrollPosition.scrollTo(y: offset)
+                for _ in 0..<10 {
+                    try? await Task.sleep(for: .milliseconds(700))
+                    guard !Task.isCancelled else { return }
+                    scrollPosition.scrollTo(y: offset)
+                }
             }
             #endif
 
-            EntityNavBar(
+            MovieHeader(
+                logo: details.logo,
                 title: entity.title,
-                artwork: entity.artwork,
                 scrollOffset: scrollOffset,
-                thresholds: MovieScreenMotion.navBar(lead: leadText)
+                coverHeight: MovieLayout.coverHeight(lead: leadText)
             ) {
                 headerActions
             }
@@ -230,6 +225,8 @@ struct MovieScreen: View {
         .background(Color.black.ignoresSafeArea())
         .overlay(alignment: .bottom) { MovieMainButtons() }
         .toolbar(.hidden, for: .navigationBar)
+        // Под панелью действий в макете экрана нет вовсе — общий хром там был бы вторым дном.
+        .hidesBottomChrome()
     }
 
     // MARK: Шапка
@@ -239,7 +236,7 @@ struct MovieScreen: View {
     private var headerActions: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
             GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться")
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть")
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть") { dismiss() }
         }
     }
 
@@ -264,19 +261,6 @@ struct MovieScreen: View {
             }
             .clipped()
             .overlay(alignment: .bottom) { coverFade }
-            .overlay(alignment: .top) { headerScrim }
-            .overlay(alignment: .topLeading) { logo }
-    }
-
-    /// Логотип тайтла в шапке (`figma-moviecard.md` §2.2). Едет вместе с кавером —
-    /// закрепление и уменьшение по скроллу макет описывает отдельным состоянием.
-    @ViewBuilder
-    private var logo: some View {
-        if let url = details.logo {
-            MovieTitleLogo(url: url, title: entity.title)
-                .padding(.leading, MovieLogoLayout.leading)
-                .padding(.top, MovieLogoLayout.top)
-        }
     }
 
     /// Нижние 104pt кавера: чёрный градиент под лёгким размытием — стык с фоном экрана
@@ -292,12 +276,6 @@ struct MovieScreen: View {
         }
         .frame(height: MovieLayout.coverFadeHeight)
         .allowsHitTesting(false)
-    }
-
-    private var headerScrim: some View {
-        MovieScrim.gradient(peak: MovieLayout.headerScrimPeak, from: .bottom, to: .top)
-            .frame(height: MovieLayout.headerScrimHeight)
-            .allowsHitTesting(false)
     }
 
     private var info: some View {
@@ -384,7 +362,7 @@ private struct MovieMainButtons: View {
         }
         .frame(height: MovieLayout.buttonHeight)
         .padding(.horizontal, MovieLayout.panelSide)
-        .padding(.bottom, MovieLayout.panelBottom + PlusChromeMetrics.contentBottomInset)
+        .padding(.bottom, MovieLayout.panelBottom)
         .background(alignment: .bottom) { scrim }
     }
 
@@ -407,7 +385,7 @@ private struct MovieMainButtons: View {
 
     private static var scrimHeight: CGFloat {
         MovieLayout.panelLead + MovieLayout.buttonHeight + MovieLayout.panelBottom
-            + PlusChromeMetrics.contentBottomInset + PlusChromeMetrics.bottomSafeArea
+            + PlusChromeMetrics.bottomSafeArea
     }
 
     private var playButton: some View {
