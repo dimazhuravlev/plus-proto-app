@@ -399,6 +399,11 @@ private struct SearchPill: View {
                     anchor: .trailing
                 )
                 .opacity(layout.isRaised ? 1 : 0)
+                // Ширина анимируется, а это проход раскладки на кадр. Здесь он
+                // несущий: без схлопывания ширины крест переполнит контент круга
+                // 60pt и утащит лупу влево — та же ловушка, что описана выше про
+                // общий `spacing`. Бар и так анимирует ширины зон, класс работы
+                // не меняется.
                 .frame(width: layout.isRaised ? ActionBarGeometry.searchIconBox : 0)
                 .padding(.leading, layout.isRaised ? ActionBarGeometry.clearLeadingGap : 0)
                 // Схлопнутый крест остаётся в дереве — гасим хит-тест явно, иначе
@@ -552,6 +557,12 @@ private enum SearchPlaceholderMotion {
 private struct SearchPlaceholderTicker: View {
     var isPaused: Bool
 
+    /// Ход подмены — движение декоративное: оно ничего не объясняет, только
+    /// намекает на смену фразы. При включённом «уменьшении движения» его надо
+    /// убрать, но не гасить подмену целиком: кросс-фейд помогает понять, что
+    /// текст сменился, и остаётся.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private static let phrases = [
         "Хочу послушать",
         "Хочу почитать",
@@ -568,8 +579,8 @@ private struct SearchPlaceholderTicker: View {
                 // `transition`: SwiftUI видит замену вью, а не смену её текста.
                 .id(activeIndex)
                 .transition(.asymmetric(
-                    insertion: .opacity.combined(with: .offset(y: -SearchPlaceholderMotion.travel)),
-                    removal: .opacity.combined(with: .offset(y: SearchPlaceholderMotion.travel))
+                    insertion: .opacity.combined(with: .offset(y: -travel)),
+                    removal: .opacity.combined(with: .offset(y: travel))
                 ))
         }
         .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
@@ -583,6 +594,10 @@ private struct SearchPlaceholderTicker: View {
             guard !isPaused else { return }
             await runEllipsisLoop()
         }
+    }
+
+    private var travel: CGFloat {
+        reduceMotion ? 0 : SearchPlaceholderMotion.travel
     }
 
     private func phrase(_ text: String) -> some View {
