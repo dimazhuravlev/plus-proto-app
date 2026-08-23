@@ -93,13 +93,56 @@ extension View {
         modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 15, lineHeight: 18, tracking: -0.2))
     }
 
-    /// Мини-плеер, подписи прогресса — YS Text Medium 13 / lh 16 / tracking −0.2
+    /// Мини-плеер, подписи прогресса — YS Text Medium 13 / lh 16 / tracking 0.
+    /// Трекинг был −0.2 «по аналогии» с соседними стилями; замер ноды мини-плеера
+    /// показал в макете ровно 0, и подписи из-за минуса шли на 6pt уже эталона
+    /// («Cocteau Twins» 82.67 против 89). Решение пользователя 2026-08-23.
     func plusTextS() -> some View {
-        modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 13, lineHeight: 16, tracking: -0.2))
+        modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 13, lineHeight: 16, tracking: 0))
     }
 
     /// Лейблы табов — YS Text Medium 11 / lh 14
     func plusTabLabel() -> some View {
         modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 11, lineHeight: 14, tracking: 0))
+    }
+}
+
+// MARK: - Карточка тайтла
+
+/// Экран фильма нарисован в другом файле Figma («🎬 Mobile Title Card») и на другом
+/// шрифте — Yango Group Headline / Yango Text. Метрики оттуда с витриной не совпадают:
+/// интерлиньяж задан процентами (110 / 120 / 100 %), трекинг всюду нулевой, у текста
+/// 15 кегля межстрочное 20, а не 18. Поэтому это отдельная линейка стилей, а не
+/// перенастройка существующих: смешивать их — значит незаметно сдвинуть витрину.
+/// Семейства — ближайшие бандленные: YS Display вместо Group Headline, YS Text вместо Yango Text.
+extension View {
+    /// Лид карточки — Group Headline Bold 32 / lh 110 % = 35.2
+    func plusMovieLead() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 32, lineHeight: 35.2, tracking: 0))
+    }
+
+    /// Заголовок секции — Group Headline ExtraBold 24 / lh 100 %
+    func plusMovieSection() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 24, lineHeight: 24, tracking: 0))
+    }
+
+    /// Абзац описания — Group Headline Bold 24 / lh 120 % = 28.8
+    func plusMovieParagraph() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 24, lineHeight: 28.8, tracking: 0))
+    }
+
+    /// Мета, значения в «Деталях» — Yango Text Medium 15 / lh 20
+    func plusMovieText() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 15, lineHeight: 20, tracking: 0))
+    }
+
+    /// Лейблы кнопок — Yango Text Semibold(=Bold) 15 / lh 20
+    func plusMovieTextBold() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 15, lineHeight: 20, tracking: 0))
+    }
+
+    /// Подписи оценки и бейджей — Yango Text Bold 13 / lh 18
+    func plusMovieCaption() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 13, lineHeight: 18, tracking: 0))
     }
 }
