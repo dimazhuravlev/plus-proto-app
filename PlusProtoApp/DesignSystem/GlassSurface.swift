@@ -83,16 +83,35 @@ struct BackdropBlurView: UIViewRepresentable {
     let radius: CGFloat
 
     func makeUIView(context: Context) -> UIVisualEffectView {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
+        let view = UIVisualEffectView(effect: nil)
         view.isUserInteractionEnabled = false
-        // Тонировка материала дала бы серый налёт поверх нашей заливки — гасим, оставляем чистый блюр.
-        for tint in view.subviews.dropFirst() { tint.alpha = 0 }
-        applyRadius(to: view)
+        sync(view)
         return view
     }
 
     func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
-        applyRadius(to: uiView)
+        sync(uiView)
+    }
+
+    /// Нулевой радиус — это **отсутствие блюра**, а не блюр силой ноль.
+    ///
+    /// Разница принципиальная: живой `UIVisualEffectView` всегда снимает всё, что под ним,
+    /// в уменьшенном масштабе и растягивает обратно — даже когда `inputRadius == 0`.
+    /// Слой поиска висит в дереве постоянно, и из-за этого весь контент под ним
+    /// (то есть все экраны во всех табах) шёл размытым, а хром — он выше по цепочке
+    /// модификаторов — оставался резким. Поэтому на нуле эффект снимается целиком.
+    private func sync(_ view: UIVisualEffectView) {
+        guard radius > 0 else {
+            view.effect = nil
+            return
+        }
+        if view.effect == nil {
+            view.effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+            // Тонировка материала дала бы серый налёт поверх нашей заливки —
+            // гасим, оставляем чистый блюр.
+            for tint in view.subviews.dropFirst() { tint.alpha = 0 }
+        }
+        applyRadius(to: view)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIVisualEffectView, context: Context) -> CGSize? {
