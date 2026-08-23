@@ -3,10 +3,21 @@ import SwiftUI
 /// Заглушка сервисного таба — внутренние разделы сервисов пока не проектируем.
 struct ServiceStubScreen: View {
     let tab: AppTab
+    @State private var probeOffset: CGFloat = 0 // TEMP-MEASURE
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
+            // TEMP-MEASURE
+            ScrollView {
+                VStack(spacing: 0) {
+                    Color.gray.frame(height: 400)
+                    Color.white.opacity(0.2).frame(height: 1200)
+                }
+            }
+            .ignoresSafeArea(edges: .top)
+            .trackNavBarScroll(into: $probeOffset)
 
             VStack(spacing: 24) {
                 Text(tab.title)
@@ -24,6 +35,20 @@ struct ServiceStubScreen: View {
                 #endif
             }
         }
+        .overlay(alignment: .top) {
+            // «Пустой» вариант: сущности у заглушки нет, скролла тоже — поэтому
+            // название раздела и подложка стоят на месте (`.pinned`).
+            // На корне стека `dismiss()` — no-op: кнопка здесь стоит стендом,
+            // рабочей она становится на пуше (`ServiceStubDetailScreen`).
+            EntityNavBar( // TEMP-MEASURE
+                title: tab.title,
+                artwork: .asset("mockAlbumCover"),
+                isArtworkCircular: true,
+                scrollOffset: probeOffset
+            )
+        }
+        // Системный бар выключен: сверху стоит свой (приём `NavBar` MusicPlayer).
+        .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         .navigationDestination(for: ServiceStubRoute.self) { route in
             switch route {
@@ -50,6 +75,10 @@ private struct ServiceStubDetailScreen: View {
                 .plusTextM()
                 .foregroundStyle(Color.fillOne)
         }
+        .overlay(alignment: .top) {
+            EntityNavBar(title: tab.title, thresholds: .pinned)
+        }
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 #endif

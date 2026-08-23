@@ -35,6 +35,15 @@ final class AppNavigationState {
         activeTab = tab
     }
 
+    /// Программный пуш. Нужен и отладке (тапнуть по симулятору из шелла нечем),
+    /// и будущим кросс-сервисным переходам из Алисы.
+    func push(_ value: some Hashable, in tab: AppTab? = nil) {
+        let tab = tab ?? activeTab
+        var path = paths[tab] ?? NavigationPath()
+        path.append(value)
+        paths[tab] = path
+    }
+
     func path(for tab: AppTab) -> Binding<NavigationPath> {
         Binding(
             get: { self.paths[tab] ?? NavigationPath() },

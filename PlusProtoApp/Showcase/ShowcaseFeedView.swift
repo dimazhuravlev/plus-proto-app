@@ -39,7 +39,10 @@ enum ShowcaseMotion {
 /// экрана. Каждый блок знает свой слот — см. `ShowcaseLayout`.
 struct ShowcaseFeedView: View {
     let feed: ShowcaseFeed
+    /// Namespace зум-перехода — объявлен в `ShowcaseScreen`, см. комментарий там.
+    let zoom: Namespace.ID
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(AppNavigationState.self) private var navigation
     @State private var scrollPosition = ScrollPosition()
 
     var body: some View {
@@ -51,21 +54,11 @@ struct ShowcaseFeedView: View {
                     .showcaseAppear()
 
                 ForEach(Array(feed.blocks.enumerated()), id: \.element.id) { index, block in
-                    Button {
-                        open(block)
-                    } label: {
-                        blockView(block)
-                            .frame(
-                                width: ShowcaseLayout.designWidth,
-                                height: block.slot.height,
-                                alignment: .topLeading
-                            )
-                    }
-                    .buttonStyle(ShowcaseCardButtonStyle())
-                    .padding(.top, gap(before: index))
-                    // Наезжающая карточка должна лечь поверх предыдущей, как в макете.
-                    .zIndex(Double(index))
-                    .showcaseAppear()
+                    card(block)
+                        .padding(.top, gap(before: index))
+                        // Наезжающая карточка должна лечь поверх предыдущей, как в макете.
+                        .zIndex(Double(index))
+                        .showcaseAppear()
                 }
             }
             .frame(width: ShowcaseLayout.designWidth)
@@ -101,12 +94,50 @@ struct ShowcaseFeedView: View {
             guard tapIndex > 0, tapIndex <= feed.blocks.count else { return }
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
-            actionBar.open(feed.blocks[tapIndex - 1].player)
+            let block = feed.blocks[tapIndex - 1]
+            actionBar.open(block.player)
+            // Настоящий тап делает и то, и другое — отладочный обязан повторять его целиком.
+            if UserDefaults.standard.bool(forKey: "debugOpenEntity"), let route = block.entityRoute {
+                try? await Task.sleep(for: .seconds(1))
+                navigation.push(route)
+            }
         }
         #endif
     }
 
-    /// Тап по карточке открывает плеер её сервиса — action bar переезжает в нужный режим.
+    /// Тап по карточке ведёт на экран сущности зум-переходом. Исключение — «Моя Волна»:
+    /// у неё нет своей сущности, это генератор потока, поэтому она только включает плеер.
+    @ViewBuilder
+    private func card(_ block: ShowcaseBlock) -> some View {
+        if let route = block.entityRoute {
+            NavigationLink(value: route) {
+                cardBody(block)
+            }
+            .buttonStyle(ShowcaseCardButtonStyle())
+            .simultaneousGesture(TapGesture().onEnded { open(block) })
+            // Источник зума — вся карточка целиком, включая ореол: он часть её силуэта.
+            .matchedTransitionSource(id: route, in: zoom)
+        } else {
+            Button {
+                open(block)
+            } label: {
+                cardBody(block)
+            }
+            .buttonStyle(ShowcaseCardButtonStyle())
+        }
+    }
+
+    private func cardBody(_ block: ShowcaseBlock) -> some View {
+        blockView(block)
+            .frame(
+                width: ShowcaseLayout.designWidth,
+                height: block.slot.height,
+                alignment: .topLeading
+            )
+    }
+
+    /// Хаптика и перевод action bar в режим сущности. Бар отражает последний
+    /// потреблённый контент, а открытие экрана сущности — это ровно оно.
     private func open(_ block: ShowcaseBlock) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
