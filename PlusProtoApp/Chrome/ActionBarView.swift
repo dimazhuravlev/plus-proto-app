@@ -33,6 +33,16 @@ enum ActionBarMotion {
     static let transportHapticIntensity: CGFloat = 1.0
 }
 
+/// Состояние «бар поднят над клавиатурой». Обе величины считаются в BottomChrome
+/// из ОДНОГО предиката и приезжают в бар одним значением — поэтому подъём и
+/// раскладка зон физически не могут поменяться в разных апдейтах, а значит
+/// и в разных транзакциях. Это и есть гарантия, что бар едет целиком.
+struct ActionBarRaise: Equatable {
+    var isRaised = false
+    var lift: CGFloat = 0
+    static let none = ActionBarRaise()
+}
+
 // MARK: - Geometry
 
 /// Числа из figma-actionbar §4, которых нет в Tokens.swift.
@@ -58,6 +68,9 @@ private enum ActionBarGeometry {
     static let focusedScreenMargin: CGFloat = 16
     /// На сколько плеер уезжает вправо, скрываясь за кромкой экрана
     static let trailingEscape: CGFloat = 120
+    /// Насколько «распускается» клип правой зоны там, где резать нельзя.
+    /// 120 уезда + половина самого широкого чипа (кино 91.552) + запас.
+    static let trailingClipRelief: CGFloat = 240
 }
 
 /// Резина свайпа по полю поиска. Формула из UIScrollView: f(x) = (x·d·c)/(d + c·x),
@@ -102,6 +115,8 @@ private enum SearchPullConfig {
 /// (figma-actionbar §4). Один persistent HStack — ширины и opacity анимируются
 /// на живых вью, скрытые слои остаются в дереве с opacity 0.
 struct ActionBarView: View {
+    /// Подъём над клавиатурой. Дефолт нужен для превью.
+    var raise: ActionBarRaise = .none
     @Environment(ActionBarState.self) private var actionBar
     @FocusState private var searchFocused: Bool
     @State private var query = ""
@@ -110,28 +125,35 @@ struct ActionBarView: View {
         let layout = ActionBarLayout(
             mode: actionBar.mode,
             hasMusic: actionBar.music != nil,
-            isSearchFocused: actionBar.isSearchFocused
+            raise: raise
         )
 
-        // Зазор нужен, только когда справа что-то есть: в пустом состоянии поиск
-        // занимает бар целиком.
-        HStack(spacing: layout.trailingWidth == 0 ? 0 : PlusMetrics.actionBarGap) {
+        // Зазор переехал в padding правой зоны: `spacing` не интерполируется и прыгал
+        // 8→0 в нулевом кадре фокуса, дёргая правую кромку поля.
+        //
+        // Поля экрана принадлежат зонам, а не бару: сам бар — во всю ширину экрана.
+        // Общий `padding(.horizontal)` на баре загонял уезжающий плеер в чужую
+        // систему координат, и он скрывался в чёрной полосе отступа вместо кромки
+        // экрана. Значения полей не изменились: 24 в покое, 16 в фокусе (`2021:11283` —
+        // search лежит на x=16 шириной 370 при ширине бара 402).
+        HStack(spacing: 0) {
             SearchPill(
                 layout: layout,
-                isSearchFocused: actionBar.isSearchFocused,
                 searchFocused: $searchFocused,
                 query: $query
             )
+            .padding(.leading, layout.screenMargin)
 
             TrailingSlot(layout: layout)
         }
-        .animation(ActionBarMotion.morph, value: layout.animationKey)
         .frame(height: PlusMetrics.actionBarHeight)
-        // При фокусе поле расширяется — поля экрана ужимаются с 24 до 16 (`2021:11283`:
-        // search лежит на x=16 шириной 370 при ширине бара 402).
-        .padding(.horizontal, actionBar.isSearchFocused
-                 ? ActionBarGeometry.focusedScreenMargin
-                 : PlusMetrics.screenMargin)
+        .offset(y: layout.lift)
+        // ЕДИНСТВЕННАЯ анимация бара. Порядок обязателен: она оборачивает и HStack,
+        // и падинг, и offset — поэтому ширины зон, уезд плеера, поля 24→16 и подъём
+        // меняются одним апдейтом, одной кривой, с одной точкой старта.
+        // Ключ — сам `layout` (синтезированный ==), а не строка: нельзя «забыть поле»,
+        // и на каждом проходе body больше не строится String.
+        .animation(ActionBarMotion.morph, value: layout)
         .onChange(of: searchFocused) { _, focused in
             actionBar.isSearchFocused = focused
         }
@@ -165,6 +187,10 @@ struct ActionBarView: View {
 /// Ширины не вычисляются из измеренной ширины бара — измерение анимируемого размера
 /// через GeometryReader замыкает цикл «измерил → пересчитал → анимировал → измерил»
 /// и вешает рендер на 100% CPU (поймано в режиме music 2026-08-22).
+///
+/// Структура — ключ единственной анимации бара, поэтому в неё **не должно попадать
+/// ни одной величины, меняющейся чаще, чем раз в переход** (`musicProgress`, `pull`,
+/// угол обложки): иначе каждый тик получит пружину 0.32.
 private struct ActionBarLayout: Equatable {
     /// nil — зона занимает остаток (гибкая).
     let searchWidth: CGFloat?
@@ -175,27 +201,31 @@ private struct ActionBarLayout: Equatable {
     let showMovieChip: Bool
     let placeholderOpacity: Double
     let searchIconOnly: Bool
-    let miniPlayerExpanded: Bool
     let trackInfoOpacity: Double
     let progressOpacity: Double
-    let clipTrailing: Bool
-    /// Плеер уезжает за правый край экрана — так фокус поиска освобождает бар целиком.
-    let trailingEscaped: Bool
+    /// Фокусная раскладка: поле занимает бар целиком, плеер уезжает за кромку.
+    let isRaised: Bool
+    /// Подъём над клавиатурой — свойство ОБЩЕГО предка обеих зон, а не зоны.
+    let lift: CGFloat
+    let screenMargin: CGFloat
+    /// Зазор между зонами (бывший HStack spacing).
+    let gap: CGFloat
+    /// 0 — клип по границе зоны (эквивалент `.clipped()`); большой — клипа нет.
+    let trailingClipRelief: CGFloat
 
-    var animationKey: String {
-        "\(searchWidth ?? -1)-\(trailingWidth ?? -1)-\(showMiniPlayer)-\(showBookChip)-\(showMovieChip)-\(searchIconOnly)-\(miniPlayerExpanded)-\(placeholderOpacity)-\(trackInfoOpacity)-\(clipTrailing)-\(trailingEscaped)"
-    }
-
-    init(mode: ActionBarMode, hasMusic: Bool, isSearchFocused: Bool) {
+    init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise) {
         let compact = PlusMetrics.actionBarCompact
+        isRaised = raise.isRaised
+        lift = raise.lift
+        screenMargin = raise.isRaised ? ActionBarGeometry.focusedScreenMargin : PlusMetrics.screenMargin
 
         // Фокус поиска перекрывает режим: поле занимает бар целиком, плейсхолдер гаснет,
         // а плеер уезжает вправо за кромку экрана (`2021:11248` — в баре остаётся
         // только поле 370pt при полях 16).
-        if isSearchFocused {
+        if raise.isRaised {
             searchWidth = nil
             trailingWidth = 0
-            trailingEscaped = true
+            gap = 0
             // Слои остаются в дереве, чтобы уехать, а не мигнуть исчезновением.
             // Мини-плеер только в своих режимах: иначе в .book/.movie он оказывался
             // активным одновременно с чипом и проявлялся из блюра прямо во время уезда.
@@ -204,15 +234,12 @@ private struct ActionBarLayout: Equatable {
             showMovieChip = mode == .movie
             placeholderOpacity = 0
             searchIconOnly = false
-            miniPlayerExpanded = false
             trackInfoOpacity = 0
             progressOpacity = 0
-            // Без клипа: иначе нулевая зона срежет уезжающий плеер на первом же кадре.
-            clipTrailing = false
+            // Клип распущен: нулевая зона срезала бы уезжающий плеер на первом же кадре.
+            trailingClipRelief = ActionBarGeometry.trailingClipRelief
             return
         }
-
-        trailingEscaped = false
 
         switch mode {
         case .search:
@@ -222,37 +249,38 @@ private struct ActionBarLayout: Equatable {
             placeholderOpacity = 1
             trackInfoOpacity = 0
             progressOpacity = 0
-            clipTrailing = true
+            trailingClipRelief = 0
             searchIconOnly = false
-            miniPlayerExpanded = false
             // Поиск гибкий, свёрнутый плеер — фиксированный круг. В макете это 284 + 60
             // при контенте 352; гибкая зона даёт ту же картинку и переживает любую ширину экрана.
             searchWidth = nil
             // Без музыки правой зоны нет вовсе: обе гибкие поделили бы бар пополам
             // и обрезали плейсхолдер.
             trailingWidth = hasMusic ? compact : 0
+            gap = hasMusic ? PlusMetrics.actionBarGap : 0
 
         case .music:
             showMiniPlayer = hasMusic
             showBookChip = false
             showMovieChip = false
-            clipTrailing = true
-            trackInfoOpacity = isSearchFocused ? 0 : 1
-            progressOpacity = isSearchFocused ? 0 : 1
+            trailingClipRelief = 0
+            // Фокус перехвачен ранним return выше — сюда попадаем только вне фокуса.
+            trackInfoOpacity = 1
+            progressOpacity = 1
 
-            if isSearchFocused || !hasMusic {
+            if !hasMusic {
                 searchIconOnly = false
-                miniPlayerExpanded = false
                 placeholderOpacity = 1
                 searchWidth = nil
-                trailingWidth = hasMusic ? compact : 0
+                trailingWidth = 0
+                gap = 0
             } else {
                 // Зеркало режима search: теперь фиксирован поиск, а плеер занимает остаток.
                 searchIconOnly = true
-                miniPlayerExpanded = true
                 placeholderOpacity = 0
                 searchWidth = compact
                 trailingWidth = nil
+                gap = PlusMetrics.actionBarGap
             }
 
         case .book:
@@ -261,12 +289,13 @@ private struct ActionBarLayout: Equatable {
             showMovieChip = false
             placeholderOpacity = 1
             searchIconOnly = false
-            miniPlayerExpanded = false
             trackInfoOpacity = 0
             progressOpacity = 0
             searchWidth = nil
             trailingWidth = ActionBarGeometry.bookChipAABBWidth
-            clipTrailing = false
+            gap = PlusMetrics.actionBarGap
+            // AABB повёрнутого чипа книги 62.9pt в зоне 60pt — вертикальный клип его срежет.
+            trailingClipRelief = ActionBarGeometry.trailingClipRelief
 
         case .movie:
             showMiniPlayer = false
@@ -274,12 +303,12 @@ private struct ActionBarLayout: Equatable {
             showMovieChip = true
             placeholderOpacity = 1
             searchIconOnly = false
-            miniPlayerExpanded = false
             trackInfoOpacity = 0
             progressOpacity = 0
             searchWidth = nil
             trailingWidth = ActionBarGeometry.movieChipAABBWidth
-            clipTrailing = true
+            gap = PlusMetrics.actionBarGap
+            trailingClipRelief = 0
         }
     }
 }
@@ -288,7 +317,6 @@ private struct ActionBarLayout: Equatable {
 
 private struct SearchPill: View {
     let layout: ActionBarLayout
-    let isSearchFocused: Bool
     @FocusState.Binding var searchFocused: Bool
     @Binding var query: String
 
@@ -322,11 +350,15 @@ private struct SearchPill: View {
                 }
                 // Поле ввода живёт всегда, но до фокуса невидимо: пересоздавать его
                 // по условию — значит терять фокус и каретку на первом же кадре.
+                // Гейт по сырому фокусу, а не по раскладке: каретка и набранный текст
+                // видны сразу, даже если клавиатура ещё не пришла.
                 input
-                    .opacity(isSearchFocused ? 1 : 0)
+                    .opacity(searchFocused ? 1 : 0)
             }
 
-            if isSearchFocused {
+            // Крест влияет на раскладку — обязан ехать общей транзакцией, значит
+            // гейт по геометрии, а не по сырому фокусу.
+            if layout.isRaised {
                 clearButton
                     .padding(.leading, 8)
                     .transition(.opacity)
@@ -349,7 +381,7 @@ private struct SearchPill: View {
         // Сжатие ширины — внешним отступом, а не frame: HStack всё равно отдаёт
         // гибкому ребёнку весь остаток, поэтому правая зона не едет.
         .padding(.horizontal, squeeze / 2)
-        .onChange(of: isSearchFocused) { _, focused in
+        .onChange(of: searchFocused) { _, focused in
             if focused, pull != 0 {
                 withAnimation(ActionBarMotion.morph) { pull = 0 }
             }
@@ -361,7 +393,7 @@ private struct SearchPill: View {
     private var pullGesture: some Gesture {
         DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .local)
             .onChanged { value in
-                guard !isSearchFocused else { return }
+                guard !searchFocused else { return }
                 let travel = -value.translation.height
                 // Без withAnimation: резина идёт за пальцем один в один.
                 pull = SearchPullConfig.progress(travel: travel)
@@ -369,7 +401,7 @@ private struct SearchPill: View {
             }
             .onEnded { value in
                 tickArmed = false
-                guard !isSearchFocused else { pull = 0; return }
+                guard !searchFocused else { pull = 0; return }
                 let travel = -value.translation.height
                 let flick = -value.velocity.height >= SearchPullConfig.flickVelocity
                     && travel >= SearchPullConfig.flickMinDistance
@@ -407,8 +439,8 @@ private struct SearchPill: View {
             .plusTitleL()
             .submitLabel(.search)
             // opacity 0 в SwiftUI не выключает хит-тест: без этого невидимое поле
-            // перехватывало бы касания мимо жеста резины.
-            .allowsHitTesting(isSearchFocused)
+            // перехватывало бы касания мимо жеста резины. Гейт тот же, что и у opacity.
+            .allowsHitTesting(searchFocused)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -444,7 +476,8 @@ private struct SearchPill: View {
 
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
-            SearchPlaceholderTicker(isPaused: isSearchFocused)
+            // Пауза совпадает с гашением плейсхолдера — значит по раскладке.
+            SearchPlaceholderTicker(isPaused: layout.isRaised)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
@@ -513,6 +546,19 @@ private struct SearchPlaceholderTicker: View {
 
 // MARK: - Trailing slot
 
+/// Клип правой зоны без ветвления. `relief == 0` — эквивалент `.clipped()`,
+/// большой рельеф = клипа фактически нет.
+/// Рельеф НЕ анимируется (`EmptyAnimatableData`): иначе на первых кадрах фокуса
+/// клип ещё тугой и срезает уезжающий плеер.
+private struct TrailingClipShape: Shape {
+    var relief: CGFloat
+    var animatableData: EmptyAnimatableData {
+        get { EmptyAnimatableData() }
+        set {}
+    }
+    func path(in rect: CGRect) -> Path { Path(rect.insetBy(dx: -relief, dy: -relief)) }
+}
+
 private struct TrailingSlot: View {
     @Environment(ActionBarState.self) private var actionBar
     let layout: ActionBarLayout
@@ -546,12 +592,22 @@ private struct TrailingSlot: View {
         .frame(width: layout.trailingWidth)
         .frame(height: PlusMetrics.actionBarHeight)
         // Уезд вправо за кромку экрана при фокусе поиска — плеер не исчезает рывком,
-        // а уходит из бара; opacity добивает хвост, чтобы он не мелькал за краем.
-        .offset(x: layout.trailingEscaped ? ActionBarGeometry.trailingEscape : 0)
-        .opacity(layout.trailingEscaped ? 0 : 1)
-        .if(layout.clipTrailing) { view in
-            view.clipped()
-        }
+        // а уходит из бара. Без `opacity`: гашение по пути превращало уезд в
+        // растворение над правым полем, до кромки экрана плеер не доезжал.
+        // Режет его теперь сама кромка, а поле экрана он проходит насквозь —
+        // поэтому в escape входит и оно.
+        .offset(x: layout.isRaised ? ActionBarGeometry.trailingEscape + layout.screenMargin : 0)
+        // Уехавший плеер остаётся живым в дереве — гасим хит-тест явно.
+        .allowsHitTesting(!layout.isRaised)
+        // Клип без ветвления. `.if(...)` переключал ветку `_ConditionalContent`:
+        // SwiftUI удалял ВСЮ правую зону (она переставала участвовать в раскладке,
+        // замирала в последней геометрии и гасла) и вставлял новую, рождённую уже
+        // с offset(x: 120) и opacity 0. Поэтому плеер не ехал ни вверх, ни вправо.
+        .clipShape(TrailingClipShape(relief: layout.trailingClipRelief))
+        // Бывший HStack(spacing:): как padding зазор интерполируется, а spacing прыгал.
+        .padding(.leading, layout.gap)
+        // Правое поле экрана — часть правой зоны, а не бара: см. комментарий в `ActionBarView`.
+        .padding(.trailing, layout.screenMargin)
     }
 }
 
@@ -819,15 +875,4 @@ private func glyphSize(of name: String, box: CGFloat) -> CGSize {
     }
     let fit = min(1, min(box / natural.width, box / natural.height))
     return CGSize(width: natural.width * fit, height: natural.height * fit)
-}
-
-private extension View {
-    @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
-    }
 }

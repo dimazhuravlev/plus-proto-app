@@ -94,27 +94,36 @@ struct BottomChrome: View {
         VStack(spacing: PlusChromeMetrics.actionBarToTabsGap) {
             // Поднимается только бар. Таббар остаётся на своём месте и уходит
             // под клавиатуру — гасить его не нужно (решение пользователя 2026-08-23).
-            ActionBarView()
-                .offset(y: focusedOffset)
-                .animation(.smooth(duration: 0.25), value: focusedOffset)
+            // Подъём уехал ВНУТРЬ бара: он обязан висеть на общем предке обеих зон
+            // под той же единственной анимацией, что и ширины зон и уезд плеера.
+            ActionBarView(raise: raise)
 
             TabBarView()
                 .allowsHitTesting(!actionBar.isSearchFocused)
         }
-        .animation(ActionBarMotion.morph, value: actionBar.isSearchFocused)
         // Системный подъём над клавиатурой выключен: SwiftUI поднял бы весь хром
         // вместе с таббаром, да ещё и сложился бы с нашим сдвигом — бар улетал вдвое выше.
         .ignoresSafeArea(.keyboard)
     }
 
-    /// Подъём хрома при фокусе поиска: низ бара встаёт на 12pt над клавиатурой
-    /// (`2021:11248` — бар 775..835 при клавиатуре с 847).
-    private var focusedOffset: CGFloat {
-        guard actionBar.isSearchFocused, keyboard.overlap > 0 else { return 0 }
+    /// Единственный источник фокусной геометрии бара: и подъём, и ширины зон, и уезд
+    /// плеера считаются отсюда, из ОДНОГО предиката. Драйвер — состояние клавиатуры,
+    /// а не флаг фокуса: так оба края перехода (подъём и опускание) начинаются ровно
+    /// тогда, когда трогается клавиатура, и всё меняется одним апдейтом.
+    /// В приложении одно текстовое поле — поиск; если появится второе, добавить
+    /// `&& actionBar.isSearchFocused`.
+    ///
+    /// Подъём: низ бара встаёт на 12pt над клавиатурой (`2021:11248` — бар 775..835
+    /// при клавиатуре с 847).
+    private var raise: ActionBarRaise {
+        guard keyboard.isUp else { return .none }
         let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
             + PlusChromeMetrics.tabsRowHeight
             + PlusChromeMetrics.actionBarToTabsGap
-        return -(keyboard.overlap + PlusChromeMetrics.focusKeyboardGap - barBottomFromScreenBottom)
+        // min(0,) обязателен: с аппаратной клавиатурой overlap == 0 (или 55pt панели
+        // шорткатов) — бар не должен уезжать ВНИЗ.
+        let lift = min(0, -(keyboard.overlap + PlusChromeMetrics.focusKeyboardGap - barBottomFromScreenBottom))
+        return ActionBarRaise(isRaised: true, lift: lift)
     }
 }
 
@@ -153,6 +162,12 @@ struct TabBarUnderlay: View {
 @Observable
 final class KeyboardObserver {
     private(set) var overlap: CGFloat = 0
+    /// Клавиатура на экране. Отдельный флаг, а не `overlap > 0`: с аппаратной
+    /// клавиатурой (⌘K в симуляторе) overlap равен нулю или высоте панели шорткатов,
+    /// а раскладка бара обязана раскрыться — иначе не появится крест и фокус нечем снять.
+    /// Меняется в том же `withAnimation`, что и `overlap`: обе величины приходят во вью
+    /// одним апдейтом.
+    private(set) var isUp = false
     private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -171,6 +186,7 @@ final class KeyboardObserver {
                 let next = max(0, screenHeight - frame.origin.y)
                 withAnimation(.smooth(duration: duration)) {
                     self?.overlap = next
+                    self?.isUp = true
                 }
             }
         )
@@ -179,9 +195,13 @@ final class KeyboardObserver {
                 forName: UIResponder.keyboardWillHideNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
-                withAnimation(.smooth(duration: 0.25)) {
+            ) { [weak self] note in
+                // Длительность — из самой клавиатуры, а не константой: обратный переход
+                // обязан совпасть с её кривой так же, как прямой.
+                let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+                withAnimation(.smooth(duration: duration)) {
                     self?.overlap = 0
+                    self?.isUp = false
                 }
             }
         )
