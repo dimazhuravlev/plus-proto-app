@@ -179,10 +179,13 @@ struct MovieScreen: View {
         store.details ?? .placeholder(title: entity.title, mock: entity.kinopoiskID == nil)
     }
 
-    /// Текст лида. Если у тайтла нет логотипа, слот лида по правилу макета занимает
-    /// название — описание при этом целиком остаётся в секции ниже.
+    /// Текст лида — всегда сам аргумент, короткое редакционное описание.
+    ///
+    /// Раньше при отсутствии логотипа сюда подставлялось название тайтла. Теперь
+    /// название показывается на своём месте, текстом в шапке (`MovieHeader`),
+    /// и подменять им аргумент незачем: слот аргумента обязан показывать аргумент.
     private var leadText: String {
-        details.logo == nil ? entity.title : details.lead
+        details.lead
     }
 
     var body: some View {
@@ -254,8 +257,7 @@ struct MovieScreen: View {
             MovieHeader(
                 logo: details.logo,
                 title: entity.title,
-                scrollOffset: scrollOffset,
-                coverHeight: MovieLayout.coverHeight(lead: leadText)
+                scrollOffset: scrollOffset
             ) {
                 headerActions
             }

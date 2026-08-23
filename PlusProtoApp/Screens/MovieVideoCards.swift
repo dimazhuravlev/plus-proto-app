@@ -67,6 +67,9 @@ struct MovieVideoSection: View {
     /// Обычный `@State`, а не отдельный `@Observable`-арбитр: тот обновлялся прямо
     /// в обход раскладки того же поддерева, и SwiftUI ругался `AttributeGraph: cycle detected`.
     @State private var visibleCards: Set<Int> = []
+    /// Неподвижные кадры роликов. Живут в секции, а не в карточках: их показывают
+    /// оба слоя — и сами карточки, и слой свечений под ними.
+    @State private var stills: [Int: Image] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -89,29 +92,55 @@ struct MovieVideoSection: View {
         /// Текстовый блок между второй и третьей карточкой
         static let textAfter = 2
         static let textBlockVertical: CGFloat = 16
+
+        /// Свечение. Вынос фиксированный, а не масштабом: у более широкой карточки
+        /// прототипа масштаб раздул бы его непропорционально.
+        ///
+        /// Тише макета: там 425×520.6 против кадра 361×451.25 при прозрачности 0.32,
+        /// и на тёмном кинокадре это едва заметно. У нас клип светлее, вынос поджат
+        /// вдвое, прозрачность втрое ниже, а радиус, наоборот, больше — пятно шире
+        /// и оттого мягче.
+        static let glowInsetX: CGFloat = 16
+        static let glowInsetY: CGFloat = 18
+        static let glowBlur: CGFloat = 64
+        static let glowOpacity: Double = 0.11
     }
 
     var body: some View {
+        // Два слоя одинаковой раскладки: свечения все до единого лежат **под** всеми
+        // карточками. Одним стеком это недостижимо — свечение вылезает за края
+        // карточки, а соседи в `VStack` рисуются по порядку, и ореол следующей
+        // карточки ложился поверх предыдущей. Поджать вынос не помогло бы: `blur`
+        // размазывает копию далеко за её кадр независимо от отступов.
+        ZStack(alignment: .top) {
+            rows { index, _ in glow(index) }
+            rows { index, card in cardView(index, card) }
+        }
+        .padding(.top, Layout.top)
+        .padding(.bottom, Layout.bottom)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task {
+            for (index, clip) in MovieVideoCardMock.all.indices.map({ ($0, Self.clip(for: $0)) }) {
+                stills[index] = await ClipStill.load(clip)
+            }
+        }
+        // Энергосбережение: система просит не тратить батарею на автовоспроизведение.
+        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+            isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        }
+    }
+
+    /// Раскладка секции. Одна на оба слоя, чтобы они не разъехались: текстовый блок
+    /// в слое свечений тот же самый, только скрытый — `hidden` сохраняет кадр,
+    /// поэтому высоты совпадают сами и повторять их числом не приходится.
+    @ViewBuilder
+    private func rows<Row: View>(
+        @ViewBuilder row: @escaping (Int, MovieVideoCardMock) -> Row
+    ) -> some View {
         VStack(alignment: .leading, spacing: Layout.gap) {
             ForEach(Array(MovieVideoCardMock.all.enumerated()), id: \.offset) { index, card in
-                MovieVideoCard(
-                    card: card,
-                    clip: Self.clip(for: index),
-                    isActive: activeCard == index,
-                    aspect: Layout.cardAspect,
-                    radius: Layout.cardRadius
-                )
-                .padding(.horizontal, Layout.side)
-                // Порог — половина карточки: ниже него на быстром скролле успевали бы
-                // стартовать ролики, которых пользователь даже не увидит.
-                .onScrollVisibilityChange(threshold: 0.5) { isVisible in
-                    if isVisible {
-                        visibleCards.insert(index)
-                    } else {
-                        visibleCards.remove(index)
-                    }
-                }
-                .onDisappear { visibleCards.remove(index) }
+                row(index, card)
+                    .padding(.horizontal, Layout.side)
 
                 if index + 1 == Layout.textAfter, !paragraphs.isEmpty {
                     MovieSynopsisSection(paragraphs: paragraphs)
@@ -119,16 +148,45 @@ struct MovieVideoSection: View {
                 }
             }
         }
-        .padding(.top, Layout.top)
-        .padding(.bottom, Layout.bottom)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Движение выключено пользователем — ролики не стартуют вовсе, карточки
-        // остаются остановленным кадром. Это ровно тот случай, ради которого настройка
-        // есть: четыре зацикленных ролика, встающих по скроллу, — это фоновое движение.
-        // Энергосбережение: система просит не тратить батарею на автовоспроизведение.
-        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
-            isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
+    private func cardView(_ index: Int, _ card: MovieVideoCardMock) -> some View {
+        MovieVideoCard(
+            card: card,
+            clip: Self.clip(for: index),
+            still: stills[index],
+            isActive: activeCard == index,
+            aspect: Layout.cardAspect,
+            radius: Layout.cardRadius
+        )
+        // Порог — половина карточки: ниже него на быстром скролле успевали бы
+        // стартовать ролики, которых пользователь даже не увидит.
+        .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+            if isVisible {
+                visibleCards.insert(index)
+            } else {
+                visibleCards.remove(index)
+            }
         }
+        .onDisappear { visibleCards.remove(index) }
+    }
+
+    /// Свечение карточки — размытая копия её кадра, вылезающая за края.
+    private func glow(_ index: Int) -> some View {
+        Color.clear
+            .aspectRatio(Layout.cardAspect, contentMode: .fit)
+            .overlay {
+                if let still = stills[index] {
+                    still
+                        .resizable()
+                        .scaledToFill()
+                        .padding(.horizontal, -Layout.glowInsetX)
+                        .padding(.vertical, -Layout.glowInsetY)
+                        .blur(radius: Layout.glowBlur)
+                        .opacity(Layout.glowOpacity)
+                }
+            }
+            .allowsHitTesting(false)
     }
 
     /// Кто играет прямо сейчас. `nil` — никто: движение выключено пользователем,
@@ -164,6 +222,8 @@ struct MovieVideoSection: View {
 private struct MovieVideoCard: View {
     let card: MovieVideoCardMock
     let clip: String
+    /// Неподвижный кадр ролика приходит из секции: его же показывает слой свечений.
+    let still: Image?
     let isActive: Bool
     /// Пропорция кадра. Ширину карточка берёт от секции — на холсте макета 393 это
     /// 361, но экран прототипа шире, и фиксировать её значило бы оставить поле справа.
@@ -172,9 +232,6 @@ private struct MovieVideoCard: View {
 
     @State private var playback = LoopingVideoPlayback()
     @State private var isVideoReady = false
-    /// Неподвижный кадр того же ролика: фон карточки до первого показа и источник
-    /// свечения по краям — см. `ClipStill`.
-    @State private var still: Image?
     /// Карточка хоть раз играла. До этого видеослой прозрачен: он не рисует кадр,
     /// пока ему не дали play, и без этого флага мы бы гасили картинку под пустотой.
     @State private var hasPlayed = false
@@ -190,15 +247,11 @@ private struct MovieVideoCard: View {
             .clipShape(shape)
             // Рамка поверх клипа, иначе её съедает скругление.
             .overlay { shape.strokeBorder(Color.fillNine, lineWidth: Self.border) }
-            .background { ambilight }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(card.title)
             // Ролик заряжается сразу, но не запускается: играть он начнёт, когда
             // карточка станет верхней видимой.
-            .task(id: clip) {
-                playback.prepare(bundled: clip)
-                still = await ClipStill.load(clip)
-            }
+            .task(id: clip) { playback.prepare(bundled: clip) }
             // Пауза, а не остановка: ролик зациклен, и вернувшаяся в кадр карточка
             // должна продолжить, а не дёрнуться в начало.
             .onChange(of: isActive, initial: true) { _, active in
@@ -228,30 +281,6 @@ private struct MovieVideoCard: View {
                 .opacity(hasPlayed && isVideoReady ? 1 : 0)
                 .animation(.easeInOut(duration: MovieCoverMotion.videoFadeIn), value: hasPlayed)
         }
-        .allowsHitTesting(false)
-    }
-
-    /// Свечение вокруг карточки — размытая копия кадра, вылезающая за края.
-    ///
-    /// Вынос фиксированный, а не масштабом: у более широкой карточки прототипа масштаб
-    /// раздул бы его непропорционально.
-    ///
-    /// Числа макетные (425×520.6 против кадра 361×451.25, то есть +32 и +34.7 с каждой
-    /// стороны, прозрачность 0.32, CSS-блюр 40). Раньше они были поджаты вдвое, потому
-    /// что в карточке лежал постер тайтла — яркий и насыщенный, ореол от него лез в глаза.
-    /// Теперь в карточке, как и в макете, тёмный кинокадр, и повода расходиться нет.
-    private var ambilight: some View {
-        Group {
-            if let still {
-                still
-                    .resizable()
-                    .scaledToFill()
-            }
-        }
-        .padding(.horizontal, -Self.ambilightInsetX)
-        .padding(.vertical, -Self.ambilightInsetY)
-        .blur(radius: Self.ambilightBlur)
-        .opacity(Self.ambilightOpacity)
         .allowsHitTesting(false)
     }
 

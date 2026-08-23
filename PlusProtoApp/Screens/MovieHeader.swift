@@ -1,4 +1,5 @@
 import SwiftUI
+import VariableBlur
 
 /// Геометрия шапки карточки тайтла — `figma-moviecard.md` §2.2 и §5.1.
 ///
@@ -22,9 +23,17 @@ enum MovieHeaderLayout {
     /// Кнопки: верх 63 (высота статус-бара), правый край 377 = 393 − 16
     static let actionsTop: CGFloat = 63
     static let actionsTrailing: CGFloat = 16
-    /// Блюр шапки в компактном состоянии. Число в **CSS-единицах**, как `ambilightBlur`:
-    /// в панели Figma радиус вдвое больше (`BACKGROUND_BLUR 10` = `backdrop-blur 5px`).
-    static let blurRadius: CGFloat = 5
+    /// Название текстом вместо логотипа — `2063:11230`: YS Display Bold 28/32,
+    /// бокс `inset 63/144/113/20`, то есть ширина 229 и две строки по 32.
+    static let titleSize: CGFloat = 28
+    static let titleLineHeight: CGFloat = 32
+    static let titleWidth: CGFloat = 229
+    static let titleLines = 2
+    /// Пик **прогрессивного** размытия шапки: 10 у верхней кромки, 0 у нижней —
+    /// зеркально полосе под кавером (`MovieLayout.coverFadeBlur`) и по тому же
+    /// профилю, что верхний скрим ленты. Это пик рампы, а не равномерный радиус:
+    /// с `BACKGROUND_BLUR 10` из панели Figma (= 5 равномерных) напрямую не сравнивается.
+    static let blurRadius: CGFloat = 10
 }
 
 /// Шапка карточки тайтла: градиент, логотип слева, действия справа.
@@ -38,8 +47,6 @@ struct MovieHeader<Actions: View>: View {
     /// Сколько уже прокручено. Приходит снаружи: читать свой размер и позицию вью,
     /// от которых зависит её же раскладка, в проекте запрещено (DECISIONS).
     let scrollOffset: CGFloat
-    /// Высота кавера — чтобы понять, есть ли ещё что размывать под шапкой.
-    let coverHeight: CGFloat
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
@@ -61,18 +68,31 @@ struct MovieHeader<Actions: View>: View {
 
     // MARK: Слои
 
+    /// Размытие **нарастает к верху**, вслед за самим градиентом, и живёт всегда —
+    /// в обоих кадрах тюнинга оно стоит на шапке, а не появляется по скроллу.
+    ///
+    /// Равномерное здесь не годится: полоса шапки сама становится кромкой — там, где
+    /// она кончается, резкость обрывается на ровном месте посреди кавера. Рампа снимает
+    /// эту границу тем же приёмом и в ту же сторону, что верхний скрим ленты
+    /// (`TopScrim`), зеркально полосе под кавером.
+    ///
+    /// Порядок слоёв: размытие **под** градиентом, а не над, — размывать нужно кавер,
+    /// а не собственную затемняющую заливку.
     private var backdrop: some View {
         ZStack {
-            // Размытие под градиентом, а не над: размывать нужно кавер, а не собственную
-            // затемняющую заливку.
-            BackdropBlurView(radius: blur)
+            VariableBlurView(
+                maxBlurRadius: MovieHeaderLayout.blurRadius,
+                direction: .blurredTopClearBottom
+            )
             MovieScrim.linear(peak: MovieHeaderLayout.scrimPeak, from: .bottom, to: .top)
         }
         .frame(height: gradientHeight)
         .allowsHitTesting(false)
     }
 
-    /// Ужимается логотип к **верхне-левому** углу. В обоих кадрах тюнинга его бокс
+    /// Логотип, а если его нет — название текстом на том же месте (`2063:11183`).
+    ///
+    /// Ужимается он к **верхне-левому** углу. В обоих кадрах тюнинга его бокс
     /// стоит в одной точке (20, 63), а сторона падает 88 → 52.8 — значит на месте
     /// остаётся верхняя кромка, а не нижняя, как было раньше. Сверено замером по
     /// рендеру макета: левый край краски 21 в обоих состояниях, верхний 67 → 65
@@ -82,10 +102,36 @@ struct MovieHeader<Actions: View>: View {
     /// раскладкой на каждом кадре скролла.
     @ViewBuilder
     private var logoView: some View {
-        if let logo {
-            MovieTitleLogo(url: logo, title: title)
-                .scaleEffect(logoScale, anchor: .topLeading)
+        Group {
+            if let logo {
+                MovieTitleLogo(url: logo, title: title)
+            } else {
+                titleText
+            }
         }
+        .scaleEffect(logoScale, anchor: .topLeading)
+    }
+
+    /// Название на месте логотипа: то же выравнивание, то же положение и тот же
+    /// масштаб по скроллу — отличается только тем, что это текст.
+    ///
+    /// Правило макета «text big до 28 символов, text small свыше» воспроизведено
+    /// не дискретной парой стилей, а сжатием: мастер `title / logo` лежит
+    /// в подключённой библиотеке и кегль «text small» оттуда не читается, а
+    /// придумывать число в проекте, который сверяется с макетом попиксельно, нельзя.
+    /// `minimumScaleFactor` даёт то же поведение — длинное название становится
+    /// мельче, — и остаётся честным: он подгоняет, а не выдаёт выдуманный кегль.
+    private var titleText: some View {
+        Text(title)
+            .plusMovieHeaderTitle()
+            .foregroundStyle(Color.fillOne)
+            .lineLimit(MovieHeaderLayout.titleLines)
+            .minimumScaleFactor(0.7)
+            .frame(
+                width: MovieHeaderLayout.titleWidth,
+                height: MovieHeaderLayout.titleLineHeight * CGFloat(MovieHeaderLayout.titleLines),
+                alignment: .topLeading
+            )
     }
 
     // MARK: Прогресс
@@ -102,14 +148,5 @@ struct MovieHeader<Actions: View>: View {
 
     private var logoScale: CGFloat {
         1 + (MovieHeaderLayout.logoCompactScale - 1) * compact
-    }
-
-    /// Блюр включается вместе со схлопыванием и гаснет по мере ухода кавера — ровно
-    /// как описано в спеке («10 → 0 по мере ухода кавера»). Когда кавера под шапкой
-    /// уже нет, размывать нечего: там сплошной чёрный фон экрана.
-    private var blur: CGFloat {
-        let remaining = coverHeight - scrollOffset
-        let fade = min(1, max(0, remaining / MovieHeaderLayout.gradientMain))
-        return MovieHeaderLayout.blurRadius * compact * fade
     }
 }

@@ -29,6 +29,14 @@ final class ShowcaseCatalog {
     /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
     /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после
     /// установки, когда запас ещё пуст, — и тут же сменяется живыми данными.
+    /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
+    /// и читается за миллисекунды.
+    ///
+    /// **Только собственные поля, никаких общих эффектов.** Выражение по умолчанию
+    /// у `@State` вычисляется на каждом пересоздании вью, то есть этот `init` работает
+    /// не один раз, а на каждом проходе. Пока он трогал общий `ArtworkLoader`, SwiftUI
+    /// уходил в бесконечный круг перерисовки: экран оставался белым, а разбор
+    /// аргументов запуска успевал отработать четверть миллиона раз.
     init() {
         var rng = ShowcaseRotation.movieGenerator()
         let snapshot = MoviePool.diskSnapshot()
@@ -37,7 +45,7 @@ final class ShowcaseCatalog {
         pickedWatching = unseen
             .filter { Self.isWatchable($0) && $0.id != pickedFeatured?.id }
             .randomElement(using: &rng)
-        applyMovieBlocks(featuredTint: nil, rng: &rng)
+        applyMovieBlocks(featuredTint: nil, rng: &rng, preload: false)
     }
 
     /// Один заход за сессию. Повторный сбор — `reload()`.
@@ -117,7 +125,7 @@ final class ShowcaseCatalog {
 
     /// Кладёт оба киноблока по уже выбранным фильмам. Отдельно от загрузки, потому что
     /// вызывается дважды: синхронно на первом кадре и после подсчёта акцента.
-    private func applyMovieBlocks(featuredTint: Color?, rng: inout SeededGenerator) {
+    private func applyMovieBlocks(featuredTint: Color?, rng: inout SeededGenerator, preload: Bool = true) {
         if let movie = pickedFeatured, let poster = movie.poster?.url(size: .medium) {
             apply(.movie(MovieBlock(
                 id: "kp-\(movie.id)",
@@ -130,7 +138,7 @@ final class ShowcaseCatalog {
                 // `shortDescription` бывает и вдвое длиннее — режем.
                 caption: (movie.shortDescription ?? "").showcaseCaption(maxCharacters: 88),
                 captionTint: featuredTint ?? Self.mockMovieTint
-            )))
+            )), preload: preload)
         }
 
         if
@@ -151,7 +159,7 @@ final class ShowcaseCatalog {
                 logo: .remote(logo),
                 progress: Double.random(in: 0.15...0.9, using: &rng),
                 remaining: ShowcaseSeeds.watchingRemaining.randomElement(using: &rng) ?? ""
-            )))
+            )), preload: preload)
         }
     }
 
@@ -297,7 +305,7 @@ final class ShowcaseCatalog {
 
     /// Подменяет блок того же типа на месте. Порядок слотов зафиксирован макетом,
     /// поэтому лента не пересобирается — меняется ровно один элемент.
-    private func apply(_ block: ShowcaseBlock) {
+    private func apply(_ block: ShowcaseBlock, preload: Bool = true) {
         var blocks = feed.blocks
         guard let index = blocks.firstIndex(where: { $0.slot.top == block.slot.top }) else { return }
         blocks[index] = block
@@ -320,6 +328,8 @@ final class ShowcaseCatalog {
         }
 
         feed = ShowcaseFeed(headline: headline, blocks: blocks, backdrop: backdrop)
+        // Прогрев — общий эффект, и из `init` его звать нельзя: см. комментарий там.
+        guard preload else { return }
         ArtworkLoader.shared.preload(blocks.flatMap(\.artworks))
     }
 
