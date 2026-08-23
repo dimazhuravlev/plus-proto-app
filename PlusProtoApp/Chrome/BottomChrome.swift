@@ -103,6 +103,11 @@ struct BottomChrome: View {
         }
         // Системный подъём над клавиатурой выключен: SwiftUI поднял бы весь хром
         // вместе с таббаром, да ещё и сложился бы с нашим сдвигом — бар улетал вдвое выше.
+        //
+        // Отдать подъём системной безопасной зоне пробовали (2026-08-23): таббар и бар
+        // разнесли по разным слоям, зону погасили только у таббара. Бар при этом улетел
+        // выше экрана и пропал — сдвиг сложился вдвое ровно так, как описано выше.
+        // Синхрон с клавиатурой добираем её собственной кривой, см. `KeyboardObserver`.
         .ignoresSafeArea(.keyboard)
     }
 
@@ -110,11 +115,8 @@ struct BottomChrome: View {
     /// плеера считаются отсюда, из ОДНОГО предиката. Драйвер — состояние клавиатуры,
     /// а не флаг фокуса: так оба края перехода (подъём и опускание) начинаются ровно
     /// тогда, когда трогается клавиатура, и всё меняется одним апдейтом.
-    /// В приложении одно текстовое поле — поиск; если появится второе, добавить
-    /// `&& actionBar.isSearchFocused`.
     ///
-    /// Подъём: низ бара встаёт на 12pt над клавиатурой (`2021:11248` — бар 775..835
-    /// при клавиатуре с 847).
+    /// Подъём: низ бара встаёт на 12pt над клавиатурой (`2021:11248`).
     private var raise: ActionBarRaise {
         guard keyboard.isUp else { return .none }
         let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
@@ -123,7 +125,9 @@ struct BottomChrome: View {
         // min(0,) обязателен: с аппаратной клавиатурой overlap == 0 (или 55pt панели
         // шорткатов) — бар не должен уезжать ВНИЗ.
         let lift = min(0, -(keyboard.overlap + PlusChromeMetrics.focusKeyboardGap - barBottomFromScreenBottom))
-        return ActionBarRaise(isRaised: true, lift: lift)
+        // Кривую отдаём бару вместе с геометрией: он обязан ехать тем же движением,
+        // что и клавиатура.
+        return ActionBarRaise(isRaised: true, lift: lift, motion: keyboard.motion)
     }
 }
 
@@ -161,6 +165,15 @@ struct TabBarUnderlay: View {
 /// а не остаток над safe area — отступ до бара отмеряется от верха клавиатуры.
 @Observable
 final class KeyboardObserver {
+    /// Кривая и длительность текущего движения клавиатуры. `nil` — она стоит,
+    /// и бар едет своим морфом режимов.
+    ///
+    /// Нужна, потому что клавиатура анимируется **своей** кривой, а не той, что
+    /// мы выберем. Пока бар ехал `.smooth(0.32)` против её ~0.25, она уходила вверх
+    /// быстрее и на мгновение накрывала бар собой. Совпасть можно только одним
+    /// способом — взять её собственные длительность и кривую из нотификации.
+    private(set) var motion: Animation?
+
     private(set) var overlap: CGFloat = 0
     /// Клавиатура на экране. Отдельный флаг, а не `overlap > 0`: с аппаратной
     /// клавиатурой (⌘K в симуляторе) overlap равен нулю или высоте панели шорткатов,
@@ -169,6 +182,8 @@ final class KeyboardObserver {
     /// одним апдейтом.
     private(set) var isUp = false
     private var observers: [NSObjectProtocol] = []
+    /// Снимает `motion` после того, как клавиатура доехала.
+    private var settle: Task<Void, Never>?
 
     init() {
         let center = NotificationCenter.default
@@ -179,15 +194,11 @@ final class KeyboardObserver {
                 queue: .main
             ) { [weak self] note in
                 guard
-                    let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
-                    let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+                    let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
                 else { return }
                 let screenHeight = UIScreen.main.bounds.height
                 let next = max(0, screenHeight - frame.origin.y)
-                withAnimation(.smooth(duration: duration)) {
-                    self?.overlap = next
-                    self?.isUp = true
-                }
+                self?.drive(overlap: next, up: true, from: note)
             }
         )
         observers.append(
@@ -196,19 +207,70 @@ final class KeyboardObserver {
                 object: nil,
                 queue: .main
             ) { [weak self] note in
-                // Длительность — из самой клавиатуры, а не константой: обратный переход
-                // обязан совпасть с её кривой так же, как прямой.
-                let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
-                withAnimation(.smooth(duration: duration)) {
-                    self?.overlap = 0
-                    self?.isUp = false
-                }
+                // Обратный переход обязан совпасть с кривой клавиатуры так же, как прямой.
+                self?.drive(overlap: 0, up: false, from: note)
             }
         )
     }
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
+        settle?.cancel()
+    }
+
+    /// Публикует новое состояние клавиатуры **вместе с её собственной кривой**.
+    ///
+    /// Порядок важен: `motion` выставляется ДО `withAnimation`, иначе бар успеет
+    /// пересобрать `body` со старой кривой и уедет по ней.
+    @MainActor
+    private func drive(overlap next: CGFloat, up: Bool, from note: Notification) {
+        let info = note.userInfo
+        let duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        let rawCurve = info?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int
+        let curve = Self.animation(curve: rawCurve, duration: duration)
+
+        motion = curve
+        withAnimation(curve) {
+            overlap = next
+            isUp = up
+        }
+
+        // Кривую держим ровно на время движения: дальше бар обязан вернуться
+        // к своему морфу режимов, иначе смена music↔book поедет по клавиатурной.
+        settle?.cancel()
+        settle = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled else { return }
+            self?.motion = nil
+        }
+    }
+
+    /// Фора, которую бар отыгрывает у собственной задержки.
+    ///
+    /// Клавиатуру двигает UIKit прямо в момент нотификации, а SwiftUI применяет наше
+    /// состояние следующим проходом рендера — бар трогается на кадр-полтора позже.
+    /// Догнать это кривой нельзя: замер записи показал, что на первых кадрах перехода
+    /// клавиатура успевала накрыть бар собой. Поэтому бар едет **той же** кривой, но
+    /// на длительность одного-двух кадров короче — фазы совпадают, и он оказывается
+    /// не ниже клавиатуры, а чуть выше. Ошибка в эту сторону не видна: бар просто
+    /// приходит на место раньше, а не выныривает из-под клавиатуры.
+    private static let commitLatency: Double = 0.03
+
+    /// Кривая анимации клавиатуры по сырому значению из нотификации.
+    ///
+    /// Системная клавиатура присылает **7** — приватную кривую, которой нет среди
+    /// публичных `UIView.AnimationCurve`. Её общепринятая аппроксимация в кубических
+    /// коэффициентах — `(0.38, 0.7, 0.125, 1.0)`: резкий старт и долгое торможение.
+    /// Остальные значения — стандартные CSS-эквиваленты ease-in-out / in / out / linear.
+    private static func animation(curve raw: Int?, duration rawDuration: Double) -> Animation {
+        let duration = max(0.12, rawDuration - commitLatency)
+        return switch raw {
+        case 0: .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+        case 1: .timingCurve(0.42, 0, 1, 1, duration: duration)
+        case 2: .timingCurve(0, 0, 0.58, 1, duration: duration)
+        case 3: .linear(duration: duration)
+        default: .timingCurve(0.38, 0.7, 0.125, 1, duration: duration)
+        }
     }
 
 }

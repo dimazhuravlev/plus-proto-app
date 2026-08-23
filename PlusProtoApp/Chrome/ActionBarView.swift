@@ -7,8 +7,6 @@ import UIKit
 enum ActionBarMotion {
     /// Морф ширин и opacity между четырьмя режимами.
     static let morph: Animation = .smooth(duration: 0.32)
-    /// Кросс-смена плейсхолдера поиска (шаг 42pt = lh 26 + gap 16).
-    static let placeholderStep: Animation = .smooth(duration: 0.45)
     /// Дискретная смена троеточия 1→2→3.
     static let ellipsisStep: Animation = .smooth(duration: 0.2)
     /// Интервал ротации плейсхолдера (открытый вопрос — стартовое значение 4s).
@@ -47,6 +45,11 @@ enum ActionBarMotion {
 struct ActionBarRaise: Equatable {
     var isRaised = false
     var lift: CGFloat = 0
+    /// Кривая текущего движения клавиатуры. `nil` — она стоит, и бар едет своим
+    /// морфом режимов. Намеренно **не** попадает в `ActionBarLayout`: это не
+    /// геометрия, а способ до неё доехать, и ключом анимации быть не должна —
+    /// иначе смена самой кривой перезапускала бы переход.
+    var motion: Animation?
     static let none = ActionBarRaise()
 }
 
@@ -59,7 +62,11 @@ enum ActionBarGeometry {
     static let searchExpandedWidth: CGFloat = 284
     static let searchPaddingH: CGFloat = 18
     static let searchIconBox: CGFloat = 24
-    static let placeholderRowStep: CGFloat = 42
+    /// Зазор между полем ввода и крестом очистки.
+    static let clearLeadingGap: CGFloat = 8
+    /// Во что схлопывается крест в расфокусе. Не ноль: из нуля предмет появляется
+    /// «из ниоткуда», а с 0.9 остаётся ощущение, что он просто был сложен.
+    static let clearCollapsedScale: CGFloat = 0.9
     static let miniPlayerPaddingLeading: CGFloat = 6
     static let miniPlayerPaddingTrailing: CGFloat = 18
     /// Зазор тексты ↔ кнопки
@@ -162,7 +169,11 @@ struct ActionBarView: View {
         // меняются одним апдейтом, одной кривой, с одной точкой старта.
         // Ключ — сам `layout` (синтезированный ==), а не строка: нельзя «забыть поле»,
         // и на каждом проходе body больше не строится String.
-        .animation(ActionBarMotion.morph, value: layout)
+        //
+        // Кривая — клавиатурная, пока клавиатура едет, и морф режимов в остальное время.
+        // Иначе бар шёл своей `.smooth(0.32)` против её ~0.25 с другой кривой, она
+        // уходила вверх быстрее и на мгновение накрывала его собой.
+        .animation(raise.motion ?? ActionBarMotion.morph, value: layout)
         .onChange(of: searchFocused) { _, focused in
             actionBar.isSearchFocused = focused
         }
@@ -374,13 +385,25 @@ private struct SearchPill: View {
                     .opacity(searchFocused ? 1 : 0)
             }
 
-            // Крест влияет на раскладку — обязан ехать общей транзакцией, значит
-            // гейт по геометрии, а не по сырому фокусу.
-            if layout.isRaised {
-                clearButton
-                    .padding(.leading, 8)
-                    .transition(.opacity)
-            }
+            // Крест живёт в дереве всегда и схлопывается в ноль по ширине.
+            //
+            // Раньше он вставлялся по `if` — то есть рождался уже на своём финальном
+            // месте и просто проявлялся, читаясь как приклеенный к прилетевшему полю.
+            // Теперь он с самого начала лежит в том же `HStack`, что и лупа с вводом,
+            // поэтому едет вместе с правой кромкой поля: и когда та расширяется,
+            // и когда поле поднимается над клавиатурой. Ширина и отступ интерполируются
+            // в той же единственной транзакции бара, что и всё остальное.
+            clearButton
+                .scaleEffect(
+                    layout.isRaised ? 1 : ActionBarGeometry.clearCollapsedScale,
+                    anchor: .trailing
+                )
+                .opacity(layout.isRaised ? 1 : 0)
+                .frame(width: layout.isRaised ? ActionBarGeometry.searchIconBox : 0)
+                .padding(.leading, layout.isRaised ? ActionBarGeometry.clearLeadingGap : 0)
+                // Схлопнутый крест остаётся в дереве — гасим хит-тест явно, иначе
+                // он ловил бы касания в свёрнутом поле.
+                .allowsHitTesting(layout.isRaised)
         }
         .padding(.horizontal, ActionBarGeometry.searchPaddingH)
         .frame(maxWidth: layout.searchWidth == nil ? .infinity : nil)
@@ -498,11 +521,34 @@ private struct SearchPill: View {
             SearchPlaceholderTicker(isPaused: layout.isRaised)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
+        // Без `clipped()`: он срезал бы 4pt хода подмены. Границу и так держит
+        // капсула поля, а фразы заведомо уже доступной ширины.
+        .allowsHitTesting(false)
     }
 }
 
-/// Три плейсхолдера с вертикальной ротацией и отдельным анимированным троеточием.
+/// Подмена плейсхолдера поиска.
+private enum SearchPlaceholderMotion {
+    /// Ход по вертикали: уходящий вниз, приходящий сверху.
+    static let travel: CGFloat = 4
+    /// Быстро, но плавно. Сильный ease-out: движение видно с первого кадра,
+    /// торможение длинное — так подмена не читается как щелчок. Держимся ниже
+    /// 300мс, за которыми интерфейс начинает казаться медленным.
+    static let swap: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
+    /// Интерлиньяж строки плейсхолдера — `plusTitleL()`.
+    static let lineHeight: CGFloat = 26
+    /// Место под троеточие.
+    static let ellipsisWidth: CGFloat = 24
+}
+
+/// Плейсхолдеры поиска: подмена кросс-фейдом со сдвигом на 4pt.
+///
+/// Карусели больше нет. Вертикальная лента прокручивала все три фразы разом и
+/// читалась как механизм — было видно, что за кадром едет лишний текст. Здесь
+/// уходящая фраза гаснет и **опускается** на 4pt, приходящая одновременно
+/// проявляется и приходит **сверху** с тех же 4pt. Ход крошечный намеренно:
+/// плейсхолдер не должен спорить за внимание с полем ввода, ему достаточно
+/// намекнуть на смену.
 private struct SearchPlaceholderTicker: View {
     var isPaused: Bool
 
@@ -516,25 +562,19 @@ private struct SearchPlaceholderTicker: View {
     @State private var dotCount = 1
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            VStack(spacing: 16) {
-                ForEach(Array(Self.phrases.enumerated()), id: \.offset) { index, phrase in
-                    HStack(spacing: 0) {
-                        Text(phrase)
-                        Text(index == activeIndex ? String(repeating: ".", count: dotCount) : "...")
-                            .frame(width: 24, alignment: .leading)
-                            .opacity(index == activeIndex ? 1 : 0)
-                    }
-                    .plusTitleL()
-                    .foregroundStyle(Color.searchPlaceholder)
-                    .opacity(index == activeIndex ? 1 : 0)
-                }
-            }
-            .offset(y: -CGFloat(activeIndex) * ActionBarGeometry.placeholderRowStep)
-            .animation(ActionBarMotion.placeholderStep, value: activeIndex)
+        ZStack(alignment: .leading) {
+            phrase(Self.phrases[activeIndex])
+                // Идентичность по индексу — то, ради чего здесь вообще возможен
+                // `transition`: SwiftUI видит замену вью, а не смену её текста.
+                .id(activeIndex)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .offset(y: -SearchPlaceholderMotion.travel)),
+                    removal: .opacity.combined(with: .offset(y: SearchPlaceholderMotion.travel))
+                ))
         }
-        .frame(height: 26, alignment: .top)
-        .clipped()
+        .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
+        // Клипа нет: он срезал бы те самые 4pt хода. Границу держит капсула поля.
+        .animation(SearchPlaceholderMotion.swap, value: activeIndex)
         .task(id: isPaused) {
             guard !isPaused else { return }
             await runPlaceholderLoop()
@@ -543,6 +583,17 @@ private struct SearchPlaceholderTicker: View {
             guard !isPaused else { return }
             await runEllipsisLoop()
         }
+    }
+
+    private func phrase(_ text: String) -> some View {
+        HStack(spacing: 0) {
+            Text(text)
+            // Ширина фиксирована, чтобы прибавляющиеся точки не толкали фразу.
+            Text(String(repeating: ".", count: dotCount))
+                .frame(width: SearchPlaceholderMotion.ellipsisWidth, alignment: .leading)
+        }
+        .plusTitleL()
+        .foregroundStyle(Color.searchPlaceholder)
     }
 
     private func runPlaceholderLoop() async {

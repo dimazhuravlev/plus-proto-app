@@ -34,11 +34,15 @@ struct SearchOverlay: View {
             Color.black.opacity(isActive ? SearchOverlayConfig.dim : 0)
         }
         .ignoresSafeArea()
-        // Неактивный слой обязан быть полностью прозрачным для касаний: он лежит
-        // поверх всей витрины, и без этого по карточкам стало бы нельзя тапнуть.
-        .allowsHitTesting(isActive)
         .contentShape(.rect)
         .onTapGesture(perform: onDismiss)
+        // Порядок критичен и стоит последним осознанно: `allowsHitTesting` гасит
+        // только то, что оборачивает. Когда он стоял ДО `contentShape`/`onTapGesture`,
+        // жест оказывался снаружи погашенного поддерева и слой ловил касания всегда —
+        // невидимый ловец на весь экран поверх всего контента. Тап по карточке витрины
+        // уходил в него, и не работали ни переход на экран сущности, ни открытие плеера.
+        // Хром лежит выше слоя, поэтому таббар продолжал работать — и это сбивало с толку.
+        .allowsHitTesting(isActive)
         // Та же кривая, что у морфа бара: слой и бар — одно движение.
         .animation(ActionBarMotion.morph, value: isActive)
     }
