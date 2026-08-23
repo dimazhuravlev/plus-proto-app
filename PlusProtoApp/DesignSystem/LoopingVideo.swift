@@ -14,23 +14,39 @@ final class LoopingVideoPlayback {
 
     /// Идемпотентно: повторный вызов с тем же источником просто снимает с паузы.
     func start(url: URL) {
-        if source != url {
-            source = url
-            AmbientAudio.configureOnce()
-            queue.isMuted = true
-            queue.preventsDisplaySleepDuringVideoPlayback = false
-            looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(url: url))
-        }
+        prepare(url: url)
         queue.play()
     }
 
+    /// Зарядить ролик, но не запускать: слой покажет его первый кадр неподвижной
+    /// картинкой. Нужно там, где остановленное видео стоит **вместо** постера
+    /// (видеокарточки экрана фильма): без этого карточка до своей очереди играть
+    /// показывала бы пустоту, а `start` + немедленная пауза дёргали бы кадром.
+    func prepare(url: URL) {
+        guard source != url else { return }
+        source = url
+        AmbientAudio.configureOnce()
+        queue.isMuted = true
+        queue.preventsDisplaySleepDuringVideoPlayback = false
+        looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(url: url))
+    }
+
     func start(bundled name: String) {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "mp4") else { return }
+        guard let url = Self.bundled(name) else { return }
         start(url: url)
+    }
+
+    func prepare(bundled name: String) {
+        guard let url = Self.bundled(name) else { return }
+        prepare(url: url)
     }
 
     func pause() {
         queue.pause()
+    }
+
+    static func bundled(_ name: String) -> URL? {
+        Bundle.main.url(forResource: name, withExtension: "mp4")
     }
 }
 

@@ -1,6 +1,42 @@
 import AVFoundation
 import SwiftUI
 
+// MARK: - Содержимое карточек
+
+/// Временный мок содержимого видеокарточек.
+///
+/// Секция рассказывает **про сам тайтл** — про его героев и про детали, ради которых
+/// его стоит смотреть. Раньше сюда шли похожие фильмы из `similar`, и полка читалась
+/// как второе «Похожее», хотя настоящее «Похожее» стоит ниже на том же экране.
+///
+/// Данных такого рода в API нет ни у Кинопоиска, ни у TMDB: там есть факты о тайтле,
+/// но не редакционные врезки. Поэтому до появления источника тексты замокированы —
+/// это карточки из макета `2052:10642`, переведённые на русский. Тексты одни и те же
+/// для любого тайтла: подставлять их под конкретный фильм было бы враньём о контенте.
+struct MovieVideoCardMock {
+    let title: String
+    let subtitle: String
+
+    static let all: [MovieVideoCardMock] = [
+        .init(
+            title: "Лейла",
+            subtitle: "Она вернулась — и на этот раз её замысел слишком велик, чтобы его не заметить"
+        ),
+        .init(
+            title: "Команда снова в сборе",
+            subtitle: "Смогут ли они провернуть ещё одно ограбление?"
+        ),
+        .init(
+            title: "Мустафа",
+            subtitle: "Мастер перевоплощений"
+        ),
+        .init(
+            title: "1918 год",
+            subtitle: "Когда британцы оккупировали Турцию"
+        ),
+    ]
+}
+
 // MARK: - Секция
 
 /// Секция видеокарточек — `figma-moviecard.md` §4.2 «originals content».
@@ -8,13 +44,12 @@ import SwiftUI
 /// Четыре карточки 361×451.25 с шагом 467.25 и текстовый блок в шахматном порядке
 /// между второй и третьей.
 ///
-/// **Про контент.** Настоящих трейлеров взять негде: Кинопоиск на бесплатном тарифе
+/// **Про контент.** Тексты карточек замокированы (`MovieVideoCardMock`), движение —
+/// забандленный клип: настоящих роликов взять негде, Кинопоиск на бесплатном тарифе
 /// отдаёт `videos: null`, а на платном — страницу своего плеера, чей поток закрыт для
 /// сторонних клиентов; TMDB отдаёт ролики ключами YouTube, а это не поток для `AVPlayer`.
-/// Поэтому картинка и название у карточки настоящие, а движение — забандленный клип.
-/// Тот же компромисс уже принят в блоке «продолжить смотреть» витрины.
+/// Живым в секции остаётся только описание тайтла между карточками.
 struct MovieVideoSection: View {
-    let titles: [MovieSimilarTitle]
     let paragraphs: [String]
 
     /// Какие карточки сейчас в поле зрения — по порядковому номеру в секции.
@@ -58,9 +93,9 @@ struct MovieVideoSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Layout.gap) {
-            ForEach(Array(cards.enumerated()), id: \.offset) { index, title in
+            ForEach(Array(MovieVideoCardMock.all.enumerated()), id: \.offset) { index, card in
                 MovieVideoCard(
-                    title: title,
+                    card: card,
                     clip: Self.clip(for: index),
                     isActive: activeCard == index,
                     aspect: Layout.cardAspect,
@@ -88,8 +123,8 @@ struct MovieVideoSection: View {
         .padding(.bottom, Layout.bottom)
         .frame(maxWidth: .infinity, alignment: .leading)
         // Движение выключено пользователем — ролики не стартуют вовсе, карточки
-        // остаются постерами. Это ровно тот случай, ради которого настройка есть:
-        // четыре зацикленных ролика, встающих по скроллу, — это фоновое движение.
+        // остаются остановленным кадром. Это ровно тот случай, ради которого настройка
+        // есть: четыре зацикленных ролика, встающих по скроллу, — это фоновое движение.
         // Энергосбережение: система просит не тратить батарею на автовоспроизведение.
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
             isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -103,29 +138,31 @@ struct MovieVideoSection: View {
         return visibleCards.min()
     }
 
-    /// Карточек в макете четыре. Меньше — показываем сколько есть, больше не берём:
-    /// остальные похожие тайтлы уходят в сетку «Похожее» ниже.
-    private var cards: [MovieSimilarTitle] {
-        Array(titles.prefix(4))
-    }
-
     /// Клипов в бандле меньше, чем карточек, — раздаём по кругу.
     private static func clip(for index: Int) -> String {
         ShowcaseSeeds.videoCardClips[index % ShowcaseSeeds.videoCardClips.count]
     }
-
 }
 
 // MARK: - Карточка
 
 /// Одна видеокарточка: свечение по краям, кадр со скруглением, скрим и подписи.
 ///
+/// Фон карточки — **сам ролик**: пока очередь играть не дошла, на карточке стоит его
+/// же неподвижный кадр, а как дойдёт — тот же кадр оживает. Постера тайтла под ним
+/// больше нет: карточка рассказывает про фильм, а не показывает соседний.
+///
+/// Кадр берётся картинкой (`ClipStill`), а не «паузой на плеере». `AVPlayerLayer`,
+/// которому ни разу не давали играть, ничего не рисует — карточка оставалась чёрной,
+/// пока до неё не доскроллят. Показывать пустоту до первого показа нельзя: карточек
+/// четыре, одновременно играет одна, и три из них были бы дырами.
+///
 /// Плеер живёт всё время, пока карточка в дереве, и только ставится на паузу:
 /// пересобирать `AVQueuePlayer` на каждый заход в поле зрения дороже, чем держать его,
-/// а на скролле это ещё и лишний рывок на первом кадре. Карточек максимум четыре,
+/// а на скролле это ещё и лишний рывок на первом кадре. Карточек четыре,
 /// ролики беззвучные и локальные — держать их дёшево.
 private struct MovieVideoCard: View {
-    let title: MovieSimilarTitle
+    let card: MovieVideoCardMock
     let clip: String
     let isActive: Bool
     /// Пропорция кадра. Ширину карточка берёт от секции — на холсте макета 393 это
@@ -135,26 +172,39 @@ private struct MovieVideoCard: View {
 
     @State private var playback = LoopingVideoPlayback()
     @State private var isVideoReady = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Неподвижный кадр того же ролика: фон карточки до первого показа и источник
+    /// свечения по краям — см. `ClipStill`.
+    @State private var still: Image?
+    /// Карточка хоть раз играла. До этого видеослой прозрачен: он не рисует кадр,
+    /// пока ему не дали play, и без этого флага мы бы гасили картинку под пустотой.
+    @State private var hasPlayed = false
 
     var body: some View {
-        // Кадр задаёт распорка, а картинка его заполняет: `aspectRatio` на самой
-        // картинке считает высоту от её идеального размера, а не от пропорции макета,
+        // Кадр задаёт распорка, а видео его заполняет: `aspectRatio` на самом слое
+        // считает высоту от идеального размера, а не от пропорции макета,
         // и карточка расползалась на всю ширину экрана. Та же идиома, что у кавера.
         Color.clear
             .aspectRatio(aspect, contentMode: .fit)
-            .overlay { content }
+            .overlay { frame }
             .overlay(alignment: .bottom) { caption }
             .clipShape(shape)
             // Рамка поверх клипа, иначе её съедает скругление.
             .overlay { shape.strokeBorder(Color.fillNine, lineWidth: Self.border) }
             .background { ambilight }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(title.title)
+            .accessibilityLabel(card.title)
+            // Ролик заряжается сразу, но не запускается: играть он начнёт, когда
+            // карточка станет верхней видимой.
+            .task(id: clip) {
+                playback.prepare(bundled: clip)
+                still = await ClipStill.load(clip)
+            }
             // Пауза, а не остановка: ролик зациклен, и вернувшаяся в кадр карточка
             // должна продолжить, а не дёрнуться в начало.
             .onChange(of: isActive, initial: true) { _, active in
-                active ? playback.start(bundled: clip) : playback.pause()
+                guard active else { return playback.pause() }
+                hasPlayed = true
+                playback.start(bundled: clip)
             }
             .onDisappear { playback.pause() }
     }
@@ -163,25 +213,22 @@ private struct MovieVideoCard: View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
     }
 
-    private var content: some View {
+    /// Кадр карточки: неподвижная картинка, поверх которой встаёт видео, когда
+    /// доходит очередь. Подмена мягкая — жёсткая читается щелчком, хотя картинка
+    /// и первый кадр ролика это одно и то же изображение.
+    private var frame: some View {
         ZStack {
-            // Постер держит кадр, пока видео не готово, и остаётся насовсем,
-            // если движение выключено.
-            if let poster = title.poster {
-                ArtworkImage(source: .remote(poster))
+            if let still {
+                still
+                    .resizable()
                     .scaledToFill()
-            } else {
-                Color.fillTen
             }
 
-            if !reduceMotion {
-                LoopingVideoLayer(player: playback.queue) { isVideoReady = true }
-                    // Видео проявляется поверх постера: жёсткая подмена читается щелчком.
-                    .opacity(isVideoReady ? 1 : 0)
-                    .animation(.easeInOut(duration: MovieCoverMotion.videoFadeIn), value: isVideoReady)
-                    .allowsHitTesting(false)
-            }
+            LoopingVideoLayer(player: playback.queue) { isVideoReady = true }
+                .opacity(hasPlayed && isVideoReady ? 1 : 0)
+                .animation(.easeInOut(duration: MovieCoverMotion.videoFadeIn), value: hasPlayed)
         }
+        .allowsHitTesting(false)
     }
 
     /// Свечение вокруг карточки — размытая копия кадра, вылезающая за края.
@@ -189,16 +236,15 @@ private struct MovieVideoCard: View {
     /// Вынос фиксированный, а не масштабом: у более широкой карточки прототипа масштаб
     /// раздул бы его непропорционально.
     ///
-    /// **Тише макета сознательно.** В макете это 425×520.6 против кадра 361×451.25
-    /// (+32 и +34.7 с каждой стороны) при прозрачности 0.32 — и там внутри карточки
-    /// лежит тёмный кинокадр, от которого свечение едва заметно. У нас в карточке
-    /// постер тайтла: он ярче и насыщеннее, и на тех же числах ореол лезет в глаза.
-    /// Поэтому вынос поджат, прозрачность вдвое ниже, а радиус, наоборот, больше —
-    /// пятно шире и оттого мягче.
+    /// Числа макетные (425×520.6 против кадра 361×451.25, то есть +32 и +34.7 с каждой
+    /// стороны, прозрачность 0.32, CSS-блюр 40). Раньше они были поджаты вдвое, потому
+    /// что в карточке лежал постер тайтла — яркий и насыщенный, ореол от него лез в глаза.
+    /// Теперь в карточке, как и в макете, тёмный кинокадр, и повода расходиться нет.
     private var ambilight: some View {
         Group {
-            if let poster = title.poster {
-                ArtworkImage(source: .remote(poster))
+            if let still {
+                still
+                    .resizable()
                     .scaledToFill()
             }
         }
@@ -213,14 +259,12 @@ private struct MovieVideoCard: View {
     /// (`justify=MAX`), а не просто «в 24 от нижней кромки карточки».
     private var caption: some View {
         VStack(alignment: .leading, spacing: Self.captionGap) {
-            Text(title.title.prefixWords(maxCharacters: Self.titleLimit))
+            Text(card.title.prefixWords(maxCharacters: Self.titleLimit))
                 .plusMovieCardText()
                 .foregroundStyle(Color.fillOne)
-            if let year = title.year {
-                Text(year)
-                    .plusMovieCardText()
-                    .foregroundStyle(Color.fillSubtitle)
-            }
+            Text(card.subtitle)
+                .plusMovieCardText()
+                .foregroundStyle(Color.fillSubtitle)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Self.captionPadding)
@@ -239,11 +283,44 @@ private struct MovieVideoCard: View {
     /// Пик скрима: у панели действий он 0.92, здесь заметно мягче
     private static let captionScrimPeak: Double = 0.48
     private static let titleLimit = 50
-    private static let ambilightInsetX: CGFloat = 20
-    private static let ambilightInsetY: CGFloat = 22
-    /// В макете CSS `blur(40px)` — здесь больше, чтобы пятно было мягче
-    private static let ambilightBlur: CGFloat = 56
-    private static let ambilightOpacity: Double = 0.16
+    private static let ambilightInsetX: CGFloat = 32
+    private static let ambilightInsetY: CGFloat = 34.7
+    /// В макете CSS `blur(40px)`
+    private static let ambilightBlur: CGFloat = 40
+    private static let ambilightOpacity: Double = 0.32
+}
+
+// MARK: - Первый кадр ролика
+
+/// Первый кадр забандленного клипа, картинкой. Работает и фоном карточки, и источником
+/// свечения по её краям.
+///
+/// Фоном — потому что `AVPlayerLayer` без единого `play` кадр не рисует, и карточка,
+/// до которой не доскроллили, оставалась бы чёрной.
+///
+/// Свечением — потому что в макете это размытая копия того же **видео**, а живьём её
+/// взять нечем: `AVPlayer` отдаёт картинку одному слою, второй на тот же плеер
+/// останется пустым, а `.blur` радиусом 40 по видеослою — это гауссиан на каждый кадр,
+/// ровно та цена, которой на скролле быть не должно. Под блюром 40 и прозрачностью
+/// 0.32 застывшее свечение от живого не отличить.
+///
+/// Разрешение — родное для клипа: карточка портретная, ролики широкие, и `resizeAspectFill`
+/// и так растягивает узкую вертикальную полосу источника. Уменьшать её значит проиграть
+/// в чёткости самому видео, поверх которого картинка и стоит.
+@MainActor
+private enum ClipStill {
+    private static var cache: [String: Image] = [:]
+
+    static func load(_ name: String) async -> Image? {
+        if let hit = cache[name] { return hit }
+        guard let url = LoopingVideoPlayback.bundled(name) else { return nil }
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        guard let cgImage = try? await generator.image(at: .zero).image else { return nil }
+        let image = Image(decorative: cgImage, scale: 1)
+        cache[name] = image
+        return image
+    }
 }
 
 private extension String {

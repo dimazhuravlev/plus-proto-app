@@ -14,8 +14,11 @@ enum MovieLayout {
     static let coverAspect: CGFloat = 3.0 / 4.0
     /// «cover bottom blur» 393×104, прижат к низу кавера
     static let coverFadeHeight: CGFloat = 104
-    /// BACKGROUND_BLUR 10 в панели Figma = 5 в единицах проекта (см. GlassSurface)
-    static let coverFadeBlur: CGFloat = 5
+    /// Пик **прогрессивного** размытия: 0 у верхней кромки полосы, 10 у нижней.
+    /// С равномерным `BACKGROUND_BLUR 10` из панели Figma (= 5 в единицах проекта)
+    /// это число напрямую не сравнивается: рампа доходит до максимума только у самого
+    /// низа, и на глаз она мягче равномерной пятёрки, а не вдвое сильнее.
+    static let coverFadeBlur: CGFloat = 10
 
     /// Высота кавера — макетные 3:4, если инфо-блок под ним успевает закончиться
     /// **над градиентом** панели действий; иначе кавер ужимается ровно настолько,
@@ -110,7 +113,7 @@ enum MovieLayout {
 }
 
 /// Скримы карточки тайтла. Профилей два, и это не небрежность, а два разных места
-/// макета: сглаженный на 16 стопов у панели кнопок (пик 0.92) и подписей видеокарточек,
+/// макета: сглаженный на 16 стопов — у панели кнопок и подписей видеокарточек,
 /// прямая рампа в два стопа — у верхней шапки. У сглаженного стопы дословные из макета:
 /// заменить их линейной интерполяцией значит получить видимый банд.
 enum MovieScrim {
@@ -191,11 +194,11 @@ struct MovieScreen: View {
                     // и третьей, — так оно стоит в макете. Отдельной секцией оно было,
                     // пока карточек не существовало, и показывалось дважды, когда они
                     // появились.
-                    if !details.similar.isEmpty {
-                        MovieVideoSection(titles: details.similar, paragraphs: details.synopsis)
-                    } else if !details.synopsis.isEmpty {
-                        MovieSynopsisSection(paragraphs: details.synopsis)
-                    }
+                    //
+                    // Секция больше не ждёт данных: содержимое карточек замокировано
+                    // (см. `MovieVideoCardMock`), поэтому она есть всегда, а живым
+                    // в ней остаётся только описание.
+                    MovieVideoSection(paragraphs: details.synopsis)
                     if !details.cast.isEmpty {
                         MovieCastSection(cast: details.cast)
                     }
@@ -296,11 +299,19 @@ struct MovieScreen: View {
             .overlay(alignment: .bottom) { coverFade }
     }
 
-    /// Нижние 104pt кавера: чёрный градиент под лёгким размытием — стык с фоном экрана
-    /// не должен читаться кромкой.
+    /// Нижние 104pt кавера: чёрный градиент под размытием, нарастающим книзу, — стык
+    /// с фоном экрана не должен читаться кромкой.
+    ///
+    /// Размытие именно прогрессивное, а не равномерное: у равномерного полоса сама
+    /// становится кромкой — там, где она начинается, резкость обрывается на ровном
+    /// месте. Рампа снимает эту границу тем же приёмом, что подложка таббара
+    /// (`TabBarUnderlay`), и в ту же сторону — чисто сверху, максимум снизу.
     private var coverFade: some View {
         ZStack {
-            BackdropBlurView(radius: MovieLayout.coverFadeBlur)
+            VariableBlurView(
+                maxBlurRadius: MovieLayout.coverFadeBlur,
+                direction: .blurredBottomClearTop
+            )
             LinearGradient(
                 colors: [.black.opacity(0), .black],
                 startPoint: .top,
