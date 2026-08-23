@@ -26,6 +26,21 @@ enum ShowcaseRotation {
         return UInt64(max(0, Date().timeIntervalSince1970) / window)
     }
 
+    /// Генератор для кино. Кино живёт не по окну, а по запасу на диске (`MoviePool`):
+    /// новый фильм обязан быть при **каждом** холодном запуске, а запросов это не стоит —
+    /// выборка идёт из уже скачанной пачки. Поэтому зерно честно случайное.
+    ///
+    /// `-debugFrozenFeed` фиксирует его: скриншотная сверка должна быть воспроизводимой,
+    /// а моков, на которых её раньше делали, у кино больше нет.
+    static func movieGenerator() -> SeededGenerator {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "debugFrozenFeed") {
+            return SeededGenerator(seed: Salt.movies)
+        }
+        #endif
+        return SeededGenerator(seed: UInt64.random(in: .min ... .max))
+    }
+
     /// Генератор на домен. Соль нужна, чтобы кино, музыка и книги не выбирали
     /// один и тот же индекс из своих пулов — иначе выборки коррелируют.
     static func generator(salt: UInt64) -> SeededGenerator {

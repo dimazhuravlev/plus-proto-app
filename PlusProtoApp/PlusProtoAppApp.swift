@@ -43,6 +43,12 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugFreshFeed") {
             UserDefaults.standard.removeObject(forKey: "debugFreshFeed")
         }
+        if !args.contains("-debugFrozenFeed") {
+            UserDefaults.standard.removeObject(forKey: "debugFrozenFeed")
+        }
+        if !args.contains("-debugResetMoviePool") {
+            UserDefaults.standard.removeObject(forKey: "debugResetMoviePool")
+        }
         if !args.contains("-debugPlayCycle") {
             UserDefaults.standard.removeObject(forKey: "debugPlayCycle")
         }
@@ -82,6 +88,14 @@ struct PlusProtoAppApp: App {
                 index += 1
             case "-debugFreshFeed":
                 UserDefaults.standard.set(true, forKey: "debugFreshFeed")
+            // Кино выбирается случайно на каждый запуск — для скриншотной сверки
+            // зерно надо уметь зафиксировать.
+            case "-debugFrozenFeed":
+                UserDefaults.standard.set(true, forKey: "debugFrozenFeed")
+            // Опустошить запас фильмов: иначе первый запуск после установки
+            // не проверить, не переустанавливая приложение.
+            case "-debugResetMoviePool":
+                UserDefaults.standard.set(true, forKey: "debugResetMoviePool")
                 index += 1
             case "-debugPlayCycle":
                 UserDefaults.standard.set(true, forKey: "debugPlayCycle")

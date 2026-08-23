@@ -14,7 +14,7 @@ struct KinopoiskListResponse<T: Decodable>: Decodable {
 // MARK: - Image
 
 /// Картинка КП: `url` — оригинал, `previewUrl` — уменьшенная копия.
-struct KinopoiskImage: Decodable {
+struct KinopoiskImage: Codable {
     let url: String?
     let previewUrl: String?
 }
@@ -84,20 +84,20 @@ enum TMDBImageProxy {
 
 // MARK: - Movie
 
-struct KinopoiskRating: Decodable {
+struct KinopoiskRating: Codable {
     let kp: Double?
     let imdb: Double?
     let filmCritics: Double?
     let russianFilmCritics: Double?
 }
 
-struct KinopoiskGenre: Decodable, Identifiable {
+struct KinopoiskGenre: Codable, Identifiable {
     let name: String
 
     var id: String { name }
 }
 
-struct KinopoiskCountry: Decodable, Identifiable {
+struct KinopoiskCountry: Codable, Identifiable {
     let name: String
 
     var id: String { name }
@@ -106,7 +106,7 @@ struct KinopoiskCountry: Decodable, Identifiable {
 /// Персона тайтла. Роль различаем по `enProfession` (`actor`, `director`) — русское
 /// `profession` приходит во множественном числе и в разных падежах.
 /// Имя бывает пустым у эпизодических персон, поэтому оптионально всё.
-struct KinopoiskPerson: Decodable {
+struct KinopoiskPerson: Codable {
     let id: Int?
     let name: String?
     let enName: String?
@@ -125,7 +125,7 @@ struct KinopoiskPerson: Decodable {
 }
 
 /// Похожий тайтл из `similarMovies`: усечённый фильм — ни описания, ни хронометража.
-struct KinopoiskSimilarMovie: Decodable, Identifiable {
+struct KinopoiskSimilarMovie: Codable, Identifiable {
     let id: Int
     let name: String?
     let alternativeName: String?
@@ -139,7 +139,7 @@ struct KinopoiskSimilarMovie: Decodable, Identifiable {
 /// Ролик тайтла. `url` — **страница-эмбед плеера Кинопоиска**, а не файл: прямой поток
 /// внутри неё подписан и отдаёт 403 любому клиенту вне их плеера (замер 2026-08-23,
 /// curl и настоящий браузер). Пригодны из этой модели `name` и `previewUrl` — кадр ролика.
-struct KinopoiskVideo: Decodable {
+struct KinopoiskVideo: Codable {
     let url: String?
     let name: String?
     let site: String?
@@ -166,7 +166,7 @@ struct KinopoiskVideo: Decodable {
 }
 
 /// Ролики тайтла. Секция целиком бывает пустой (`"videos": {}`) — у половины каталога.
-struct KinopoiskVideos: Decodable {
+struct KinopoiskVideos: Codable {
     let trailers: [KinopoiskVideo]?
     let teasers: [KinopoiskVideo]?
 }
@@ -177,7 +177,7 @@ struct KinopoiskVideos: Decodable {
 /// **Полнота ответа зависит от роута.** Списочный `/v1.4/movie` на бесплатном тарифе
 /// отдаёт урезанный набор (без `videos`, `persons`, `similarMovies`) и `selectFields`
 /// его не расширяет; всё перечисленное приезжает только с `/v1.4/movie/{id}`.
-struct KinopoiskMovie: Decodable, Identifiable {
+struct KinopoiskMovie: Codable, Identifiable {
     let id: Int
     let name: String?
     let alternativeName: String?

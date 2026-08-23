@@ -20,6 +20,26 @@ final class ShowcaseCatalog {
 
     private var hasLoaded = false
 
+    /// Фильмы, выбранные синхронно из запаса на первом кадре. Асинхронный проход
+    /// потом не выбирает заново, а лишь добирает акцентный цвет подписи — иначе
+    /// фильм на экране успевал бы смениться на глазах.
+    private var pickedFeatured: KinopoiskMovie?
+    private var pickedWatching: KinopoiskMovie?
+
+    /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
+    /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после
+    /// установки, когда запас ещё пуст, — и тут же сменяется живыми данными.
+    init() {
+        var rng = ShowcaseRotation.movieGenerator()
+        let snapshot = MoviePool.diskSnapshot()
+        let unseen = snapshot.movies.filter { !snapshot.shown.contains($0.id) }
+        pickedFeatured = unseen.filter(Self.isFeaturable).randomElement(using: &rng)
+        pickedWatching = unseen
+            .filter { Self.isWatchable($0) && $0.id != pickedFeatured?.id }
+            .randomElement(using: &rng)
+        applyMovieBlocks(featuredTint: nil, rng: &rng)
+    }
+
     /// Один заход за сессию. Повторный сбор — `reload()`.
     func loadIfNeeded() async {
         guard !hasLoaded else { return }
@@ -30,6 +50,12 @@ final class ShowcaseCatalog {
     func reload() async {
         isLoading = true
         failures = []
+
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "debugResetMoviePool") {
+            await MoviePool.shared.reset()
+        }
+        #endif
 
         // Три независимых заказа: домен, который упал или отвечает медленно,
         // не задерживает остальные.
@@ -43,69 +69,132 @@ final class ShowcaseCatalog {
 
     // MARK: - Кино
 
-    /// Один запрос на оба киноблока: квота Кинопоиска 200 в сутки, и брать
-    /// «посмотреть» и «продолжить смотреть» по отдельности — вдвое дороже без нужды.
+    /// Кино берётся из запаса на диске (`MoviePool`), а не из сети на каждый запуск.
+    ///
+    /// Требование — новые фильмы при **каждом холодном запуске**. В лоб это значит запрос
+    /// на запуск, а квота Кинопоиска 200 в сутки: одна сессия разработки — два десятка
+    /// перезапусков. Поэтому в сеть ходим редко и помногу: `limit=250` отдаёт подборку
+    /// целиком, а показываем по одному фильму в блок. Одного запроса хватает примерно
+    /// на сотню запусков, и каждый из них показывает то, чего ещё не показывали.
+    ///
+    /// Окна ротации у кино поэтому больше нет: выбор честно случайный на каждый запуск.
+    /// Для воспроизводимых скриншотов есть `-debugFrozenFeed` — он фиксирует зерно.
     private func loadMovies() async {
-        var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.movies)
-        guard let slug = ShowcaseSeeds.movieLists.randomElement(using: &rng) else { return }
-        let page = Int.random(in: 1...ShowcaseSeeds.movieMaxPage, using: &rng)
+        var rng = ShowcaseRotation.movieGenerator()
+
+        // Считаем по «продолжить смотреть»: логотип есть далеко не у всех, и годные
+        // для этого блока кончаются первыми.
+        if await MoviePool.shared.needsRefill(scarcest: Self.isWatchable) {
+            await refillMoviePool(using: &rng)
+            let featured = await MoviePool.shared.unseen(where: Self.isFeaturable)
+            let watchable = await MoviePool.shared.unseen(where: Self.isWatchable)
+            pickedFeatured = featured.randomElement(using: &rng)
+            pickedWatching = watchable.filter { $0.id != pickedFeatured?.id }.randomElement(using: &rng)
+        }
+
+        guard let featured = pickedFeatured else {
+            failures.append("кино: в запасе нет фильма с постером и описанием")
+            return
+        }
+        if pickedWatching == nil {
+            failures.append("продолжить смотреть: в запасе нет кадра с логотипом")
+        }
+
+        // Акцент подписи считается по постеру — это загрузка картинки, синхронно
+        // на первом кадре её не получить.
+        var tint: Color?
+        if let poster = featured.poster?.url(size: .medium) {
+            tint = await ArtworkLoader.shared.accent(for: poster)
+        }
+        applyMovieBlocks(featuredTint: tint, rng: &rng)
+
+        await MoviePool.shared.markShown([featured.id, pickedWatching?.id].compactMap { $0 })
+
+        // Греем кэш под будущие запуски: фильм каждый раз новый, и без прогрева его
+        // постер каждый раз качается с нуля на глазах у пользователя.
+        await preloadNextMovies()
+    }
+
+    /// Кладёт оба киноблока по уже выбранным фильмам. Отдельно от загрузки, потому что
+    /// вызывается дважды: синхронно на первом кадре и после подсчёта акцента.
+    private func applyMovieBlocks(featuredTint: Color?, rng: inout SeededGenerator) {
+        if let movie = pickedFeatured, let poster = movie.poster?.url(size: .medium) {
+            apply(.movie(MovieBlock(
+                id: "kp-\(movie.id)",
+                title: movie.displayTitle,
+                // Без бандленного фолбэка, по той же причине, что и у логотипа ниже:
+                // моковый постер чужого фильма врёт о контенте, а фильм в витрине
+                // теперь каждый запуск новый — врал бы он каждый раз.
+                poster: .remote(poster),
+                // Подпись `2004:10769` рассчитана на 3 строки по 182.68pt;
+                // `shortDescription` бывает и вдвое длиннее — режем.
+                caption: (movie.shortDescription ?? "").showcaseCaption(maxCharacters: 88),
+                captionTint: featuredTint ?? Self.mockMovieTint
+            )))
+        }
+
+        if
+            let watching = pickedWatching,
+            let still = watching.backdrop?.url(size: .frame),
+            // Логотипы лежат на tmdb, а он у нас не резолвится — `logoURL`
+            // уводит их через прокси (см. `TMDBImageProxy`).
+            let logo = watching.logo?.logoURL(width: Self.logoPixelWidth)
+        {
+            apply(.watching(WatchingBlock(
+                id: "kp-w-\(watching.id)",
+                title: watching.displayTitle,
+                still: .remote(still),
+                // Видео из открытых API кино не отдаёт никто — клип остаётся забандленным.
+                clip: ShowcaseSeeds.watchingClip,
+                // Без бандленного фолбэка: моковый логотип чужого фильма
+                // соврал бы о контенте. Не загрузится — карточка покажет название.
+                logo: .remote(logo),
+                progress: Double.random(in: 0.15...0.9, using: &rng),
+                remaining: ShowcaseSeeds.watchingRemaining.randomElement(using: &rng) ?? ""
+            )))
+        }
+    }
+
+    /// Прогрев картинок для следующих запусков. Берём немного: смысл в том, чтобы
+    /// ближайшие два-три запуска открывались с готовым постером, а не в том,
+    /// чтобы скачать весь запас.
+    private func preloadNextMovies() async {
+        let next = await MoviePool.shared.unseen(where: Self.isFeaturable).prefix(3)
+        let posters = next.compactMap { $0.poster?.url(size: .medium) }.map { ArtworkSource.remote($0) }
+        let stills = await MoviePool.shared.unseen(where: Self.isWatchable).prefix(2)
+            .compactMap { $0.backdrop?.url(size: .frame) }
+            .map { ArtworkSource.remote($0) }
+        ArtworkLoader.shared.preload(posters + stills)
+    }
+
+    /// Один запрос за целой подборкой. Берём ту, из которой ещё не брали, — иначе
+    /// пополнение принесёт те же фильмы и запас не вырастет.
+    private func refillMoviePool(using rng: inout SeededGenerator) async {
+        let used = await MoviePool.shared.usedSources()
+        let fresh = ShowcaseSeeds.movieLists.filter { !used.contains($0) }
+        let pool = fresh.isEmpty ? ShowcaseSeeds.movieLists : fresh
+        guard let slug = pool.randomElement(using: &rng) else { return }
 
         do {
             let batch = try await KinopoiskService.shared.movies(
                 list: slug,
-                limit: ShowcaseSeeds.movieBatch,
-                page: page
+                limit: ShowcaseSeeds.moviePoolBatch,
+                page: 1
             )
-
-            // Блоку «посмотреть» нужен постер и короткое описание.
-            let featured = batch.filter {
-                $0.poster?.url(size: .medium) != nil && !($0.shortDescription ?? "").isEmpty
-            }
-            // Блоку «продолжить смотреть» — горизонтальный кадр и логотип проекта.
-            let watchable = batch.filter {
-                $0.backdrop?.url(size: .frame) != nil && $0.logo?.logoURL(width: Self.logoPixelWidth) != nil
-            }
-
-            if let movie = featured.randomElement(using: &rng), let poster = movie.poster?.url(size: .medium) {
-                let tint = await ArtworkLoader.shared.accent(for: poster)
-                apply(.movie(MovieBlock(
-                    id: "kp-\(movie.id)",
-                    title: movie.displayTitle,
-                    poster: .remote(poster, fallback: "mockMoviePoster"),
-                    // Подпись `2004:10769` рассчитана на 3 строки по 182.68pt;
-                    // `shortDescription` бывает и вдвое длиннее — режем.
-                    caption: (movie.shortDescription ?? "").showcaseCaption(maxCharacters: 88),
-                    captionTint: tint ?? Self.mockMovieTint
-                )))
-            } else {
-                failures.append("кино: в подборке \(slug) нет фильма с постером и описанием")
-            }
-
-            if
-                let movie = watchable.first(where: { "kp-\($0.id)" != currentMovieId }) ?? watchable.randomElement(using: &rng),
-                let still = movie.backdrop?.url(size: .frame),
-                // Логотипы лежат на tmdb, а он у нас не резолвится — `logoURL`
-                // уводит их через прокси (см. `TMDBImageProxy`).
-                let logo = movie.logo?.logoURL(width: Self.logoPixelWidth)
-            {
-                apply(.watching(WatchingBlock(
-                    id: "kp-w-\(movie.id)",
-                    title: movie.displayTitle,
-                    still: .remote(still, fallback: "mockVideoStill"),
-                    // Видео из открытых API кино не отдаёт никто — клип остаётся забандленным.
-                    clip: ShowcaseSeeds.watchingClip,
-                    // Без бандленного фолбэка: моковый логотип чужого фильма
-                    // соврал бы о контенте. Не загрузится — карточка покажет название.
-                    logo: .remote(logo),
-                    progress: Double.random(in: 0.15...0.9, using: &rng),
-                    remaining: ShowcaseSeeds.watchingRemaining.randomElement(using: &rng) ?? ""
-                )))
-            } else {
-                failures.append("продолжить смотреть: в подборке \(slug) нет кадра с логотипом")
-            }
+            await MoviePool.shared.store(batch, source: slug)
         } catch {
             failures.append("кино: \(error.localizedDescription)")
         }
+    }
+
+    /// Блоку «посмотреть» нужен постер и короткое описание.
+    private static let isFeaturable: @Sendable (KinopoiskMovie) -> Bool = { movie in
+        movie.poster?.url(size: .medium) != nil && !(movie.shortDescription ?? "").isEmpty
+    }
+
+    /// Блоку «продолжить смотреть» — горизонтальный кадр и логотип проекта.
+    private static let isWatchable: @Sendable (KinopoiskMovie) -> Bool = { movie in
+        movie.backdrop?.url(size: .frame) != nil && movie.logo?.logoURL(width: logoPixelWidth) != nil
     }
 
     // MARK: - Музыка
