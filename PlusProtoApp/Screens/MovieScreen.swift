@@ -164,14 +164,14 @@ struct MovieScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     titleBlock
-                    if !details.synopsis.isEmpty {
-                        MovieSynopsisSection(paragraphs: details.synopsis)
-                    }
+                    // Описание живёт внутри секции видеокарточек, между второй
+                    // и третьей, — так оно стоит в макете. Отдельной секцией оно было,
+                    // пока карточек не существовало, и показывалось дважды, когда они
+                    // появились.
                     if !details.similar.isEmpty {
-                        MovieVideoSection(
-                            titles: details.similar,
-                            paragraphs: Array(details.synopsis.dropFirst())
-                        )
+                        MovieVideoSection(titles: details.similar, paragraphs: details.synopsis)
+                    } else if !details.synopsis.isEmpty {
+                        MovieSynopsisSection(paragraphs: details.synopsis)
                     }
                     if !details.cast.isEmpty {
                         MovieCastSection(cast: details.cast)

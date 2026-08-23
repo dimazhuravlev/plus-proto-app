@@ -20,18 +20,24 @@ struct MovieSectionHeader: View {
 
 // MARK: - Описание
 
-/// Текстовый блок `2101:22593` из секции «originals content»: абзацы идут в шахматном
-/// порядке — первый прижат влево и не доходит до правого края, второй наоборот.
-/// Сами видео-карточки секции опущены: под них нет ни кадров, ни видео.
+/// Абзацы описания в шахматном порядке: первый прижат влево и не доходит до правого
+/// края, второй наоборот.
+///
+/// Живёт **внутри** секции видеокарточек (`MovieVideoSection`), между второй и третьей,
+/// — там его место по макету `2052:10645`. Отдельной секцией экрана он был, только пока
+/// карточек не существовало.
 struct MovieSynopsisSection: View {
     let paragraphs: [String]
 
     private enum Layout {
-        /// `padding 16/48/8/16` у первого абзаца, зеркально — у второго
+        /// `pl 24 / pr 48 / pt 16 / pb 8` у первого абзаца, зеркально — у второго.
+        /// Прежняя спека (`2101:22593`) давала первому 16 — это другой файл макета.
         static let top: CGFloat = 16
         static let bottom: CGFloat = 8
-        static let near: CGFloat = 16
+        static let near: CGFloat = 24
         static let far: CGFloat = 48
+        /// Правое поле сдвинутого абзаца — общее поле секции
+        static let edge: CGFloat = 16
     }
 
     var body: some View {
@@ -40,11 +46,11 @@ struct MovieSynopsisSection: View {
                 let shifted = index.isMultiple(of: 2) == false
 
                 Text(text)
-                    .plusMovieParagraph()
+                    .plusMovieCardText()
                     .foregroundStyle(Color.fillOne)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, shifted ? Layout.far : Layout.near)
-                    .padding(.trailing, shifted ? Layout.near : Layout.far)
+                    .padding(.trailing, shifted ? Layout.edge : Layout.far)
                     .padding(.top, Layout.top)
                     .padding(.bottom, Layout.bottom)
             }

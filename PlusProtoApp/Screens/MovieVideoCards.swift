@@ -36,19 +36,24 @@ struct MovieVideoSection: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
+    /// Числа из `2052:10642` основного файла макета. Это **другая** версия секции,
+    /// чем в `figma-moviecard.md` §4.2: там карточка фиксированных 361×451.25, заголовок
+    /// 32/110 %, пик скрима 0.9. Здесь карточка тянется по ширине, заголовок и подпись
+    /// одного кегля (замер нод: 28 и 56 = 2×28), а пик скрима 0.48.
     private enum Layout {
-        static let cardWidth: CGFloat = 361
-        static let cardHeight: CGFloat = 451.25
+        /// Поля секции: карточка тянется на всю ширину между ними.
+        static let side: CGFloat = 16
+        /// Пропорция кадра — `aspect-[480/600]`
+        static let cardAspect: CGFloat = 480.0 / 600.0
         static let cardRadius: CGFloat = 20
         static let gap: CGFloat = 16
+        /// Первая карточка стоит на y 32 от верха секции, последняя — в 16 от низа
+        static let top: CGFloat = 32
+        static let bottom: CGFloat = 16
+
         /// Текстовый блок между второй и третьей карточкой
         static let textAfter = 2
-        static let paragraphLeading: CGFloat = 16
-        /// Второй абзац сдвинут вправо — «ступенька» этого макета
-        static let paragraphStagger: CGFloat = 48
-        static let paragraphTrailing: CGFloat = 48
-        static let paragraphGap: CGFloat = 8
-        static let paragraphBottom: CGFloat = 16
+        static let textBlockVertical: CGFloat = 16
     }
 
     var body: some View {
@@ -58,9 +63,10 @@ struct MovieVideoSection: View {
                     title: title,
                     clip: Self.clip(for: index),
                     isActive: activeCard == index,
-                    size: CGSize(width: Layout.cardWidth, height: Layout.cardHeight),
+                    aspect: Layout.cardAspect,
                     radius: Layout.cardRadius
                 )
+                .padding(.horizontal, Layout.side)
                 // Порог — половина карточки: ниже него на быстром скролле успевали бы
                 // стартовать ролики, которых пользователь даже не увидит.
                 .onScrollVisibilityChange(threshold: 0.5) { isVisible in
@@ -73,10 +79,13 @@ struct MovieVideoSection: View {
                 .onDisappear { visibleCards.remove(index) }
 
                 if index + 1 == Layout.textAfter, !paragraphs.isEmpty {
-                    textBlock
+                    MovieSynopsisSection(paragraphs: paragraphs)
+                        .padding(.vertical, Layout.textBlockVertical)
                 }
             }
         }
+        .padding(.top, Layout.top)
+        .padding(.bottom, Layout.bottom)
         .frame(maxWidth: .infinity, alignment: .leading)
         // Движение выключено пользователем — ролики не стартуют вовсе, карточки
         // остаются постерами. Это ровно тот случай, ради которого настройка есть:
@@ -105,18 +114,6 @@ struct MovieVideoSection: View {
         ShowcaseSeeds.videoCardClips[index % ShowcaseSeeds.videoCardClips.count]
     }
 
-    private var textBlock: some View {
-        VStack(alignment: .leading, spacing: Layout.paragraphGap) {
-            ForEach(Array(paragraphs.prefix(2).enumerated()), id: \.offset) { index, text in
-                Text(text)
-                    .plusMovieParagraph()
-                    .foregroundStyle(Color.fillOne)
-                    .padding(.leading, index == 0 ? Layout.paragraphLeading : Layout.paragraphStagger)
-                    .padding(.trailing, Layout.paragraphTrailing)
-            }
-        }
-        .padding(.bottom, Layout.paragraphBottom)
-    }
 }
 
 // MARK: - Карточка
@@ -131,7 +128,9 @@ private struct MovieVideoCard: View {
     let title: MovieSimilarTitle
     let clip: String
     let isActive: Bool
-    let size: CGSize
+    /// Пропорция кадра. Ширину карточка берёт от секции — на холсте макета 393 это
+    /// 361, но экран прототипа шире, и фиксировать её значило бы оставить поле справа.
+    let aspect: CGFloat
     let radius: CGFloat
 
     @State private var playback = LoopingVideoPlayback()
@@ -139,12 +138,17 @@ private struct MovieVideoCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        content
-            .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        // Кадр задаёт распорка, а картинка его заполняет: `aspectRatio` на самой
+        // картинке считает высоту от её идеального размера, а не от пропорции макета,
+        // и карточка расползалась на всю ширину экрана. Та же идиома, что у кавера.
+        Color.clear
+            .aspectRatio(aspect, contentMode: .fit)
+            .overlay { content }
             .overlay(alignment: .bottom) { caption }
-            .background(alignment: .center) { ambilight }
-            .padding(.leading, MovieLayout.sectionSide)
+            .clipShape(shape)
+            // Рамка поверх клипа, иначе её съедает скругление.
+            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: Self.border) }
+            .background { ambilight }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(title.title)
             // Пауза, а не остановка: ролик зациклен, и вернувшаяся в кадр карточка
@@ -153,6 +157,10 @@ private struct MovieVideoCard: View {
                 active ? playback.start(bundled: clip) : playback.pause()
             }
             .onDisappear { playback.pause() }
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
     }
 
     private var content: some View {
@@ -176,8 +184,10 @@ private struct MovieVideoCard: View {
         }
     }
 
-    /// Свечение вокруг карточки — копия кадра, размытая и вылезающая за края.
-    /// Радиус 80 против 28 у витрины: карточка крупнее, и мягкость должна расти с ней.
+    /// Свечение вокруг карточки — размытая копия кадра, вылезающая за края.
+    /// В макете это 425×520.6 против кадра 361×451.25, то есть **+32 по горизонтали
+    /// и +34.7 по вертикали с каждой стороны**, и это фиксированный вынос, а не масштаб:
+    /// у более широкой карточки прототипа масштаб раздул бы его непропорционально.
     private var ambilight: some View {
         Group {
             if let poster = title.poster {
@@ -185,45 +195,52 @@ private struct MovieVideoCard: View {
                     .scaledToFill()
             }
         }
-        .frame(width: size.width * Self.ambilightScale, height: size.height * Self.ambilightScale)
+        .padding(.horizontal, -Self.ambilightInsetX)
+        .padding(.vertical, -Self.ambilightInsetY)
         .blur(radius: Self.ambilightBlur)
         .opacity(Self.ambilightOpacity)
         .allowsHitTesting(false)
     }
 
+    /// Подписи прижаты к низу стека 256pt с полем 24 — так они стоят в макете
+    /// (`justify=MAX`), а не просто «в 24 от нижней кромки карточки».
     private var caption: some View {
         VStack(alignment: .leading, spacing: Self.captionGap) {
-            Text(title.title.prefixWords(maxCharacters: 50))
-                .plusMovieCardTitle()
+            Text(title.title.prefixWords(maxCharacters: Self.titleLimit))
+                .plusMovieCardText()
                 .foregroundStyle(Color.fillOne)
             if let year = title.year {
                 Text(year)
-                    .plusMovieCardSubtitle()
-                    .foregroundStyle(Color.fillOne.opacity(0.5))
+                    .plusMovieCardText()
+                    .foregroundStyle(Color.fillSubtitle)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Self.captionPadding)
-        .background(alignment: .bottom) {
+        .frame(height: Self.captionHeight, alignment: .bottom)
+        .background {
             MovieScrim.gradient(peak: Self.captionScrimPeak, from: .top, to: .bottom)
-                .frame(height: Self.captionScrimHeight)
-                .allowsHitTesting(false)
         }
+        .allowsHitTesting(false)
     }
 
-    // Макетные числа §4.2
+    // Числа из `2052:10643`
+    private static let border: CGFloat = 1
     private static let captionGap: CGFloat = 4
     private static let captionPadding: CGFloat = 24
-    private static let captionScrimHeight: CGFloat = 256
-    private static let captionScrimPeak: Double = 0.9
-    /// `ambilight` 425×520.6 против кадра 361×451.25 — это 1.177 и 1.154; берём среднее.
-    private static let ambilightScale: CGFloat = 1.165
-    private static let ambilightBlur: CGFloat = 80
-    private static let ambilightOpacity: Double = 0.7
+    private static let captionHeight: CGFloat = 256
+    /// Пик скрима: у панели действий он 0.92, здесь заметно мягче
+    private static let captionScrimPeak: Double = 0.48
+    private static let titleLimit = 50
+    private static let ambilightInsetX: CGFloat = 32
+    private static let ambilightInsetY: CGFloat = 34.67
+    /// CSS `blur(40px)` из макета — вдвое меньше значения панели Figma
+    private static let ambilightBlur: CGFloat = 40
+    private static let ambilightOpacity: Double = 0.32
 }
 
 private extension String {
-    /// Обрезает по границе слова: лимиты макета — 50 символов на заголовок карточки.
+    /// Обрезает по границе слова: лимит макета — 50 символов на заголовок карточки.
     func prefixWords(maxCharacters: Int) -> String {
         guard count > maxCharacters else { return self }
         let clipped = String(prefix(maxCharacters))

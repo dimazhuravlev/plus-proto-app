@@ -133,11 +133,6 @@ extension View {
         modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 24, lineHeight: 24, tracking: 0))
     }
 
-    /// Абзац описания — Group Headline Bold 24 / lh 120 % = 28.8
-    func plusMovieParagraph() -> some View {
-        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 24, lineHeight: 28.8, tracking: 0))
-    }
-
     /// Мета, значения в «Деталях» — Yango Text Medium 15 / lh 20
     func plusMovieText() -> some View {
         modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 15, lineHeight: 20, tracking: 0))
@@ -148,17 +143,17 @@ extension View {
         modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 15, lineHeight: 20, tracking: 0))
     }
 
+    /// Текст секции видеокарточек — YS Display Bold 24 / lh 28.
+    ///
+    /// Один стиль на всё: заголовок карточки, подпись и абзацы между карточками
+    /// в макете `2052:10642` набраны одинаково и различаются только цветом. Прежняя
+    /// спека обещала заголовку 32/110 %, но описывала другой файл — здесь у заголовка
+    /// и подписи одна высота строки, это видно и по замеру нод (28 и 56 = 2×28).
+    func plusMovieCardText() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 24, lineHeight: 28, tracking: 0))
+    }
+
     /// Подписи оценки и бейджей — Yango Text Bold 13 / lh 18
-    /// Заголовок видеокарточки — `figma-moviecard.md` §4.2: Bold 32/110 %.
-    func plusMovieCardTitle() -> some View {
-        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 32, lineHeight: 35.2, tracking: 0))
-    }
-
-    /// Подпись видеокарточки — Bold 24/120 %.
-    func plusMovieCardSubtitle() -> some View {
-        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 24, lineHeight: 28.8, tracking: 0))
-    }
-
     func plusMovieCaption() -> some View {
         modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 13, lineHeight: 18, tracking: 0))
     }
