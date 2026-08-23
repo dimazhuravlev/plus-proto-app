@@ -76,7 +76,10 @@ extension View {
 /// Поэтому подменяем фильтры backdrop-слоя `UIVisualEffectView` — тот же приём,
 /// на котором построен VariableBlur из MusicPlayer. Если приватный `CAFilter` недоступен,
 /// вью остаётся системным материалом.
-private struct BackdropBlurView: UIViewRepresentable {
+///
+/// Не `private`: этим же блюром расфокусируется весь экран под активным поиском
+/// (`SearchOverlay`), и радиус там едет от нуля.
+struct BackdropBlurView: UIViewRepresentable {
     let radius: CGFloat
 
     func makeUIView(context: Context) -> UIVisualEffectView {

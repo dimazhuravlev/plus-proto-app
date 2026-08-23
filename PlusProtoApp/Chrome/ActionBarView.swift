@@ -53,7 +53,10 @@ private enum ActionBarGeometry {
     static let placeholderRowStep: CGFloat = 42
     static let miniPlayerPaddingLeading: CGFloat = 6
     static let miniPlayerPaddingTrailing: CGFloat = 18
+    /// Зазор тексты ↔ кнопки
     static let miniPlayerContentGap: CGFloat = 12
+    /// Зазор обложка ↔ тексты. В макете он меньше, чем до кнопок.
+    static let miniPlayerCoverGap: CGFloat = 8
     static let miniPlayerActionsGap: CGFloat = 18
     static let bookChipSize = CGSize(width: 44, height: 60)
     static let bookCoverSize = CGSize(width: 36, height: 52)
@@ -677,11 +680,16 @@ private struct MiniPlayerPill: View {
             .accessibilityLabel("\(item.title), \(item.artist)")
     }
 
+    /// Два вложенных стека, а не один плоский: в макете зазор обложка↔тексты 8,
+    /// а тексты↔кнопки 12. Плоский `HStack` держал 12 на обоих и уводил левый край
+    /// подписей на 4pt вправо (замер: 66.3 от кромки пилюли против 62 в макете).
     private var content: some View {
         HStack(spacing: ActionBarGeometry.miniPlayerContentGap) {
-            cover
-            trackInfo
-                .opacity(trackInfoOpacity)
+            HStack(spacing: ActionBarGeometry.miniPlayerCoverGap) {
+                cover
+                trackInfo
+                    .opacity(trackInfoOpacity)
+            }
             actions
                 .opacity(trackInfoOpacity)
         }
@@ -718,8 +726,10 @@ private struct MiniPlayerPill: View {
             .scaledToFill()
     }
 
+    /// Без зазора: в макете это два бокса по 16 подряд в контейнере ровно 32
+    /// (`spacing: 2` разводил базовые линии на 18 вместо 16).
     private var trackInfo: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(item.title)
                 .plusTextS()
                 .foregroundStyle(Color.fillOne)
