@@ -14,8 +14,15 @@ enum ActionBarMotion {
     /// Интервал ротации плейсхолдера (открытый вопрос — стартовое значение 4s).
     static let placeholderInterval: Duration = .seconds(4)
     static let ellipsisInterval: Duration = .milliseconds(500)
-    /// Вращение обложки при воспроизведении — как MiniPlayerV2 MusicPlayer.
+    /// Установившаяся скорость вращения обложки, °/с.
     static let coverDegreesPerSecond: Double = 18
+    /// Инерция диска: постоянная времени разгона и торможения (см. `CoverSpin`).
+    /// Асимметрия намеренная — подхватывает быстро, докатывается долго, так читается
+    /// маховик. Недобор угла на старте ω·τ = 6.3°, выбег после паузы ω·τ = 21.6°.
+    static let coverSpinUp: Double = 0.35
+    static let coverSpinDown: Double = 1.2
+    /// Ниже этой остаточной скорости движение неразличимо — диск считается вставшим.
+    static let coverSpinEpsilon: Double = 1.0
 
     /// Смена типа плеера (музыка ↔ книга ↔ кино) — кроссфейд с блюром.
     /// Числа взяты из нативного `BlurReplaceTransition(.downUp)`: opacity 0, blur 7,
@@ -175,6 +182,15 @@ struct ActionBarView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(1600))
                 actionBar.cycleDebugMode()
+            }
+        }
+        .task {
+            // `-debugPlayCycle` — play/pause по кругу: инерцию вращения обложки
+            // иначе не снять, кнопку из шелла не нажать.
+            guard UserDefaults.standard.bool(forKey: "debugPlayCycle") else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                actionBar.toggleMusicPlayback()
             }
         }
         #endif
@@ -621,33 +637,86 @@ private struct TrailingSlot: View {
 
 // MARK: - Mini player
 
-/// Угол обложки — чистая функция от времени, а не накапливаемое состояние.
-/// Запись `@State` из `onChange(of: timeline.date)` (так сделано в MusicPlayer)
-/// замыкает цикл перерисовки и вешает экран — этот приём сюда не переносим.
+/// Вращение обложки с инерцией: диск подхватывает не мгновенно и после паузы
+/// докатывается, как маховик.
+///
+/// Скорость релаксирует к цели с постоянной времени τ, и у этого дифура есть
+/// аналитический интеграл — поэтому **угол остаётся чистой функцией от времени**:
+/// ```
+/// ω(t) = ω_T + (ω₀ − ω_T)·e^(−t/τ)
+/// θ(t) = θ₀ + ω_T·t + (ω₀ − ω_T)·τ·(1 − e^(−t/τ))
+/// ```
+/// Это принципиально. В MusicPlayer инерция сделана покадровым lerp скорости
+/// с записью трёх `@State` на каждом кадре — такой приём здесь замыкает цикл
+/// перерисовки и вешает рендер (зафиксировано в DECISIONS). Плюс покадровый lerp
+/// зависит от частоты кадров: коэффициент 0.04 даёт τ 0.41с на 60Гц и 0.20с
+/// на 120Гц, то есть на ProMotion инерция вдвое резче — это баг, а не тюнинг.
+///
+/// На смене фазы снимается снапшот **и угла, и скорости**, поэтому стык гладкий
+/// по производной: play/pause можно дёргать посреди разгона, ветвлений
+/// «разгон/торможение» в формуле нет вообще.
 private struct CoverSpin {
-    /// Угол на момент старта текущей фазы
+    /// θ₀ — угол на старте текущей фазы
     var base: Double = 0
-    /// Начало фазы вращения; nil — обложка стоит
-    var anchor: Date?
+    /// ω₀ — скорость на старте текущей фазы, °/с
+    var speed: Double = 0
+    /// ω_T — к какой скорости фаза стремится
+    var target: Double = 0
+    /// τ текущей фазы
+    var tau: Double = ActionBarMotion.coverSpinDown
+    var anchor: Date = .distantPast
 
-    var isSpinning: Bool { anchor != nil }
+    private func elapsed(_ date: Date) -> Double {
+        max(0, date.timeIntervalSince(anchor))
+    }
 
     func degrees(at date: Date) -> Double {
-        guard let anchor else { return base }
-        let elapsed = date.timeIntervalSince(anchor)
-        return (base + elapsed * ActionBarMotion.coverDegreesPerSecond)
+        let t = elapsed(date)
+        let decay = exp(-t / tau)
+        return (base + target * t + (speed - target) * tau * (1 - decay))
             .truncatingRemainder(dividingBy: 360)
     }
 
-    /// Идемпотентно: повторный вызов с тем же состоянием угол не двигает.
+    func velocity(at date: Date) -> Double {
+        target + (speed - target) * exp(-elapsed(date) / tau)
+    }
+
+    /// Движение ещё видно: либо фаза разгонная, либо диск не докатился.
+    func isMoving(at date: Date) -> Bool {
+        target > 0 || abs(velocity(at: date)) > ActionBarMotion.coverSpinEpsilon
+    }
+
+    /// Угол, на котором диск встанет: предел θ при t → ∞ на нулевой цели.
+    /// Известен аналитически, поэтому выбег не нужно доигрывать кадрами.
+    var restingDegrees: Double {
+        (base + (speed - target) * tau).truncatingRemainder(dividingBy: 360)
+    }
+
+    /// Когда остаточная скорость упадёт ниже порога. Считается заранее — по ней
+    /// `TimelineView` выключается ровно один раз, а не опрашивается каждый кадр.
+    var settleDate: Date? {
+        guard target == 0, speed > ActionBarMotion.coverSpinEpsilon else { return nil }
+        return anchor.addingTimeInterval(tau * log(speed / ActionBarMotion.coverSpinEpsilon))
+    }
+
+    /// Идемпотентно: повторный вызов с той же целью фазу не перезапускает.
     mutating func set(spinning: Bool, at date: Date = .now) {
-        guard spinning != isSpinning else { return }
-        if spinning {
-            anchor = date
-        } else {
-            base = degrees(at: date)
-            anchor = nil
-        }
+        let next = spinning ? ActionBarMotion.coverDegreesPerSecond : 0
+        guard next != target else { return }
+        // Снимаем обе величины ДО смены параметров — иначе снапшот возьмётся
+        // уже из новой фазы и угол прыгнет.
+        base = degrees(at: date)
+        speed = velocity(at: date)
+        target = next
+        tau = spinning ? ActionBarMotion.coverSpinUp : ActionBarMotion.coverSpinDown
+        anchor = date
+    }
+
+    /// Диск докатился: фиксируем финальный угол и уходим в статику.
+    mutating func settle() {
+        base = restingDegrees
+        speed = 0
+        target = 0
     }
 }
 
@@ -662,6 +731,9 @@ private struct MiniPlayerPill: View {
 
     /// Вращение обложки — см. `CoverSpin`.
     @State private var spin = CoverSpin()
+    /// Крутится ли диск прямо сейчас (включая выбег). Отдельный флаг, а не
+    /// производная от `isPlaying`: после паузы диск ещё докатывается.
+    @State private var isSpinning = false
 
     var body: some View {
         // Ширину пилюли задаёт родитель. Контент лежит в overlay, а не внутри —
@@ -683,6 +755,11 @@ private struct MiniPlayerPill: View {
     /// Два вложенных стека, а не один плоский: в макете зазор обложка↔тексты 8,
     /// а тексты↔кнопки 12. Плоский `HStack` держал 12 на обоих и уводил левый край
     /// подписей на 4pt вправо (замер: 66.3 от кромки пилюли против 62 в макете).
+    private func startSpinPhase(_ playing: Bool) {
+        spin.set(spinning: playing)
+        if spin.isMoving(at: .now) { isSpinning = true }
+    }
+
     private var content: some View {
         HStack(spacing: ActionBarGeometry.miniPlayerContentGap) {
             HStack(spacing: ActionBarGeometry.miniPlayerCoverGap) {
@@ -700,7 +777,7 @@ private struct MiniPlayerPill: View {
 
     private var cover: some View {
         Group {
-            if spin.isSpinning {
+            if isSpinning {
                 TimelineView(.animation) { timeline in
                     coverImage
                         .rotationEffect(.degrees(spin.degrees(at: timeline.date)))
@@ -711,9 +788,19 @@ private struct MiniPlayerPill: View {
             }
         }
         // Флаг меняют и кнопка, и карточка витрины, и debug-прогон — слушаем сам флаг.
-        .onChange(of: isPlaying) { _, playing in spin.set(spinning: playing) }
+        .onChange(of: isPlaying) { _, playing in startSpinPhase(playing) }
         // Холодный старт: бар может подняться уже играющим.
-        .task { spin.set(spinning: isPlaying) }
+        .task { startSpinPhase(isPlaying) }
+        // Выбег после паузы доигрывается ровно до расчётной даты успокоения, после
+        // чего `TimelineView` уходит из дерева и в покое не стоит ни одного тика.
+        .task(id: spin.anchor) {
+            guard let settle = spin.settleDate else { return }
+            let wait = settle.timeIntervalSinceNow
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            guard !Task.isCancelled else { return }
+            spin.settle()
+            isSpinning = false
+        }
         .frame(width: PlusMetrics.miniPlayerCover, height: PlusMetrics.miniPlayerCover)
         .clipShape(Circle())
         .overlay {
