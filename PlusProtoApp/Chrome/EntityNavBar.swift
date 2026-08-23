@@ -125,20 +125,15 @@ struct EntityNavBar<Trailing: View>: View {
 
     // MARK: Слои
 
+    /// Шеврон — `icon / dropleft` из ДС «🦄 Графика» (нода сета `19:6461`).
+    /// Раньше здесь стоял системный `chevron.left`: своего ассета не было.
+    ///
+    /// Кнопка — тот же `GlassIconButton`, что у крестика и сердца: круг 40, бокс глифа 20,
+    /// стекло и пресс-стейт совпадали и раньше, просто были переписаны здесь заново.
     private var backButton: some View {
-        Button {
+        GlassIconButton(icon: "iconDropleft", accessibilityTitle: "Назад") {
             if let onBack { onBack() } else { dismiss() }
-        } label: {
-            // Шеврона в ассетах проекта нет, а заводить его ради одной кнопки нечем:
-            // MCP-ссылки на Фигму протухают. SF Symbol — как в оригинале.
-            Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.fillOne)
-                .frame(width: EntityNavBarGeometry.controlSize, height: EntityNavBarGeometry.controlSize)
-                .glassCircle()
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Назад")
     }
 
     private var entity: some View {

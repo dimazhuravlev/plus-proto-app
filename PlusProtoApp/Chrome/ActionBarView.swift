@@ -493,17 +493,15 @@ private struct SearchPill: View {
     /// Крест справа: снимает фокус и опускает клавиатуру. В макете 24×24 с полем 18
     /// от правого края поля — то есть на месте общего внутреннего отступа пилюли.
     private var clearButton: some View {
-        let glyph = glyphSize(of: "iconClose", box: ActionBarGeometry.searchIconBox)
-        return Button {
+        Button {
             query = ""
             searchFocused = false
         } label: {
-            Image("iconClose")
+            Image("iconCross")
                 .renderingMode(.template)
                 .resizable()
-                .frame(width: glyph.width, height: glyph.height)
-                .foregroundStyle(Color.searchIcon)
                 .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+                .foregroundStyle(Color.searchIcon)
                 .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle())
@@ -511,13 +509,11 @@ private struct SearchPill: View {
     }
 
     private var searchIcon: some View {
-        let glyph = glyphSize(of: "iconSearch", box: ActionBarGeometry.searchIconBox)
-        return Image("iconSearch")
+        Image("iconSearch")
             .renderingMode(.template)
             .resizable()
-            .frame(width: glyph.width, height: glyph.height)
-            .foregroundStyle(Color.searchIcon)
             .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+            .foregroundStyle(Color.searchIcon)
     }
 
     private var placeholderStack: some View {
@@ -914,7 +910,7 @@ private struct MiniPlayerPill: View {
 
     private var actions: some View {
         HStack(spacing: ActionBarGeometry.miniPlayerActionsGap) {
-            actionIcon("iconHeart", liked: isLiked)
+            actionIcon("iconLove", liked: isLiked)
             playPauseButton
         }
         // В book/movie плеер остаётся в дереве прозрачным, а прозрачные вью всё равно
@@ -953,14 +949,11 @@ private struct MiniPlayerPill: View {
     }
 
     private func actionIcon(_ name: String, liked: Bool = false) -> some View {
-        let box: CGFloat = 24
-        let glyph = glyphSize(of: name, box: box)
-        return Image(name)
+        Image(name)
             .renderingMode(.template)
             .resizable()
-            .frame(width: glyph.width, height: glyph.height)
+            .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
             .foregroundStyle(liked ? Color.plusAccent : Color.fillOne)
-            .frame(width: box, height: box)
     }
 }
 
@@ -1052,12 +1045,4 @@ private extension View {
     }
 }
 
-// MARK: - Helpers
 
-private func glyphSize(of name: String, box: CGFloat) -> CGSize {
-    guard let natural = UIImage(named: name)?.size, natural.width > 0, natural.height > 0 else {
-        return CGSize(width: box, height: box)
-    }
-    let fit = min(1, min(box / natural.width, box / natural.height))
-    return CGSize(width: natural.width * fit, height: natural.height * fit)
-}

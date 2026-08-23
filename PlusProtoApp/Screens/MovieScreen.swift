@@ -233,8 +233,8 @@ struct MovieScreen: View {
     /// верхнему углу и по скроллу не меняются — ровно поведение trailing-слота навбара.
     private var headerActions: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
-            GlassIconButton(icon: "iconMovieShare", accessibilityTitle: "Поделиться")
-            GlassIconButton(icon: "iconMovieClose", accessibilityTitle: "Закрыть")
+            GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться")
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть")
         }
     }
 
@@ -322,11 +322,7 @@ struct MovieScreen: View {
     private var trailerButton: some View {
         Button {} label: {
             HStack(spacing: MovieLayout.trailerGap) {
-                MovieIcon(
-                    name: "iconMovieTrailer",
-                    box: MovieLayout.trailerIconBox,
-                    leaf: CGSize(width: 13.333, height: 17.5)
-                )
+                MovieIcon(name: "iconTrailer", box: MovieLayout.trailerIconBox)
                 Text("Смотреть трейлер")
                     .plusMovieTextBold()
                     .foregroundStyle(Color.fillOne)
@@ -385,13 +381,7 @@ private struct MovieMainButtons: View {
 
     private var playButton: some View {
         Button {} label: {
-            label(
-                icon: "iconMoviePlay",
-                leaf: CGSize(width: 14.5, height: 21),
-                // В боксе 24 глиф сдвинут вправо: inset 7 слева против 2.5 справа
-                leafOffset: CGPoint(x: 7, y: 1.5),
-                title: "Смотреть"
-            )
+            label(icon: "iconPlay", title: "Смотреть")
             .frame(maxWidth: .infinity)
             .frame(height: MovieLayout.buttonHeight)
             .background(MoviePlayGradient.fill, in: Capsule(style: .continuous))
@@ -401,12 +391,7 @@ private struct MovieMainButtons: View {
 
     private var watchLaterButton: some View {
         Button {} label: {
-            label(
-                icon: "iconMovieWatchLater",
-                leaf: CGSize(width: 17, height: 22.5),
-                leafOffset: CGPoint(x: 5, y: 0),
-                title: "Позже"
-            )
+            label(icon: "iconBookmark", title: "Позже")
             .frame(height: MovieLayout.buttonHeight)
             .glassSurface(
                 Capsule(style: .continuous),
@@ -420,11 +405,7 @@ private struct MovieMainButtons: View {
 
     private var downloadButton: some View {
         Button {} label: {
-            MovieIcon(
-                name: "iconMovieDownload",
-                box: MovieLayout.buttonIconBox,
-                leaf: CGSize(width: 18, height: 21)
-            )
+            MovieIcon(name: "iconDownload", box: MovieLayout.buttonIconBox)
             .frame(width: MovieLayout.buttonHeight, height: MovieLayout.buttonHeight)
             .glassSurface(Circle(), blur: PlusMetrics.buttonBlur, border: .clear, borderWidth: 0)
         }
@@ -432,19 +413,9 @@ private struct MovieMainButtons: View {
         .accessibilityLabel("Скачать")
     }
 
-    private func label(
-        icon: String,
-        leaf: CGSize,
-        leafOffset: CGPoint,
-        title: String
-    ) -> some View {
+    private func label(icon: String, title: String) -> some View {
         HStack(spacing: MovieLayout.buttonGap) {
-            MovieIcon(
-                name: icon,
-                box: MovieLayout.buttonIconBox,
-                leaf: leaf,
-                leafOffset: leafOffset
-            )
+            MovieIcon(name: icon, box: MovieLayout.buttonIconBox)
             Text(title)
                 .plusMovieTextBold()
                 .foregroundStyle(Color.fillOne)
@@ -472,26 +443,19 @@ private enum MoviePlayGradient {
 
 // MARK: - Иконка
 
-/// Глиф в боксе макета: у иконок карточки тайтла лист не совпадает с боксом и не всегда
-/// в нём центрован (у play inset слева 7 против 2.5 справа — оптическая компенсация).
-/// Поэтому бокс и лист задаются раздельно, как в Figma.
+/// Иконка экрана в боксе макета. Отдельного размера листа больше нет: ассеты приходят
+/// из ДС на едином холсте 16×16 с уже запечёнными полями, поэтому картинка просто
+/// растягивается в бокс, а оптические сдвиги (у play лист смещён вправо) живут внутри
+/// самого вектора — ровно как в Figma.
 struct MovieIcon: View {
     let name: String
     let box: CGFloat
-    let leaf: CGSize
-    /// Левый верхний угол листа внутри бокса. `nil` — лист по центру.
-    var leafOffset: CGPoint?
 
     var body: some View {
-        Color.clear
+        Image(name)
+            .renderingMode(.template)
+            .resizable()
             .frame(width: box, height: box)
-            .overlay(alignment: leafOffset == nil ? .center : .topLeading) {
-                Image(name)
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: leaf.width, height: leaf.height)
-                    .foregroundStyle(Color.fillOne)
-                    .offset(x: leafOffset?.x ?? 0, y: leafOffset?.y ?? 0)
-            }
+            .foregroundStyle(Color.fillOne)
     }
 }
