@@ -76,6 +76,10 @@ enum MovieLayout {
     static let panelSide: CGFloat = 24
     static let panelBottom: CGFloat = 24
     static let panelGap: CGFloat = 8
+    /// Глубина затемнения под панелью. Ниже таббарных 0.90 и макетных 0.92
+    /// сознательно: под панелью фильма едет собственный контент экрана, и он
+    /// должен читаться размытым, а не тонуть в черноте.
+    static let panelPeak: Double = 0.70
     static let buttonHeight: CGFloat = 56
     static let buttonIconBox: CGFloat = 24
     static let buttonLeading: CGFloat = 22
@@ -381,11 +385,11 @@ struct MovieScreen: View {
 ///
 /// Панель прибита к нижней кромке экрана: поля 24 по бокам и снизу — макетные.
 ///
-/// Градиент и блюр — **те же, что у таббара**: `PlusGradient.tabBarUnderlay` и
-/// прогрессивный `VariableBlurView`. Так две нижние панели приложения выглядят
-/// одинаково, и это осознанно чуть иначе, чем в макете карточки: там свой градиент
-/// с пиком 0.92 (против 0.90 у таббара) и `backdrop-blur: 2` вместо прогрессивного.
-/// Разница между 0.90 и 0.92 неразличима, а единообразие важнее.
+/// Градиент и блюр — **той же формы, что у таббара**: `PlusGradient.bottomUnderlay`
+/// и прогрессивный `VariableBlurView`. Кривая одна на обе нижние панели приложения,
+/// но глубина затемнения своя: 0.70 против таббарных 0.90 и макетных 0.92 — под
+/// панелью фильма едет контент самого экрана, и он должен читаться размытым,
+/// а не тонуть в черноте.
 ///
 /// Высоты при этом свои, не таббарные: подложка ровно в панель (96 + 56 + 24),
 /// а блюр начинается от верхней кромки кнопок (56 + 24), а не от верха градиента.
@@ -420,7 +424,7 @@ private struct MovieMainButtons: View {
             )
             .frame(height: MovieLayout.panelBlurHeight)
 
-            PlusGradient.tabBarUnderlay
+            PlusGradient.bottomUnderlay(peak: MovieLayout.panelPeak)
                 .frame(height: MovieLayout.panelHeight)
         }
         .allowsHitTesting(false)

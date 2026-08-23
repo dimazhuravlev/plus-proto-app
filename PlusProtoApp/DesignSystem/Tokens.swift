@@ -97,30 +97,30 @@ enum PlusMetrics {
 // MARK: - Градиенты
 
 enum PlusGradient {
-    /// Подложка таббара: 16 сглаженных стопов чёрного снизу вверх.
-    /// Значения из макета — воспроизводятся дословно, линейная интерполяция даёт видимый банд.
-    static let tabBarUnderlay = LinearGradient(
-        stops: [
-            .init(color: .black.opacity(0.90), location: 0.0000),
-            .init(color: .black.opacity(0.867), location: 0.1123),
-            .init(color: .black.opacity(0.828), location: 0.2050),
-            .init(color: .black.opacity(0.783), location: 0.2812),
-            .init(color: .black.opacity(0.732), location: 0.3439),
-            .init(color: .black.opacity(0.678), location: 0.3960),
-            .init(color: .black.opacity(0.619), location: 0.4406),
-            .init(color: .black.opacity(0.556), location: 0.4807),
-            .init(color: .black.opacity(0.491), location: 0.5193),
-            .init(color: .black.opacity(0.424), location: 0.5594),
-            .init(color: .black.opacity(0.354), location: 0.6040),
-            .init(color: .black.opacity(0.284), location: 0.6561),
-            .init(color: .black.opacity(0.212), location: 0.7188),
-            .init(color: .black.opacity(0.141), location: 0.7950),
-            .init(color: .black.opacity(0.070), location: 0.8877),
-            .init(color: .black.opacity(0.000), location: 1.0000),
-        ],
-        startPoint: .bottom,
-        endPoint: .top
-    )
+    /// Подложка нижнего хрома: 16 сглаженных стопов чёрного снизу вверх.
+    /// Значения из макета — воспроизводятся дословно, линейная интерполяция даёт
+    /// видимый банд. Доли берутся от `peak`, поэтому форма кривой у всех подложек
+    /// одна, а глубина затемнения своя.
+    static func bottomUnderlay(peak: Double) -> LinearGradient {
+        LinearGradient(
+            stops: underlayShares.map { share, location in
+                .init(color: .black.opacity(peak * share), location: location)
+            },
+            startPoint: .bottom,
+            endPoint: .top
+        )
+    }
+
+    /// Доля от пика и позиция стопа. Пик исходного макета — 0.90.
+    private static let underlayShares: [(Double, CGFloat)] = [
+        (1.0000, 0.0000), (0.9633, 0.1123), (0.9200, 0.2050), (0.8700, 0.2812),
+        (0.8133, 0.3439), (0.7533, 0.3960), (0.6878, 0.4406), (0.6178, 0.4807),
+        (0.5456, 0.5193), (0.4711, 0.5594), (0.3933, 0.6040), (0.3156, 0.6561),
+        (0.2356, 0.7188), (0.1567, 0.7950), (0.0778, 0.8877), (0.0000, 1.0000),
+    ]
+
+    /// Подложка таббара — исходная глубина макета.
+    static let tabBarUnderlay = bottomUnderlay(peak: 0.90)
 
     /// Заливка глифа активного таба — диагональный градиент слева-сверху вниз-вправо
     static let activeTabGlyph = LinearGradient(
