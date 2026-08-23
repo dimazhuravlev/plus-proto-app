@@ -10,6 +10,9 @@ struct ShowcaseThumbnailContext {
     /// `nil` — переходить некуда: у «Моей Волны» нет своей сущности, это генератор потока.
     var route: EntityRoute?
     var zoom: Namespace.ID
+    /// Имя миниатюры для VoiceOver. Без него кнопкой читается имя ассета обложки,
+    /// да ещё дважды — у `AmbilightArtwork` картинка лежит в кадре и в ореоле.
+    var title: String
     /// Хаптика и перевод action bar в режим сущности — общее для тапа по любой карточке.
     var onTap: () -> Void
 }
@@ -56,11 +59,13 @@ private struct ShowcaseThumbnailModifier: ViewModifier {
                 // с ней пропадал ореол (замер 2026-08-23: свечение слева от постера
                 // 16.9 → 7.4 по яркости). Скругление старта система берёт сама.
                 .matchedTransitionSource(id: route, in: context.zoom)
+                .accessibilityLabel(context.title)
         } else if let context {
             // Карточка без своей сущности: миниатюра всё равно нажимается, но только
             // включает плеер — переходить некуда.
             Button { context.onTap() } label: { content }
                 .buttonStyle(ShowcaseThumbnailButtonStyle())
+                .accessibilityLabel(context.title)
         } else {
             content
         }
