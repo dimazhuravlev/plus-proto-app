@@ -20,21 +20,17 @@ enum MovieLayout {
     /// низа, и на глаз она мягче равномерной пятёрки, а не вдвое сильнее.
     static let coverFadeBlur: CGFloat = 10
 
-    /// Высота кавера — макетные 3:4, если инфо-блок под ним успевает закончиться
-    /// **над градиентом** панели действий; иначе кавер ужимается ровно настолько,
-    /// чтобы он там поместился.
+    /// Высота кавера — макетные 3:4, и **только** они.
     ///
-    /// Расходимся именно с градиентом, а не с рядом кнопок: в макете пилюля «Смотреть
-    /// трейлер» яркая и читается целиком, а пик скрима 0.92 съедает её больше чем
-    /// наполовину (замер: пик текста падал 255 → 117). Экран прототипа выше макетного,
-    /// и лишнюю высоту правильнее отдать каверу до его макетных 3:4, а не задвинуть
-    /// инфо-блок под панель.
-    static func coverHeight(lead: String) -> CGFloat {
-        min(
-            PlusMetrics.designWidth / coverAspect,
-            panelRowTop - panelLead - infoHeight(lead: lead) + infoOverlap
-        )
-    }
+    /// Раньше она бралась минимумом из 3:4 и того, что оставалось над панелью действий,
+    /// чтобы инфо-блок гарантированно помещался на первом экране. Побочно это делало
+    /// кадр видео заложником длины лида: у Кинопоиска лид почти всегда длиннее двух
+    /// строк, и кавер выходил 443 вместо 536 — пропорция 0.907 вместо 0.75 (замер).
+    ///
+    /// Теперь наоборот: кадр постоянный, а длинный лид просто опускает всё, что идёт
+    /// за ним, ниже. Следствие принято сознательно — при длинном лиде пилюля «Смотреть
+    /// трейлер» уезжает под градиент панели и до неё надо доскроллить.
+    static let coverHeight: CGFloat = PlusMetrics.designWidth / coverAspect
 
     // Шапка `I3806:11014;6787:11641`
 
@@ -50,19 +46,6 @@ enum MovieLayout {
     static let metaSpacing: CGFloat = 5
     static let metaDot: CGFloat = 4
 
-    /// Ширина колонки лида: холст минус «ступенька» 48, поле 16 и внутренний отступ 32.
-    static let leadWidth: CGFloat = PlusMetrics.designWidth - infoLeading - infoTrailing - leadInset
-
-    /// Всё, что инфо-блок занимает помимо лида: лейбл 20 + мета 20 + пилюля и три зазора.
-    static let infoWithoutLead: CGFloat = 20 + infoSpacing + infoSpacing + 20 + infoSpacing + trailerHeight
-
-    /// Высота инфо-блока под конкретный лид. Лид не режется, поэтому его высота —
-    /// не константа: считаем её замером самой строки (`MovieLeadType`), а не вью.
-    /// Это не запрещённое чтение собственного размера — обратной связи нет:
-    /// высота лида зависит только от текста и фиксированной ширины колонки.
-    static func infoHeight(lead: String) -> CGFloat {
-        infoWithoutLead + MovieLeadType.height(of: lead)
-    }
     /// Зазор «низ трейлера → верх ряда кнопок» из макета (756 → 772)
     static let trailerToPanelGap: CGFloat = 16
 
@@ -94,16 +77,6 @@ enum MovieLayout {
     static var panelHeight: CGFloat { panelLead + buttonHeight + panelBottom }
     /// Блюр начинается от верхней кромки кнопок, а не от верха градиента
     static var panelBlurHeight: CGFloat { buttonHeight + panelBottom }
-
-    /// Верх ряда кнопок панели от верха экрана. Экран — константа устройства,
-    /// а не замер вью: читать размер вью, от которого зависит её же раскладка, запрещено.
-    ///
-    /// Отмеряется от **физического** низа: панель прибита к нижней кромке экрана
-    /// с полем 24 — тем же, что по бокам, — и под неё не подложены ни хром приложения,
-    /// ни безопасная зона.
-    static var panelRowTop: CGFloat {
-        UIScreen.main.bounds.height - panelBottom - buttonHeight
-    }
 
     // Секции
     /// `header / static` 393×52: padding 16/16/12/16
@@ -291,7 +264,7 @@ struct MovieScreen: View {
     private var cover: some View {
         Color.clear
             .frame(maxWidth: .infinity)
-            .frame(height: MovieLayout.coverHeight(lead: leadText))
+            .frame(height: MovieLayout.coverHeight)
             // Кадр задаёт распорка, а картинка его заполняет: `aspectRatio` в скролле
             // считает высоту от идеального размера картинки, а не от пропорции макета.
             .overlay {

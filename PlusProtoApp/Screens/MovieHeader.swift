@@ -29,11 +29,32 @@ enum MovieHeaderLayout {
     static let titleLineHeight: CGFloat = 32
     static let titleWidth: CGFloat = 229
     static let titleLines = 2
-    /// Пик **прогрессивного** размытия шапки: 10 у верхней кромки, 0 у нижней —
-    /// зеркально полосе под кавером (`MovieLayout.coverFadeBlur`) и по тому же
-    /// профилю, что верхний скрим ленты. Это пик рампы, а не равномерный радиус:
-    /// с `BACKGROUND_BLUR 10` из панели Figma (= 5 равномерных) напрямую не сравнивается.
-    static let blurRadius: CGFloat = 10
+    /// Полоса размытия **короче полосы градиента** и живёт своей высотой. Затемнение
+    /// остаётся макетным (200/150), размытие кончается выше — эти две вещи здесь
+    /// сознательно разной высоты.
+    static let blurMain: CGFloat = 176
+    static let blurCompact: CGFloat = 132
+
+    /// Размытие идёт **двумя слоями** разной высоты — приём тот же, что у верхнего
+    /// скрима ленты (`PlusChromeMetrics.topScrimBlurSoft/Strong`).
+    ///
+    /// Считать надо не по высоте полосы, а по тому, где радиус проходит **порог
+    /// заметности**. Глаз ловит размытие текста примерно с 1pt, а у линейной рампы
+    /// радиус равен единице на высоте `H·(1 − 1/R)`: у прежней одиночной рампы
+    /// 10/200 это 180pt — то есть размывать она начинала почти у самого низа шапки
+    /// и дальше нарастала круто, отчего граница и читалась строкой.
+    ///
+    /// Здесь порог вынесен к низу логотипа и подход к нему сделан пологим: тихий
+    /// слой 6/176 даёт единицу на 147pt (низ бокса логотипа — 63 + 88 = 151)
+    /// и растёт по 0.034pt на пункт. Сильный слой включается только с 97pt
+    /// и доводит пик на верхней кромке до √(6² + 8²) = 10 — той же десятки, что была.
+    ///
+    /// Это пик рампы, а не равномерный радиус: с `BACKGROUND_BLUR 10` из панели
+    /// Figma (= 5 равномерных) напрямую не сравнивается.
+    static let blurSoftRadius: CGFloat = 6
+    static let blurStrongRadius: CGFloat = 8
+    /// Сильный слой кончается раньше тихого — на этом и держится плавность хвоста.
+    static let blurStrongShare: CGFloat = 0.55
 }
 
 /// Шапка карточки тайтла: градиент, логотип слева, действия справа.
@@ -76,17 +97,31 @@ struct MovieHeader<Actions: View>: View {
     /// эту границу тем же приёмом и в ту же сторону, что верхний скрим ленты
     /// (`TopScrim`), зеркально полосе под кавером.
     ///
+    /// Слоёв размытия два и они разной высоты — так хвост рампы растянут и строки,
+    /// на которой резкость возвращается, не видно. Оба короче полосы градиента,
+    /// поэтому стек выровнен по верху: затемнение доходит до низа шапки, размытие —
+    /// только до логотипа.
+    ///
     /// Порядок слоёв: размытие **под** градиентом, а не над, — размывать нужно кавер,
     /// а не собственную затемняющую заливку.
     private var backdrop: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             VariableBlurView(
-                maxBlurRadius: MovieHeaderLayout.blurRadius,
+                maxBlurRadius: MovieHeaderLayout.blurSoftRadius,
                 direction: .blurredTopClearBottom
             )
+            .frame(height: blurHeight)
+
+            VariableBlurView(
+                maxBlurRadius: MovieHeaderLayout.blurStrongRadius,
+                direction: .blurredTopClearBottom
+            )
+            .frame(height: blurHeight * MovieHeaderLayout.blurStrongShare)
+
             MovieScrim.linear(peak: MovieHeaderLayout.scrimPeak, from: .bottom, to: .top)
+                .frame(height: gradientHeight)
         }
-        .frame(height: gradientHeight)
+        .frame(height: gradientHeight, alignment: .top)
         .allowsHitTesting(false)
     }
 
@@ -148,5 +183,12 @@ struct MovieHeader<Actions: View>: View {
 
     private var logoScale: CGFloat {
         1 + (MovieHeaderLayout.logoCompactScale - 1) * compact
+    }
+
+    /// Полоса размытия ужимается вместе с шапкой, но по своим числам: она короче
+    /// полосы градиента и кончается примерно у низа логотипа.
+    private var blurHeight: CGFloat {
+        MovieHeaderLayout.blurMain
+            + (MovieHeaderLayout.blurCompact - MovieHeaderLayout.blurMain) * compact
     }
 }
