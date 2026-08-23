@@ -185,7 +185,7 @@ struct EntityNavBar<Trailing: View>: View {
             // Тот же 16-стоповый сглаженный чёрный, что под таббаром: двух стопов
             // на 120pt мало — на градиенте виден банд, ради этого стопы и заведены.
             // Переворачиваем по вертикали, потому что у него зашит startPoint .bottom.
-            Color.red // TEMP-MEASURE
+            PlusGradient.tabBarUnderlay
                 .scaleEffect(y: -1)
                 .opacity(EntityNavBarMotion.backdropTint)
         }
