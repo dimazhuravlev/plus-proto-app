@@ -39,6 +39,14 @@ struct AppRootView: View {
         .overlay(alignment: .bottom) {
             BottomChrome()
         }
+        // Поверх хрома: полноэкранный плеер вырастает из мини-плеера и обязан
+        // накрыть и бар, и таббар.
+        .overlay {
+            GeometryReader { proxy in
+                FullScreenPlayer(screen: proxy.size)
+            }
+            .ignoresSafeArea()
+        }
         // Системное поднятие над клавиатурой отключаем на корне: иначе SwiftUI поднимает
         // весь overlay с хромом целиком (включая таббар), и это складывается с ручным
         // сдвигом бара — он улетал вдвое выше клавиатуры. Отступ считает `BottomChrome`.

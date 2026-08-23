@@ -49,6 +49,12 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugOpenEntity") {
             UserDefaults.standard.removeObject(forKey: "debugOpenEntity")
         }
+        if !args.contains("-debugFullPlayer") {
+            UserDefaults.standard.removeObject(forKey: "debugFullPlayer")
+        }
+        if !args.contains("-debugFullPlayerNow") {
+            UserDefaults.standard.removeObject(forKey: "debugFullPlayerNow")
+        }
 
         var index = 0
         while index < args.count {
@@ -76,6 +82,12 @@ struct PlusProtoAppApp: App {
                 index += 1
             case "-debugOpenEntity":
                 UserDefaults.standard.set(true, forKey: "debugOpenEntity")
+                index += 1
+            case "-debugFullPlayer":
+                UserDefaults.standard.set(true, forKey: "debugFullPlayer")
+                index += 1
+            case "-debugFullPlayerNow":
+                UserDefaults.standard.set(true, forKey: "debugFullPlayerNow")
                 index += 1
             case "-debugScrollTo" where index + 1 < args.count:
                 UserDefaults.standard.set(Double(args[index + 1]) ?? 0, forKey: "debugScrollTo")

@@ -90,6 +90,10 @@ final class ActionBarState {
     var isMusicPlaying: Bool = false
     var isMusicLiked: Bool = false
 
+    /// Полноэкранный плеер раскрыт. Живёт здесь, а не в хроме: морф стартует
+    /// из мини-плеера, а закрыть плеер сможет и жест, и будущая кнопка «свернуть».
+    var isFullPlayerOpen: Bool = false
+
     /// Поиск в фокусе: поле расширяется, плеер сжимается в круг 60×60, бар поднимается
     /// над клавиатурой. Не локальный стейт бара, потому что таббар уезжает под клавиатуру
     /// вместе с этим флагом.
@@ -210,6 +214,9 @@ extension ActionBarState {
             resumeBook(Self.debugBook)
         default:
             break
+        }
+        if UserDefaults.standard.bool(forKey: "debugFullPlayerNow") {
+            isFullPlayerOpen = true
         }
     }
 

@@ -53,7 +53,9 @@ struct ActionBarRaise: Equatable {
 // MARK: - Geometry
 
 /// Числа из figma-actionbar §4, которых нет в Tokens.swift.
-private enum ActionBarGeometry {
+/// Не `private`: внутреннюю раскладку мини-плеера читает `FullScreenPlayer` —
+/// морф стартует ровно из кадра его обложки.
+enum ActionBarGeometry {
     static let searchExpandedWidth: CGFloat = 284
     static let searchPaddingH: CGFloat = 18
     static let searchIconBox: CGFloat = 24
@@ -183,6 +185,15 @@ struct ActionBarView: View {
                 try? await Task.sleep(for: .milliseconds(1600))
                 actionBar.cycleDebugMode()
             }
+        }
+        .task {
+            // `-debugFullPlayer` — раскрыть и свернуть полноэкранный плеер:
+            // морф иначе не снять на видео, тапнуть по пилюле из шелла нечем.
+            guard UserDefaults.standard.bool(forKey: "debugFullPlayer") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            actionBar.isFullPlayerOpen = true
+            try? await Task.sleep(for: .seconds(6))
+            actionBar.isFullPlayerOpen = false
         }
         .task {
             // `-debugPlayCycle` — play/pause по кругу: инерцию вращения обложки
@@ -597,7 +608,8 @@ private struct TrailingSlot: View {
                     progress: actionBar.musicProgress,
                     isPlaying: actionBar.isMusicPlaying,
                     isLiked: actionBar.isMusicLiked,
-                    onTogglePlay: { actionBar.toggleMusicPlayback() }
+                    onTogglePlay: { actionBar.toggleMusicPlayback() },
+                    onExpand: { actionBar.isFullPlayerOpen = true }
                 )
                 .blurReplaceLayer(layout.showMiniPlayer)
             }
@@ -728,6 +740,7 @@ private struct MiniPlayerPill: View {
     let isPlaying: Bool
     let isLiked: Bool
     let onTogglePlay: () -> Void
+    let onExpand: () -> Void
 
     /// Вращение обложки — см. `CoverSpin`.
     @State private var spin = CoverSpin()
@@ -748,6 +761,10 @@ private struct MiniPlayerPill: View {
             }
             .overlay(alignment: .leading) { content }
             .clipShape(Capsule(style: .continuous))
+            .contentShape(Capsule(style: .continuous))
+            // Тап по пилюле раскрывает полноэкранный плеер. Кнопки сердца и play
+            // лежат выше по дереву и перехватывают касание сами.
+            .onTapGesture(perform: onExpand)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(item.title), \(item.artist)")
     }
