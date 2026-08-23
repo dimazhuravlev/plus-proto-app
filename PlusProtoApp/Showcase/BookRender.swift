@@ -34,6 +34,8 @@ struct BookRender: View {
                 .drawingGroup()
                 .opacity(glowOpacity)
                 .allowsHitTesting(false)
+                // Вторая копия той же обложки — VoiceOver не должен называть её дважды.
+                .accessibilityHidden(true)
 
             slab
         }

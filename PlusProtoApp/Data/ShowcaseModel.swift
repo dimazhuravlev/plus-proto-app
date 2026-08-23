@@ -86,6 +86,19 @@ enum ShowcaseBlock: Identifiable {
         }
     }
 
+    /// Название контента блока. Нужно миниатюре: она стала кнопкой, а кнопка без имени
+    /// читается VoiceOver именем ассета обложки.
+    var title: String {
+        switch self {
+        case .movie(let b): b.title
+        case .album(let b): b.title
+        case .book(let b): b.title
+        case .vibe(let b): b.title
+        case .reading(let b): b.title
+        case .watching(let b): b.title
+        }
+    }
+
     /// Вертикальный слот блока в кадре витрины — см. `ShowcaseLayout`.
     var slot: ShowcaseLayout.Slot {
         switch self {

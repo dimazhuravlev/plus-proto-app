@@ -184,5 +184,7 @@ struct ContinueReadingCard: View {
             .drawingGroup()
             .opacity(ReadingCardLayout.miniBookGlowOpacity)
             .allowsHitTesting(false)
+            // Вторая копия той же обложки — VoiceOver не должен называть её дважды.
+            .accessibilityHidden(true)
     }
 }

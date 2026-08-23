@@ -173,6 +173,10 @@ struct ContinueWatchingCard: View {
                 .allowsHitTesting(false)
         }
         .frame(width: WatchingGeometry.videoSize.width, height: WatchingGeometry.videoSize.height)
+        // Кадр стал кнопкой, а внутри него лежат слои шире его самого. Без явной формы
+        // хит-зона раздувалась до 359×156 против видимых 277×156 (замер дампом доступности)
+        // и заезжала на логотип справа.
+        .contentShape(shape)
         .rotationEffect(WatchingGeometry.videoRotation)
     }
 

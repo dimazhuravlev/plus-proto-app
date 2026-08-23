@@ -86,5 +86,7 @@ struct AmbilightArtwork: View {
             .drawingGroup()
             .opacity(glowOpacity)
             .allowsHitTesting(false)
+            // Ореол — вторая копия той же картинки: без этого VoiceOver называет обложку дважды.
+            .accessibilityHidden(true)
     }
 }

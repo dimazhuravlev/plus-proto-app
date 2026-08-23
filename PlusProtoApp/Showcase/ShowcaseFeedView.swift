@@ -121,6 +121,7 @@ struct ShowcaseFeedView: View {
                 ShowcaseThumbnailContext(
                     route: block.entityRoute,
                     zoom: zoom,
+                    title: block.title,
                     onTap: { open(block) }
                 )
             )

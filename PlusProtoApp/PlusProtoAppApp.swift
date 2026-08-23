@@ -49,6 +49,12 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugOpenEntity") {
             UserDefaults.standard.removeObject(forKey: "debugOpenEntity")
         }
+        if !args.contains("-debugCloseEntity") {
+            UserDefaults.standard.removeObject(forKey: "debugCloseEntity")
+        }
+        if !args.contains("-debugHitProbe") {
+            UserDefaults.standard.removeObject(forKey: "debugHitProbe")
+        }
         if !args.contains("-debugFullPlayer") {
             UserDefaults.standard.removeObject(forKey: "debugFullPlayer")
         }
@@ -83,6 +89,12 @@ struct PlusProtoAppApp: App {
             case "-debugOpenEntity":
                 UserDefaults.standard.set(true, forKey: "debugOpenEntity")
                 index += 1
+            case "-debugCloseEntity":
+                UserDefaults.standard.set(true, forKey: "debugCloseEntity")
+                index += 1
+            case "-debugHitProbe":
+                UserDefaults.standard.set(true, forKey: "debugHitProbe")
+                index += 1
             case "-debugFullPlayer":
                 UserDefaults.standard.set(true, forKey: "debugFullPlayer")
                 index += 1
@@ -106,6 +118,9 @@ struct PlusProtoAppApp: App {
         WindowGroup {
             AppRootView()
                 .preferredColorScheme(.dark)
+                #if DEBUG
+                .debugHitAreaProbe()
+                #endif
         }
     }
 }
