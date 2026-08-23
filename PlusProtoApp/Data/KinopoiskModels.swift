@@ -23,6 +23,9 @@ struct KinopoiskImage: Decodable {
 enum KinopoiskPosterSize: String {
     case small = "300x450"
     case medium = "600x900"
+    /// Нативный размер кадра `backdrop`. Витрина показывает его в рамке 322×181pt,
+    /// то есть 966×543px — брать `wide` вдвое дороже по памяти без выигрыша в чёткости.
+    case frame = "1344x756"
     case wide = "1920x1080"
     case tall = "x1000"
     case original = "orig"

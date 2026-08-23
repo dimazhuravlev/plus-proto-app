@@ -87,18 +87,24 @@
 ### Этап 6 — Витрина 2: «Полчаса в такси» ⏸ pending
 Спека `figma-screen2.md`: то же представление в другом состоянии (заголовок, блоки, фон). Переиспользование карточек Этапа 5.
 
-### Этап 7 — Данные ⏸ pending
+### Этап 7 — Данные 🟡 витрина на живых API
 
 | Домен | Источник | Ключ | Статус |
 |---|---|---|---|
-| Музыка | Deezer (перенос `DeezerService`) | нет | не перенесён |
-| Кино | kinopoisk.dev | ✅ `APIKeys.kinopoisk` | сервис готов |
-| Кино: видео | `_assets/videos/` → `Videos/` | — | ✅ забандлено |
-| Книги: обложки | Google covers CDN | нет | — |
-| Книги: мета | Google Books API | ✅ `APIKeys.googleBooks` | сервис не написан |
-| Книги: текст | ru.wikisource | нет | сервис не написан |
+| Музыка | Deezer (`DeezerService`) | нет | ✅ перенесён, витрина на нём |
+| Кино | kinopoisk.dev (`KinopoiskService`) | ✅ `APIKeys.kinopoisk` | ✅ витрина на нём |
+| Кино: логотип проекта | `image.tmdb.org` | — | ❌ CDN недоступен из РФ — фолбэк на название текстом |
+| Кино: видео | `_assets/videos/` → `Videos/` | — | ✅ забандлено (в API видео нет ни у кого) |
+| Книги | Google Books (`BooksService`) | ✅ `APIKeys.googleBooks` | ✅ витрина на нём |
+| Книги: текст | ru.wikisource | нет | ⏸ пока берём `description` тома |
 
-Написать: `BooksService`, `WikisourceService`, `BookModels`, `BookCatalog` (20–30 книг). Перенести Deezer. Включить `CurationCache`.
+Сделано: `ShowcaseCatalog` собирает все шесть блоков витрины из трёх API, моковая лента
+осталась стартовым состоянием и фолбэком. Квота Кинопоиска защищена окном ротации
+(`ShowcaseRotation`) — внутри получаса URL повторяются и приезжают из `URLCache`.
+
+Осталось по этапу: `WikisourceService` для настоящего фрагмента книги; живой текст
+заголовка витрины (сейчас моковый — врезки живые, слова нет); отдельный `BookCatalog`,
+если понадобится редакторская подборка вместо пула запросов.
 
 ### Этап 8 — Полировка ⏸ pending
 Хаптики (`research/nav-chrome.md` §11), каскад карточек, parallax, Instruments (Animation Hitches), grain орба.

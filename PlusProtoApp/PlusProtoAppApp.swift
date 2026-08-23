@@ -37,6 +37,12 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugTapBlock") {
             UserDefaults.standard.removeObject(forKey: "debugTapBlock")
         }
+        if !args.contains("-debugMockFeed") {
+            UserDefaults.standard.removeObject(forKey: "debugMockFeed")
+        }
+        if !args.contains("-debugFreshFeed") {
+            UserDefaults.standard.removeObject(forKey: "debugFreshFeed")
+        }
 
         var index = 0
         while index < args.count {
@@ -52,6 +58,12 @@ struct PlusProtoAppApp: App {
                 index += 1
             case "-debugMorphCycle":
                 UserDefaults.standard.set(true, forKey: "debugMorphCycle")
+                index += 1
+            case "-debugMockFeed":
+                UserDefaults.standard.set(true, forKey: "debugMockFeed")
+                index += 1
+            case "-debugFreshFeed":
+                UserDefaults.standard.set(true, forKey: "debugFreshFeed")
                 index += 1
             case "-debugScrollTo" where index + 1 < args.count:
                 UserDefaults.standard.set(Double(args[index + 1]) ?? 0, forKey: "debugScrollTo")

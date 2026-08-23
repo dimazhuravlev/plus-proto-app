@@ -52,7 +52,7 @@ struct AlbumCard: View {
 
     private var cover: some View {
         AmbilightArtwork(
-            image: block.cover.staticImage,
+            source: block.cover,
             size: AlbumCardLayout.coverSize,
             rotation: AlbumCardLayout.coverRotation,
             glowOpacity: AlbumCardLayout.glowOpacity
@@ -60,7 +60,12 @@ struct AlbumCard: View {
         .offset(x: AlbumCardLayout.coverOrigin.x, y: AlbumCardLayout.coverOrigin.y)
     }
 
-    /// Обе строки 15/18 без зазора: в макете это две соседние строки одного бокса
+    /// Обе строки 15/18 без зазора: в макете это две соседние строки одного бокса.
+    ///
+    /// По две строки на подпись, а не по одной, как в макете: бокс 107pt подобран под
+    /// «Аквариум / Равноденствие», а у живых альбомов названия длиннее и обрезались
+    /// на середине слова («Turn On The B…»). Высота блока при этом не растёт —
+    /// подписи наезжают на нижний угол обложки, там есть куда.
     private var titles: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(block.title)
@@ -70,7 +75,7 @@ struct AlbumCard: View {
                 .plusTextM()
                 .foregroundStyle(Color.fillSubtitle)
         }
-        .lineLimit(1)
+        .lineLimit(2)
         .frame(width: AlbumCardLayout.titlesWidth, alignment: .leading)
         .offset(x: AlbumCardLayout.titlesOrigin.x, y: AlbumCardLayout.titlesOrigin.y)
     }

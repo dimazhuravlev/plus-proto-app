@@ -28,5 +28,6 @@ xcodebuild -project PlusProtoApp.xcodeproj -scheme PlusProtoApp -destination 'pl
 - Общение, коммиты, UI-копия — на русском. Conventional Commits.
 - Токены: только переиспользуемые значения в `DesignSystem/Tokens.swift`; одноразовые градиенты/тени живут локально у компонента («токен ради единственного вызова не заводим»).
 - Файлы добавляются простым созданием на диске (filesystem-synchronized pbxproj) — проект править не нужно.
-- `APIKeys.swift` в гитигноре; без него проект не соберётся — создать локально.
+- `APIKeys.swift` в гитигноре; без него проект не соберётся — копия в `_secrets/`.
+- Живые данные витрины: `-debugMockFeed` — прогон на моках без сети (для сверки с макетом), `-debugFreshFeed` — обойти получасовое окно ротации контента.
 - Магические числа анимаций — именованными константами в config-enum рядом с компонентом (стиль MusicPlayer: YMTiming, ShareCardDragConfig).

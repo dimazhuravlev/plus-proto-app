@@ -52,7 +52,7 @@ struct MovieCard: View {
 
     private var poster: some View {
         AmbilightArtwork(
-            image: block.poster.staticImage,
+            source: block.poster,
             size: MovieCardLayout.posterSize,
             rotation: MovieCardLayout.posterRotation,
             glowOpacity: MovieCardLayout.glowOpacity

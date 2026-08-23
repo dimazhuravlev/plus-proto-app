@@ -39,12 +39,10 @@ struct BookCard: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            AmbilightArtwork(
-                image: block.render.staticImage,
-                size: BookCardLayout.render,
-                corner: 0,
-                glowOpacity: BookCardLayout.glowOpacity,
-                borderWidth: 0
+            BookRender(
+                cover: block.render,
+                box: BookCardLayout.render,
+                glowOpacity: BookCardLayout.glowOpacity
             )
             .offset(x: BookCardLayout.renderOrigin.x, y: BookCardLayout.renderOrigin.y)
 

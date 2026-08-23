@@ -81,9 +81,12 @@ struct ContinueWatchingCard: View {
             videoFrame
                 .offset(x: WatchingGeometry.videoOrigin.x, y: WatchingGeometry.videoOrigin.y)
 
-            ArtworkImage(source: block.logo)
-                .scaledToFit()
-                .frame(width: WatchingGeometry.logoSize.width, height: WatchingGeometry.logoSize.height)
+            projectLogo
+                .frame(
+                    width: WatchingGeometry.logoSize.width,
+                    height: WatchingGeometry.logoSize.height,
+                    alignment: .bottomLeading
+                )
                 .offset(x: WatchingGeometry.logoOrigin.x, y: WatchingGeometry.logoOrigin.y)
                 .allowsHitTesting(false)
 
@@ -100,6 +103,29 @@ struct ContinueWatchingCard: View {
         }
         .onChange(of: scenePhase) { _, _ in syncPlayback() }
         .onDisappear { playback.pause() }
+    }
+
+    /// Логотип проекта, а если его нет — название текстом.
+    ///
+    /// Логотипы Кинопоиск раздаёт с `image.tmdb.org`, и он недоступен из России
+    /// (замер 2026-08-23: соединение не устанавливается вовсе). Подставлять сюда
+    /// чужой моковый логотип нельзя — это была бы прямая ложь о контенте,
+    /// поэтому фолбэк текстовый.
+    @ViewBuilder
+    private var projectLogo: some View {
+        ResolvedArtwork(source: block.logo) { image in
+            image
+                .resizable()
+                .scaledToFit()
+        } placeholder: {
+            Text(block.title)
+                .plusTitleL()
+                .foregroundStyle(Color.fillOne)
+                .lineLimit(2)
+                .minimumScaleFactor(0.6)
+                .multilineTextAlignment(.leading)
+                .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
+        }
     }
 
     private func syncPlayback() {
@@ -125,7 +151,7 @@ struct ContinueWatchingCard: View {
 
         return ZStack(alignment: .bottomLeading) {
             AmbilightArtwork(
-                image: block.still.staticImage,
+                source: block.still,
                 size: WatchingGeometry.videoSize,
                 glowOpacity: WatchingGeometry.ambilightOpacity,
                 borderWidth: 0

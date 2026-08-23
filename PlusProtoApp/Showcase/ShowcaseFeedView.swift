@@ -80,20 +80,28 @@ struct ShowcaseFeedView: View {
             ShowcaseBackdrop(source: feed.backdrop)
         }
         #if DEBUG
-        .onAppear {
-            // `-debugScrollTo <pt>` — стартовая прокрутка: свайпнуть симулятор из шелла нечем,
-            // а карточки ниже сгиба иначе не сверить с макетом.
+        // Скролл переставляется и после подмены блоков живыми: лента пересобирается,
+        // и заданная на старте позиция сбрасывается в ноль. Пауза обязательна —
+        // до перераскладки `scrollTo` уезжает в ещё не существующую высоту.
+        .task(id: feed.blocks.map(\.id)) {
             let offset = UserDefaults.standard.double(forKey: "debugScrollTo")
-            if offset > 0 { scrollPosition.scrollTo(y: offset) }
-
-            // `-debugTapBlock <n>` — повторяет тап по n-й карточке: тапнуть по симулятору
-            // из шелла нечем, а связь «карточка → плеер» иначе не проверить.
+            guard offset > 0 else { return }
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            scrollPosition.scrollTo(y: offset)
+        }
+        // `-debugTapBlock <n>` — повторяет тап по n-й карточке: тапнуть по симулятору
+        // из шелла нечем, а связь «карточка → плеер» иначе не проверить.
+        //
+        // Именно `task(id:)`, а не `onAppear`: замыкание `onAppear` вызывается один раз
+        // и держит ту ленту, что была на первом кадре, то есть моковую. Здесь задача
+        // перезапускается на каждой подмене блока и всегда видит текущую.
+        .task(id: feed.blocks.map(\.id)) {
             let tapIndex = UserDefaults.standard.integer(forKey: "debugTapBlock")
-            if tapIndex > 0, tapIndex <= feed.blocks.count {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                    actionBar.open(feed.blocks[tapIndex - 1].player)
-                }
-            }
+            guard tapIndex > 0, tapIndex <= feed.blocks.count else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            actionBar.open(feed.blocks[tapIndex - 1].player)
         }
         #endif
     }

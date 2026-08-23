@@ -11,11 +11,31 @@ enum ActionBarMode: Equatable {
 }
 
 /// Откуда берётся картинка. Прототип живёт на двух источниках одновременно:
-/// забандленные моки сейчас и картинки из API на Этапе 7 — различаем здесь,
-/// чтобы вёрстка бара не переписывалась при переходе на живые данные.
+/// забандленные моки и картинки из API — различаем здесь, чтобы вёрстка не зависела
+/// от того, приехали живые данные или нет.
 enum ArtworkSource: Equatable {
     case asset(String)
-    case remote(URL)
+    /// Живая картинка с бандленным фолбэком: пока она грузится и если не загрузится
+    /// вовсе, рисуется ассет. Без фолбэка блок мигал бы пустотой на каждом холодном
+    /// старте и оставался пустым без сети.
+    case remote(URL, fallback: String?)
+
+    static func remote(_ url: URL) -> ArtworkSource { .remote(url, fallback: nil) }
+
+    /// Бандленная картинка, которой закрывается кадр до загрузки.
+    var fallbackAsset: String? {
+        switch self {
+        case .asset(let name): name
+        case .remote(_, let fallback): fallback
+        }
+    }
+
+    var remoteURL: URL? {
+        switch self {
+        case .asset: nil
+        case .remote(let url, _): url
+        }
+    }
 }
 
 /// Что играет: круглая обложка 48×48 + две строки подписи (figma-actionbar §4.2).

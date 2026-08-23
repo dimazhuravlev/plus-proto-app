@@ -26,7 +26,7 @@ struct ShowcaseHeadline {
 }
 
 struct ShowcaseHeadlineChip: Identifiable {
-    enum Kind {
+    enum Kind: Hashable {
         /// Круглый аватар исполнителя
         case avatar
         /// Постер фильма со скруглением и рамкой
@@ -35,7 +35,9 @@ struct ShowcaseHeadlineChip: Identifiable {
         case book
     }
 
-    let id = UUID()
+    /// Врезка на тип ровно одна, поэтому id — сам тип: при подмене картинки
+    /// на живую вью не должна пересоздаваться.
+    var id: Kind { kind }
     let kind: Kind
     let artwork: ArtworkSource
     let size: CGSize
@@ -126,9 +128,12 @@ struct AlbumBlock {
 struct BookBlock {
     let id: String
     let title: String
-    /// Изометрическая книга — плоский PNG: пять слоёв со skew в SwiftUI не окупаются.
+    /// Плоская обложка, из которой `BookRender` собирает объёмную книгу. Раньше здесь
+    /// лежал готовый изометрический PNG из макета, но у живой книги такого рендера нет —
+    /// объём строится из обложки (решение 2026-08-23).
     let render: ArtworkSource
-    /// Плоская обложка для чипа в action bar: изометрический рендер туда не годится.
+    /// Обложка для чипа в action bar. Отдельное поле: у чипа своя геометрия,
+    /// и в будущем сюда может лечь другой кроп.
     let cover: ArtworkSource
     let caption: String
     let captionTint: Color
@@ -269,7 +274,7 @@ extension ShowcaseFeed {
             .book(BookBlock(
                 id: "technofeudalism",
                 title: "Технофеодализм",
-                render: .asset("mockBookIsometric"),
+                render: .asset("mockBookTechno"),
                 cover: .asset("mockBookTechno"),
                 caption: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
