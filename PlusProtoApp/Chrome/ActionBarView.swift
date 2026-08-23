@@ -60,6 +60,42 @@ private enum ActionBarGeometry {
     static let trailingEscape: CGFloat = 120
 }
 
+/// Резина свайпа по полю поиска. Формула из UIScrollView: f(x) = (x·d·c)/(d + c·x),
+/// где d — асимптота отклика, c — начальная скорость. В нормированном виде это
+/// p(x) = x/(x + d/c) ∈ [0,1): один прогресс на кадр, высота и ширина считаются от него,
+/// поэтому синхронны по построению.
+private enum SearchPullConfig {
+    /// Слоп распознавания: до него живёт тап, резина ещё не тянется.
+    static let activation: CGFloat = 8
+    /// c из UIScrollView — доля хода пальца, которую капсула отдаёт на старте.
+    static let rate: CGFloat = 0.55
+    /// d по высоте: капсула 60 тянется максимум до 70.
+    static let heightLimit: CGFloat = 10
+    /// d по ширине: 16pt — около 4.5% ширины поля. Честное сохранение объёма дало бы
+    /// 50pt сжатия при той же высоте, это карикатура.
+    static let widthLimit: CGFloat = 16
+    /// Путь пальца, на котором резина натянута наполовину.
+    static let halfway: CGFloat = heightLimit / rate
+
+    /// Порог фокуса по пути пальца вверх.
+    static let triggerDistance: CGFloat = 44
+    /// Короткий резкий рывок открывает поиск, не дотягивая до порога.
+    static let flickVelocity: CGFloat = 500
+    static let flickMinDistance: CGFloat = 16
+    /// Гистерезис, чтобы хаптика не дребезжала на границе порога.
+    static let triggerHysteresis: CGFloat = 8
+    static let tickHapticIntensity: CGFloat = 0.45
+
+    /// Отпустили, не дотянув: возврат с едва заметной отдачей ~11%.
+    static let release: Animation = .spring(duration: 0.32, bounce: 0.42)
+
+    /// Нормированное натяжение 0…1.
+    static func progress(travel: CGFloat) -> CGFloat {
+        let x = max(0, travel - activation)
+        return x / (x + halfway)
+    }
+}
+
 // MARK: - Root
 
 /// Action bar: высота 60, поля 24, две зоны с зазором 8 во всю ширину бара
@@ -256,6 +292,20 @@ private struct SearchPill: View {
     @FocusState.Binding var searchFocused: Bool
     @Binding var query: String
 
+    /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
+    /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
+    @State private var pull: CGFloat = 0
+    /// Хаптика порога уже отдана.
+    @State private var tickArmed = false
+
+    private var stretch: CGFloat { pull * SearchPullConfig.heightLimit }
+
+    /// Сжимается только гибкая капсула: у круга 60pt те же 16pt — это 27% ширины,
+    /// и HStack тащил бы за собой мини-плеер каждый кадр.
+    private var squeeze: CGFloat {
+        layout.searchWidth == nil ? pull * SearchPullConfig.widthLimit : 0
+    }
+
     var body: some View {
         // Зазоры навешены на элементы, а не заданы общим `spacing`: в компактном круге
         // контент — это 60 − 18 − 18 = 24pt, ровно бокс иконки. Общий spacing 8 не
@@ -285,11 +335,65 @@ private struct SearchPill: View {
         .padding(.horizontal, ActionBarGeometry.searchPaddingH)
         .frame(maxWidth: layout.searchWidth == nil ? .infinity : nil)
         .frame(width: layout.searchWidth)
-        .frame(height: PlusMetrics.actionBarHeight)
+        .frame(height: PlusMetrics.actionBarHeight + stretch)
         .glassPill()
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
+        // Фрейм растёт вокруг центра — сдвиг на половину прижимает низ к бару,
+        // вверх уходит только верхняя кромка. Чистый transform, раскладку не трогает.
+        .offset(y: -stretch / 2)
+        // simultaneousGesture, а не gesture: внутри капсулы живут TextField и крест,
+        // у потомков приоритет выше, и обычный жест на родителе они бы перебили.
+        .simultaneousGesture(pullGesture)
         .onTapGesture { searchFocused = true }
+        // Сжатие ширины — внешним отступом, а не frame: HStack всё равно отдаёт
+        // гибкому ребёнку весь остаток, поэтому правая зона не едет.
+        .padding(.horizontal, squeeze / 2)
+        .onChange(of: isSearchFocused) { _, focused in
+            if focused, pull != 0 {
+                withAnimation(ActionBarMotion.morph) { pull = 0 }
+            }
+        }
+    }
+
+    /// Свайп вверх по полю: капсула тянется как резина, на пороге открывается поиск.
+    /// Фокус ставится только на отпускании — иначе бар прыгнет вверх из-под пальца.
+    private var pullGesture: some Gesture {
+        DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .local)
+            .onChanged { value in
+                guard !isSearchFocused else { return }
+                let travel = -value.translation.height
+                // Без withAnimation: резина идёт за пальцем один в один.
+                pull = SearchPullConfig.progress(travel: travel)
+                updateTick(travel: travel)
+            }
+            .onEnded { value in
+                tickArmed = false
+                guard !isSearchFocused else { pull = 0; return }
+                let travel = -value.translation.height
+                let flick = -value.velocity.height >= SearchPullConfig.flickVelocity
+                    && travel >= SearchPullConfig.flickMinDistance
+                    && travel > abs(value.translation.width)
+
+                if travel >= SearchPullConfig.triggerDistance || flick {
+                    searchFocused = true
+                    // Резина расходится тем же морфом, каким бар переезжает в фокус.
+                    withAnimation(ActionBarMotion.morph) { pull = 0 }
+                } else {
+                    withAnimation(SearchPullConfig.release) { pull = 0 }
+                }
+            }
+    }
+
+    /// Тик на пересечении порога: палец ещё внизу, но уже «взведено».
+    private func updateTick(travel: CGFloat) {
+        if travel >= SearchPullConfig.triggerDistance, !tickArmed {
+            tickArmed = true
+            UIImpactFeedbackGenerator(style: .medium)
+                .impactOccurred(intensity: SearchPullConfig.tickHapticIntensity)
+        } else if travel < SearchPullConfig.triggerDistance - SearchPullConfig.triggerHysteresis {
+            tickArmed = false
+        }
     }
 
     /// Настоящее поле ввода: даёт системную каретку, которой в макете отмечено
@@ -302,6 +406,9 @@ private struct SearchPill: View {
             .foregroundStyle(Color.fillOne)
             .plusTitleL()
             .submitLabel(.search)
+            // opacity 0 в SwiftUI не выключает хит-тест: без этого невидимое поле
+            // перехватывало бы касания мимо жеста резины.
+            .allowsHitTesting(isSearchFocused)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
