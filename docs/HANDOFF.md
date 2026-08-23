@@ -1,173 +1,102 @@
 # Передача работы: прототип «Яндекс Плюс»
 
 Документ самодостаточный — рассчитан на агента без контекста предыдущей сессии.
-Обновлён: 2026-08-22. Если расходится с кодом — верь коду и обнови этот файл.
+Обновлён: 2026-08-23. Если расходится с кодом — верь коду и обнови этот файл.
+
+---
+
+## 0. С ЧЕГО НАЧАТЬ ПРЯМО СЕЙЧАС
+
+**Есть один незакрытый дефект с готовым, но НЕ применённым планом правок.**
+
+При фокусе поиска правая зона бара (плеер/чип) **не анимируется вообще**: она не поднимается вместе с полем и не уезжает за правый край. Пользователь это заметил и попросил починить — задача сформулирована им так:
+
+> «action bar должен анимировать и сдвигаться целиком — две его части — поиск и плеер. При подъёме клавиатуры должен подниматься весь action bar (плеер не должен оставаться на своём нижнем месте), плюс одновременно с подъёмом плеер должен скрываться/уходить за правый край, отдавая всю ширину инпуту поиска».
+
+Что уже сделано за тебя:
+- **Диагноз с покадровыми замерами** — `docs/specs/actionbar-sync-diagnosis.md`
+- **Готовый план правок** (файл → строки → фрагменты кода) — `docs/specs/actionbar-sync-plan.md`
+- **Грабли и способ проверки** — `docs/specs/actionbar-sync-pitfalls.md`
+
+Суть дефекта в одну фразу: `.if(layout.clipTrailing)` в `TrailingSlot` — это `_ConditionalContent`, переключение флага при фокусе **меняет идентичность вью**, и анимация к ней не применяется. Плюс на переход работают три разные кривые вместо одной.
+
+Порядок: прочитать план → применить → собрать → снять видео перехода → разложить покадрово и убедиться, что зоны идут вместе (в контрольном режиме `.book` расхождение 0.3pt — вот эталон) → записать результат в `docs/DECISIONS.md`.
 
 ---
 
 ## 1. Что это за проект
 
-iOS/SwiftUI **дизайн-прототип супераппа «Яндекс Плюс»** — партизанская копия, не продовое приложение. Пользователь (Дима Журавлёв, продуктовый дизайнер в Яндексе) проектирует в нём опыт взаимодействия и тестирует новый дизайн. Данные — моки + бесплатные публичные API.
+iOS/SwiftUI **дизайн-прототип супераппа «Яндекс Плюс»** — не продовое приложение. Пользователь (Дима Журавлёв, продуктовый дизайнер в Яндексе) проектирует в нём опыт взаимодействия. Данные — моки + бесплатные публичные API.
 
 **Репозиторий**: `/Users/dimazhuravlev/Repos/plus-proto-app`
 **Xcode-таргет/схема**: `PlusProtoApp`, bundle `com.dima.PlusProtoApp`, iOS 26.0, Swift 5.
 
-**Концепция** (со слов пользователя): суперапп объединяет развлекательные сервисы — Яндекс Музыка, Кинопоиск, Книги, Алиса. У каждого свой таб. **Внутренние разделы сервисов НЕ проектируем** — переход по табу ведёт на пустую заглушку. **Фокус — на архитектуре, навигации и главном экране «Плюс»**: кросс-сервисной витрине, объединяющей все сервисы в единое целое.
+**Концепция**: суперапп объединяет Яндекс Музыку, Кинопоиск, Книги и Алису. У каждого свой таб, но **внутренние разделы сервисов не проектируем** — переход по табу ведёт на заглушку. Фокус — на архитектуре, навигации и главном экране «Плюс»: кросс-сервисной витрине.
 
-**Сиблинг-проект `/Users/dimazhuravlev/Repos/MusicPlayer`** — источник архитектуры и готовых компонентов. Это предыдущий прототип того же пользователя (музыкальный стриминг). Переиспользуй оттуда всё, что подходит.
+**Сиблинг `/Users/dimazhuravlev/Repos/MusicPlayer`** — предыдущий прототип того же пользователя, источник архитектуры и компонентов.
 
 ---
 
-## 2. Обязательное чтение перед работой
+## 2. Обязательное чтение
 
-По порядку:
-
-1. **`CLAUDE.md`** (корень репо) — конвенции проекта.
-2. **`docs/DECISIONS.md`** — лог всех принятых решений с обоснованиями. **Главный документ.** Каждое новое решение (своё или пользователя) записывай туда сразу, с датой и «почему».
-3. **`docs/PLAN.md`** — 9 этапов со статусами и таблица источников данных.
-4. **`docs/research/`** — снапшот разведки от 2026-08-22, **не редактировать**:
-   - `figma-tabbar.md`, `figma-actionbar.md`, `figma-screen1.md`, `figma-screen2.md`, `figma-tokens.md` — попиксельные спеки из макета с node ID
-   - `app-skeleton.md`, `screens.md`, `nav-chrome.md`, `design-kit.md`, `data-apis.md`, `bootstrap.md` — разбор MusicPlayer с путями и номерами строк
-   - `history.md` — контекст о пользователе и его рабочих привычках
+1. **`CLAUDE.md`** — конвенции проекта.
+2. **`docs/DECISIONS.md`** — лог решений с обоснованиями. **Главный документ.** Каждое новое решение записывай туда сразу, с датой и «почему». Раздел «Техника» отсортирован от новых к старым.
+3. **`docs/PLAN.md`** — этапы и статусы.
+4. **`docs/specs/`** — готовые спецификации под конкретные правки (см. §0 и §6).
+5. **`docs/research/`** — снапшот разведки 2026-08-22, **не редактировать**: попиксельные спеки Figma и разбор MusicPlayer.
 
 ---
 
 ## 3. Три правила, нарушение которых обесценит работу
 
-1. **Пиксель в пиксель с Фигмой.** Типографика, отступы, цвета, градиенты, бордеры — точными значениями из макета, не «примерно». Числа брать из `docs/research/figma-*.md` или перепроверять в Фигме. После каждого компонента — скриншот симулятора и сверка с рендером ноды.
-
-2. **120 fps на скролле витрины — приоритет №1.** Скролл должен быть идеально плавным, без фризов. `LazyVStack`, растеризация тяжёлых blur-слоёв, ambilight считать один раз, видео играть только у видимых карточек. Любой эффект, роняющий фреймрейт, — резать или запекать.
-
-3. **Квота Кинопоиска — 200 запросов в сутки.** Не жечь её отладочными запросами. Проверка остатка: `GET /v1.5/token` (сам не тратится). Дисковый кэш обязателен.
+1. **Пиксель в пиксель с Figma.** Числа брать замером, не на глаз. После каждого компонента — скриншот симулятора и численная сверка с макетом.
+2. **120 fps.** Никаких лишних проходов раскладки на кадр. **Не читать размер вью, от которого зависит её же layout** — это уже вешало рендер на 100% CPU.
+3. **Квота Кинопоиска — 200 запросов в сутки.** Не жечь отладкой. Остаток: `GET /v1.5/token` (сам не тратится).
 
 ---
 
-## 4. Что уже сделано
+## 4. Приёмы верификации, выработанные на этом проекте
 
-### Этап 0 — развёртывание ✅ (2026-08-22)
-Проект создан копированием `project.pbxproj` из MusicPlayer + sed-переименование. **pbxproj в формате filesystem-synchronized (objectVersion 77)** — списков файлов внутри нет, поэтому **новые .swift-файлы добавляются простым созданием на диске, проект править не нужно.**
+Они сэкономят часы — на каждом из них уже обожглись:
 
-Готово и собирается:
-- `PlusProtoApp/PlusProtoAppApp.swift` — точка входа
-- `PlusProtoApp/Fonts/FontManager.swift` — runtime-регистрация 4 шрифтов YS
-- `PlusProtoApp/DesignSystem/Typography.swift`, `Tokens.swift`
-- `PlusProtoApp/Services/KinopoiskService.swift` + `Data/KinopoiskModels.swift`
-- Шрифты в `PlusProtoApp/Fonts/`, клипы в `PlusProtoApp/Videos/`
-- `PlusProtoApp/APIKeys.swift` — **в гитигноре**, дубликат в `_secrets/APIKeys.swift`
+- **Наклонные элементы сверять замером пикселей, а не глазом.** Полоса под углом 5° на кропе читается как две — час ушёл на поиск несуществующего дубля.
+- **Анимации разбирать покадрово**, а не по скриншотам: `xcrun simctl io booted recordVideo` → `ffmpeg -vf fps=60` → замер координат питоном с PIL. Именно так найден дефект из §0.
+- **Каждый растр из Figma проверять на альфу.** PNG-экспорт — это скриншот ноды в контексте, у него бывает запечён фон канваса `#444`. Так десять глифов табов приехали с непрозрачным фоном.
+- **Новый imageset требует полной очистки DerivedData** — инкрементальная сборка его не подхватывает. Проверка: `xcrun --sdk iphonesimulator assetutil --info <app>/Assets.car | grep icon`.
+- **Переустанавливать приложение после сборки.** Дважды случалось показать пользователю «исправленный» экран, где на симуляторе стояла старая сборка.
 
-**BUILD SUCCEEDED** на iPhone 17 Pro, шрифт YS отрисовывается.
+---
 
-### Этап 1 — атомы дизайн-системы ✅ (2026-08-22)
-Файлы в `PlusProtoApp/DesignSystem/`:
-- `GlassSurface.swift` — `.glassPill` / `.glassCircle` / `.glassIconTile`
-- `GlassIconButton.swift` — 40×40, `LikeDismissPair`, `PressScaleButtonStyle`
-- `GradientText.swift`
-- `PlusProgressBar.swift`
-- `AmbilightArtwork.swift`
-- `AtomsCatalogScreen.swift` — debug-каталог (вставлен в `ShowcaseScreen` под `// ATOMS-CATALOG`, удалить на Этапе 5)
+## 5. Что готово
 
-### Этап 2 — каркас ✅ (2026-08-22)
-Структура:
-- `App/` — `AppTab.swift`, `AppRootView.swift`
-- `State/` — `AppNavigationState`, `ActionBarState` (`@Observable`)
-- `Chrome/` — `BottomChrome.swift` (+ `PlusChromeMetrics`, `KeyboardObserver`), `TabBarView.swift`, `ActionBarView.swift`
-- `Screens/` — `ShowcaseScreen` (заглушка), `ServiceStubScreen`
-
-5 `NavigationStack` с независимыми путями, хром в ZStack вне стеков, `contentMargins(.bottom, 130, for: .scrollContent)`. Env-объекты из корня: `AppNavigationState`, `ActionBarState`, `KeyboardObserver`.
-
-### Этап 3 — таббар ✅ (2026-08-22)
-`TabBarView` наполнен по `figma-tabbar.md`: 5×(60×62), тайл 40×40 r14, кроссфейд глифов (PNG Active/Inactive с emboss), pulse PNG, лейблы 11/14, скрим 210pt. Тайминг активации **0,26s `.smooth`**, пресс-стейт `PressScaleButtonStyle` (scale 0.92). Сверка с нодой `2004:9169` — попиксельно.
-
-### Этап 4 — action bar ✅ (2026-08-22)
-`ActionBarView` по `figma-actionbar.md` — **полная реализация**, не заглушка:
-
-- **Persistent HStack** (две зоны, gap 8, поля 24, h 60): ширины и opacity анимируются на живых вью; скрытые слои остаются в дереве с opacity 0 — никаких if/else-подмен.
-- **4 режима** (`ActionBarMode`): search / music / movie / book. Режим определяется последним потреблённым контентом, не активным табом.
-- **Морф 0,32s `.smooth`** (`ActionBarMotion.morph`) на ширины и opacity; прогресс плеера — отдельно `.easeOut(0.12)`.
-- **SearchPill**: иконка 24, padding H 18, плейсхолдер YS Display Semibold 20/26; режим icon-only 60×60 в music; flex в book/movie/focused.
-- **Тикер плейсхолдера**: три фразы, шаг 42pt за 0,45s, интервал 4s; троеточие 1→2→3 каждые 500ms.
-- **MiniPlayerPill**: обложка 48×48, вращение 18°/s при `isMusicPlaying`, подписи 13/16, ♥/⏸, `MiniPlayerProgressFill` (white 6%).
-- **Чипы**: book 44×60 r4 + cover 36×52; movie 88×54 r8 + frame 80×46; rot 4°; book без clip (AABB 48×63).
-- **Пустое состояние музыки**: только search на всю ширину, круг 60 не показывается.
-- **Клавиатура**: тап по search → `isSearchFocused`; `KeyboardObserver` поднимает хром; таббар opacity 0; search flex, mini-player сжимается в 60×60.
-- **Sticky payload'ы** в `ActionBarState`: `music`/`movie`/`book` не сбрасываются при смене режима (морф до конца анимации).
-- **DEBUG-пресеты** (см. §7): `-debugActionBar search|music|movie|book`, `-debugSearchFocus`. `AtomsCatalogScreen` скрывается при `-debugActionBar` для чистых скриншотов.
-
-**BUILD SUCCEEDED.** Скриншоты 4 режимов + keyboard layout: `/tmp/plus-actionbar-screenshots/` (`actionbar-{search,music,movie,book,keyboard}.png`). При глюке simctl (белый кадр ~67 КБ) — `terminate` + fresh `install`/`launch`. Софт-клавиатура в headless simctl обычно не видна; layout с `-debugSearchFocus` (таббар скрыт, бар поднят) снят, полный кадр с клавиатурой — только в интерактивном Simulator (I/O → Keyboard).
-
-### Ассеты ✅ (2026-08-22)
-**31 imageset** в `PlusProtoApp/Assets.xcassets/` (+ `AppIcon`, `AccentColor`):
-
-| Группа | Имена |
+| Этап | Статус |
 |---|---|
-| Глифы табов (PNG @3x, original, градиент + emboss запечены) | `tabGlyphPlusActive`/`Inactive`, `tabGlyphMusic*`, `tabGlyphKinopoisk*`, `tabGlyphBooks*`, `tabGlyphAlisa*` |
-| Свечение | `tabPulseGlow` |
-| Иконки UI (SVG template) | `iconSearch`, `iconHeart`, `iconClose`, `iconPause` |
-| Орб «Моя Волна» | `vibeGlyph`, `vibeColorEllipse`, `mockVibeNoise` |
-| Моки контента | `mockAlbumCover`, `mockMoviePoster`, `mockPlayerCover`, `mockAvatar`, `mockLogoYura`, `mockBgCollage`, `mockBookIsometric`, `mockBookMini`, `mockChipBook`, `mockChipBookCover`, `mockChipMovieStill`, `mockChipPoster`, `mockVideoStill` |
+| 0. Развёртывание проекта | ✅ |
+| 1. Дизайн-система и атомы | ✅ |
+| 2. Каркас (5 табов, хром вне NavigationStack) | ✅ |
+| 3. Таббар | ✅ |
+| 4. Action bar (4 режима, морф, клавиатура) | ✅ кроме дефекта из §0 |
+| 5. Витрина «Плюс» (7 блоков) | ✅ |
+| 6. Второе состояние витрины | ⏸ не начато |
+| 7. Данные (живые API) | ⏸ сервисы кино написаны, книги и Deezer нет |
+| 8. Полировка | ⏸ |
 
-**Пайплайн экспорта** (см. DECISIONS.md §«Пайплайн ассетов»): брать **`rawImages` ноды**, не `download_assets` PNG (это скриншот ноды с фоном и хромом). Ресемпл LANCZOS под @3x, апскейл запрещён. Монохромные векторы — template-рендеринг. Свечения — предрендеренные PNG @3x. Глифы табов — **два PNG на таб** (Active/Inactive), не template-SVG.
+Сверх плана сделано: иконка приложения, тап по карточке открывает плеер её сервиса, резиновый свайп по полю поиска, кроссфейд при смене типа плеера, кнопка play/pause с живым прогрессом.
 
-### APIKeys ✅
-Локально в `PlusProtoApp/APIKeys.swift` (gitignore):
-- `kinopoisk` — kinopoisk.dev, заголовок `X-API-KEY`
-- `googleBooks` — ключ получен **2026-08-22**, квота ~1000/сутки
-
-Без `APIKeys.swift` проект не соберётся — скопировать из `_secrets/`.
-
-### Книжный сервис — отложен до Этапа 7
-`BooksService`, `WikisourceService`, `BookModels`, `BookCatalog` **отсутствуют** (решение 2026-08-22). Ключ Google Books уже есть; сервисы пишутся вместе с подключением данных на Этапе 7.
+**Структура кода** (`PlusProtoApp/`): `App/` (точка входа, AppTab, AppRootView) · `Chrome/` (BottomChrome, TabBarView, ActionBarView) · `Showcase/` (лента и 6 карточек) · `Screens/` · `DesignSystem/` (токены, типографика, стекло, кнопки, ambilight) · `State/` · `Data/` (модели + каталог витрины) · `Services/` (KinopoiskService) · `Fonts/`, `Videos/`, `Assets.xcassets/`.
 
 ---
 
-## 5. Что делать дальше
+## 6. Открытые задачи
 
-**Текущий фокус: Этап 5 — витрина «Плюс»** (`docs/research/figma-screen1.md`).
+**Ближайшая** — дефект из §0.
 
-### Что делать на Этапе 5
-1. Заменить заглушку `ShowcaseScreen` на ленту из **7 карточек** по макету `2004:10701`.
-2. Нерегулярные гэпы 20–66pt, наезды карточек, контент не клипать.
-3. Динамический фон от обложки первого блока (blur 100, opacity 0.4, scale ×2).
-4. Каскадное появление + лёгкий scroll-параллакс слоёв.
-5. Орб «Моя Волна» — живой (glyph + noise + color ellipse).
-6. Карточка «продолжить смотреть» — `LoopingVideoPlayer`, muted, только в viewport.
-7. Карточка «продолжить чтение» — мок-текст / Wikitext позже.
-8. **Удалить** `AtomsCatalogScreen` из `ShowcaseScreen` (блок `// ATOMS-CATALOG`).
+**Дальше по плану**: второе состояние витрины (`docs/research/figma-screen2.md`), живые данные (`BooksService`, `WikisourceService`, перенос `DeezerService`, включить `CurationCache`), полировка (хаптики, Instruments по скроллу).
 
-### После Этапа 5
-- **Этап 6** — второе состояние витрины (`figma-screen2.md`).
-- **Этап 7** — данные (Deezer, Kinopoisk, Google Books + Викитека, `BookCatalog`).
-- **Этап 8** — полировка (хаптики, тайминги, Instruments).
-
-### Follow-up по action bar (не блокирует Этап 5)
-- Покадровая верификация тайминга морфа 0,32s (simctl record).
-- Каденция плейсholдера 4s — подтвердить с пользователем.
-- Полный keyboard-скрин с софт-клавиатурой — интерактивный Simulator (headless layout уже снят).
-- Подключить Deezer-превью → живой прогресс/вращение обложки (Этап 7).
-
----
-
-## 6. API: что проверено и как этим пользоваться
-
-### Кино — kinopoisk.dev ✅ работает
-- База: **`https://api.poiskkino.dev`**
-- Заголовок `X-API-KEY`, ключ в `APIKeys.kinopoisk`
-- **Квота 200/сутки**, сброс в 21:00 UTC; 5 запросов/сек
-- Сервис готов: `KinopoiskService.shared`
-- Подпись фильма в макете — поле **`shortDescription`**
-- Постеры: Яндекс-CDN. Рабочие: `300x450`, `600x900`, `1920x1080`, `x1000`, `orig`
-
-### Книги — три источника (сервисы на Этапе 7)
-- **Обложки** → Google covers CDN, **без ключа**: `books.google.com/books/publisher/content?id={id}&printsec=frontcover&img=1&zoom=1&fife=w1600`
-- **Метаданные** → Google Books API, ключ в `APIKeys.googleBooks` (~1000/сутки), `langRestrict=ru`
-- **Текст** → `ru.wikisource.org/w/api.php?action=parse&page={путь}&prop=text&format=json&formatversion=2`, без ключа, нужен User-Agent
-- **Курируемый каталог 20–30 книг** — состав ещё не выбран (`BookCatalog`)
-
-### Видео — забандленные клипы
-`PlusProtoApp/Videos/{fallen-angels,yura,movie-short}.mp4` — H.264, 1080×30, без звука, 3,58 МБ суммарно.
-
-### Исключено
-TMDB (DNS → 127.0.0.1), iTunes Search для кино, Gutendex, Open Library как основной источник обложек.
+**Мелочи, замеченные но не сделанные**:
+- В debug-пресете `ActionBarState.debugBook` стоит чужая обложка (`mockChipBookCover` вместо `mockBookTechno`) — расходится с витриной.
+- Тайминги помечены ⏳ в DECISIONS и ждут подтверждения пользователем: морф 0.32s, активация таба 0.26s, каденция плейсхолдера 4s.
+- Отдельной сессией запущена задача про размер глифа сердца в мини-плеере (16.67 против 20.0).
 
 ---
 
@@ -179,76 +108,39 @@ xcodebuild -project PlusProtoApp.xcodeproj -scheme PlusProtoApp \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -configuration Debug build
 ```
 
-Запуск и скриншот:
+Запуск:
 ```bash
 APP=$(ls -d ~/Library/Developer/Xcode/DerivedData/PlusProtoApp-*/Build/Products/Debug-iphonesimulator/PlusProtoApp.app | head -1)
-xcrun simctl install booted "$APP" && xcrun simctl launch booted com.dima.PlusProtoApp
+xcrun simctl terminate booted com.dima.PlusProtoApp
+xcrun simctl install booted "$APP"
+xcrun simctl launch booted com.dima.PlusProtoApp
 sleep 3 && xcrun simctl io booted screenshot /tmp/plus.png
 ```
 
-DEBUG-аргументы запуска (парсятся в `PlusProtoAppApp.parseDebugLaunchArguments` → UserDefaults):
-```bash
-# Стартовый таб (plus|music|kinopoisk|books|alisa)
-xcrun simctl launch booted com.dima.PlusProtoApp -debugTab plus
+**Отладочные флаги** (тапнуть по симулятору из шелла нечем, поэтому состояния поднимаются аргументами):
 
-# Режим action bar (search|music|movie|book) — мок-payload'ы из ActionBarState.debug*
-xcrun simctl launch booted com.dima.PlusProtoApp -debugTab plus -debugActionBar music
+| Флаг | Что делает |
+|---|---|
+| `-debugTab <plus\|music\|kinopoisk\|books\|alisa>` | стартовый таб |
+| `-debugActionBar <search\|music\|movie\|book>` | режим бара |
+| `-debugSearchFocus` | фокус в поиске через 0.8с (поднимает клавиатуру) |
+| `-debugMorphCycle` | прогон четырёх режимов по кругу каждые 1.6с — для записи морфа |
+| `-debugScrollTo <pt>` | стартовая прокрутка витрины |
+| `-debugTapBlock <1…6>` | повторяет тап по n-й карточке витрины |
 
-# Фокус поиска + клавиатура (задержка 0,8s в ActionBarView.onAppear)
-xcrun simctl launch booted com.dima.PlusProtoApp -debugTab plus -debugActionBar search -debugSearchFocus
-```
+Скриншоты симулятора агентом — норма для этого проекта.
+Окружение: Xcode 26.3, iPhone 17 Pro (iOS 26.0), экран 402×874pt, скриншот 1206×2622 (×3).
 
-Скриншоты action bar (terminate между режимами для чистого старта):
-```bash
-xcrun simctl terminate booted com.dima.PlusProtoApp
-xcrun simctl launch booted com.dima.PlusProtoApp -debugTab plus -debugActionBar search
-sleep 5 && xcrun simctl io booted screenshot /tmp/plus-actionbar-search.png
-```
-
-**Параллельные агенты**: `xcodebuild` — только одному одновременно (конфликт DerivedData). `Assets.xcassets/` — зона экспорта, не править параллельно.
-
-Окружение: Xcode 26.3, симулятор iPhone 17 Pro (iOS 26.0).
+Ориентиры для замеров (pt от низа экрана): ряд табов 34…100, action bar 104…164, поля экрана 24 (в фокусе 16).
 
 ---
 
 ## 8. Конвенции
 
-- Общение, коммиты, UI-копия — **на русском**. Conventional Commits.
-- **Токены**: только переиспользуемые значения в `DesignSystem/Tokens.swift`; одноразовые градиенты/тени — локально у компонента.
-- **Магические числа анимаций** — именованными константами в config-enum рядом с компонентом (`ActionBarMotion`, `TabBarMotion` и т.п.).
-- `APIKeys.swift` в гитигноре — без него проект не соберётся.
-
----
-
-## 9. Открытые вопросы
-
-**Закрыто (не спрашивать повторно):**
-- Ключ Google Books — ✅ получен 2026-08-22, в `APIKeys.googleBooks`
-- Пустое состояние музплеера — ✅ только поиск, без круга 60
-- Тайминг активации таба — ✅ 0,26s `.smooth`
-- Пресс-стейт табов — ✅ `PressScaleButtonStyle`
-- Action bar 4 режима + морф — ✅ Этап 4 закрыт 2026-08-22
-
-**Осталось решить по ходу (не блокеры):**
-- Каденция смены плейсхолдера поиска (интервал ротации фраз — старт 4s)
-- Состав курируемого каталога книг (20–30 произведений)
-- Тайминг морфа action bar 0,32s — покадровая верификация записью simctl
-- A/B: единицы блюра (CSS-сигма vs панель Figma vs SwiftUI `.blur`) — см. DECISIONS.md
-- Хаптики — карта в `research/nav-chrome.md` §11, сверить на устройстве
-- Тап по «продолжить чтение» → ридер (экрана пока нет)
-
-**Как спрашивать**: формат «вопрос + рекомендация», по одному за раз.
-
----
-
-## 10. Критические факты для продолжения
-
-- **Блюры в коде — CSS-единицы (гауссова σ)**, не значения панели Figma (там σ×2). Менять все константы разом. SwiftUI `.blur(radius:)` может отличаться — нужен A/B на симуляторе.
-- **Тайл таба 40×40 — без backdrop-blur**, только заливка white 10% + hairline. `glassIconTile()` без блюра.
-- **Морф action bar** — один persistent HStack, скрытые слои с opacity 0, **никаких if/else-подмен** и пересозданий вью.
-- **120 fps** — `LazyVStack`, `drawingGroup()` на тяжёлых blur-слоях, ambilight запекается один раз. **Не переносить** `ScrollOffsetPreferenceKey` из MusicPlayer — перерисовывает хром каждый кадр.
-- **Env-объекты `@Observable`**, не `ObservableObject` — тик прогресса не инвалидирует витрину/таббар.
-- **Payload'ы action bar sticky** — уходящий элемент рисуется до конца анимации морфа.
-- **`GeometryReader` только в background** action bar для замера ширины — корневой GeometryReader раздувает ZStack до белого кадра.
-- **DEBUG**: `-debugTab`, `-debugActionBar`, `-debugSearchFocus` — simctl launch без тапов.
-- **Параллельные агенты**: один `xcodebuild`; `Assets.xcassets/` — не трогать одновременно.
+- Общение, коммиты, UI-копия — **на русском**. Conventional Commits, трейлер `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
+- **Токены**: переиспользуемое — в `DesignSystem/Tokens.swift`; одноразовые числа живут локальной константой рядом с компонентом («токен ради единственного вызова не заводим»).
+- Магические числа анимаций — именованными константами в config-enum рядом с компонентом (`ActionBarMotion`, `SearchPullConfig`, `ShowcaseMotion`).
+- Комментарии — только там, где логика неочевидна; объяснять **почему**, а не что делает строка.
+- Файлы добавляются простым созданием на диске (filesystem-synchronized pbxproj), проект править не нужно.
+- `APIKeys.swift` в гитигноре, но без него проект не соберётся — копия в `_secrets/`.
+- **Оркестрация**: тяжёлые исследования — параллельными субагентами; правки в одном файле применять последовательно, иначе агенты передерутся за файл.
