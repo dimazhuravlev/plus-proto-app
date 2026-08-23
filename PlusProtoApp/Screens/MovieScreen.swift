@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import VariableBlur
 
 // MARK: - Геометрия
 
@@ -80,17 +81,21 @@ enum MovieLayout {
     static let buttonLeading: CGFloat = 22
     static let buttonTrailing: CGFloat = 26
     static let buttonGap: CGFloat = 8
-    /// Сколько лента обязана оставить под панелью сверх хрома приложения
+    /// Сколько лента обязана оставить под прибитой панелью
     static var panelClearance: CGFloat { buttonHeight + panelBottom }
+    /// Высота затемняющей подложки: чистый градиент над кнопками + сами кнопки + поле
+    static var panelHeight: CGFloat { panelLead + buttonHeight + panelBottom }
+    /// Блюр начинается от верхней кромки кнопок, а не от верха градиента
+    static var panelBlurHeight: CGFloat { buttonHeight + panelBottom }
 
     /// Верх ряда кнопок панели от верха экрана. Экран — константа устройства,
     /// а не замер вью: читать размер вью, от которого зависит её же раскладка, запрещено.
-    /// Хрома приложения под панелью на этом экране нет, поэтому его высота не вычитается.
+    ///
+    /// Отмеряется от **физического** низа: панель прибита к нижней кромке экрана
+    /// с полем 24 — тем же, что по бокам, — и под неё не подложены ни хром приложения,
+    /// ни безопасная зона.
     static var panelRowTop: CGFloat {
-        UIScreen.main.bounds.height
-            - PlusChromeMetrics.bottomSafeArea
-            - panelBottom
-            - buttonHeight
+        UIScreen.main.bounds.height - panelBottom - buttonHeight
     }
 
     // Секции
@@ -209,8 +214,10 @@ struct MovieScreen: View {
             // поджиматься под него не надо. Инсет приходит по environment из
             // `AppRootView` и доезжает даже в презентацию — снимаем его явно.
             .contentMargins(.bottom, 0, for: .scrollContent)
-            // Кавер начинается от физического верха экрана, а не от safe area
-            .ignoresSafeArea(edges: .top)
+            // Кавер начинается от физического верха экрана, а не от safe area.
+            // Снизу — то же самое: панель прибита к физической кромке, и лента
+            // обязана уходить под неё, иначе её клиренс считался бы от безопасной зоны.
+            .ignoresSafeArea(edges: [.top, .bottom])
             .scrollPosition($scrollPosition)
             .trackNavBarScroll(into: $scrollOffset)
             #if DEBUG
@@ -374,13 +381,14 @@ struct MovieScreen: View {
 ///
 /// Панель прибита к нижней кромке экрана: поля 24 по бокам и снизу — макетные.
 ///
-/// Подложка — **та же, что у таббара** (`TabBarUnderlay`): прогрессивный блюр плюс
-/// градиент `PlusGradient.tabBarUnderlay`. Так две нижние панели приложения выглядят
+/// Градиент и блюр — **те же, что у таббара**: `PlusGradient.tabBarUnderlay` и
+/// прогрессивный `VariableBlurView`. Так две нижние панели приложения выглядят
 /// одинаково, и это осознанно чуть иначе, чем в макете карточки: там свой градиент
 /// с пиком 0.92 (против 0.90 у таббара) и `backdrop-blur: 2` вместо прогрессивного.
 /// Разница между 0.90 и 0.92 неразличима, а единообразие важнее.
 ///
-/// Высоты совпали сами: у таббара подложка 210, и `96 + 56 + 24 + 34` — те же 210.
+/// Высоты при этом свои, не таббарные: подложка ровно в панель (96 + 56 + 24),
+/// а блюр начинается от верхней кромки кнопок (56 + 24), а не от верха градиента.
 ///
 /// Сплошного чёрного под кнопками больше нет. Он появился, когда под панелью стоял
 /// хром приложения и сквозь пик 0.92 читался текст описания; теперь экран показывается
@@ -396,13 +404,26 @@ private struct MovieMainButtons: View {
         .padding(.horizontal, MovieLayout.panelSide)
         .padding(.bottom, MovieLayout.panelBottom)
         .background(alignment: .bottom) { scrim }
+        // Поле снизу отмеряется от физической кромки экрана, а не от безопасной зоны:
+        // в макете оно равно боковому. Одного `ignoresSafeArea` мало — выравнивание
+        // оверлея всё равно считается по безопасной зоне родителя, поэтому панель
+        // разворачивается на всю высоту и прижимается к низу уже внутри себя.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .ignoresSafeArea(edges: .bottom)
     }
 
     private var scrim: some View {
-        TabBarUnderlay()
-            // Оверлей прижат к границе safe area, а подложка обязана уйти
-            // под home indicator.
-            .offset(y: PlusChromeMetrics.bottomSafeArea)
+        ZStack(alignment: .bottom) {
+            VariableBlurView(
+                maxBlurRadius: PlusChromeMetrics.underlayBlurRadius,
+                direction: .blurredBottomClearTop
+            )
+            .frame(height: MovieLayout.panelBlurHeight)
+
+            PlusGradient.tabBarUnderlay
+                .frame(height: MovieLayout.panelHeight)
+        }
+        .allowsHitTesting(false)
     }
 
     private var playButton: some View {
