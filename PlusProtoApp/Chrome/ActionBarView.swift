@@ -68,9 +68,6 @@ private enum ActionBarGeometry {
     static let focusedScreenMargin: CGFloat = 16
     /// На сколько плеер уезжает вправо, скрываясь за кромкой экрана
     static let trailingEscape: CGFloat = 120
-    /// Насколько «распускается» клип правой зоны там, где резать нельзя.
-    /// 120 уезда + половина самого широкого чипа (кино 91.552) + запас.
-    static let trailingClipRelief: CGFloat = 240
 }
 
 /// Резина свайпа по полю поиска. Формула из UIScrollView: f(x) = (x·d·c)/(d + c·x),
@@ -210,8 +207,6 @@ private struct ActionBarLayout: Equatable {
     let screenMargin: CGFloat
     /// Зазор между зонами (бывший HStack spacing).
     let gap: CGFloat
-    /// 0 — клип по границе зоны (эквивалент `.clipped()`); большой — клипа нет.
-    let trailingClipRelief: CGFloat
 
     init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise) {
         let compact = PlusMetrics.actionBarCompact
@@ -236,8 +231,6 @@ private struct ActionBarLayout: Equatable {
             searchIconOnly = false
             trackInfoOpacity = 0
             progressOpacity = 0
-            // Клип распущен: нулевая зона срезала бы уезжающий плеер на первом же кадре.
-            trailingClipRelief = ActionBarGeometry.trailingClipRelief
             return
         }
 
@@ -249,7 +242,6 @@ private struct ActionBarLayout: Equatable {
             placeholderOpacity = 1
             trackInfoOpacity = 0
             progressOpacity = 0
-            trailingClipRelief = 0
             searchIconOnly = false
             // Поиск гибкий, свёрнутый плеер — фиксированный круг. В макете это 284 + 60
             // при контенте 352; гибкая зона даёт ту же картинку и переживает любую ширину экрана.
@@ -263,7 +255,6 @@ private struct ActionBarLayout: Equatable {
             showMiniPlayer = hasMusic
             showBookChip = false
             showMovieChip = false
-            trailingClipRelief = 0
             // Фокус перехвачен ранним return выше — сюда попадаем только вне фокуса.
             trackInfoOpacity = 1
             progressOpacity = 1
@@ -294,8 +285,6 @@ private struct ActionBarLayout: Equatable {
             searchWidth = nil
             trailingWidth = ActionBarGeometry.bookChipAABBWidth
             gap = PlusMetrics.actionBarGap
-            // AABB повёрнутого чипа книги 62.9pt в зоне 60pt — вертикальный клип его срежет.
-            trailingClipRelief = ActionBarGeometry.trailingClipRelief
 
         case .movie:
             showMiniPlayer = false
@@ -308,7 +297,6 @@ private struct ActionBarLayout: Equatable {
             searchWidth = nil
             trailingWidth = ActionBarGeometry.movieChipAABBWidth
             gap = PlusMetrics.actionBarGap
-            trailingClipRelief = 0
         }
     }
 }
@@ -546,17 +534,34 @@ private struct SearchPlaceholderTicker: View {
 
 // MARK: - Trailing slot
 
-/// Клип правой зоны без ветвления. `relief == 0` — эквивалент `.clipped()`,
-/// большой рельеф = клипа фактически нет.
-/// Рельеф НЕ анимируется (`EmptyAnimatableData`): иначе на первых кадрах фокуса
-/// клип ещё тугой и срезает уезжающий плеер.
+/// Клип правой зоны: режем **только по левой кромке**, вправо и по вертикали — никогда.
+/// Одно правило на все режимы и все состояния, без параметров и без ветвлений.
+///
+/// Почему именно так:
+/// - по левой кромке резать надо: уходящий чип кино (AABB 91.552) в сжатой зоне
+///   вылезал бы на поле поиска;
+/// - вправо резать нельзя: при фокусе плеер уезжает за кромку экрана, и клип
+///   по зоне обрезал бы его задолго до неё;
+/// - по вертикали резать нельзя: AABB повёрнутого чипа книги 62.9pt выше зоны 60pt.
+///
+/// Здесь был параметр `relief` — и это был баг. `Shape` с `EmptyAnimatableData`
+/// не интерполируется, и SwiftUI держал **старое** значение фигуры всю анимацию.
+/// В `.book` клип в покое распущен, поэтому уезд работал; в `.music` и `.movie`
+/// он в покое тугой — и всю анимацию фокуса резал уезжающий плеер по кромке зоны.
+/// Отсюда жалоба «правый паддинг обрезает киноплеер, а с книгой всё хорошо».
 private struct TrailingClipShape: Shape {
-    var relief: CGFloat
-    var animatableData: EmptyAnimatableData {
-        get { EmptyAnimatableData() }
-        set {}
+    /// Запас, на который клип уходит вправо и по вертикали. Заведомо больше
+    /// и высоты бара, и уезда 120 + поля 16, и любого чипа.
+    private static let overshoot: CGFloat = 2000
+
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(
+            x: rect.minX,
+            y: rect.minY - Self.overshoot,
+            width: rect.width + Self.overshoot,
+            height: rect.height + Self.overshoot * 2
+        ))
     }
-    func path(in rect: CGRect) -> Path { Path(rect.insetBy(dx: -relief, dy: -relief)) }
 }
 
 private struct TrailingSlot: View {
@@ -603,7 +608,7 @@ private struct TrailingSlot: View {
         // SwiftUI удалял ВСЮ правую зону (она переставала участвовать в раскладке,
         // замирала в последней геометрии и гасла) и вставлял новую, рождённую уже
         // с offset(x: 120) и opacity 0. Поэтому плеер не ехал ни вверх, ни вправо.
-        .clipShape(TrailingClipShape(relief: layout.trailingClipRelief))
+        .clipShape(TrailingClipShape())
         // Бывший HStack(spacing:): как padding зазор интерполируется, а spacing прыгал.
         .padding(.leading, layout.gap)
         // Правое поле экрана — часть правой зоны, а не бара: см. комментарий в `ActionBarView`.
