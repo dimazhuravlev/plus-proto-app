@@ -115,6 +115,26 @@ actor KinopoiskService {
         return response.docs
     }
 
+    /// Кадры (`type=still`) сразу для нескольких тайтлов.
+    ///
+    /// `movieId` — повторяющийся параметр, поэтому один запрос покрывает целую пачку
+    /// фильмов: иначе кадры стоили бы запроса на тайтл, а квота 200 в сутки этого
+    /// не переживёт. Выдача общая на всю пачку, и жадный тайтл (у «Игры престолов»
+    /// 1423 кадра) может занять её целиком — отсюда небольшие пачки, а не все 250 сразу.
+    func stills(movieIDs: [Int], limit: Int = 250) async throws -> [KinopoiskStill] {
+        guard !movieIDs.isEmpty else { return [] }
+        var query = movieIDs.map { URLQueryItem(name: "movieId", value: "\($0)") }
+        query.append(URLQueryItem(name: "type", value: "still"))
+        query.append(URLQueryItem(name: "limit", value: "\(limit)"))
+        query.append(contentsOf: Self.selectFields(["movieId", "url", "width", "height"]))
+
+        let response: KinopoiskListResponse<KinopoiskStill> = try await fetch(
+            path: "/v1.4/image",
+            query: query
+        )
+        return response.docs
+    }
+
     /// Каталог подборок (всего их около 300).
     func lists(limit: Int = 10, page: Int = 1) async throws -> [KinopoiskMovieList] {
         let response: KinopoiskListResponse<KinopoiskMovieList> = try await fetch(
@@ -132,6 +152,32 @@ actor KinopoiskService {
         try await fetch(path: "/v1.5/token")
     }
 
+    #if DEBUG
+    /// ВРЕМЕННО, вместе с `MovieRawFieldsSection`: сырой ответ по тайтлу без `selectFields`,
+    /// то есть все поля, которые API знает о фильме, — включая те, что модель не разбирает.
+    func rawMovieJSON(id: Int) async throws -> Data {
+        try await fetchData(path: "/v1.4/movie/\(id)")
+    }
+
+    /// ВРЕМЕННО: вся графика тайтла из отдельной ручки — постеры, кадры, обложки,
+    /// скриншоты. В самом тайтле лежат только `poster`, `backdrop` и `logo`.
+    ///
+    /// Сортировка по `type` здесь не косметика: выдача идёт группами по типу, и без неё
+    /// у популярного тайтла в выборку попадают одни постеры (у «Игры престолов» их 170
+    /// из 2113 картинок). Два прохода — с начала и с конца алфавита — покрывают оба края.
+    func rawImagesJSON(movieID: Int, limit: Int, ascending: Bool) async throws -> Data {
+        try await fetchData(
+            path: "/v1.4/image",
+            query: [
+                URLQueryItem(name: "movieId", value: "\(movieID)"),
+                URLQueryItem(name: "limit", value: "\(limit)"),
+                URLQueryItem(name: "sortField", value: "type"),
+                URLQueryItem(name: "sortType", value: ascending ? "1" : "-1")
+            ]
+        )
+    }
+    #endif
+
     // MARK: - Private
 
     /// `selectFields` передаётся повторяющимся параметром, по одному полю на вхождение.
@@ -140,6 +186,15 @@ actor KinopoiskService {
     }
 
     private func fetch<T: Decodable>(path: String, query: [URLQueryItem] = []) async throws -> T {
+        let data = try await fetchData(path: path, query: query)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw KinopoiskError.invalidResponse
+        }
+    }
+
+    private func fetchData(path: String, query: [URLQueryItem] = []) async throws -> Data {
         await throttle()
 
         guard var components = URLComponents(string: baseURL + path) else {
@@ -177,11 +232,7 @@ actor KinopoiskService {
             }
         }
 
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw KinopoiskError.invalidResponse
-        }
+        return data
     }
 
     /// Скользящее окно: держим не больше `maxRequestsPerWindow` отметок за последнюю секунду,

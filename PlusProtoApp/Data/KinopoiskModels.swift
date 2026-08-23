@@ -20,13 +20,21 @@ struct KinopoiskImage: Codable {
 }
 
 /// Размеры, которые реально отдаёт Яндекс-CDN. `1000x1500` и `1440x2160` возвращают 404 — не добавлять.
+///
+/// Размер здесь — бокс, а не кроп: CDN вписывает картинку, сохраняя пропорции
+/// (замер: кадр 6000×4308 по `600x900` приезжает как 600×431). Поэтому для вертикальных
+/// картинок ширину задаёт высота бокса, и наоборот.
 enum KinopoiskPosterSize: String {
     case small = "300x450"
     case medium = "600x900"
     /// Нативный размер кадра `backdrop`. Витрина показывает его в рамке 322×181pt,
     /// то есть 966×543px — брать `wide` вдвое дороже по памяти без выигрыша в чёткости.
+    /// Работает только для `get-ott`: на `get-kinopoisk-image` этот пресет отдаёт 404.
     case frame = "1344x756"
     case wide = "1920x1080"
+    /// Квадратный бокс. Единственный крупный пресет, который берут кадры `still`:
+    /// вертикальный кадр приезжает как 1280×1920 — как раз под кавер 3:4 на ×3.
+    case huge = "1920x1920"
     case tall = "x1000"
     case original = "orig"
 }
@@ -79,6 +87,43 @@ enum TMDBImageProxy {
             URLQueryItem(name: "output", value: "png"),
         ]
         return components.url
+    }
+}
+
+// MARK: - Кадры тайтла
+
+/// Кадр из ручки `/v1.4/image` с `type=still`.
+///
+/// Зачем он нужен помимо `backdrop`: `backdrop` у тайтла ровно один, всегда 16:9,
+/// а кавер карточки — портретный 3:4, и от кадра в нём оставалось меньше половины
+/// ширины (DECISIONS 2026-08-23). Среди `still` есть и вертикальные кадры высокого
+/// разрешения — они закрывают кавер целиком. Обратная сторона: `still` есть далеко
+/// не у всех тайтлов (замер по пачке из 10 фильмов пула: кадры нашлись у четырёх),
+/// поэтому `backdrop` остаётся фолбэком, а не уходит.
+struct KinopoiskStill: Codable, Identifiable {
+    let movieId: Int
+    let url: String
+    let width: Int?
+    let height: Int?
+
+    var id: String { url }
+
+    /// Вертикальный кадр — тот, что годится каверу без жёсткого кропа.
+    var isPortrait: Bool {
+        guard let width, let height else { return false }
+        return height > width
+    }
+
+    /// Ссылка на кадр нужного размера — размер у Яндекс-CDN задаётся последним
+    /// сегментом пути, как и у `KinopoiskImage`.
+    func url(size: KinopoiskPosterSize) -> URL? {
+        guard !url.isEmpty else { return nil }
+        let resized = url.replacingOccurrences(
+            of: #"/(?:orig|\d*x\d*)$"#,
+            with: "/" + size.rawValue,
+            options: .regularExpression
+        )
+        return URL(string: resized)
     }
 }
 

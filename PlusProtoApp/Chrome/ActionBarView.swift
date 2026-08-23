@@ -7,11 +7,8 @@ import UIKit
 enum ActionBarMotion {
     /// Морф ширин и opacity между четырьмя режимами.
     static let morph: Animation = .smooth(duration: 0.32)
-    /// Дискретная смена троеточия 1→2→3.
-    static let ellipsisStep: Animation = .smooth(duration: 0.2)
     /// Интервал ротации плейсхолдера (открытый вопрос — стартовое значение 4s).
     static let placeholderInterval: Duration = .seconds(4)
-    static let ellipsisInterval: Duration = .milliseconds(500)
     /// Установившаяся скорость вращения обложки, °/с.
     static let coverDegreesPerSecond: Double = 18
     /// Инерция диска: постоянная времени разгона и торможения (см. `CoverSpin`).
@@ -108,6 +105,9 @@ private enum SearchPullConfig {
 
     /// Порог фокуса по пути пальца вверх.
     static let triggerDistance: CGFloat = 44
+    /// Порог снятия фокуса по пути пальца вниз. Меньше, чем на открытие: закрывать
+    /// всегда должно быть легче, чем открывать, — то же правило, что у шторок.
+    static let dismissDistance: CGFloat = 24
     /// Короткий резкий рывок открывает поиск, не дотягивая до порога.
     static let flickVelocity: CGFloat = 500
     static let flickMinDistance: CGFloat = 16
@@ -186,6 +186,18 @@ struct ActionBarView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     searchFocused = true
                 }
+            }
+        }
+        .task {
+            // `-debugSearchCycle` — фокус и расфокус поля по кругу. Нужен, чтобы снять
+            // на видео **уход** затемнения: тапнуть по нему из шелла нечем, а именно
+            // на обратном движении видно, отстаёт слой от клавиатуры или идёт с ней.
+            guard UserDefaults.standard.bool(forKey: "debugSearchCycle") else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                searchFocused = true
+                try? await Task.sleep(for: .seconds(3))
+                searchFocused = false
             }
         }
         .task {
@@ -436,10 +448,20 @@ private struct SearchPill: View {
 
     /// Свайп вверх по полю: капсула тянется как резина, на пороге открывается поиск.
     /// Фокус ставится только на отпускании — иначе бар прыгнет вверх из-под пальца.
+    ///
+    /// Обратное движение — свайп вниз по уже сфокусированному полю — снимает фокус:
+    /// клавиатура уезжает, бар опускается. Здесь фокус снимается **сразу на пороге**,
+    /// не дожидаясь отпускания: жест повторяет привычный сброс клавиатуры протягиванием,
+    /// а он идёт за пальцем.
     private var pullGesture: some Gesture {
         DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .local)
             .onChanged { value in
-                guard !searchFocused else { return }
+                guard !searchFocused else {
+                    if value.translation.height >= SearchPullConfig.dismissDistance {
+                        searchFocused = false
+                    }
+                    return
+                }
                 let travel = -value.translation.height
                 // Без withAnimation: резина идёт за пальцем один в один.
                 pull = SearchPullConfig.progress(travel: travel)
@@ -447,7 +469,19 @@ private struct SearchPill: View {
             }
             .onEnded { value in
                 tickArmed = false
-                guard !searchFocused else { pull = 0; return }
+                guard !searchFocused else {
+                    pull = 0
+                    // Короткий рывок вниз закрывает, не дотягивая до порога, — зеркально
+                    // тому, как рывок вверх открывает.
+                    let down = value.translation.height
+                    let flickDown = value.velocity.height >= SearchPullConfig.flickVelocity
+                        && down >= SearchPullConfig.flickMinDistance
+                        && down > abs(value.translation.width)
+                    if down >= SearchPullConfig.dismissDistance || flickDown {
+                        searchFocused = false
+                    }
+                    return
+                }
                 let travel = -value.translation.height
                 let flick = -value.velocity.height >= SearchPullConfig.flickVelocity
                     && travel >= SearchPullConfig.flickMinDistance
@@ -532,63 +566,83 @@ private struct SearchPill: View {
 private enum SearchPlaceholderMotion {
     /// Ход по вертикали: уходящий вниз, приходящий сверху.
     static let travel: CGFloat = 4
-    /// Быстро, но плавно. Сильный ease-out: движение видно с первого кадра,
-    /// торможение длинное — так подмена не читается как щелчок. Держимся ниже
-    /// 300мс, за которыми интерфейс начинает казаться медленным.
-    static let swap: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
+    /// Уход: обычный ease-in-out — фраза спокойно убирается с дороги.
+    /// Длительность парная с `swapOutDuration`, их правят вместе: по одной анимируется
+    /// движение, по второй ждёт цикл подмены.
+    static let swapOut: Animation = .timingCurve(0.4, 0, 0.6, 1, duration: 0.26)
+    static let swapOutDuration: Duration = .milliseconds(260)
+    /// Приход: сильный ease-out, движение видно с первого кадра, торможение длинное.
+    static let swapIn: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.36)
+    /// Пауза между уходом и приходом. Глаз должен увидеть пустое поле — тогда смена
+    /// читается как «одна фраза сменила другую», а не как проявление сквозь неё.
+    static let swapGap: Duration = .milliseconds(100)
     /// Интерлиньяж строки плейсхолдера — `plusTitleL()`.
     static let lineHeight: CGFloat = 26
-    /// Место под троеточие.
-    static let ellipsisWidth: CGFloat = 24
 }
 
-/// Плейсхолдеры поиска: подмена кросс-фейдом со сдвигом на 4pt.
+/// Плейсхолдеры поиска: подмена со сдвигом на 4pt, уход и приход разведены по времени.
 ///
 /// Карусели больше нет. Вертикальная лента прокручивала все три фразы разом и
-/// читалась как механизм — было видно, что за кадром едет лишний текст. Здесь
-/// уходящая фраза гаснет и **опускается** на 4pt, приходящая одновременно
-/// проявляется и приходит **сверху** с тех же 4pt. Ход крошечный намеренно:
-/// плейсхолдер не должен спорить за внимание с полем ввода, ему достаточно
-/// намекнуть на смену.
+/// читалась как механизм — было видно, что за кадром едет лишний текст.
+///
+/// **Одна строка, три фазы, а не две вью с `transition`.** Через переход это не
+/// собирается: SwiftUI ставит уход и приход в одну транзакцию, и обе фразы
+/// оказываются полупрозрачными в одном кадре — тот самый нахлёст. Собственная
+/// анимация на половинках `.asymmetric` этого не лечит: задержка у вставки
+/// сдвигает старт, но уходящая вью всё равно живёт в дереве рядом с приходящей.
+/// Поэтому фраза здесь **одна**, а смена — последовательность: уехала вниз и погасла →
+/// текст подменился, пока прозрачность 0 → выехала сверху и проявилась.
 private struct SearchPlaceholderTicker: View {
     var isPaused: Bool
 
+    /// Где строка находится сейчас. `.above` и `.below` — одно и то же невидимое
+    /// состояние, отличаются только стороной, с которой строка входит и выходит.
+    private enum Phase {
+        case above, visible, below
+    }
+
     /// Ход подмены — движение декоративное: оно ничего не объясняет, только
     /// намекает на смену фразы. При включённом «уменьшении движения» его надо
-    /// убрать, но не гасить подмену целиком: кросс-фейд помогает понять, что
-    /// текст сменился, и остаётся.
+    /// убрать, но не гасить подмену целиком: смена помогает понять, что текст
+    /// изменился, и остаётся.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let phrases = [
-        "Хочу послушать",
-        "Хочу почитать",
-        "Хочу посмотреть",
+        "Найти",
+        "Послушать",
+        "Создать",
+        "Посмотреть",
+        "Почитать",
     ]
 
     @State private var activeIndex = 0
-    @State private var dotCount = 1
+    @State private var phase: Phase = .visible
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            phrase(Self.phrases[activeIndex])
-                // Идентичность по индексу — то, ради чего здесь вообще возможен
-                // `transition`: SwiftUI видит замену вью, а не смену её текста.
-                .id(activeIndex)
-                .transition(.asymmetric(
-                    insertion: .opacity.combined(with: .offset(y: -travel)),
-                    removal: .opacity.combined(with: .offset(y: travel))
-                ))
-        }
-        .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
-        // Клипа нет: он срезал бы те самые 4pt хода. Границу держит капсула поля.
-        .animation(SearchPlaceholderMotion.swap, value: activeIndex)
-        .task(id: isPaused) {
-            guard !isPaused else { return }
-            await runPlaceholderLoop()
-        }
-        .task(id: isPaused) {
-            guard !isPaused else { return }
-            await runEllipsisLoop()
+        phrase(Self.phrases[activeIndex])
+            .opacity(phase == .visible ? 1 : 0)
+            .offset(y: offsetY)
+            .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Клипа нет: он срезал бы те самые 4pt хода. Границу держит капсула поля.
+            .task(id: isPaused) {
+                guard !isPaused else {
+                    // Пауза застаёт строку в любой фазе, в том числе в невидимой.
+                    // Без сброса плейсхолдер так и остался бы пустым.
+                    var instant = Transaction()
+                    instant.disablesAnimations = true
+                    withTransaction(instant) { phase = .visible }
+                    return
+                }
+                await runPlaceholderLoop()
+            }
+    }
+
+    private var offsetY: CGFloat {
+        switch phase {
+        case .above: -travel
+        case .visible: 0
+        case .below: travel
         }
     }
 
@@ -596,30 +650,36 @@ private struct SearchPlaceholderTicker: View {
         reduceMotion ? 0 : SearchPlaceholderMotion.travel
     }
 
+    /// Троеточие статичное: набегающие точки читались как индикатор загрузки —
+    /// будто поле думает, — хотя ничего не происходит.
     private func phrase(_ text: String) -> some View {
-        HStack(spacing: 0) {
-            Text(text)
-            // Ширина фиксирована, чтобы прибавляющиеся точки не толкали фразу.
-            Text(String(repeating: ".", count: dotCount))
-                .frame(width: SearchPlaceholderMotion.ellipsisWidth, alignment: .leading)
-        }
-        .plusTitleL()
-        .foregroundStyle(Color.searchPlaceholder)
+        Text(text + "...")
+            .plusTitleL()
+            .foregroundStyle(Color.searchPlaceholder)
     }
 
     private func runPlaceholderLoop() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: ActionBarMotion.placeholderInterval)
-            activeIndex = (activeIndex + 1) % Self.phrases.count
-        }
-    }
+            guard !Task.isCancelled else { return }
 
-    private func runEllipsisLoop() async {
-        while !Task.isCancelled {
-            try? await Task.sleep(for: ActionBarMotion.ellipsisInterval)
-            withAnimation(ActionBarMotion.ellipsisStep) {
-                dotCount = dotCount % 3 + 1
+            withAnimation(SearchPlaceholderMotion.swapOut) { phase = .below }
+            try? await Task.sleep(for: SearchPlaceholderMotion.swapOutDuration)
+            guard !Task.isCancelled else { return }
+
+            // Подмена текста и переброс на исходную позицию — строго без анимации:
+            // иначе строка проедет снизу вверх через всё поле, а видно этого быть
+            // не должно, она в этот момент прозрачная.
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                activeIndex = (activeIndex + 1) % Self.phrases.count
+                phase = .above
             }
+
+            try? await Task.sleep(for: SearchPlaceholderMotion.swapGap)
+            guard !Task.isCancelled else { return }
+            withAnimation(SearchPlaceholderMotion.swapIn) { phase = .visible }
         }
     }
 }

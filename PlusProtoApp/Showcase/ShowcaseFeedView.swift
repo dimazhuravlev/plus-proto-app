@@ -62,6 +62,9 @@ struct ShowcaseFeedView: View {
                 }
             }
             .frame(width: ShowcaseLayout.designWidth)
+            // Клиренс под хромом ленте уже даёт `contentMargins` в корне — это воздух
+            // сверх него, чтобы последняя карточка не притиралась к панели действий.
+            .padding(.bottom, ShowcaseLayout.feedBottomPadding)
         }
         .scrollIndicators(.hidden)
         .scrollPosition($scrollPosition)

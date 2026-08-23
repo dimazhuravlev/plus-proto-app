@@ -72,6 +72,15 @@ struct AmbilightArtwork: View {
                 .clipShape(shape)
                 .overlay { shape.strokeBorder(Color.fillNine, lineWidth: borderWidth) }
                 .background { glow(image) }
+        } placeholder: {
+            // Плейсхолдер обязан совпадать с обложкой кадром и формой. Дефолтный —
+            // это голый `Color`: он тянется по предложению родителя и рисуется прямым
+            // прямоугольником, поэтому до прилёта картинки обложка была и не того
+            // размера, и без скруглений, а потом прыгала в кадр.
+            Color.buttonsPrimary
+                .frame(width: size.width, height: size.height)
+                .clipShape(shape)
+                .overlay { shape.strokeBorder(Color.fillNine, lineWidth: borderWidth) }
         }
         .rotationEffect(rotation)
     }

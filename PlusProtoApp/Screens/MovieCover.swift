@@ -123,23 +123,18 @@ struct MovieTrailerCover: View {
 
     var body: some View {
         ZStack {
-            ArtworkImage(source: poster)
-                .scaledToFill()
-                .overlay(Color(red: 0, green: 0, blue: 1).opacity(0.45))
+            // Неподвижный кадр и видео — **взаимоисключающие** слои: одновременно
+            // в кадре они бывают только в те 0.4с, пока идёт кроссфейд.
+            still
+                .opacity(isVideoShown ? 0 : 1)
 
-            if let clean {
-                clean
-                    .resizable()
-                    .scaledToFill()
-                    .transition(.opacity)
-                    .overlay(Color(red: 1, green: 1, blue: 0).opacity(0.45))
+            fill {
+                LoopingVideoLayer(player: playback.queue) { isVideoReady = true }
             }
-
-            LoopingVideoLayer(player: playback.queue) { isVideoReady = true }
-                .opacity(isPlaying && isVideoReady ? 1 : 0)
-                .animation(fade(MovieCoverMotion.videoFadeIn), value: isPlaying && isVideoReady)
-                .allowsHitTesting(false)
+            .opacity(isVideoShown ? 1 : 0)
+            .allowsHitTesting(false)
         }
+        .animation(fade(MovieCoverMotion.videoFadeIn), value: isVideoShown)
         // Кадр целиком — одна кнопка. `contentShape` обязателен: без него тап ловят
         // только непрозрачные пиксели, а слои здесь появляются и исчезают.
         .contentShape(Rectangle())
@@ -175,6 +170,44 @@ struct MovieTrailerCover: View {
             guard isPlaying else { return }
             phase == .active ? start() : playback.pause()
         }
+    }
+
+    /// Видео действительно на экране: пользователь его включил **и** слой отдал кадр.
+    /// Пока плеер не готов, гасить неподвижный кадр нельзя — получилась бы дыра.
+    private var isVideoShown: Bool {
+        isPlaying && isVideoReady
+    }
+
+    /// Неподвижный кадр: постер сущности, а поверх — чистый кадр из API, когда доедет.
+    private var still: some View {
+        ZStack {
+            fill {
+                ArtworkImage(source: poster)
+                    .scaledToFill()
+            }
+
+            if let clean {
+                fill {
+                    clean
+                        .resizable()
+                        .scaledToFill()
+                }
+                .transition(.opacity)
+            }
+        }
+    }
+
+    /// Слой во весь кадр. Размер держит распорка, а картинка её заполняет.
+    ///
+    /// Без распорки слои разъезжаются, и это не теория: `scaledToFill` отдаёт наверх
+    /// **свой** размер (для постера 2:3 это 402×603, для кадра 16:9 — 953×536), стек
+    /// берёт объединение и раскладывает детей каждого по своему размеру. Замер
+    /// тонировкой слоёв: постер занимал верхние 380pt кадра, кадр из API — оставшиеся
+    /// 156, то есть в одном кавере одновременно висели две разные картинки.
+    private func fill<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        Color.clear
+            .overlay { content() }
+            .clipped()
     }
 
     /// Проявление без анимации при «уменьшении движения». Само воспроизведение при

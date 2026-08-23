@@ -35,8 +35,12 @@ enum MovieLayout {
     // Шапка `I3806:11014;6787:11641`
 
     // Инфо-блок `I3806:11014;6787:11640`
-    /// Отрицательный gap: инфо наезжает на кавер
-    static let infoOverlap: CGFloat = 40
+    /// Отрицательный gap: инфо наезжает на кавер.
+    ///
+    /// В макете здесь 40, у нас 80 — правка от 2026-08-23. На кавере теперь чистый
+    /// кадр без нанесённого названия, и блоку положено заметно заезжать на него,
+    /// а не касаться кромки. Число одно, менять тут же.
+    static let infoOverlap: CGFloat = 80
     static let infoLeading: CGFloat = 48
     static let infoTrailing: CGFloat = 16
     static let infoSpacing: CGFloat = 16
@@ -185,6 +189,13 @@ struct MovieScreen: View {
                     if !details.similar.isEmpty {
                         MovieSimilarSection(titles: details.similar)
                     }
+                    #if DEBUG
+                    // ВРЕМЕННО: дамп всех полей API по этому тайтлу. Удаляется вместе
+                    // с `MovieRawFieldsSection.swift` и `KinopoiskService.rawMovieJSON`.
+                    if let id = MovieDetailsStore.debugID ?? entity.kinopoiskID {
+                        MovieRawFieldsSection(movieID: id)
+                    }
+                    #endif
                     // Хром приложения на этом экране спрятан, поэтому весь клиренс под
                     // прибитой панелью действий экран добирает сам.
                     Color.clear.frame(height: MovieLayout.panelClearance)

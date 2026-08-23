@@ -27,9 +27,27 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
     /// логотип проекта заменяется его названием.
     @ViewBuilder let placeholder: () -> Placeholder
 
-    /// Загруженная картинка. Инициализируется синхронно из памяти — иначе уже
-    /// прогретая обложка всё равно моргала бы фолбэком один кадр.
+    /// Загруженная картинка. Достаётся из памяти **синхронно, в `init`** — иначе уже
+    /// прогретая обложка моргает плейсхолдером на каждом монтировании вью: `.task`
+    /// выполняется после первого рендера, и до неё кадр рисуется пустым.
+    ///
+    /// Раньше это было только обещанием в комментарии, а поймалось на возврате
+    /// с экрана сущности: карточка пересоздаётся, и обложка на мгновение подменялась
+    /// заливкой — меньшего размера и без скруглений (запись обратного зума, 30 к/с).
     @State private var loaded: Image?
+
+    @MainActor
+    init(
+        source: ArtworkSource,
+        @ViewBuilder content: @escaping (Image) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.source = source
+        self.content = content
+        self.placeholder = placeholder
+        let warm = source.remoteURL.flatMap { ArtworkLoader.shared.cached($0) }
+        _loaded = State(initialValue: warm.map { Image(uiImage: $0) })
+    }
 
     var body: some View {
         Group {
@@ -62,6 +80,7 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
 }
 
 extension ResolvedArtwork where Placeholder == Color {
+    @MainActor
     init(source: ArtworkSource, @ViewBuilder content: @escaping (Image) -> Content) {
         self.init(source: source, content: content) { Color.buttonsPrimary }
     }

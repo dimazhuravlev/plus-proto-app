@@ -25,6 +25,8 @@ final class ShowcaseCatalog {
     /// фильм на экране успевал бы смениться на глазах.
     private var pickedFeatured: KinopoiskMovie?
     private var pickedWatching: KinopoiskMovie?
+    /// Горизонтальный кадр выбранного тайтла «продолжить смотреть», если он есть.
+    private var watchingStill: KinopoiskStill?
 
     /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
     /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после
@@ -41,10 +43,21 @@ final class ShowcaseCatalog {
         var rng = ShowcaseRotation.movieGenerator()
         let snapshot = MoviePool.diskSnapshot()
         let unseen = snapshot.movies.filter { !snapshot.shown.contains($0.id) }
-        pickedFeatured = unseen.filter(Self.isFeaturable).randomElement(using: &rng)
-        pickedWatching = unseen
-            .filter { Self.isWatchable($0) && $0.id != pickedFeatured?.id }
-            .randomElement(using: &rng)
+        // Тот же приём, что и в асинхронном проходе: сперва тайтлы, у которых уже
+        // есть кадр, и только если таких нет — любые годные.
+        func withStill(_ movies: [KinopoiskMovie]) -> [KinopoiskMovie] {
+            movies.filter { !(snapshot.stills[String($0.id)] ?? []).isEmpty }
+        }
+
+        let featurable = unseen.filter(Self.isFeaturable)
+        pickedFeatured = withStill(featurable).randomElement(using: &rng)
+            ?? featurable.randomElement(using: &rng)
+
+        let watchable = unseen.filter { Self.isWatchable($0) && $0.id != pickedFeatured?.id }
+        pickedWatching = withStill(watchable).randomElement(using: &rng)
+            ?? watchable.randomElement(using: &rng)
+        watchingStill = pickedWatching.flatMap { snapshot.stills[String($0.id)] }?.first
+
         applyMovieBlocks(featuredTint: nil, rng: &rng, preload: false)
     }
 
@@ -94,10 +107,23 @@ final class ShowcaseCatalog {
         // для этого блока кончаются первыми.
         if await MoviePool.shared.needsRefill(scarcest: Self.isWatchable) {
             await refillMoviePool(using: &rng)
-            let featured = await MoviePool.shared.unseen(where: Self.isFeaturable)
-            let watchable = await MoviePool.shared.unseen(where: Self.isWatchable)
-            pickedFeatured = featured.randomElement(using: &rng)
-            pickedWatching = watchable.filter { $0.id != pickedFeatured?.id }.randomElement(using: &rng)
+            // Кадры — до выбора: иначе первый запуск после установки покажет фильм
+            // без кадра, хотя кадр к тому моменту уже приехал.
+            await loadStills()
+            pickedFeatured = await Self.pick(where: Self.isFeaturable, using: &rng)
+            pickedWatching = await Self.pick(
+                where: Self.isWatchable,
+                excluding: pickedFeatured?.id,
+                using: &rng
+            )
+            if let id = pickedWatching?.id {
+                watchingStill = await MoviePool.shared.stills(for: id).first
+            }
+        } else {
+            // Запас кадров тратится по фильму за запуск — доливаем его заранее,
+            // на будущие запуски. Выбор на экране при этом не трогаем: фильм уже
+            // показан, и подменять его на глазах нельзя.
+            await loadStills()
         }
 
         guard let featured = pickedFeatured else {
@@ -143,7 +169,13 @@ final class ShowcaseCatalog {
 
         if
             let watching = pickedWatching,
-            let still = watching.backdrop?.url(size: .frame),
+            // Кадр из `/v1.4/image` предпочтительнее `backdrop`: это живой кадр сцены,
+            // а не одна официальная картинка на весь тайтл. Кадра может не быть —
+            // тогда блок остаётся на `backdrop`, как раньше.
+            //
+            // Размер у кадра `wide`, а не `frame`: пресет 1344×756 живёт только
+            // на `get-ott`, кадры лежат на `get-kinopoisk-image` и отвечают на него 404.
+            let still = watchingStill?.url(size: .wide) ?? watching.backdrop?.url(size: .frame),
             // Логотипы лежат на tmdb, а он у нас не резолвится — `logoURL`
             // уводит их через прокси (см. `TMDBImageProxy`).
             let logo = watching.logo?.logoURL(width: Self.logoPixelWidth)
@@ -173,6 +205,50 @@ final class ShowcaseCatalog {
             .compactMap { $0.backdrop?.url(size: .frame) }
             .map { ArtworkSource.remote($0) }
         ArtworkLoader.shared.preload(posters + stills)
+    }
+
+    /// Фильм для блока: сперва тот, у которого уже есть кадр, иначе любой годный —
+    /// тогда блок обойдётся `backdrop`, как раньше.
+    private static func pick(
+        where isEligible: @escaping @Sendable (KinopoiskMovie) -> Bool,
+        excluding excluded: Int? = nil,
+        using rng: inout SeededGenerator
+    ) async -> KinopoiskMovie? {
+        let withStill = await MoviePool.shared.unseenWithStill(where: isEligible)
+            .filter { $0.id != excluded }
+        if let picked = withStill.randomElement(using: &rng) { return picked }
+        return await MoviePool.shared.unseen(where: isEligible)
+            .filter { $0.id != excluded }
+            .randomElement(using: &rng)
+    }
+
+    /// Догружает кадры тайтлов пачками.
+    ///
+    /// Кадры лежат в отдельной ручке, и поштучно они стоили бы запроса на фильм —
+    /// поэтому `movieId` передаётся списком, и одна пачка закрывает два десятка тайтлов.
+    /// Кадры есть примерно у половины каталога, так что пачек берём несколько:
+    /// иначе запас непоказанных с кадром кончается через пару запусков.
+    private func loadStills() async {
+        let needsFeatured = await MoviePool.shared.needsStills(where: Self.isFeaturable)
+        let needsWatching = await MoviePool.shared.needsStills(where: Self.isWatchable)
+        guard needsFeatured || needsWatching else { return }
+
+        let limit = ShowcaseSeeds.stillsBatch * ShowcaseSeeds.stillsBatchCount
+        var queue = await MoviePool.shared.awaitingStills(limit: limit, where: Self.isFeaturable)
+        let watchable = await MoviePool.shared.awaitingStills(limit: limit, where: Self.isWatchable)
+        queue.append(contentsOf: watchable.filter { !queue.contains($0) })
+        guard !queue.isEmpty else { return }
+
+        for start in stride(from: 0, to: min(queue.count, limit), by: ShowcaseSeeds.stillsBatch) {
+            let chunk = Array(queue[start..<min(start + ShowcaseSeeds.stillsBatch, queue.count)])
+            do {
+                let stills = try await KinopoiskService.shared.stills(movieIDs: chunk)
+                await MoviePool.shared.store(stills: stills, asked: chunk)
+            } catch {
+                failures.append("кадры: \(error.localizedDescription)")
+                return
+            }
+        }
     }
 
     /// Один запрос за целой подборкой. Берём ту, из которой ещё не брали, — иначе

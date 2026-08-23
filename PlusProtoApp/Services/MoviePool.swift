@@ -31,12 +31,22 @@ actor MoviePool {
     /// набор неделями незачем. Неделя — компромисс между свежестью и квотой.
     private static let maxAge: TimeInterval = 7 * 24 * 60 * 60
 
+    /// Ниже этого числа непоказанных с кадром — идём за новой пачкой кадров.
+    /// Показываем по одному фильму в блок, так что это запас на несколько запусков.
+    private static let stillsThreshold = 4
+
     private struct Storage: Codable {
         var movies: [KinopoiskMovie] = []
         var shown: Set<Int> = []
         var fetchedAt: Date = .distantPast
         /// Из каких подборок уже брали — чтобы пополнение не попадало в ту же.
         var sources: [String] = []
+        /// Кадры тайтлов: id → лучший вертикальный и лучший горизонтальный.
+        /// Опционально, чтобы запас, записанный до появления кадров, читался как есть.
+        var stills: [String: [KinopoiskStill]]?
+        /// Тайтлы, для которых кадры уже спрашивали. Без этого списка фильм, у которого
+        /// кадров нет вовсе (а таких больше половины), запрашивался бы снова и снова.
+        var stillsAsked: Set<Int>?
     }
 
     private var storage: Storage
@@ -70,6 +80,52 @@ actor MoviePool {
     /// Подборки, из которых уже брали, — чтобы пополнение принесло другое кино.
     func usedSources() -> [String] {
         storage.sources
+    }
+
+    // MARK: - Кадры
+
+    /// Кадры тайтла, если они есть в запасе.
+    func stills(for id: Int) -> [KinopoiskStill] {
+        storage.stills?[String(id)] ?? []
+    }
+
+    /// Годные непоказанные, у которых уже есть кадр. Витрина берёт фильм отсюда
+    /// в первую очередь: кадр сцены живее официального `backdrop`.
+    func unseenWithStill(where isEligible: @Sendable (KinopoiskMovie) -> Bool) -> [KinopoiskMovie] {
+        unseen(where: isEligible).filter { !stills(for: $0.id).isEmpty }
+    }
+
+    /// Кому кадры ещё не спрашивали — очередь на догрузку.
+    func awaitingStills(limit: Int, where isEligible: @Sendable (KinopoiskMovie) -> Bool) -> [Int] {
+        let asked = storage.stillsAsked ?? []
+        return unseen(where: isEligible)
+            .lazy
+            .map(\.id)
+            .filter { !asked.contains($0) }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// Хватает ли запаса кадров, чтобы витрине было из чего выбирать.
+    func needsStills(where isEligible: @Sendable (KinopoiskMovie) -> Bool) -> Bool {
+        unseenWithStill(where: isEligible).count < Self.stillsThreshold
+    }
+
+    /// Кладёт кадры пачки. `asked` — все тайтлы, которые спрашивали, включая те,
+    /// у которых кадров не нашлось: иначе они попадут в следующую догрузку снова.
+    func store(stills: [KinopoiskStill], asked: [Int]) {
+        var map = storage.stills ?? [:]
+        for (id, group) in Dictionary(grouping: stills, by: \.movieId) {
+            // Только горизонтальные и только один на тайтл: и кавер, и блок
+            // «продолжить смотреть» кропают кадр по-своему, а вертикальные среди
+            // `still` — это промо-фотосессии, а не сцены. Лишние кадры к тому же
+            // раздували бы файл, который читается синхронно на первом кадре.
+            guard let landscape = group.first(where: { !$0.isPortrait }) else { continue }
+            map[String(id)] = [landscape]
+        }
+        storage.stills = map
+        storage.stillsAsked = (storage.stillsAsked ?? []).union(asked)
+        save()
     }
 
     /// Данные карточки тайтла, если он есть в запасе. `nil` — тайтл не из витрины
@@ -171,12 +227,16 @@ actor MoviePool {
     /// успевает только через полторы секунды (замер записью), и всё это время на экране
     /// висел бы мок — а моковых фильмов в витрине быть не должно вовсе. Файл локальный,
     /// чтение занимает миллисекунды, так что блокировать первый кадр им не страшно.
-    nonisolated static func diskSnapshot() -> (movies: [KinopoiskMovie], shown: Set<Int>) {
+    nonisolated static func diskSnapshot() -> (
+        movies: [KinopoiskMovie],
+        shown: Set<Int>,
+        stills: [String: [KinopoiskStill]]
+    ) {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         guard let storage = read(from: caches.appendingPathComponent("movie-pool.json")) else {
-            return ([], [])
+            return ([], [], [:])
         }
-        return (storage.movies, storage.shown)
+        return (storage.movies, storage.shown, storage.stills ?? [:])
     }
 
     // MARK: - Диск

@@ -33,7 +33,7 @@ final class MovieDetailsStore {
         // Поэтому открытие карточки фильма с витрины не стоит ни одного запроса из квоты,
         // а сеть остаётся только тайтлам не из запаса — то есть `-debugMovieId`.
         if let pooled = await MoviePool.shared.details(id: id) {
-            let parsed = MovieDetails(movie: pooled)
+            let parsed = MovieDetails(movie: pooled, stills: await MoviePool.shared.stills(for: id))
             Self.cache[id] = parsed
             details = parsed
             failure = nil
@@ -45,7 +45,12 @@ final class MovieDetailsStore {
         defer { isLoading = false }
 
         do {
-            let parsed = MovieDetails(movie: try await KinopoiskService.shared.movie(id: id))
+            let parsed = MovieDetails(
+                movie: try await KinopoiskService.shared.movie(id: id),
+                // Тайтла нет в запасе, значит и кадров к нему нет: ради `-debugMovieId`
+                // тратить ещё один запрос из квоты незачем — кавер возьмёт `backdrop`.
+                stills: await MoviePool.shared.stills(for: id)
+            )
             Self.cache[id] = parsed
             details = parsed
             failure = nil

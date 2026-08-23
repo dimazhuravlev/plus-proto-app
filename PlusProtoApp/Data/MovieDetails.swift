@@ -73,7 +73,9 @@ extension MovieDetails {
     static let directorLimit = 2
     static let similarLimit = 9
 
-    init(movie: KinopoiskMovie) {
+    /// - Parameter stills: горизонтальные кадры тайтла из `/v1.4/image`. Пустой массив —
+    ///   кадров у тайтла нет, кавер возьмёт `backdrop`, как раньше.
+    init(movie: KinopoiskMovie, stills: [KinopoiskStill] = []) {
         id = movie.id
         title = movie.displayTitle
         logo = movie.logo?.logoURL(width: Self.logoPixelWidth)
@@ -85,7 +87,15 @@ extension MovieDetails {
         cast = Self.cast(movie)
         similar = Self.similar(movie)
         trailer = Self.trailer(movie)
-        backdrop = movie.backdrop?.url(size: .frame) ?? movie.poster?.url(size: .medium)
+        // Кадр вместо `backdrop`: это сцена из фильма, а не одна официальная картинка
+        // на весь тайтл. Кропается он так же (кавер портретный, кадр 16:9), но приходит
+        // крупнее: `huge` — единственный большой пресет, который берут кадры, и кадр
+        // 6000×4000 приезжает по нему как 1920×1280 против 1344×756 у `backdrop`.
+        //
+        // Кадра может не быть вовсе — тогда всё работает как раньше, через `backdrop`.
+        backdrop = stills.first?.url(size: .huge)
+            ?? movie.backdrop?.url(size: .frame)
+            ?? movie.poster?.url(size: .medium)
     }
 
     /// Место акцентной строки макета занимает самый сильный реальный факт о тайтле.
