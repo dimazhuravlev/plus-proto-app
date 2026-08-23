@@ -26,6 +26,9 @@ struct EntityStubScreen: View {
     /// Пропорция обложки: у постера 2:3, у книги 2:3, у альбома квадрат.
     var artworkAspect: CGFloat = 2.0 / 3.0
 
+    /// Прокрутка для рампы навбара.
+    @State private var scrollOffset: CGFloat = 0
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -61,7 +64,19 @@ struct EntityStubScreen: View {
         .scrollIndicators(.hidden)
         // Лента едет под хромом, как на витрине.
         .contentMargins(.bottom, PlusChromeMetrics.contentBottomInset, for: .scrollContent)
+        .trackNavBarScroll(into: $scrollOffset)
         .background(Color.black.ignoresSafeArea())
+        // Верх экрана освобождён под навбар: он висит оверлеем и контент не поджимает.
+        .safeAreaPadding(.top, EntityNavBarGeometry.barHeight)
+        .overlay(alignment: .top) {
+            EntityNavBar(
+                title: entity.title,
+                artwork: entity.artwork,
+                isArtworkCircular: roundArtwork,
+                scrollOffset: scrollOffset
+            )
+        }
+        // Системный бар выключен: на пуше он рисовал бы свой back поверх нашего.
         .toolbar(.hidden, for: .navigationBar)
     }
 
