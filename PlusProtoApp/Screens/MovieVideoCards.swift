@@ -185,9 +185,16 @@ private struct MovieVideoCard: View {
     }
 
     /// Свечение вокруг карточки — размытая копия кадра, вылезающая за края.
-    /// В макете это 425×520.6 против кадра 361×451.25, то есть **+32 по горизонтали
-    /// и +34.7 по вертикали с каждой стороны**, и это фиксированный вынос, а не масштаб:
-    /// у более широкой карточки прототипа масштаб раздул бы его непропорционально.
+    ///
+    /// Вынос фиксированный, а не масштабом: у более широкой карточки прототипа масштаб
+    /// раздул бы его непропорционально.
+    ///
+    /// **Тише макета сознательно.** В макете это 425×520.6 против кадра 361×451.25
+    /// (+32 и +34.7 с каждой стороны) при прозрачности 0.32 — и там внутри карточки
+    /// лежит тёмный кинокадр, от которого свечение едва заметно. У нас в карточке
+    /// постер тайтла: он ярче и насыщеннее, и на тех же числах ореол лезет в глаза.
+    /// Поэтому вынос поджат, прозрачность вдвое ниже, а радиус, наоборот, больше —
+    /// пятно шире и оттого мягче.
     private var ambilight: some View {
         Group {
             if let poster = title.poster {
@@ -232,11 +239,11 @@ private struct MovieVideoCard: View {
     /// Пик скрима: у панели действий он 0.92, здесь заметно мягче
     private static let captionScrimPeak: Double = 0.48
     private static let titleLimit = 50
-    private static let ambilightInsetX: CGFloat = 32
-    private static let ambilightInsetY: CGFloat = 34.67
-    /// CSS `blur(40px)` из макета — вдвое меньше значения панели Figma
-    private static let ambilightBlur: CGFloat = 40
-    private static let ambilightOpacity: Double = 0.32
+    private static let ambilightInsetX: CGFloat = 20
+    private static let ambilightInsetY: CGFloat = 22
+    /// В макете CSS `blur(40px)` — здесь больше, чтобы пятно было мягче
+    private static let ambilightBlur: CGFloat = 56
+    private static let ambilightOpacity: Double = 0.16
 }
 
 private extension String {
