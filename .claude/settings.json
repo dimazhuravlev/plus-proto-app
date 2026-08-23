@@ -1,5 +1,6 @@
 {
   "permissions": {
-    "allow": ["Bash(*)", "Edit(*)", "Write(*)", "Glob(*)", "Grep(*)", "Read(*)"]
+    "allow": ["Bash(*)", "Edit(*)", "Write(*)", "Glob(*)", "Grep(*)", "Read(*)"],
+    "deny": ["mcp__computer-use", "mcp__computer-use__*", "mcp__terminal__read_terminal"]
   }
 }
