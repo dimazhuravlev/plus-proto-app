@@ -78,8 +78,11 @@ struct ContinueWatchingCard: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Кадр — интерактивная миниатюра карточки: ✕, логотип и блок оценки
+            // остаются снаружи и в зум-переходе не участвуют.
             videoFrame
-                .offset(x: WatchingGeometry.videoOrigin.x, y: WatchingGeometry.videoOrigin.y)
+                .showcaseThumbnail()
+                .showcasePlaced(at: WatchingGeometry.videoOrigin)
 
             projectLogo
                 .frame(
@@ -90,7 +93,7 @@ struct ContinueWatchingCard: View {
                 .offset(x: WatchingGeometry.logoOrigin.x, y: WatchingGeometry.logoOrigin.y)
                 .allowsHitTesting(false)
 
-            GlassIconButton(icon: "iconClose", accessibilityTitle: "Скрыть")
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть")
                 .offset(x: WatchingGeometry.dismissOrigin.x, y: WatchingGeometry.dismissOrigin.y)
 
             RateBlock()

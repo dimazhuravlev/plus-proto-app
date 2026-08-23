@@ -11,8 +11,8 @@ enum ShowcaseMotion {
     /// Доля карточки в кадре, с которой она считается показанной.
     static let appearThreshold: Double = 0.05
 
-    /// Нажатие на карточку: подсаживаем её чуть слабее, чем кнопки хрома —
-    /// у карточки большая площадь, и скейл 0.92 читался бы как прыжок.
+    /// Нажатие на миниатюру: подсаживаем её слабее, чем кнопки хрома —
+    /// у обложки большая площадь, и скейл 0.92 читался бы как прыжок.
     static let pressedScale: CGFloat = 0.97
     static let pressDuration: Double = 0.15
     /// Хаптика тапа — та же карта, что у табов (nav-chrome §11).
@@ -105,34 +105,24 @@ struct ShowcaseFeedView: View {
         #endif
     }
 
-    /// Тап по карточке ведёт на экран сущности зум-переходом. Исключение — «Моя Волна»:
-    /// у неё нет своей сущности, это генератор потока, поэтому она только включает плеер.
-    @ViewBuilder
+    /// Карточка целиком не интерактивна: нажатие и зум-переход берёт на себя только её
+    /// миниатюра — обложка, кадр, стеклянный блок (см. `showcaseThumbnail()`). Куда вести
+    /// и в каком namespace зумить, карточка узнаёт из контекста: маршрут известен здесь,
+    /// а миниатюра лежит на несколько слоёв глубже.
     private func card(_ block: ShowcaseBlock) -> some View {
-        if let route = block.entityRoute {
-            NavigationLink(value: route) {
-                cardBody(block)
-            }
-            .buttonStyle(ShowcaseCardButtonStyle())
-            .simultaneousGesture(TapGesture().onEnded { open(block) })
-            // Источник зума — вся карточка целиком, включая ореол: он часть её силуэта.
-            .matchedTransitionSource(id: route, in: zoom)
-        } else {
-            Button {
-                open(block)
-            } label: {
-                cardBody(block)
-            }
-            .buttonStyle(ShowcaseCardButtonStyle())
-        }
-    }
-
-    private func cardBody(_ block: ShowcaseBlock) -> some View {
         blockView(block)
             .frame(
                 width: ShowcaseLayout.designWidth,
                 height: block.slot.height,
                 alignment: .topLeading
+            )
+            .environment(
+                \.showcaseThumbnail,
+                ShowcaseThumbnailContext(
+                    route: block.entityRoute,
+                    zoom: zoom,
+                    onTap: { open(block) }
+                )
             )
     }
 
@@ -160,17 +150,6 @@ struct ShowcaseFeedView: View {
         case .reading(let item): ContinueReadingCard(block: item)
         case .watching(let item): ContinueWatchingCard(block: item)
         }
-    }
-}
-
-/// Нажатие на карточку витрины. Отдельный стиль, а не `PressScaleButtonStyle` хрома:
-/// у карточки другой масштаб, и `.plain` нужен, чтобы SwiftUI не красил её содержимое
-/// в акцентный цвет и не подсвечивал прямоугольником.
-private struct ShowcaseCardButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? ShowcaseMotion.pressedScale : 1)
-            .animation(.smooth(duration: ShowcaseMotion.pressDuration), value: configuration.isPressed)
     }
 }
 

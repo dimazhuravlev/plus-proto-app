@@ -22,7 +22,13 @@ private enum ReadingCardLayout {
     static let scrimSolidUntil: Double = 0.27885
 
     /// Кнопка ✕ `2004:10720` в правом верхнем углу блока. Лайка у этой карточки в макете нет.
+    /// Лежит не внутри блока, а рядом: блок — интерактивная миниатюра, и кнопка внутри неё
+    /// стала бы кнопкой в кнопке, то есть перестала бы нажиматься сама.
     static let dismissInset: CGFloat = 7.34
+    static let dismissOrigin = CGPoint(
+        x: blockOrigin.x + blockSize.width - dismissInset - PlusMetrics.circleButton,
+        y: blockOrigin.y + dismissInset
+    )
 
     /// Строка прогресса `2004:10721`: (109, 1346.55), ширина 137 = «36%» + 6 + трек 108.
     static let timelineOrigin = CGPoint(x: 109, y: 1346.55 - slot.top)
@@ -56,11 +62,18 @@ struct ContinueReadingCard: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Стеклянный блок — интерактивная миниатюра карточки: страница книги и есть
+            // то, что разворачивается в экран. Строка прогресса, ✕ и мини-книга лежат
+            // поверх него отдельными слоями и в переходе не участвуют.
             glassBlock
-                .offset(x: ReadingCardLayout.blockOrigin.x, y: ReadingCardLayout.blockOrigin.y)
+                .showcaseThumbnail()
+                .showcasePlaced(at: ReadingCardLayout.blockOrigin)
 
             timeline
                 .offset(x: ReadingCardLayout.timelineOrigin.x, y: ReadingCardLayout.timelineOrigin.y)
+
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть")
+                .offset(x: ReadingCardLayout.dismissOrigin.x, y: ReadingCardLayout.dismissOrigin.y)
 
             // Книга — сосед блока, а не его потомок: внутри её срезал бы клип.
             miniBook
@@ -81,11 +94,6 @@ struct ContinueReadingCard: View {
         return ZStack(alignment: .topLeading) {
             excerpt
             scrim
-            GlassIconButton(icon: "iconClose", accessibilityTitle: "Скрыть")
-                .offset(
-                    x: ReadingCardLayout.blockSize.width - ReadingCardLayout.dismissInset - PlusMetrics.circleButton,
-                    y: ReadingCardLayout.dismissInset
-                )
         }
         .frame(
             width: ReadingCardLayout.blockSize.width,

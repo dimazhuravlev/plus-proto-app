@@ -50,6 +50,8 @@ struct AlbumCard: View {
             .allowsHitTesting(false)
     }
 
+    /// Обложка — интерактивная миниатюра карточки: только она нажимается
+    /// и только она разворачивается в экран альбома.
     private var cover: some View {
         AmbilightArtwork(
             source: block.cover,
@@ -57,7 +59,8 @@ struct AlbumCard: View {
             rotation: AlbumCardLayout.coverRotation,
             glowOpacity: AlbumCardLayout.glowOpacity
         )
-        .offset(x: AlbumCardLayout.coverOrigin.x, y: AlbumCardLayout.coverOrigin.y)
+        .showcaseThumbnail()
+        .showcasePlaced(at: AlbumCardLayout.coverOrigin)
     }
 
     /// Обе строки 15/18 без зазора: в макете это две соседние строки одного бокса.

@@ -33,18 +33,20 @@ private enum BookCardLayout {
 }
 
 /// Карточка книги: изометрический рендер прижат к правому краю экрана, слева от него —
-/// подпись с выключкой вправо и пара ♥/✕ под ней. Логики по тапу пока нет.
+/// подпись с выключкой вправо и пара ♥/✕ под ней. Интерактивен только рендер.
 struct BookCard: View {
     let block: BookBlock
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Рендер — интерактивная миниатюра карточки.
             BookRender(
                 cover: block.render,
                 box: BookCardLayout.render,
                 glowOpacity: BookCardLayout.glowOpacity
             )
-            .offset(x: BookCardLayout.renderOrigin.x, y: BookCardLayout.renderOrigin.y)
+            .showcaseThumbnail()
+            .showcasePlaced(at: BookCardLayout.renderOrigin)
 
             VStack(alignment: .trailing, spacing: BookCardLayout.captionToButtons) {
                 GradientText(block.caption, from: .fillOne, to: block.captionTint)

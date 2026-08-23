@@ -44,6 +44,16 @@ final class AppNavigationState {
         paths[tab] = path
     }
 
+    /// Программный поп. Именно `removeLast`, а не подмена пути целиком: замена всего
+    /// `NavigationPath` читается SwiftUI как смена контента, и экран снимается срезом,
+    /// без зум-перехода.
+    func pop(in tab: AppTab? = nil) {
+        let tab = tab ?? activeTab
+        guard var path = paths[tab], !path.isEmpty else { return }
+        path.removeLast()
+        paths[tab] = path
+    }
+
     func path(for tab: AppTab) -> Binding<NavigationPath> {
         Binding(
             get: { self.paths[tab] ?? NavigationPath() },

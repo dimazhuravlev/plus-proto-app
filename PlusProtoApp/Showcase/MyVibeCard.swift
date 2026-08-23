@@ -9,8 +9,11 @@ private enum VibeGeometry {
     static let slot = ShowcaseLayout.Slot.vibe
     static let size = CGSize(width: ShowcaseLayout.designWidth, height: slot.height)
 
-    /// `2004:10735` — эллипс гало 150.48² в (59.46, 1101.92).
-    static let haloCenter = CGPoint(x: 59.46 + 150.48 / 2, y: 1101.92 - slot.top + 150.48 / 2)
+    /// `2004:10735` — эллипс гало 150.48² в (59.46, 1101.92). Он же — кадр орба:
+    /// слои рисования далеко выходят за него, а нажимается и подсаживается ровно круг.
+    static let haloSize: CGFloat = 150.48
+    static let haloOrigin = CGPoint(x: 59.46, y: 1101.92 - slot.top)
+    static let haloCenter = CGPoint(x: haloOrigin.x + haloSize / 2, y: haloOrigin.y + haloSize / 2)
     /// Ассет отрисован по границам, до которых блюр раздувает эллипс: спилл −53.33% на сторону,
     /// то есть 150.48 × 2.0666 = 311 (PNG @3x = 933px). Блюр запечён — живьём не повторяем.
     static let haloBleed: CGFloat = 311
@@ -21,6 +24,17 @@ private enum VibeGeometry {
     /// `2004:10737` — глиф «Моя Волна» 100.32² в (83.29, 1127).
     static let glyphSize: CGFloat = 100.32
     static let glyphOrigin = CGPoint(x: 83.29, y: 1127 - slot.top)
+
+    /// Слои внутри орба расставлены от его центра, а координаты макета — от угла карточки.
+    /// Пересчитываем здесь, чтобы в вёрстке не появилось второго набора чисел.
+    static let grainOffset = CGSize(
+        width: grainBox.midX - haloCenter.x,
+        height: grainBox.midY - haloCenter.y
+    )
+    static let glyphOffset = CGSize(
+        width: glyphOrigin.x + glyphSize / 2 - haloCenter.x,
+        height: glyphOrigin.y + glyphSize / 2 - haloCenter.y
+    )
 
     /// `2004:10738` — текстовая колонка в (208, 1118), внутренний зазор 12.
     static let textOrigin = CGPoint(x: 208, y: 1118 - slot.top)
@@ -82,7 +96,13 @@ struct MyVibeCard: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Орб — интерактивная миниатюра карточки: заголовок, подзаголовок и ♥/✕
+            // остаются снаружи. Своей сущности у «Моей Волны» нет, поэтому тап только
+            // включает плеер — разворачиваться некуда.
             orb
+                .showcaseThumbnail()
+                .showcasePlaced(at: VibeGeometry.haloOrigin)
+
             textColumn
         }
         .frame(width: VibeGeometry.size.width, height: VibeGeometry.size.height, alignment: .topLeading)
@@ -93,12 +113,16 @@ struct MyVibeCard: View {
 
     /// Три слоя снизу вверх: гало → зерно в color-dodge → глиф.
     /// В таймлайне живут только первые два, глиф вынесен наружу и не перерисовывается.
+    ///
+    /// Кадр — круг гало, слои расставлены от его центра: зерно 317×316 и раздутое блюром
+    /// гало 311 выходят за кадр далеко, и если отдать кнопке их габарит, она ловила бы тапы
+    /// по пустому месту, а просадка под пальцем считалась бы вокруг чужого центра.
     private var orb: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack {
             TimelineView(.animation(minimumInterval: VibeOrbMotion.tick, paused: !isVisible)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
 
-                ZStack(alignment: .topLeading) {
+                ZStack {
                     halo(t)
                     grain(t)
                 }
@@ -107,9 +131,10 @@ struct MyVibeCard: View {
             Image("vibeGlyph")
                 .resizable()
                 .frame(width: VibeGeometry.glyphSize, height: VibeGeometry.glyphSize)
-                .offset(x: VibeGeometry.glyphOrigin.x, y: VibeGeometry.glyphOrigin.y)
+                .offset(x: VibeGeometry.glyphOffset.width, y: VibeGeometry.glyphOffset.height)
         }
-        .allowsHitTesting(false)
+        .frame(width: VibeGeometry.haloSize, height: VibeGeometry.haloSize)
+        .contentShape(Circle())
     }
 
     /// Гало: PNG с запечённым блюром, дышит масштабом и яркостью.
@@ -125,10 +150,6 @@ struct MyVibeCard: View {
                     VibeOrbMotion.haloOpacity,
                     phase: VibeOrbMotion.haloOpacityPhase
                 )
-            )
-            .offset(
-                x: VibeGeometry.haloCenter.x - VibeGeometry.haloBleed / 2,
-                y: VibeGeometry.haloCenter.y - VibeGeometry.haloBleed / 2
             )
     }
 
@@ -151,7 +172,7 @@ struct MyVibeCard: View {
             .clipped()
             .opacity(wave(t, period: VibeOrbMotion.grainPeriodOpacity, VibeOrbMotion.grainOpacity))
             .blendMode(.colorDodge)
-            .offset(x: VibeGeometry.grainBox.minX, y: VibeGeometry.grainBox.minY)
+            .offset(x: VibeGeometry.grainOffset.width, y: VibeGeometry.grainOffset.height)
     }
 
     // MARK: Текст
