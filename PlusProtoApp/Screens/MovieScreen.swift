@@ -167,6 +167,12 @@ struct MovieScreen: View {
                     if !details.synopsis.isEmpty {
                         MovieSynopsisSection(paragraphs: details.synopsis)
                     }
+                    if !details.similar.isEmpty {
+                        MovieVideoSection(
+                            titles: details.similar,
+                            paragraphs: Array(details.synopsis.dropFirst())
+                        )
+                    }
                     if !details.cast.isEmpty {
                         MovieCastSection(cast: details.cast)
                     }

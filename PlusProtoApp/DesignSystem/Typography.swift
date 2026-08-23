@@ -149,6 +149,16 @@ extension View {
     }
 
     /// Подписи оценки и бейджей — Yango Text Bold 13 / lh 18
+    /// Заголовок видеокарточки — `figma-moviecard.md` §4.2: Bold 32/110 %.
+    func plusMovieCardTitle() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 32, lineHeight: 35.2, tracking: 0))
+    }
+
+    /// Подпись видеокарточки — Bold 24/120 %.
+    func plusMovieCardSubtitle() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 24, lineHeight: 28.8, tracking: 0))
+    }
+
     func plusMovieCaption() -> some View {
         modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 13, lineHeight: 18, tracking: 0))
     }

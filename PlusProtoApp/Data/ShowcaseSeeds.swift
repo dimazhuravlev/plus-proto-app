@@ -87,4 +87,7 @@ enum ShowcaseSeeds {
     static let watchingClip = "yura"
     /// Фон верхнего блока карточки тайтла — на месте трейлера.
     static let trailerClip = "movie-short"
+    /// Клипы видеокарточек экрана фильма. Настоящих трейлеров взять негде
+    /// (см. `MovieVideoSection`), поэтому раздаём забандленные по кругу.
+    static let videoCardClips = ["fallen-angels", "movie-short", "yura"]
 }
