@@ -1,37 +1,6 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Заглушки данных
-
-/// Карточку тайтла макет кормит полями, которых в `EntityRef` пока нет: год, жанр,
-/// хронометраж, возрастной рейтинг, описание, дорожки. **Это временная заглушка** —
-/// как только модель сущности расширится (или экран пойдёт в `KinopoiskService`
-/// за деталями), всё отсюда должно уехать в данные.
-///
-/// Значения намеренно нейтральные: подставлять под живой тайтл выдуманные факты —
-/// та же ложь о контенте, из-за которой в блоке «продолжить смотреть» отказались
-/// от мокового логотипа (DECISIONS 2026-08-23).
-private enum MovieStub {
-    static let editorial = "Выбор редакции"
-    /// Мета-строка макета: «2025 · comedy · 2 seasons · Egypt · 15+»
-    static let meta = ["2024", "драма", "1 ч 58 мин", "16+"]
-
-    /// Абзацы описания — в макете их 1–3, до ~150 символов каждый
-    static let synopsis = [
-        "Герой возвращается в город, из которого однажды сбежал, и застаёт его совсем другим.",
-        "Дальше — история про то, что прошлое не отпускает, пока с ним не поговоришь начистоту.",
-    ]
-
-    /// Строки блока «Детали»: лейбл, значение, приглушённое уточнение
-    static let details: [MovieDetailRow] = [
-        // Лейбл держится в колонке 104pt: «Аудиодорожки» в неё не влезает и переносится
-        MovieDetailRow(label: "Аудио", value: "Русский", note: "стерео"),
-        MovieDetailRow(label: "Субтитры", value: "Русские", note: nil),
-        MovieDetailRow(label: "Качество", value: "4K", note: "HDR"),
-        MovieDetailRow(label: "Возраст", value: "16+", note: nil),
-    ]
-}
-
 // MARK: - Геометрия
 
 /// Числа из `docs/research/figma-moviecard.md` (макет `IKXMroHnoO08WT5W6Rd2bs`,
@@ -51,11 +20,11 @@ enum MovieLayout {
     /// нет хрома приложения: action bar и таббар съедают 164pt снизу, и на 3:4 инфо-блок
     /// уезжает под панель действий. Поэтому берём минимум из макетной пропорции и того,
     /// что остаётся над панелью при сохранённом зазоре «трейлер → кнопки» из макета.
-    /// На 402×874 выходит 487 — кавер 1:1.21 вместо 1:1.33, остальные отношения макета целы.
-    static var coverHeight: CGFloat {
+    /// Высота зависит от длины лида: он не режется, а инфо-блок стоит под кавером.
+    static func coverHeight(lead: String) -> CGFloat {
         min(
             PlusMetrics.designWidth / coverAspect,
-            panelRowTop - trailerToPanelGap - infoHeight + infoOverlap
+            panelRowTop - trailerToPanelGap - infoHeight(lead: lead) + infoOverlap
         )
     }
 
@@ -75,9 +44,19 @@ enum MovieLayout {
     static let metaSpacing: CGFloat = 5
     static let metaDot: CGFloat = 4
 
-    /// Высота инфо-блока с однострочным лидом: 20 + 35.2 + 20 + 44 и три зазора по 16.
-    /// Лид на две строки инфо-блок удлинит — хвост уедет под панель, это допущение.
-    static let infoHeight: CGFloat = 20 + infoSpacing + 35.2 + infoSpacing + 20 + infoSpacing + trailerHeight
+    /// Ширина колонки лида: холст минус «ступенька» 48, поле 16 и внутренний отступ 32.
+    static let leadWidth: CGFloat = PlusMetrics.designWidth - infoLeading - infoTrailing - leadInset
+
+    /// Всё, что инфо-блок занимает помимо лида: лейбл 20 + мета 20 + пилюля и три зазора.
+    static let infoWithoutLead: CGFloat = 20 + infoSpacing + infoSpacing + 20 + infoSpacing + trailerHeight
+
+    /// Высота инфо-блока под конкретный лид. Лид не режется, поэтому его высота —
+    /// не константа: считаем её замером самой строки (`MovieLeadType`), а не вью.
+    /// Это не запрещённое чтение собственного размера — обратной связи нет:
+    /// высота лида зависит только от текста и фиксированной ширины колонки.
+    static func infoHeight(lead: String) -> CGFloat {
+        infoWithoutLead + MovieLeadType.height(of: lead)
+    }
     /// Зазор «низ трейлера → верх ряда кнопок» из макета (756 → 772)
     static let trailerToPanelGap: CGFloat = 16
 
@@ -149,19 +128,19 @@ enum MovieScrim {
 /// это константа, а не замер вью: читать собственный размер здесь запрещено (DECISIONS).
 enum MovieScreenMotion {
     /// Верх лида: кавер − наезд + лейбл (20) + зазор
-    static var leadTop: CGFloat {
-        MovieLayout.coverHeight - MovieLayout.infoOverlap + 20 + MovieLayout.infoSpacing
+    static func leadTop(lead: String) -> CGFloat {
+        MovieLayout.coverHeight(lead: lead) - MovieLayout.infoOverlap + 20 + MovieLayout.infoSpacing
     }
     /// Нижняя кромка кнопок навбара: вырез iPhone 17 Pro + круг 40
     static let navBarBottom: CGFloat = 62 + EntityNavBarGeometry.controlSize
 
     /// Подложка навбара приезжает, пока уезжает градиент шапки; название — только когда
     /// лид уйдёт под бар, иначе название экрана какое-то время видно дважды.
-    static var navBar: EntityNavBarThresholds {
+    static func navBar(lead: String) -> EntityNavBarThresholds {
         EntityNavBarThresholds(
             backgroundStart: 200,
             backgroundRamp: 120,
-            titleStart: leadTop - navBarBottom,
+            titleStart: leadTop(lead: lead) - navBarBottom,
             titleRamp: 60
         )
     }
@@ -169,26 +148,51 @@ enum MovieScreenMotion {
 
 // MARK: - Экран
 
-/// Карточка фильма. Одно состояние — загруженный тайтл со статичным кавером:
-/// кавер со скримом (высота — см. `MovieLayout.coverHeight`), инфо-блок с фирменной
-/// «ступенькой» слева, закреплённая снизу панель действий и несколько секций под ней.
+/// Карточка фильма: кавер с зацикленным роликом, инфо-блок с фирменной «ступенькой»
+/// слева, закреплённая снизу панель действий и секции под ней.
 ///
-/// Сознательно не делаем (спека §7): трейлер-видео и индикатор звука, скелетоны входа,
+/// Данные живые — `/v1.4/movie/{id}` по id, который витрина положила в `EntityRef`
+/// (см. `MovieDetailsStore`). Пока ответ едет и для моковой витрины экран показывает
+/// `MovieDetails.placeholder`.
+///
+/// Сознательно не делаем (спека §7): индикатор звука трейлера, скелетоны входа,
 /// все состояния кнопок кроме дефолтного, схлопывание шапки 240 → 166 при скролле
 /// (вместо него по скроллу проявляется общий `EntityNavBar`).
 struct MovieScreen: View {
     let entity: EntityRef
+    @State private var store = MovieDetailsStore()
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
+
+    /// Что показывать прямо сейчас: живые детали, иначе заглушка по названию.
+    private var details: MovieDetails {
+        store.details ?? .placeholder(title: entity.title, mock: entity.kinopoiskID == nil)
+    }
+
+    /// Текст лида. Если у тайтла нет логотипа, слот лида по правилу макета занимает
+    /// название — описание при этом целиком остаётся в секции ниже.
+    private var leadText: String {
+        details.logo == nil ? entity.title : details.lead
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     titleBlock
-                    MovieSynopsisSection(paragraphs: MovieStub.synopsis)
-                    MovieDetailsSection(rows: MovieStub.details)
+                    if !details.synopsis.isEmpty {
+                        MovieSynopsisSection(paragraphs: details.synopsis)
+                    }
+                    if !details.cast.isEmpty {
+                        MovieCastSection(cast: details.cast)
+                    }
+                    if !details.rows.isEmpty {
+                        MovieDetailsSection(rows: details.rows)
+                    }
                     MovieRateSection()
+                    if !details.similar.isEmpty {
+                        MovieSimilarSection(titles: details.similar)
+                    }
                     // Панель действий висит поверх ленты, а хром приложения поджимает
                     // её сам (`contentMargins` из AppRootView) — распоркой добираем
                     // только высоту самой панели.
@@ -196,6 +200,7 @@ struct MovieScreen: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .task { await store.load(entity) }
             .scrollIndicators(.hidden)
             // Кавер начинается от физического верха экрана, а не от safe area
             .ignoresSafeArea(edges: .top)
@@ -217,7 +222,7 @@ struct MovieScreen: View {
                 title: entity.title,
                 artwork: entity.artwork,
                 scrollOffset: scrollOffset,
-                thresholds: MovieScreenMotion.navBar
+                thresholds: MovieScreenMotion.navBar(lead: leadText)
             ) {
                 headerActions
             }
@@ -251,13 +256,27 @@ struct MovieScreen: View {
     private var cover: some View {
         Color.clear
             .frame(maxWidth: .infinity)
-            .frame(height: MovieLayout.coverHeight)
+            .frame(height: MovieLayout.coverHeight(lead: leadText))
             // Кадр задаёт распорка, а картинка его заполняет: `aspectRatio` в скролле
             // считает высоту от идеального размера картинки, а не от пропорции макета.
-            .overlay { ArtworkImage(source: entity.artwork).scaledToFill() }
+            .overlay {
+                MovieTrailerCover(poster: entity.artwork, trailer: details.trailer)
+            }
             .clipped()
             .overlay(alignment: .bottom) { coverFade }
             .overlay(alignment: .top) { headerScrim }
+            .overlay(alignment: .topLeading) { logo }
+    }
+
+    /// Логотип тайтла в шапке (`figma-moviecard.md` §2.2). Едет вместе с кавером —
+    /// закрепление и уменьшение по скроллу макет описывает отдельным состоянием.
+    @ViewBuilder
+    private var logo: some View {
+        if let url = details.logo {
+            MovieTitleLogo(url: url, title: entity.title)
+                .padding(.leading, MovieLogoLayout.leading)
+                .padding(.top, MovieLogoLayout.top)
+        }
     }
 
     /// Нижние 104pt кавера: чёрный градиент под лёгким размытием — стык с фоном экрана
@@ -283,19 +302,27 @@ struct MovieScreen: View {
 
     private var info: some View {
         VStack(alignment: .leading, spacing: MovieLayout.infoSpacing) {
-            Text(MovieStub.editorial)
-                .plusMovieText()
-                .foregroundStyle(Color.plusAccent)
+            // В макете здесь «Editor's choice». Редакционных подборок API не отдаёт,
+            // поэтому на этом месте самый сильный реальный факт о тайтле — позиция
+            // в топ-250 или оценка Кинопоиска. Нет и его — строки просто нет.
+            if let accent = details.accent {
+                Text(accent)
+                    .plusMovieText()
+                    .foregroundStyle(Color.plusAccent)
+            }
 
-            // В макете здесь лид-описание, а название несёт логотип тайтла. Логотипов
-            // у нас нет (правило самого макета: «если лого нет — текстовое название»),
-            // поэтому в лид уходит название — единственное живое поле сущности.
-            Text(entity.title)
+            // В макете лид — это описание, а название несёт логотип тайтла. Если логотипа
+            // у тайтла нет, правило макета отдаёт название текстом: у нас оно занимает
+            // именно этот слот, а описание целиком остаётся в секции ниже.
+            // Не режется: аргумент Кинопоиска — законченная фраза из двух частей
+            // («что происходит» + редакционный вердикт), и обрыв убивает вторую.
+            // Под его настоящую длину подобран кегль — см. `MovieLeadType`.
+            Text(leadText)
                 .plusMovieLead()
                 .foregroundStyle(Color.fillOne)
                 .padding(.trailing, MovieLayout.leadInset)
 
-            meta
+            if !details.meta.isEmpty { meta }
             trailerButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -305,7 +332,7 @@ struct MovieScreen: View {
 
     private var meta: some View {
         HStack(spacing: MovieLayout.metaSpacing) {
-            ForEach(Array(MovieStub.meta.enumerated()), id: \.offset) { index, item in
+            ForEach(Array(details.meta.enumerated()), id: \.offset) { index, item in
                 if index > 0 {
                     // Fill/Seven — разделитель встречается только здесь, токен не заводим
                     Circle()
@@ -317,6 +344,7 @@ struct MovieScreen: View {
                     .foregroundStyle(Color.fillSubtitle)
             }
         }
+        .lineLimit(1)
     }
 
     private var trailerButton: some View {
@@ -334,6 +362,9 @@ struct MovieScreen: View {
             .background(Capsule(style: .continuous).fill(Color.buttonsPrimary))
         }
         .buttonStyle(PressScaleButtonStyle())
+        // У ролика из API есть своё имя («Джентльмены (2019) — Трейлер дублированный») —
+        // на пилюле оно не помещается, но озвучить его VoiceOver стоит.
+        .accessibilityLabel(details.trailer?.name ?? "Смотреть трейлер")
     }
 }
 

@@ -116,9 +116,16 @@ extension View {
 /// перенастройка существующих: смешивать их — значит незаметно сдвинуть витрину.
 /// Семейства — ближайшие бандленные: YS Display вместо Group Headline, YS Text вместо Yango Text.
 extension View {
-    /// Лид карточки — Group Headline Bold 32 / lh 110 % = 35.2
+    /// Лид карточки — Group Headline Bold, lh 110 %. Кегль живёт в `MovieLeadType`,
+    /// а не здесь: от него считается высота инфо-блока и, через неё, высота кавера —
+    /// две величины обязаны браться из одного места. Почему не макетные 32 — там же.
     func plusMovieLead() -> some View {
-        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 32, lineHeight: 35.2, tracking: 0))
+        modifier(FigmaTextStyle(
+            family: PlusFont.displaySemibold,
+            size: MovieLeadType.size,
+            lineHeight: MovieLeadType.lineHeight,
+            tracking: 0
+        ))
     }
 
     /// Заголовок секции — Group Headline ExtraBold 24 / lh 100 %

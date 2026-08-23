@@ -63,7 +63,7 @@ final class ShowcaseCatalog {
             }
             // Блоку «продолжить смотреть» — горизонтальный кадр и логотип проекта.
             let watchable = batch.filter {
-                $0.backdrop?.url(size: .frame) != nil && $0.logo?.url != nil
+                $0.backdrop?.url(size: .frame) != nil && $0.logo?.logoURL(width: Self.logoPixelWidth) != nil
             }
 
             if let movie = featured.randomElement(using: &rng), let poster = movie.poster?.url(size: .medium) {
@@ -84,8 +84,9 @@ final class ShowcaseCatalog {
             if
                 let movie = watchable.first(where: { "kp-\($0.id)" != currentMovieId }) ?? watchable.randomElement(using: &rng),
                 let still = movie.backdrop?.url(size: .frame),
-                let logoRaw = movie.logo?.url,
-                let logo = URL(string: logoRaw)
+                // Логотипы лежат на tmdb, а он у нас не резолвится — `logoURL`
+                // уводит их через прокси (см. `TMDBImageProxy`).
+                let logo = movie.logo?.logoURL(width: Self.logoPixelWidth)
             {
                 apply(.watching(WatchingBlock(
                     id: "kp-w-\(movie.id)",
@@ -234,6 +235,9 @@ final class ShowcaseCatalog {
     }
 
     // MARK: - Фолбэки моковой ленты
+
+    /// Логотип в блоке «продолжить смотреть» рисуется в боксе 147pt — на ×3 это 441px.
+    private static let logoPixelWidth = 441
 
     private static let mockMovieTint = Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
     private static let mockBookTint = Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
