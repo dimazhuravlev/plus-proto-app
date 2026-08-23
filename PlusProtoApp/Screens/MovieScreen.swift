@@ -75,7 +75,6 @@ enum MovieLayout {
     static let panelSide: CGFloat = 24
     static let panelBottom: CGFloat = 24
     static let panelGap: CGFloat = 8
-    static let panelPeak: Double = 0.92
     static let buttonHeight: CGFloat = 56
     static let buttonIconBox: CGFloat = 24
     static let buttonLeading: CGFloat = 22
@@ -101,15 +100,30 @@ enum MovieLayout {
     static let sectionSide: CGFloat = 16
 }
 
-/// Скрим карточки тайтла: 16 сглаженных стопов чёрного. Профиль один на шапку (пик 0.56)
-/// и панель кнопок (пик 0.92) — отличается только пиком и направлением. Линейная
-/// интерполяция двумя стопами даёт видимый банд, поэтому стопы дословные из макета.
+/// Скримы карточки тайтла. Профилей два, и это не небрежность, а два разных места
+/// макета: сглаженный на 16 стопов у панели кнопок (пик 0.92) и подписей видеокарточек,
+/// прямая рампа в два стопа — у верхней шапки. У сглаженного стопы дословные из макета:
+/// заменить их линейной интерполяцией значит получить видимый банд.
 enum MovieScrim {
     /// Доли альфы от нуля к пику; позиции равномерные, шаг 6.667 %
     private static let profile: [Double] = [
         0, 0.009, 0.036, 0.082, 0.147, 0.232, 0.332, 0.443,
         0.557, 0.668, 0.768, 0.853, 0.918, 0.964, 0.991, 1,
     ]
+
+    /// Прямая рампа: шапка тайтла после тюнинга `2063:10865` идёт именно так —
+    /// в дампе заливки ровно два стопа (α 0 → 1) при `opacity` 0.75. Раньше шапка
+    /// делила сглаженный профиль с панелью; теперь профили разошлись.
+    ///
+    /// Оба конца — чёрные, отличаются только альфой: интерполяция от `.clear`
+    /// (это чёрный с нулевой альфой у другого цвета) дала бы грязь на светлом кавере.
+    static func linear(peak: Double, from start: UnitPoint, to end: UnitPoint) -> LinearGradient {
+        LinearGradient(
+            colors: [.black.opacity(0), .black.opacity(peak)],
+            startPoint: start,
+            endPoint: end
+        )
+    }
 
     /// `startPoint` — конец с нулевой альфой, `endPoint` — с пиковой
     static func gradient(peak: Double, from start: UnitPoint, to end: UnitPoint) -> LinearGradient {
@@ -358,9 +372,19 @@ struct MovieScreen: View {
 
 /// `2101:20595`: Play с акцентным градиентом, «Позже» и круглая загрузка.
 ///
-/// В макете панель прибита к нижней кромке экрана, у нас под ней стоит хром приложения —
-/// поэтому кнопки подняты на `contentBottomInset`, а градиент **дотянут до физического
-/// низа**: если оборвать его на кромке панели, на ленте появится горизонтальный шов.
+/// Панель прибита к нижней кромке экрана: поля 24 по бокам и снизу — макетные.
+///
+/// Подложка — **та же, что у таббара** (`TabBarUnderlay`): прогрессивный блюр плюс
+/// градиент `PlusGradient.tabBarUnderlay`. Так две нижние панели приложения выглядят
+/// одинаково, и это осознанно чуть иначе, чем в макете карточки: там свой градиент
+/// с пиком 0.92 (против 0.90 у таббара) и `backdrop-blur: 2` вместо прогрессивного.
+/// Разница между 0.90 и 0.92 неразличима, а единообразие важнее.
+///
+/// Высоты совпали сами: у таббара подложка 210, и `96 + 56 + 24 + 34` — те же 210.
+///
+/// Сплошного чёрного под кнопками больше нет. Он появился, когда под панелью стоял
+/// хром приложения и сквозь пик 0.92 читался текст описания; теперь экран показывается
+/// слоем поверх хрома, и градиент работает так же, как в макете, — до самого низа.
 private struct MovieMainButtons: View {
     var body: some View {
         HStack(spacing: MovieLayout.panelGap) {
@@ -375,25 +399,10 @@ private struct MovieMainButtons: View {
     }
 
     private var scrim: some View {
-        VStack(spacing: 0) {
-            // Набор пика — ровно на макетных 96pt чистого градиента над кнопками.
-            MovieScrim.gradient(peak: MovieLayout.panelPeak, from: .top, to: .bottom)
-                .frame(height: MovieLayout.panelLead)
-            // Ниже кнопок — сплошной чёрный. В макете под панелью экрана нет вовсе,
-            // а у нас там хром приложения, и сквозь пик 0.92 в полосе между кнопками
-            // и action bar всё ещё читался текст описания. Шов 0.92 → 1 на уже
-            // затемнённом фоне неразличим.
-            Color.black
-        }
-        .frame(height: MovieMainButtons.scrimHeight)
-        // Оверлей прижат к границе safe area, а градиент обязан уйти под home indicator
-        .offset(y: PlusChromeMetrics.bottomSafeArea)
-        .allowsHitTesting(false)
-    }
-
-    private static var scrimHeight: CGFloat {
-        MovieLayout.panelLead + MovieLayout.buttonHeight + MovieLayout.panelBottom
-            + PlusChromeMetrics.bottomSafeArea
+        TabBarUnderlay()
+            // Оверлей прижат к границе safe area, а подложка обязана уйти
+            // под home indicator.
+            .offset(y: PlusChromeMetrics.bottomSafeArea)
     }
 
     private var playButton: some View {
