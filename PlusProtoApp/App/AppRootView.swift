@@ -6,8 +6,6 @@ struct AppRootView: View {
     @State private var navigation = AppNavigationState()
     @State private var actionBar = ActionBarState()
     @State private var keyboard = KeyboardObserver()
-    /// Экран сущности может попросить убрать нижний хром — см. `BottomChromeHiddenKey`.
-    @State private var isChromeHidden = false
 
     var body: some View {
         ZStack {
@@ -18,17 +16,7 @@ struct AppRootView: View {
                 // из-под него выходит. `contentMargins` едет по environment, поэтому доходит
                 // и до запушенных экранов — `safeAreaInset` снаружи через NavigationStack
                 // не пробивается (проверено на симуляторе).
-                // Хром спрятан — поджимать под него нечего, и экран сам считает свой
-                // нижний клиренс: иначе под его панелью действий остаётся пустая полоса
-                // ровно в высоту несуществующего хрома.
-                .contentMargins(
-                    .bottom,
-                    isChromeHidden ? 0 : PlusChromeMetrics.contentBottomInset,
-                    for: .scrollContent
-                )
-                .onPreferenceChange(BottomChromeHiddenKey.self) { hidden in
-                    isChromeHidden = hidden
-                }
+                .contentMargins(.bottom, PlusChromeMetrics.contentBottomInset, for: .scrollContent)
 
             // Подложка нижнего хрома — своим слоем на всю высоту экрана, чтобы уйти
             // под home indicator: изнутри `overlay` ниже safe area она не пробивается.
@@ -38,7 +26,6 @@ struct AppRootView: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
-            .opacity(isChromeHidden ? 0 : 1)
         }
         .overlay(alignment: .top) {
             TopScrim()
@@ -50,12 +37,7 @@ struct AppRootView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            // Не `if`, а прозрачность с погашенным хит-тестом: подмена ветки убивает
-            // идентичность поддерева, и мини-плеер пересоздавался бы на каждом заходе
-            // в карточку — вместе с вращением обложки и прогрессом.
             BottomChrome()
-                .opacity(isChromeHidden ? 0 : 1)
-                .allowsHitTesting(!isChromeHidden)
         }
         // Поверх хрома: полноэкранный плеер вырастает из мини-плеера и обязан
         // накрыть и бар, и таббар.

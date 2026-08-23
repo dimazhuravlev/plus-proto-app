@@ -185,6 +185,10 @@ struct MovieScreen: View {
             }
             .task { await store.load(entity) }
             .scrollIndicators(.hidden)
+            // Экран показан слоем поверх хрома и перекрывает его собой, поэтому
+            // поджиматься под него не надо. Инсет приходит по environment из
+            // `AppRootView` и доезжает даже в презентацию — снимаем его явно.
+            .contentMargins(.bottom, 0, for: .scrollContent)
             // Кавер начинается от физического верха экрана, а не от safe area
             .ignoresSafeArea(edges: .top)
             .scrollPosition($scrollPosition)
@@ -225,8 +229,6 @@ struct MovieScreen: View {
         .background(Color.black.ignoresSafeArea())
         .overlay(alignment: .bottom) { MovieMainButtons() }
         .toolbar(.hidden, for: .navigationBar)
-        // Под панелью действий в макете экрана нет вовсе — общий хром там был бы вторым дном.
-        .hidesBottomChrome()
     }
 
     // MARK: Шапка

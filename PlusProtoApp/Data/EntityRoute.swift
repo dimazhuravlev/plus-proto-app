@@ -15,15 +15,35 @@ struct EntityRef: Hashable {
 /// Куда ведёт тап по карточке витрины. `Hashable` нужен дважды: как значение
 /// `NavigationPath` и как `sourceID` зум-перехода — обе стороны перехода
 /// адресуются одним и тем же значением, поэтому рассинхрон невозможен.
-enum EntityRoute: Hashable {
+enum EntityRoute: Hashable, Identifiable {
     case movie(EntityRef)
     case book(EntityRef)
     case album(EntityRef)
+
+    /// Для показа слоем: `fullScreenCover(item:)` требует `Identifiable`.
+    var id: String {
+        switch self {
+        case .movie(let ref): "movie-" + ref.id
+        case .book(let ref): "book-" + ref.id
+        case .album(let ref): "album-" + ref.id
+        }
+    }
 
     var ref: EntityRef {
         switch self {
         case .movie(let ref), .book(let ref), .album(let ref): ref
         }
+    }
+
+    /// Карточка тайтла показывается **слоем поверх хрома**, а не пушем: по макету
+    /// у неё своя панель действий во всю ширину, и таббар с action bar она перекрывает
+    /// собой. Пушем это недостижимо — хром лежит слоем выше контента табов, и экран,
+    /// запушенный внутрь стека, всегда оказывается под ним.
+    ///
+    /// Альбом и книга остаются обычным пушем: они хром показывают.
+    var coversChrome: Bool {
+        if case .movie = self { return true }
+        return false
     }
 
     /// Обложка альбома круглая, у фильма и книги — скруглённый прямоугольник.

@@ -99,7 +99,9 @@ struct ShowcaseFeedView: View {
             // Настоящий тап делает и то, и другое — отладочный обязан повторять его целиком.
             if UserDefaults.standard.bool(forKey: "debugOpenEntity"), let route = block.entityRoute {
                 try? await Task.sleep(for: .seconds(1))
-                navigation.push(route)
+                // Через `open`, а не `push`: карточка тайтла показывается слоем поверх
+                // хрома, и отладочный тап обязан повторять настоящий целиком.
+                navigation.open(route)
             }
         }
         #endif
@@ -122,7 +124,8 @@ struct ShowcaseFeedView: View {
                     route: block.entityRoute,
                     zoom: zoom,
                     title: block.title,
-                    onTap: { open(block) }
+                    onTap: { open(block) },
+                    present: { navigation.coveredRoute = $0 }
                 )
             )
     }

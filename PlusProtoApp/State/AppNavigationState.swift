@@ -11,6 +11,11 @@ import SwiftUI
 final class AppNavigationState {
     var activeTab: AppTab = .plus
 
+    /// Экран сущности, показанный **слоем поверх хрома** вместо пуша (см.
+    /// `EntityRoute.coversChrome`). Живёт отдельно от путей: он не элемент стека,
+    /// а отдельная презентация, и переживать переключение таба ему не нужно.
+    var coveredRoute: EntityRoute?
+
     private var paths: [AppTab: NavigationPath] = [:]
 
     init() {
@@ -42,6 +47,25 @@ final class AppNavigationState {
         var path = paths[tab] ?? NavigationPath()
         path.append(value)
         paths[tab] = path
+    }
+
+    /// Открыть экран сущности: пушем или слоем поверх хрома — решает сам маршрут.
+    /// Одна точка входа, чтобы витрина и отладочный тап не расходились в способе.
+    func open(_ route: EntityRoute, in tab: AppTab? = nil) {
+        if route.coversChrome {
+            coveredRoute = route
+        } else {
+            push(route, in: tab)
+        }
+    }
+
+    /// Закрыть то, что открыто последним.
+    func close(in tab: AppTab? = nil) {
+        if coveredRoute != nil {
+            coveredRoute = nil
+        } else {
+            pop(in: tab)
+        }
     }
 
     /// Программный поп. Именно `removeLast`, а не подмена пути целиком: замена всего

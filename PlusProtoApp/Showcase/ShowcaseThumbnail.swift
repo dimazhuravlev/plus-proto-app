@@ -15,6 +15,9 @@ struct ShowcaseThumbnailContext {
     var title: String
     /// Хаптика и перевод action bar в режим сущности — общее для тапа по любой карточке.
     var onTap: () -> Void
+    /// Открыть маршрут, который показывается слоем поверх хрома. Для пуша не нужен:
+    /// его делает сам `NavigationLink`.
+    var present: (EntityRoute) -> Void
 }
 
 extension EnvironmentValues {
@@ -46,7 +49,19 @@ private struct ShowcaseThumbnailModifier: ViewModifier {
     @Environment(\.showcaseThumbnail) private var context
 
     func body(content: Content) -> some View {
-        if let context, let route = context.route {
+        if let context, let route = context.route, route.coversChrome {
+            // Кнопка, а не `NavigationLink`: карточка тайтла показывается слоем поверх
+            // хрома, а не пушем внутрь стека. Источник зума тот же — сам маршрут.
+            Button {
+                context.onTap()
+                context.present(route)
+            } label: {
+                content
+            }
+            .buttonStyle(ShowcaseThumbnailButtonStyle())
+            .matchedTransitionSource(id: route, in: context.zoom)
+            .accessibilityLabel(context.title)
+        } else if let context, let route = context.route {
             NavigationLink(value: route) { content }
                 .buttonStyle(ShowcaseThumbnailButtonStyle())
                 .simultaneousGesture(TapGesture().onEnded { context.onTap() })

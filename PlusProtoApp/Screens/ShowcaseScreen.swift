@@ -13,9 +13,26 @@ struct ShowcaseScreen: View {
     @Namespace private var zoom
 
     var body: some View {
-        ZStack {
+        @Bindable var navigation = navigation
+        return ZStack {
             Color.black.ignoresSafeArea()
             ShowcaseFeedView(feed: catalog.feed, zoom: zoom)
+        }
+        // Карточка тайтла — слоем поверх всего, а не пушем: `fullScreenCover` кроется
+        // на уровне окна, то есть выше хрома по определению. Пушем это недостижимо —
+        // хром лежит слоем над контентом табов. Зум при этом сохраняется: `.zoom`
+        // работает и для презентаций, не только для пуша.
+        .fullScreenCover(item: $navigation.coveredRoute) { route in
+            EntityScreen(route: route)
+                .navigationTransition(.zoom(sourceID: route, in: zoom))
+                #if DEBUG
+                .task {
+                    guard UserDefaults.standard.bool(forKey: "debugCloseEntity") else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
+                    navigation.close()
+                }
+                #endif
         }
         .navigationDestination(for: EntityRoute.self) { route in
             EntityScreen(route: route)
