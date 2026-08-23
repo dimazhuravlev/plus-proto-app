@@ -24,6 +24,13 @@ enum ActionBarMotion {
     /// вместе с зоной, иначе замирает на своей ширине и наезжает на поле поиска.
     static let swapBlurRadius: CGFloat = 7
     static let swapScale: CGFloat = 0.9
+
+    /// Кросс-поп смены play↔pause — идея `AnimatedIconButton` из MusicPlayer:
+    /// обе иконки в дереве, уходящая утапливается, приходящая выныривает.
+    static let iconSwap: Animation = .spring(response: 0.3, dampingFraction: 0.6)
+    static let iconSwapScale: CGFloat = 0.4
+    /// Хаптика транспорта — impact light, как на play/pause в MusicPlayer.
+    static let transportHapticIntensity: CGFloat = 1.0
 }
 
 // MARK: - Geometry
@@ -412,7 +419,8 @@ private struct TrailingSlot: View {
                     progressOpacity: layout.progressOpacity,
                     progress: actionBar.musicProgress,
                     isPlaying: actionBar.isMusicPlaying,
-                    isLiked: actionBar.isMusicLiked
+                    isLiked: actionBar.isMusicLiked,
+                    onTogglePlay: { actionBar.toggleMusicPlayback() }
                 )
                 .blurReplaceLayer(layout.showMiniPlayer)
             }
@@ -442,6 +450,36 @@ private struct TrailingSlot: View {
 
 // MARK: - Mini player
 
+/// Угол обложки — чистая функция от времени, а не накапливаемое состояние.
+/// Запись `@State` из `onChange(of: timeline.date)` (так сделано в MusicPlayer)
+/// замыкает цикл перерисовки и вешает экран — этот приём сюда не переносим.
+private struct CoverSpin {
+    /// Угол на момент старта текущей фазы
+    var base: Double = 0
+    /// Начало фазы вращения; nil — обложка стоит
+    var anchor: Date?
+
+    var isSpinning: Bool { anchor != nil }
+
+    func degrees(at date: Date) -> Double {
+        guard let anchor else { return base }
+        let elapsed = date.timeIntervalSince(anchor)
+        return (base + elapsed * ActionBarMotion.coverDegreesPerSecond)
+            .truncatingRemainder(dividingBy: 360)
+    }
+
+    /// Идемпотентно: повторный вызов с тем же состоянием угол не двигает.
+    mutating func set(spinning: Bool, at date: Date = .now) {
+        guard spinning != isSpinning else { return }
+        if spinning {
+            anchor = date
+        } else {
+            base = degrees(at: date)
+            anchor = nil
+        }
+    }
+}
+
 private struct MiniPlayerPill: View {
     let item: MusicNowPlaying
     let trackInfoOpacity: Double
@@ -449,13 +487,10 @@ private struct MiniPlayerPill: View {
     let progress: Double
     let isPlaying: Bool
     let isLiked: Bool
+    let onTogglePlay: () -> Void
 
-    /// Угол вращения обложки — чистая функция от времени, а не накапливаемое состояние.
-    /// Запись @State из `onChange(of: timeline.date)` (как в MusicPlayer MiniPlayerV2) даёт
-    /// бесконечный цикл перерисовки и вешает весь экран.
-    /// Якорь сдвигается только на паузе/старте, поэтому угол не прыгает при возобновлении.
-    @State private var spinAnchor: Date = .now
-    @State private var spinBaseDegrees: Double = 0
+    /// Вращение обложки — см. `CoverSpin`.
+    @State private var spin = CoverSpin()
 
     var body: some View {
         // Ширину пилюли задаёт родитель. Контент лежит в overlay, а не внутри —
@@ -489,23 +524,20 @@ private struct MiniPlayerPill: View {
 
     private var cover: some View {
         Group {
-            if isPlaying {
+            if spin.isSpinning {
                 TimelineView(.animation) { timeline in
                     coverImage
-                        .rotationEffect(.degrees(spinDegrees(at: timeline.date)))
+                        .rotationEffect(.degrees(spin.degrees(at: timeline.date)))
                 }
             } else {
                 coverImage
-                    .rotationEffect(.degrees(spinBaseDegrees))
+                    .rotationEffect(.degrees(spin.base))
             }
         }
-        .onChange(of: isPlaying) { _, playing in
-            if playing {
-                spinAnchor = .now
-            } else {
-                spinBaseDegrees = spinDegrees(at: .now)
-            }
-        }
+        // Флаг меняют и кнопка, и карточка витрины, и debug-прогон — слушаем сам флаг.
+        .onChange(of: isPlaying) { _, playing in spin.set(spinning: playing) }
+        // Холодный старт: бар может подняться уже играющим.
+        .task { spin.set(spinning: isPlaying) }
         .frame(width: PlusMetrics.miniPlayerCover, height: PlusMetrics.miniPlayerCover)
         .clipShape(Circle())
         .overlay {
@@ -516,12 +548,6 @@ private struct MiniPlayerPill: View {
     private var coverImage: some View {
         ArtworkImage(source: item.cover)
             .scaledToFill()
-    }
-
-    private func spinDegrees(at date: Date) -> Double {
-        let elapsed = date.timeIntervalSince(spinAnchor)
-        let degrees = spinBaseDegrees + elapsed * ActionBarMotion.coverDegreesPerSecond
-        return degrees.truncatingRemainder(dividingBy: 360)
     }
 
     private var trackInfo: some View {
@@ -541,8 +567,41 @@ private struct MiniPlayerPill: View {
     private var actions: some View {
         HStack(spacing: ActionBarGeometry.miniPlayerActionsGap) {
             actionIcon("iconHeart", liked: isLiked)
-            actionIcon("iconPause")
+            playPauseButton
         }
+        // В book/movie плеер остаётся в дереве прозрачным, а прозрачные вью всё равно
+        // ловят тап — гасим хит-тест вместе с подписями.
+        .allowsHitTesting(trackInfoOpacity == 1)
+    }
+
+    private var playPauseButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light)
+                .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
+            // Угол фиксируем в том же апдейте, что и смену флага, иначе кадр успеет
+            // отрисоваться со старой базой. Сеттер идемпотентен — onChange отработает вхолостую.
+            spin.set(spinning: !isPlaying)
+            onTogglePlay()
+        } label: {
+            ZStack {
+                actionIcon("iconPlay")
+                    .opacity(isPlaying ? 0 : 1)
+                    .scaleEffect(isPlaying ? ActionBarMotion.iconSwapScale : 1)
+                actionIcon("iconPause")
+                    .opacity(isPlaying ? 1 : 0)
+                    .scaleEffect(isPlaying ? 1 : ActionBarMotion.iconSwapScale)
+            }
+            .animation(ActionBarMotion.iconSwap, value: isPlaying)
+            // Хит-зона крупнее глифа, но раскладка не едет: отрицательный отступ
+            // возвращает кадру исходные 24×24, увеличенной остаётся только contentShape.
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .contentShape(.rect)
+            .padding(.horizontal, -8)
+            .padding(.vertical, -10)
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
     }
 
     private func actionIcon(_ name: String, liked: Bool = false) -> some View {

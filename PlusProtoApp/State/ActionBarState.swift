@@ -75,12 +75,19 @@ final class ActionBarState {
     /// вместе с этим флагом.
     var isSearchFocused: Bool = false
 
+    /// Мок-длительность трека: живого аудио нет, от неё считается шаг прогресса.
+    private static let mockTrackDuration: TimeInterval = 210
+    /// Шаг тика — дважды в секунду. Чаще не нужно: заливка между тиками анимируется.
+    private static let progressTick: TimeInterval = 0.5
+    private var progressTicker: Task<Void, Never>?
+
     func startMusic(_ item: MusicNowPlaying) {
         music = item
         musicProgress = 0
         isMusicPlaying = true
         isMusicLiked = false
         mode = .music
+        startProgressTicking()
     }
 
     func resumeMovie(_ item: MovieInProgress) {
@@ -98,13 +105,40 @@ final class ActionBarState {
         mode = .search
     }
 
+    /// Переключить воспроизведение. Прогресс тикает редко (2 раза в секунду) —
+    /// промежуточные кадры дорисовывает анимация заливки, `body` на них не пересчитывается.
+    func toggleMusicPlayback() {
+        isMusicPlaying.toggle()
+        if isMusicPlaying {
+            startProgressTicking()
+        } else {
+            progressTicker?.cancel()
+            progressTicker = nil
+        }
+    }
+
+    /// Живого аудио в прототипе нет — прогресс идёт от мок-длительности трека.
+    private func startProgressTicking() {
+        progressTicker?.cancel()
+        progressTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.progressTick))
+                guard let self, self.isMusicPlaying else { return }
+                let step = Self.progressTick / Self.mockTrackDuration
+                self.musicProgress = (self.musicProgress + step).truncatingRemainder(dividingBy: 1)
+            }
+        }
+    }
+
     /// Открыть плеер сущности с витрины. Повторный тап по той же карточке в музыке
     /// работает как пауза — иначе плеер нечем остановить, пока нет полноэкранного.
     func open(_ target: ShowcasePlayerTarget) {
         switch target {
         case .music(let item):
             if mode == .music, music?.id == item.id {
-                isMusicPlaying.toggle()
+                // Через тот же метод, что и кнопка: иначе тикер прогресса
+                // остался бы работать на паузе.
+                toggleMusicPlayback()
             } else {
                 startMusic(item)
             }
