@@ -70,6 +70,25 @@ actor DeezerService {
         try await fetch(path: "/playlist/\(id)")
     }
 
+    /// Треклист альбома. Лимит 100 покрывает всё разумное: у Deezer дефолтные 25
+    /// режут двухдисковые издания посреди первого диска.
+    func albumTracks(id: Int, limit: Int = 100) async throws -> [DeezerAlbumTrack] {
+        let response: DeezerListResponse<DeezerAlbumTrack> = try await fetch(
+            path: "/album/\(id)/tracks",
+            query: [URLQueryItem(name: "limit", value: "\(limit)")]
+        )
+        return response.data
+    }
+
+    /// Дискография артиста — секция «Другие альбомы» на экране альбома.
+    func artistAlbums(id: Int, limit: Int = 50) async throws -> [DeezerAlbumBrief] {
+        let response: DeezerListResponse<DeezerAlbumBrief> = try await fetch(
+            path: "/artist/\(id)/albums",
+            query: [URLQueryItem(name: "limit", value: "\(limit)")]
+        )
+        return response.data
+    }
+
     // MARK: - Private
 
     private func fetch<T: Decodable>(path: String, query: [URLQueryItem] = []) async throws -> T {

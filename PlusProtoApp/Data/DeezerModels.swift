@@ -33,6 +33,24 @@ struct DeezerAlbumBrief: Decodable, Identifiable {
     let artist: DeezerArtistBrief?
     let recordType: String?
     let nbTracks: Int?
+    /// `/artist/{id}/albums` отдаёт дату и флаг explicit — экрану альбома нужны
+    /// год в подписи карточки и бейдж. В `/search/album` этих полей нет, поля опциональны.
+    let releaseDate: String?
+    let explicitLyrics: Bool?
+}
+
+/// Трек из `/album/{id}/tracks`. Отдельный тип, а не расширение `DeezerTrack`:
+/// у трека альбома есть позиция и номер диска, но нет вложенного `album`.
+struct DeezerAlbumTrack: Decodable, Identifiable {
+    let id: Int
+    let title: String
+    /// Название без версии — «Rain On Tin» против полного «Rain On Tin (Extended Version)»
+    let titleShort: String?
+    /// «Extended Version», «Remastered» — вторая строка в треклисте
+    let titleVersion: String?
+    let trackPosition: Int?
+    let diskNumber: Int?
+    let explicitLyrics: Bool?
 }
 
 struct DeezerAlbum: Decodable, Identifiable {
