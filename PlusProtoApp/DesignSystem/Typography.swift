@@ -162,4 +162,11 @@ extension View {
     func plusMovieCaption() -> some View {
         modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 13, lineHeight: 18, tracking: 0))
     }
+
+    /// Название альбома в шапке его экрана — YS Display Bold 40 / lh 44 (макет `2079:11226`).
+    /// Живёт в линейке карточки тайтла: экран альбома набран теми же Yango-метриками
+    /// (тексты 15 / lh 20 с нулевым трекингом), что и карточка фильма.
+    func plusAlbumTitle() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 40, lineHeight: 44, tracking: 0))
+    }
 }

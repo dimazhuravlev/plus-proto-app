@@ -140,11 +140,3 @@ struct BookScreen: View {
         EntityStubScreen(entity: entity, kind: "Книга")
     }
 }
-
-struct AlbumScreen: View {
-    let entity: EntityRef
-
-    var body: some View {
-        EntityStubScreen(entity: entity, kind: "Альбом", roundArtwork: true, artworkAspect: 1)
-    }
-}
