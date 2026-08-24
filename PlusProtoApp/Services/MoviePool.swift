@@ -41,13 +41,24 @@ actor MoviePool {
         var fetchedAt: Date = .distantPast
         /// Из каких подборок уже брали — чтобы пополнение не попадало в ту же.
         var sources: [String] = []
-        /// Кадры тайтлов: id → лучший вертикальный и лучший горизонтальный.
+        /// Кадры тайтлов: id → до `stillsPerTitle` горизонтальных кадров сцен.
         /// Опционально, чтобы запас, записанный до появления кадров, читался как есть.
         var stills: [String: [KinopoiskStill]]?
         /// Тайтлы, для которых кадры уже спрашивали. Без этого списка фильм, у которого
         /// кадров нет вовсе (а таких больше половины), запрашивался бы снова и снова.
         var stillsAsked: Set<Int>?
+        /// По какому правилу собраны кадры. `nil` — запас старше самих правил.
+        var stillsVersion: Int?
     }
+
+    /// Версия правил хранения кадров. Поднимать, когда меняется то, что мы от кадров
+    /// хотим, — например их число на тайтл.
+    ///
+    /// Без неё правка правил не доезжает до тех, у кого запас уже собран: `stillsAsked`
+    /// не даёт переспросить тайтл, и он навсегда остаётся с одним кадром, собранным
+    /// по-старому. На симуляторе это лечилось `-debugResetMoviePool`, но на устройстве
+    /// такого флага не передашь — отсюда сброс по версии.
+    private static let stillsVersion = 2
 
     private var storage: Storage
     /// Детали карточек, прочитанные с диска. `nil` — файл ещё не открывали.
@@ -60,6 +71,16 @@ actor MoviePool {
         fileURL = caches.appendingPathComponent("movie-pool.json")
         detailsURL = caches.appendingPathComponent("movie-pool-details.json")
         storage = Self.read(from: fileURL) ?? Storage()
+
+        // Кадры собраны по старым правилам — просим их заново. Сам пул фильмов
+        // при этом цел: он к правилам кадров отношения не имеет, и терять пачку,
+        // за которую уже заплачено квотой, незачем.
+        if storage.stillsVersion != Self.stillsVersion {
+            storage.stills = nil
+            storage.stillsAsked = nil
+            storage.stillsVersion = Self.stillsVersion
+            save()
+        }
     }
 
     // MARK: - Чтение
@@ -111,17 +132,21 @@ actor MoviePool {
         unseenWithStill(where: isEligible).count < Self.stillsThreshold
     }
 
+    /// Сколько кадров держим на тайтл: один каверу и по одному каждой из четырёх
+    /// видеокарточек. Больше не берём — файл запаса читается синхронно на первом
+    /// кадре, и лишние ссылки в нём никому не нужны.
+    static let stillsPerTitle = 5
+
     /// Кладёт кадры пачки. `asked` — все тайтлы, которые спрашивали, включая те,
     /// у которых кадров не нашлось: иначе они попадут в следующую догрузку снова.
     func store(stills: [KinopoiskStill], asked: [Int]) {
         var map = storage.stills ?? [:]
         for (id, group) in Dictionary(grouping: stills, by: \.movieId) {
-            // Только горизонтальные и только один на тайтл: и кавер, и блок
-            // «продолжить смотреть» кропают кадр по-своему, а вертикальные среди
-            // `still` — это промо-фотосессии, а не сцены. Лишние кадры к тому же
-            // раздували бы файл, который читается синхронно на первом кадре.
-            guard let landscape = group.first(where: { !$0.isPortrait }) else { continue }
-            map[String(id)] = [landscape]
+            // Только горизонтальные: вертикальные среди `still` — это промо-фотосессии,
+            // а не сцены, и кавер с видеокарточками кропают кадр по-своему.
+            let landscape = group.filter { !$0.isPortrait }
+            guard !landscape.isEmpty else { continue }
+            map[String(id)] = Array(landscape.prefix(Self.stillsPerTitle))
         }
         storage.stills = map
         storage.stillsAsked = (storage.stillsAsked ?? []).union(asked)

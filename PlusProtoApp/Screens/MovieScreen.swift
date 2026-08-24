@@ -178,7 +178,10 @@ struct MovieScreen: View {
                     // Секция больше не ждёт данных: содержимое карточек замокировано
                     // (см. `MovieVideoCardMock`), поэтому она есть всегда, а живым
                     // в ней остаётся только описание.
-                    MovieVideoSection(paragraphs: details.synopsis)
+                    MovieVideoSection(
+                        paragraphs: details.synopsis,
+                        stillURLs: details.cardStills
+                    )
                     if !details.cast.isEmpty {
                         MovieCastSection(cast: details.cast)
                     }

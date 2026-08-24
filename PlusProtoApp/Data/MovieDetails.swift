@@ -33,6 +33,9 @@ struct MovieDetails {
     let trailer: MovieTrailer?
     /// Горизонтальный кадр тайтла — фон верхнего блока, пока не поехало видео.
     let backdrop: URL?
+    /// Кадры под видеокарточки — те же сцены тайтла, но **другие**, чем в шапке.
+    /// Пустой массив или короче четырёх — карточкам без кадра остаётся ролик.
+    let cardStills: [URL]
 }
 
 struct MovieCastMember: Identifiable {
@@ -96,6 +99,11 @@ extension MovieDetails {
         backdrop = stills.first?.url(size: .huge)
             ?? movie.backdrop?.url(size: .frame)
             ?? movie.poster?.url(size: .medium)
+        // Видеокарточкам — **остальные** кадры, начиная со второго: первый уже стоит
+        // в шапке, и повторять его четырьмя этажами ниже значит показать одну сцену
+        // пять раз. Кадров может не хватить — карточка без своего берёт первый кадр
+        // забандленного ролика, как было до этого.
+        cardStills = stills.dropFirst().compactMap { $0.url(size: .huge) }
     }
 
     /// Место акцентной строки макета занимает самый сильный реальный факт о тайтле.
@@ -261,7 +269,8 @@ extension MovieDetails {
             cast: [],
             similar: [],
             trailer: nil,
-            backdrop: nil
+            backdrop: nil,
+            cardStills: []
         )
     }
 

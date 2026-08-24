@@ -5,10 +5,10 @@ enum SearchOverlayConfig {
     /// Радиус backdrop-блюра в тех же CSS-единицах, что и остальные блюры проекта
     /// (стекло 35, кнопки 20). Экран должен уйти из фокуса целиком, но остаться узнаваемым —
     /// это не «шторка», а расфокус: пользователь помнит, откуда вызвал поиск.
-    static let blur: CGFloat = 56
+    static let blur: CGFloat = 80
     /// Затемнение поверх блюра. Без него размытая витрина остаётся яркой и спорит
     /// с полем ввода за внимание.
-    static let dim: Double = 0.68
+    static let dim: Double = 0.82
 }
 
 /// Слой поиска над текущим экраном.
@@ -34,7 +34,13 @@ struct SearchOverlay: View {
             // в кадре одновременно видны резкая и размытая копии экрана, и переход
             // читается как двоение.
             AnimatableBackdropBlur(radius: isActive ? SearchOverlayConfig.blur : 0)
-            Color.black.opacity(isActive ? SearchOverlayConfig.dim : 0)
+            // Прозрачность — **модификатором вью**, а не альфой самого цвета.
+            // `Color.black.opacity(x)` разрешается в метод `Color`, то есть меняется
+            // не прозрачность слоя, а сам цвет: интерполирует его другой механизм,
+            // чем радиус блюра рядом, и затемнение с размытием разъезжаются.
+            Rectangle()
+                .fill(.black)
+                .opacity(isActive ? SearchOverlayConfig.dim : 0)
         }
         .ignoresSafeArea()
         .contentShape(.rect)

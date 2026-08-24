@@ -366,6 +366,10 @@ private struct SearchPill: View {
     @State private var pull: CGFloat = 0
     /// Хаптика порога уже отдана.
     @State private var tickArmed = false
+    /// Текущий жест уже снял фокус. Открыть поиск обратно он больше не может:
+    /// закрытие и открытие в одном протягивании — это всегда ошибка отсчёта,
+    /// а не намерение пользователя.
+    @State private var dismissedByPull = false
 
     private var stretch: CGFloat { pull * SearchPullConfig.heightLimit }
 
@@ -454,14 +458,24 @@ private struct SearchPill: View {
     /// не дожидаясь отпускания: жест повторяет привычный сброс клавиатуры протягиванием,
     /// а он идёт за пальцем.
     private var pullGesture: some Gesture {
-        DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .local)
+        // **Глобальное** пространство, не локальное. Снятие фокуса опускает бар из-под
+        // пальца сразу на высоту клавиатуры, и в локальных координатах это читается как
+        // рывок пальца вверх на те же ~300pt: жест, который только что закрыл поиск,
+        // тут же видел «протяжку вверх за порог» и на отпускании открывал его обратно.
+        // Ровно то, что ловится медленным свайпом вниз с задержкой перед отпусканием.
+        // В глобальных координатах движение вью на замер не влияет.
+        DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .global)
             .onChanged { value in
                 guard !searchFocused else {
                     if value.translation.height >= SearchPullConfig.dismissDistance {
                         searchFocused = false
+                        dismissedByPull = true
                     }
                     return
                 }
+                // Один жест либо закрывает, либо открывает. Защёлка на случай, если
+                // до отпускания придёт ещё что-нибудь, что сдвинет отсчёт.
+                guard !dismissedByPull else { return }
                 let travel = -value.translation.height
                 // Без withAnimation: резина идёт за пальцем один в один.
                 pull = SearchPullConfig.progress(travel: travel)
@@ -469,6 +483,11 @@ private struct SearchPill: View {
             }
             .onEnded { value in
                 tickArmed = false
+                guard !dismissedByPull else {
+                    dismissedByPull = false
+                    pull = 0
+                    return
+                }
                 guard !searchFocused else {
                     pull = 0
                     // Короткий рывок вниз закрывает, не дотягивая до порога, — зеркально

@@ -52,22 +52,26 @@ struct MovieVideoCardMock {
 struct MovieVideoSection: View {
     let paragraphs: [String]
 
+    /// Кадры тайтла под карточки — те же сцены, что и в шапке экрана, но другие.
+    /// Короче четырёх (или пустой) — карточкам без своего кадра остаётся ролик.
+    let stillURLs: [URL]
+
+    /// Какая карточка включена тапом. Ровно одна: тап по другой переключает,
+    /// повторный тап по той же — выключает.
+    ///
+    /// Одна, а не сколько угодно, не из вредности: карточка высотой 451pt на экране
+    /// 874pt соседствует со следующей (451·0.9·2 + 16 = 828), и два живых `AVPlayer`
+    /// на скролле — лишние декодеры ровно тогда, когда экран должен ехать гладко.
+    @State private var playingCard: Int?
+
     /// Какие карточки сейчас в поле зрения — по порядковому номеру в секции.
-    ///
-    /// Играет **верхняя из видимых**, и ровно одна. Без арбитра карточки решали бы
-    /// каждая за себя, а при высоте 451pt на экране 874pt две соседние спокойно видны
-    /// одновременно: 451·0.9·2 + 16 = 828, обе проходят даже строгий порог. Два живых
-    /// `AVPlayer` на скролле — лишние декодеры ровно тогда, когда экран должен ехать гладко.
-    ///
-    /// Именно «верхняя», а не «самая видимая»: `onScrollVisibilityChange` отдаёт булево,
-    /// а не долю, поэтому у «самой видимой» победитель при двух видимых выбирался бы
-    /// произвольно и переключение мигало бы. Верхняя — устойчивый признак: пока она
-    /// не ушла, играет она, и переключение случается ровно один раз.
+    /// Включённая, но уехавшая из кадра карточка встаёт на паузу: крутить ролик,
+    /// которого не видно, незачем. Вернулась — продолжает с того же места.
     ///
     /// Обычный `@State`, а не отдельный `@Observable`-арбитр: тот обновлялся прямо
     /// в обход раскладки того же поддерева, и SwiftUI ругался `AttributeGraph: cycle detected`.
     @State private var visibleCards: Set<Int> = []
-    /// Неподвижные кадры роликов. Живут в секции, а не в карточках: их показывают
+    /// Неподвижные кадры карточек. Живут в секции, а не в карточках: их показывают
     /// оба слоя — и сами карточки, и слой свечений под ними.
     @State private var stills: [Int: Image] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -119,11 +123,20 @@ struct MovieVideoSection: View {
         .padding(.top, Layout.top)
         .padding(.bottom, Layout.bottom)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: stillURLs) { await loadStills() }
+        #if DEBUG
+        // `-debugTapCard` — тап по первой карточке и повторный тап: снять оба
+        // состояния из шелла иначе нечем.
         .task {
-            for (index, clip) in MovieVideoCardMock.all.indices.map({ ($0, Self.clip(for: $0)) }) {
-                stills[index] = await ClipStill.load(clip)
-            }
+            guard UserDefaults.standard.bool(forKey: "debugTapCard") else { return }
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            playingCard = 0
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            playingCard = nil
         }
+        #endif
         // Энергосбережение: система просит не тратить батарею на автовоспроизведение.
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
             isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -164,7 +177,9 @@ struct MovieVideoSection: View {
             isActive: activeCard == index,
             aspect: Layout.cardAspect,
             radius: Layout.cardRadius
-        )
+        ) {
+            playingCard = playingCard == index ? nil : index
+        }
         // Порог — половина карточки: ниже него на быстром скролле успевали бы
         // стартовать ролики, которых пользователь даже не увидит.
         .onScrollVisibilityChange(threshold: 0.5) { isVisible in
@@ -195,11 +210,29 @@ struct MovieVideoSection: View {
             .allowsHitTesting(false)
     }
 
-    /// Кто играет прямо сейчас. `nil` — никто: движение выключено пользователем,
-    /// включено энергосбережение, приложение в фоне или ни одна карточка не видна.
+    /// Кадр каждой карточки: сцена тайтла, если API её дал, иначе первый кадр
+    /// забандленного ролика — как было до того, как кадры появились.
+    ///
+    /// По порядку, а не пачкой: верхние карточки нужны раньше нижних, и очередь
+    /// загрузок, выстроенная сверху вниз, доставляет их в том же порядке.
+    private func loadStills() async {
+        for index in MovieVideoCardMock.all.indices {
+            if index < stillURLs.count,
+               let loaded = await ArtworkLoader.shared.image(for: stillURLs[index]) {
+                stills[index] = Image(uiImage: loaded)
+                continue
+            }
+            stills[index] = await ClipStill.load(Self.clip(for: index))
+        }
+    }
+
+    /// Кто играет прямо сейчас. `nil` — никто: не тапали, движение выключено
+    /// пользователем, включено энергосбережение, приложение в фоне или включённая
+    /// карточка ушла из кадра.
     private var activeCard: Int? {
         guard !reduceMotion, !isLowPower, scenePhase == .active else { return nil }
-        return visibleCards.min()
+        guard let playingCard, visibleCards.contains(playingCard) else { return nil }
+        return playingCard
     }
 
     /// Клипов в бандле меньше, чем карточек, — раздаём по кругу.
@@ -235,12 +268,11 @@ private struct MovieVideoCard: View {
     /// 361, но экран прототипа шире, и фиксировать её значило бы оставить поле справа.
     let aspect: CGFloat
     let radius: CGFloat
+    /// Тап по карточке: включить её ролик или выключить, если он уже играет.
+    let onTap: () -> Void
 
     @State private var playback = LoopingVideoPlayback()
     @State private var isVideoReady = false
-    /// Карточка хоть раз играла. До этого видеослой прозрачен: он не рисует кадр,
-    /// пока ему не дали play, и без этого флага мы бы гасили картинку под пустотой.
-    @State private var hasPlayed = false
 
     var body: some View {
         // Кадр задаёт распорка, а видео его заполняет: `aspectRatio` на самом слое
@@ -253,17 +285,20 @@ private struct MovieVideoCard: View {
             .clipShape(shape)
             // Рамка поверх клипа, иначе её съедает скругление.
             .overlay { shape.strokeBorder(Color.fillNine, lineWidth: Self.border) }
+            // Карточка целиком — кнопка. `contentShape` обязателен: и кадр, и подписи
+            // сняты с хит-теста, а без формы тап ловят только непрозрачные пиксели.
+            .contentShape(shape)
+            .onTapGesture { onTap() }
             .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
             .accessibilityLabel(card.title)
-            // Ролик заряжается сразу, но не запускается: играть он начнёт, когда
-            // карточка станет верхней видимой.
+            .accessibilityValue(isActive ? "Играет" : "Остановлен")
+            // Ролик заряжается сразу, но не запускается: играть он начнёт по тапу.
             .task(id: clip) { playback.prepare(bundled: clip) }
-            // Пауза, а не остановка: ролик зациклен, и вернувшаяся в кадр карточка
+            // Пауза, а не остановка: ролик зациклен, и вернувшаяся карточка
             // должна продолжить, а не дёрнуться в начало.
             .onChange(of: isActive, initial: true) { _, active in
-                guard active else { return playback.pause() }
-                hasPlayed = true
-                playback.start(bundled: clip)
+                active ? playback.start(bundled: clip) : playback.pause()
             }
             .onDisappear { playback.pause() }
     }
@@ -272,9 +307,9 @@ private struct MovieVideoCard: View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
     }
 
-    /// Кадр карточки: неподвижная картинка, поверх которой встаёт видео, когда
-    /// доходит очередь. Подмена мягкая — жёсткая читается щелчком, хотя картинка
-    /// и первый кадр ролика это одно и то же изображение.
+    /// Кадр карточки: неподвижная сцена, поверх которой по тапу проявляется видео
+    /// и по повторному тапу уходит обратно. Одновременно они бывают только те 0.4с,
+    /// пока идёт кроссфейд — ровно как на кавере экрана.
     private var frame: some View {
         ZStack {
             if let still {
@@ -283,9 +318,12 @@ private struct MovieVideoCard: View {
                     .scaledToFill()
             }
 
+            // Гасим по `isActive`, а не по «хоть раз играл»: `AVPlayerLayer` без единого
+            // `play` кадра не рисует, и без этой привязки выключенная карточка показывала
+            // бы чёрный прямоугольник вместо своей сцены.
             LoopingVideoLayer(player: playback.queue) { isVideoReady = true }
-                .opacity(hasPlayed && isVideoReady ? 1 : 0)
-                .animation(.easeInOut(duration: MovieCoverMotion.videoFadeIn), value: hasPlayed)
+                .opacity(isActive && isVideoReady ? 1 : 0)
+                .animation(.easeInOut(duration: MovieCoverMotion.videoFadeIn), value: isActive)
         }
         .allowsHitTesting(false)
     }

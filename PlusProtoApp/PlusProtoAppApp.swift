@@ -73,6 +73,9 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugTapCover") {
             UserDefaults.standard.removeObject(forKey: "debugTapCover")
         }
+        if !args.contains("-debugTapCard") {
+            UserDefaults.standard.removeObject(forKey: "debugTapCard")
+        }
 
         var index = 0
         while index < args.count {
@@ -125,6 +128,9 @@ struct PlusProtoAppApp: App {
                 index += 1
             case "-debugTapCover":
                 UserDefaults.standard.set(true, forKey: "debugTapCover")
+                index += 1
+            case "-debugTapCard":
+                UserDefaults.standard.set(true, forKey: "debugTapCard")
                 index += 1
             case "-debugFullPlayerNow":
                 UserDefaults.standard.set(true, forKey: "debugFullPlayerNow")
