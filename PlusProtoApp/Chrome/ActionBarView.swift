@@ -373,6 +373,14 @@ private struct SearchPill: View {
 
     private var stretch: CGFloat { pull * SearchPullConfig.heightLimit }
 
+    /// Куда растёт капсула. Резина одна и та же, отличается только якорь:
+    /// вне фокуса тянут вверх и на месте остаётся нижняя кромка (капсула идёт
+    /// туда, куда сейчас уедет), в фокусе тянут вниз и на месте остаётся верхняя.
+    /// Чистый transform поверх выросшего фрейма, раскладку не трогает.
+    private var stretchOffset: CGFloat {
+        searchFocused ? stretch / 2 : -stretch / 2
+    }
+
     /// Сжимается только гибкая капсула: у круга 60pt те же 16pt — это 27% ширины,
     /// и HStack тащил бы за собой мини-плеер каждый кадр.
     private var squeeze: CGFloat {
@@ -433,9 +441,9 @@ private struct SearchPill: View {
         .glassPill()
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
-        // Фрейм растёт вокруг центра — сдвиг на половину прижимает низ к бару,
-        // вверх уходит только верхняя кромка. Чистый transform, раскладку не трогает.
-        .offset(y: -stretch / 2)
+        // Фрейм растёт вокруг центра — сдвиг на половину прижимает одну кромку
+        // на месте, а уходит только противоположная (см. `stretchOffset`).
+        .offset(y: stretchOffset)
         // simultaneousGesture, а не gesture: внутри капсулы живут TextField и крест,
         // у потомков приоритет выше, и обычный жест на родителе они бы перебили.
         .simultaneousGesture(pullGesture)
@@ -467,9 +475,15 @@ private struct SearchPill: View {
         DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .global)
             .onChanged { value in
                 guard !searchFocused else {
+                    // Та же резина, что на подъёме, только вниз: капсула тянется
+                    // за пальцем, а на пороге отпускает клавиатуру.
+                    pull = SearchPullConfig.progress(travel: value.translation.height)
                     if value.translation.height >= SearchPullConfig.dismissDistance {
                         searchFocused = false
                         dismissedByPull = true
+                        // Резина расходится вместе со снятием фокуса — иначе капсула
+                        // поехала бы вниз растянутой и «схлопнулась» уже на месте.
+                        withAnimation(ActionBarMotion.morph) { pull = 0 }
                     }
                     return
                 }
@@ -489,7 +503,6 @@ private struct SearchPill: View {
                     return
                 }
                 guard !searchFocused else {
-                    pull = 0
                     // Короткий рывок вниз закрывает, не дотягивая до порога, — зеркально
                     // тому, как рывок вверх открывает.
                     let down = value.translation.height
@@ -498,6 +511,11 @@ private struct SearchPill: View {
                         && down > abs(value.translation.width)
                     if down >= SearchPullConfig.dismissDistance || flickDown {
                         searchFocused = false
+                        // Уходит вместе с баром — тем же морфом, что и подъём.
+                        withAnimation(ActionBarMotion.morph) { pull = 0 }
+                    } else {
+                        // Не дотянули: резина возвращается сама, своей кривой.
+                        withAnimation(SearchPullConfig.release) { pull = 0 }
                     }
                     return
                 }

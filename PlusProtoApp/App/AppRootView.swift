@@ -32,7 +32,7 @@ struct AppRootView: View {
         }
         // Между контентом и хромом: расфокусить надо экран, но не бар с клавиатурой.
         .overlay {
-            SearchOverlay(isActive: keyboard.isUp, motion: keyboard.motion) {
+            SearchOverlay(isActive: keyboard.isUp) {
                 actionBar.isSearchFocused = false
             }
         }
