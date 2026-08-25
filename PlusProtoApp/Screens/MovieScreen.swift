@@ -24,9 +24,11 @@ enum MovieLayout {
     /// кавера на 101 (y 423 при шве 524) и накрывает зеркало целиком
     static let reflectionFadeOverlap: CGFloat = 101
     static var reflectionFadeHeight: CGFloat { reflectionFadeOverlap + reflectionHeight }
-    /// Равномерный блюр зеркала: `backdrop-blur 28` из панели Figma = 14 в единицах
-    /// проекта. Тем же числом кончается прогрессив-рампа над швом — стык не читается.
-    static let reflectionBlur: CGFloat = 14
+    /// Пик прогрессив-рампы у низа полосы. Очень большой по прямой просьбе
+    /// пользователя (2026-08-25): продолжение должно превращаться в цветовое
+    /// пятно задолго до того, как утонет в чёрном. Макетные 28-из-панели (= 14)
+    /// оставляли зеркало читаемым.
+    static let reflectionBlur: CGFloat = 50
     /// Стоп градиента затемнения: чёрный достигается на 89.9 % высоты полосы (макет)
     static let reflectionGradientEnd: CGFloat = 0.899
 
