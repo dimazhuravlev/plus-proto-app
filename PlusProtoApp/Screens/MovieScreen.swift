@@ -194,7 +194,10 @@ struct MovieScreen: View {
                     // в ней остаётся только описание.
                     MovieVideoSection(
                         paragraphs: details.synopsis,
-                        stillURLs: details.cardStills
+                        stillURLs: details.cardStills,
+                        // Тот же сигнал, что у скелетона инфо-блока: пока детали
+                        // едут, секция стоит болванками полным каркасом.
+                        isLoading: !infoReady
                     )
                     if !details.cast.isEmpty {
                         MovieCastSection(cast: details.cast)

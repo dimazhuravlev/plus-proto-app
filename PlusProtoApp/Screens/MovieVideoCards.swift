@@ -59,6 +59,11 @@ struct MovieVideoSection: View {
     /// Число кадров и задаёт число карточек: без своего кадра карточки нет.
     let stillURLs: [URL]
 
+    /// Детали тайтла ещё едут — число карточек неизвестно. Болванки стоят с первого
+    /// кадра экрана полным каркасом (правка пользователя 2026-08-25); детали доехали —
+    /// каркас режется по числу кадров, лишние болванки растворяются тем же фейдом.
+    let isLoading: Bool
+
     /// Какая карточка включена тапом. Ровно одна: тап по другой переключает,
     /// повторный тап по той же — выключает.
     ///
@@ -151,7 +156,7 @@ struct MovieVideoSection: View {
     /// поэтому высоты совпадают сами и повторять их числом не приходится.
     /// Карточки, которым хватило кадров: мок-каркас режется по числу кадров API.
     private var shownCards: [MovieVideoCardMock] {
-        Array(MovieVideoCardMock.all.prefix(stillURLs.count))
+        isLoading ? MovieVideoCardMock.all : Array(MovieVideoCardMock.all.prefix(stillURLs.count))
     }
 
     /// После какой карточки стоит описание. Макетное место — после второй, но карточек
@@ -182,6 +187,12 @@ struct MovieVideoSection: View {
                 }
             }
         }
+        // Каркас режется, когда детали доехали: лишние болванки растворяются
+        // тем же фейдом, каким карточки оживают.
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: MovieVideoMotion.cardAppear),
+            value: shownCards.count
+        )
     }
 
     private func synopsis(isGlowLayer: Bool) -> some View {
