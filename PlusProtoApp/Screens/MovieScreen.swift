@@ -62,8 +62,8 @@ enum MovieLayout {
     // Прежний `leadInset = 32` («лид уже своего контейнера» из макета) снят —
     // правка пользователя 2026-08-25: правое поле всех текстов аргумента и описания
     // равно общему полю экрана 16, его лиду даёт `infoTrailing`.
-    static let metaSpacing: CGFloat = 5
-    static let metaDot: CGFloat = 4
+    // Прежние metaSpacing 5 / metaDot 4 ушли вместе с кругом-разделителем:
+    // мета набирается одним текстом с глифом «•», чтобы переноситься без обрезки.
 
     // Пилюля «Смотреть трейлер» из макета удалена решением пользователя 2026-08-25 —
     // вместе с её числами (44/18/22/6/20 и зазором до панели 16).
@@ -495,21 +495,18 @@ struct MovieScreen: View {
         }
     }
 
+    /// Мета — одним текстом, чтобы длинные значения («Великобритания») переносились
+    /// на следующую строку целиком, а не резались многоточием (правка пользователя
+    /// 2026-08-25; раньше HStack с `lineLimit(1)` обрезал длинную страну).
+    /// Разделитель — глиф «•» вместо макетного круга-вью 4pt: вью не переносится
+    /// вместе с текстом, а глиф на кегле меты визуально совпадает с точкой макета.
     private var meta: some View {
-        HStack(spacing: MovieLayout.metaSpacing) {
-            ForEach(Array(details.meta.enumerated()), id: \.offset) { index, item in
-                if index > 0 {
-                    // Fill/Seven — разделитель встречается только здесь, токен не заводим
-                    Circle()
-                        .fill(Color.white.opacity(0.3))
-                        .frame(width: MovieLayout.metaDot, height: MovieLayout.metaDot)
-                }
-                Text(item)
-                    .plusMovieText()
-                    .foregroundStyle(Color.fillSubtitle)
+        details.meta.dropFirst()
+            .reduce(Text(details.meta.first ?? "")) { result, item in
+                result + Text(" • ").foregroundColor(.white.opacity(0.3)) + Text(item)
             }
-        }
-        .lineLimit(1)
+            .plusMovieText()
+            .foregroundStyle(Color.fillSubtitle)
     }
 
 }
