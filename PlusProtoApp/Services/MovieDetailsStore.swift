@@ -33,7 +33,7 @@ final class MovieDetailsStore {
         // Поэтому открытие карточки фильма с витрины не стоит ни одного запроса из квоты,
         // а сеть остаётся только тайтлам не из запаса — то есть `-debugMovieId`.
         if let pooled = await MoviePool.shared.details(id: id) {
-            let parsed = MovieDetails(movie: pooled, stills: await MoviePool.shared.stills(for: id))
+            let parsed = MovieDetails(movie: pooled, stills: await stills(for: id, pooled: true))
             Self.cache[id] = parsed
             details = parsed
             failure = nil
@@ -47,9 +47,7 @@ final class MovieDetailsStore {
         do {
             let parsed = MovieDetails(
                 movie: try await KinopoiskService.shared.movie(id: id),
-                // Тайтла нет в запасе, значит и кадров к нему нет: ради `-debugMovieId`
-                // тратить ещё один запрос из квоты незачем — кавер возьмёт `backdrop`.
-                stills: await MoviePool.shared.stills(for: id)
+                stills: await stills(for: id, pooled: false)
             )
             Self.cache[id] = parsed
             details = parsed
@@ -58,6 +56,30 @@ final class MovieDetailsStore {
         } catch {
             failure = error.localizedDescription
         }
+    }
+
+    /// Кадры сцен для кавера и видеокарточек. Из запаса, если там есть; иначе —
+    /// добираются отдельным запросом: экран похожего фильма обязан наполняться так же,
+    /// как витринный (правка пользователя 2026-08-25 — раньше кадры были только у
+    /// тайтлов из запаса, и карточки похожих жили на забандленном ролике).
+    ///
+    /// Цена — один запрос на впервые открытый тайтл без кадров; повторные открытия
+    /// закрывает URLCache сервиса, а разобранный результат — кэш этого стора.
+    /// Тайтлу из запаса найденное возвращается в пул (с его же правилами отбора):
+    /// пригодится витрине, и переспрашивать не придётся. Чужие тайтлы в пул не пишем —
+    /// его файл чистится только по списку своих фильмов, осиротевшие кадры копились бы
+    /// вечно. Правила отбора те же, что в пуле: горизонтальные, не больше пяти.
+    private func stills(for id: Int, pooled: Bool) async -> [KinopoiskStill] {
+        let stored = await MoviePool.shared.stills(for: id)
+        if !stored.isEmpty { return stored }
+        guard let fetched = try? await KinopoiskService.shared.stills(movieIDs: [id], limit: 40) else {
+            return []
+        }
+        if pooled {
+            await MoviePool.shared.store(stills: fetched, asked: [id])
+            return await MoviePool.shared.stills(for: id)
+        }
+        return Array(fetched.filter { !$0.isPortrait }.prefix(MoviePool.stillsPerTitle))
     }
 
     /// Кадр и логотип нужны в первом же кадре экрана, актёры и похожее — ниже по скроллу.
