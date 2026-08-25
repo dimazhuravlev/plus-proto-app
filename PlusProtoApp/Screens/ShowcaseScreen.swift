@@ -23,21 +23,29 @@ struct ShowcaseScreen: View {
         // хром лежит слоем над контентом табов. Зум при этом сохраняется: `.zoom`
         // работает и для презентаций, не только для пуша.
         .fullScreenCover(item: $navigation.coveredRoute) { route in
-            EntityScreen(route: route)
-                // Маршрут может смениться, пока слой показан: «Похожее» открывает
-                // другой фильм подменой `coveredRoute`. Свежая идентичность
-                // обязательна — без неё новому экрану достаётся @State старого
-                // (стор деталей, скролл, состояние ролика).
-                .id(route)
-                .navigationTransition(.zoom(sourceID: route, in: zoom))
-                #if DEBUG
-                .task {
-                    guard UserDefaults.standard.bool(forKey: "debugCloseEntity") else { return }
-                    try? await Task.sleep(for: .seconds(2))
-                    guard !Task.isCancelled else { return }
-                    navigation.close()
-                }
-                #endif
+            // Внутри слоя — собственный стек (`coveredPath`): «Похожее» открывает
+            // следующий фильм **поверх** текущего, не закрывая его. Крестик экрана
+            // зовёт `dismiss()`, и тот сам делает правильное: на запушенном экране —
+            // поп к предыдущему фильму, на корневом — закрытие слоя целиком.
+            NavigationStack(path: $navigation.coveredPath) {
+                EntityScreen(route: route)
+                    .navigationDestination(for: EntityRoute.self) { pushed in
+                        EntityScreen(route: pushed)
+                    }
+                    #if DEBUG
+                    .task {
+                        guard UserDefaults.standard.bool(forKey: "debugCloseEntity") else { return }
+                        try? await Task.sleep(for: .seconds(2))
+                        guard !Task.isCancelled else { return }
+                        navigation.close()
+                    }
+                    #endif
+            }
+            // Свежая идентичность на случай подмены корня слоя, пока он показан
+            // (повторный отладочный тап витрины): без неё новому экрану достаётся
+            // @State старого (стор деталей, скролл, состояние ролика).
+            .id(route)
+            .navigationTransition(.zoom(sourceID: route, in: zoom))
         }
         .navigationDestination(for: EntityRoute.self) { route in
             EntityScreen(route: route)

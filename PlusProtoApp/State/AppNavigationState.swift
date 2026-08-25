@@ -14,7 +14,18 @@ final class AppNavigationState {
     /// Экран сущности, показанный **слоем поверх хрома** вместо пуша (см.
     /// `EntityRoute.coversChrome`). Живёт отдельно от путей: он не элемент стека,
     /// а отдельная презентация, и переживать переключение таба ему не нужно.
-    var coveredRoute: EntityRoute?
+    var coveredRoute: EntityRoute? {
+        didSet {
+            // Новый слой — чистый стек: путь прошлого слоя не должен доставаться
+            // следующему ни при закрытии, ни при подмене корня.
+            if coveredRoute != oldValue { coveredPath.removeAll() }
+        }
+    }
+
+    /// Стек **внутри** слоя: «Похожее» открывает следующий фильм поверх текущего,
+    /// не закрывая его (решение пользователя 2026-08-25). Пути табов для этого
+    /// не годятся — слой живёт над хромом отдельной презентацией.
+    var coveredPath: [EntityRoute] = []
 
     private var paths: [AppTab: NavigationPath] = [:]
 
@@ -53,15 +64,23 @@ final class AppNavigationState {
     /// Одна точка входа, чтобы витрина и отладочный тап не расходились в способе.
     func open(_ route: EntityRoute, in tab: AppTab? = nil) {
         if route.coversChrome {
-            coveredRoute = route
+            // Слой уже показан («Похожее» на экране фильма) — следующий экран
+            // встаёт в стек слоя, поверх текущего, а не подменяет его.
+            if coveredRoute == nil {
+                coveredRoute = route
+            } else {
+                coveredPath.append(route)
+            }
         } else {
             push(route, in: tab)
         }
     }
 
-    /// Закрыть то, что открыто последним.
+    /// Закрыть то, что открыто последним: верхний экран стека слоя, затем сам слой.
     func close(in tab: AppTab? = nil) {
-        if coveredRoute != nil {
+        if !coveredPath.isEmpty {
+            coveredPath.removeLast()
+        } else if coveredRoute != nil {
             coveredRoute = nil
         } else {
             pop(in: tab)
