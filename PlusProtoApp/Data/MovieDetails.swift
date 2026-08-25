@@ -69,12 +69,12 @@ extension MovieDetails {
     /// Ширина логотипа в пикселях: макетные 188pt на ×3.
     private static let logoPixelWidth = 564
 
-    /// Сколько персон и похожих тайтлов доезжает до экрана. Не приватные: по этим же
-    /// числам `MoviePool` обрезает запись перед записью на диск — хранить состав,
-    /// который карточка никогда не покажет, незачем.
+    /// Сколько персон доезжает до экрана. Не приватные: по этим же числам `MoviePool`
+    /// обрезает запись перед записью на диск — хранить состав, который карточка
+    /// никогда не покажет, незачем. Похожие не режутся вовсе (правка 2026-08-25,
+    /// был потолок 9): секция показывает все, что отдал API.
     static let castLimit = 12
     static let directorLimit = 2
-    static let similarLimit = 9
 
     /// - Parameter stills: горизонтальные кадры тайтла из `/v1.4/image`. Пустой массив —
     ///   кадров у тайтла нет, кавер возьмёт `backdrop`, как раньше.
@@ -101,8 +101,9 @@ extension MovieDetails {
             ?? movie.poster?.url(size: .medium)
         // Видеокарточкам — **остальные** кадры, начиная со второго: первый уже стоит
         // в шапке, и повторять его четырьмя этажами ниже значит показать одну сцену
-        // пять раз. Кадров может не хватить — карточка без своего берёт первый кадр
-        // забандленного ролика, как было до этого.
+        // пять раз. Кадров может не хватить — тогда карточек столько, сколько кадров:
+        // без своего кадра карточка не показывается (правка 2026-08-25, раньше брала
+        // первый кадр забандленного ролика).
         cardStills = stills.dropFirst().compactMap { $0.url(size: .huge) }
     }
 
@@ -218,7 +219,7 @@ extension MovieDetails {
     }
 
     private static func similar(_ movie: KinopoiskMovie) -> [MovieSimilarTitle] {
-        (movie.similarMovies ?? []).prefix(similarLimit).compactMap { item in
+        (movie.similarMovies ?? []).compactMap { item in
             let title = item.displayTitle
             guard !title.isEmpty else { return nil }
             return MovieSimilarTitle(

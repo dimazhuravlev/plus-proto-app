@@ -34,8 +34,8 @@ enum MovieLayout {
     /// строк, и кавер выходил 443 вместо 536 — пропорция 0.907 вместо 0.75 (замер).
     ///
     /// Теперь наоборот: кадр постоянный, а длинный лид просто опускает всё, что идёт
-    /// за ним, ниже. Следствие принято сознательно — при длинном лиде пилюля «Смотреть
-    /// трейлер» уезжает под градиент панели и до неё надо доскроллить.
+    /// за ним, ниже. Следствие принято сознательно — при длинном лиде низ инфо-блока
+    /// уезжает под градиент панели и до него надо доскроллить.
     static let coverHeight: CGFloat = PlusMetrics.designWidth / coverAspect
 
     // Шапка `I3806:11014;6787:11641`
@@ -57,15 +57,8 @@ enum MovieLayout {
     static let metaSpacing: CGFloat = 5
     static let metaDot: CGFloat = 4
 
-    /// Зазор «низ трейлера → верх ряда кнопок» из макета (756 → 772)
-    static let trailerToPanelGap: CGFloat = 16
-
-    // Пилюля «Смотреть трейлер»
-    static let trailerHeight: CGFloat = 44
-    static let trailerLeading: CGFloat = 18
-    static let trailerTrailing: CGFloat = 22
-    static let trailerGap: CGFloat = 6
-    static let trailerIconBox: CGFloat = 20
+    // Пилюля «Смотреть трейлер» из макета удалена решением пользователя 2026-08-25 —
+    // вместе с её числами (44/18/22/6/20 и зазором до панели 16).
 
     // Панель `2101:20595`
     /// Пустая градиентная зона над кнопками
@@ -365,16 +358,16 @@ struct MovieScreen: View {
         .allowsHitTesting(false)
     }
 
-    /// Блок лейбла, аргумента, меты и трейлера готов к показу: детали доехали.
+    /// Блок лейбла, аргумента и меты готов к показу: детали доехали.
     /// Мок и тайтл не из Кинопоиска показываются сразу — грузить им нечего;
     /// ошибка сети тоже показывает контент (заглушку деталей) — вечный скелетон хуже.
     private var infoReady: Bool {
         store.details != nil || entity.kinopoiskID == nil || store.failure != nil
     }
 
-    /// Лейбл, аргумент, мета и кнопка трейлера появляются **одномоментно**, когда
-    /// детали доехали, — до того стоит скелетон (правка пользователя 2026-08-25:
-    /// раньше заглушка лида подменялась настоящим текстом и блок дёргался).
+    /// Лейбл, аргумент и мета появляются **одномоментно**, когда детали доехали, —
+    /// до того стоит скелетон (правка пользователя 2026-08-25: раньше заглушка лида
+    /// подменялась настоящим текстом и блок дёргался).
     /// Кроссфейд за `MovieInfoMotion.appear`; обе ветки — дефолтный `.opacity`.
     private var info: some View {
         Group {
@@ -416,7 +409,6 @@ struct MovieScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if !details.meta.isEmpty { meta }
-            trailerButton
         }
     }
 
@@ -437,25 +429,6 @@ struct MovieScreen: View {
         .lineLimit(1)
     }
 
-    private var trailerButton: some View {
-        Button {} label: {
-            HStack(spacing: MovieLayout.trailerGap) {
-                MovieIcon(name: "iconTrailer", box: MovieLayout.trailerIconBox)
-                Text("Смотреть трейлер")
-                    .plusMovieTextBold()
-                    .foregroundStyle(Color.fillOne)
-            }
-            .padding(.leading, MovieLayout.trailerLeading)
-            .padding(.trailing, MovieLayout.trailerTrailing)
-            .frame(height: MovieLayout.trailerHeight)
-            // Заливка без блюра: у этой пилюли в макете нет backdrop-filter
-            .background(Capsule(style: .continuous).fill(Color.buttonsPrimary))
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        // У ролика из API есть своё имя («Джентльмены (2019) — Трейлер дублированный») —
-        // на пилюле оно не помещается, но озвучить его VoiceOver стоит.
-        .accessibilityLabel(details.trailer?.name ?? "Смотреть трейлер")
-    }
 }
 
 // MARK: - Скелетон инфо-блока

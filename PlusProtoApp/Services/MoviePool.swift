@@ -240,7 +240,8 @@ actor MoviePool {
         let persons = movie.persons ?? []
         copy.persons = Array(persons.filter { $0.enProfession == "director" }.prefix(MovieDetails.directorLimit))
             + persons.filter { $0.enProfession == "actor" }.prefix(MovieDetails.castLimit)
-        copy.similarMovies = movie.similarMovies.map { Array($0.prefix(MovieDetails.similarLimit)) }
+        // Похожие не режутся (правка 2026-08-25): секция показывает все. Вес терпимый —
+        // главную тяжесть записи давали персоны, а не похожие.
         return copy
     }
 

@@ -41,8 +41,11 @@ struct MovieVideoCardMock {
 
 /// Секция видеокарточек — `figma-moviecard.md` §4.2 «originals content».
 ///
-/// Четыре карточки 361×451.25 с шагом 467.25 и текстовый блок в шахматном порядке
-/// между второй и третьей.
+/// До четырёх карточек 361×451.25 с шагом 467.25 и текстовый блок в шахматном
+/// порядке между второй и третьей. Карточек ровно столько, сколько кадров дал API:
+/// нет кадра — нет карточки (правка пользователя 2026-08-25, раньше безкадровая
+/// карточка стояла на первом кадре забандленного ролика). Кадров нет вовсе —
+/// от секции остаётся только описание.
 ///
 /// **Про контент.** Тексты карточек замокированы (`MovieVideoCardMock`), движение —
 /// забандленный клип: настоящих роликов взять негде, Кинопоиск на бесплатном тарифе
@@ -53,7 +56,7 @@ struct MovieVideoSection: View {
     let paragraphs: [String]
 
     /// Кадры тайтла под карточки — те же сцены, что и в шапке экрана, но другие.
-    /// Короче четырёх (или пустой) — карточкам без своего кадра остаётся ролик.
+    /// Число кадров и задаёт число карточек: без своего кадра карточки нет.
     let stillURLs: [URL]
 
     /// Какая карточка включена тапом. Ровно одна: тап по другой переключает,
@@ -146,27 +149,49 @@ struct MovieVideoSection: View {
     /// Раскладка секции. Одна на оба слоя, чтобы они не разъехались: текстовый блок
     /// в слое свечений тот же самый, только скрытый — `hidden` сохраняет кадр,
     /// поэтому высоты совпадают сами и повторять их числом не приходится.
+    /// Карточки, которым хватило кадров: мок-каркас режется по числу кадров API.
+    private var shownCards: [MovieVideoCardMock] {
+        Array(MovieVideoCardMock.all.prefix(stillURLs.count))
+    }
+
+    /// После какой карточки стоит описание. Макетное место — после второй, но карточек
+    /// может быть меньше (вплоть до нуля): тогда описание встаёт после последней
+    /// имеющейся либо остаётся единственным содержимым секции.
+    private var synopsisAfter: Int {
+        min(Layout.textAfter, shownCards.count)
+    }
+
     @ViewBuilder
     private func rows<Row: View>(
         isGlowLayer: Bool = false,
         @ViewBuilder row: @escaping (Int, MovieVideoCardMock) -> Row
     ) -> some View {
         VStack(alignment: .leading, spacing: Layout.gap) {
-            ForEach(Array(MovieVideoCardMock.all.enumerated()), id: \.offset) { index, card in
-                row(index, card)
-                    .padding(.horizontal, Layout.side)
+            if shownCards.isEmpty {
+                if !paragraphs.isEmpty {
+                    synopsis(isGlowLayer: isGlowLayer)
+                }
+            } else {
+                ForEach(Array(shownCards.enumerated()), id: \.offset) { index, card in
+                    row(index, card)
+                        .padding(.horizontal, Layout.side)
 
-                if index + 1 == Layout.textAfter, !paragraphs.isEmpty {
-                    MovieSynopsisSection(paragraphs: paragraphs)
-                        .padding(.vertical, Layout.textBlockVertical)
-                        // В слое свечений это распорка, а не текст: `hidden` сохраняет
-                        // кадр, поэтому слои не разъезжаются, а описание рисуется
-                        // и нажимается ровно один раз.
-                        .opacity(isGlowLayer ? 0 : 1)
-                        .allowsHitTesting(!isGlowLayer)
+                    if index + 1 == synopsisAfter, !paragraphs.isEmpty {
+                        synopsis(isGlowLayer: isGlowLayer)
+                    }
                 }
             }
         }
+    }
+
+    private func synopsis(isGlowLayer: Bool) -> some View {
+        MovieSynopsisSection(paragraphs: paragraphs)
+            .padding(.vertical, Layout.textBlockVertical)
+            // В слое свечений это распорка, а не текст: `hidden` сохраняет
+            // кадр, поэтому слои не разъезжаются, а описание рисуется
+            // и нажимается ровно один раз.
+            .opacity(isGlowLayer ? 0 : 1)
+            .allowsHitTesting(!isGlowLayer)
     }
 
     private func cardView(_ index: Int, _ card: MovieVideoCardMock) -> some View {
@@ -210,19 +235,15 @@ struct MovieVideoSection: View {
             .allowsHitTesting(false)
     }
 
-    /// Кадр каждой карточки: сцена тайтла, если API её дал, иначе первый кадр
-    /// забандленного ролика — как было до того, как кадры появились.
+    /// Кадр каждой карточки — сцена тайтла из API. Фолбэка больше нет: карточка
+    /// без кадра не показывается вовсе (см. `shownCards`).
     ///
     /// По порядку, а не пачкой: верхние карточки нужны раньше нижних, и очередь
     /// загрузок, выстроенная сверху вниз, доставляет их в том же порядке.
     private func loadStills() async {
-        for index in MovieVideoCardMock.all.indices {
-            if index < stillURLs.count,
-               let loaded = await ArtworkLoader.shared.image(for: stillURLs[index]) {
-                stills[index] = Image(uiImage: loaded)
-                continue
-            }
-            stills[index] = await ClipStill.load(Self.clip(for: index))
+        for index in shownCards.indices {
+            guard let loaded = await ArtworkLoader.shared.image(for: stillURLs[index]) else { continue }
+            stills[index] = Image(uiImage: loaded)
         }
     }
 
@@ -249,10 +270,10 @@ struct MovieVideoSection: View {
 /// же неподвижный кадр, а как дойдёт — тот же кадр оживает. Постера тайтла под ним
 /// больше нет: карточка рассказывает про фильм, а не показывает соседний.
 ///
-/// Кадр берётся картинкой (`ClipStill`), а не «паузой на плеере». `AVPlayerLayer`,
-/// которому ни разу не давали играть, ничего не рисует — карточка оставалась чёрной,
-/// пока до неё не доскроллят. Показывать пустоту до первого показа нельзя: карточек
-/// четыре, одновременно играет одна, и три из них были бы дырами.
+/// Кадр берётся картинкой (сцена тайтла из API), а не «паузой на плеере».
+/// `AVPlayerLayer`, которому ни разу не давали играть, ничего не рисует — карточка
+/// оставалась бы чёрной, пока до неё не доскроллят и не тапнут. Показывать пустоту
+/// нельзя: одновременно играет одна карточка, остальные были бы дырами.
 ///
 /// Плеер живёт всё время, пока карточка в дереве, и только ставится на паузу:
 /// пересобирать `AVQueuePlayer` на каждый заход в поле зрения дороже, чем держать его,
@@ -380,22 +401,6 @@ private struct MovieVideoCard: View {
 /// Разрешение — родное для клипа: карточка портретная, ролики широкие, и `resizeAspectFill`
 /// и так растягивает узкую вертикальную полосу источника. Уменьшать её значит проиграть
 /// в чёткости самому видео, поверх которого картинка и стоит.
-@MainActor
-private enum ClipStill {
-    private static var cache: [String: Image] = [:]
-
-    static func load(_ name: String) async -> Image? {
-        if let hit = cache[name] { return hit }
-        guard let url = LoopingVideoPlayback.bundled(name) else { return nil }
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-        generator.appliesPreferredTrackTransform = true
-        guard let cgImage = try? await generator.image(at: .zero).image else { return nil }
-        let image = Image(decorative: cgImage, scale: 1)
-        cache[name] = image
-        return image
-    }
-}
-
 private extension String {
     /// Обрезает по границе слова: лимит макета — 50 символов на заголовок карточки.
     func prefixWords(maxCharacters: Int) -> String {
