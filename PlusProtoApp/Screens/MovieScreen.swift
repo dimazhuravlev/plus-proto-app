@@ -12,19 +12,21 @@ enum MovieLayout {
     // Кавер `I3806:11014;6787:11638`
     /// 393×523.99 — ровно 3:4
     static let coverAspect: CGFloat = 3.0 / 4.0
-    /// «cover bottom blur» 393×104, прижат к низу кавера. Это высота **затемнения** —
-    /// она осталась макетной; полоса размытия с 2026-08-25 короче и живёт своим числом.
-    static let coverFadeHeight: CGFloat = 104
-    /// Полоса размытия — короче полосы затемнения, прижата к её низу (тюнинг
-    /// пользователя 2026-08-25; была одной высоты с затемнением). Тот же приём
-    /// разъехавшихся высот, что у шапки (`MovieHeaderLayout.blurMain`).
-    static let coverFadeBlurHeight: CGFloat = 88
-    /// Пик **прогрессивного** размытия: 0 у верхней кромки полосы размытия, максимум
-    /// у нижней. Было макетных 10 — смягчён тюнингом 2026-08-25 заодно с высотой,
-    /// в тон верхней шапке (у неё пик ≈8.5). С равномерным `BACKGROUND_BLUR` из
-    /// панели Figma напрямую не сравнивается: рампа доходит до максимума только
-    /// у самого низа.
-    static let coverFadeBlur: CGFloat = 6
+
+    // Зеркальное продолжение кавера — макет `2102:15051` (заменил прежнюю полосу
+    // «cover bottom blur» 104/88: теперь у картинки есть визуальное продолжение вниз)
+    /// Зеркальная копия кадра встык под кавером (инстанс `cover` 393×300,
+    /// отражён по вертикали)
+    static let reflectionHeight: CGFloat = 300
+    /// Полоса затемнения и размытия `cover bottom blur` 393×401: заходит на низ
+    /// кавера на 101 (y 423 при шве 524) и накрывает зеркало целиком
+    static let reflectionFadeOverlap: CGFloat = 101
+    static var reflectionFadeHeight: CGFloat { reflectionFadeOverlap + reflectionHeight }
+    /// Равномерный блюр зеркала: `backdrop-blur 28` из панели Figma = 14 в единицах
+    /// проекта. Тем же числом кончается прогрессив-рампа над швом — стык не читается.
+    static let reflectionBlur: CGFloat = 14
+    /// Стоп градиента затемнения: чёрный достигается на 89.9 % высоты полосы (макет)
+    static let reflectionGradientEnd: CGFloat = 0.899
 
     /// Высота кавера — макетные 3:4, и **только** они.
     ///
@@ -316,12 +318,12 @@ struct MovieScreen: View {
                 )
             }
             .clipped()
-            .overlay(alignment: .bottom) { coverFade }
+            .overlay(alignment: .bottom) { coverExtension }
             // Резина оттяга — на чистых transform'ах, как на экране альбома: слой
             // компенсирует оттяг `offset(y: -pull)` (контент едет вниз, верхняя кромка
             // кадра стоит на месте), а рост даёт `scaleEffect` с якорем `.top` — низ
             // тянется ровно на величину оттяга и остаётся приклеен к инфо-блоку.
-            // Полоса `coverFade` внутри растягиваемого поддерева сознательно: она
+            // Полоса `coverExtension` внутри растягиваемого поддерева сознательно: она
             // обязана ехать вместе с низом кадра, снаружи скейла она отстала бы от него
             // на величину роста. Порядок модификаторов обязателен `scaleEffect → offset`:
             // наоборот скейл умножил бы и компенсирующее смещение (DECISIONS, альбом).
@@ -336,26 +338,63 @@ struct MovieScreen: View {
     /// становится кромкой — там, где она начинается, резкость обрывается на ровном
     /// месте. Рампа снимает эту границу тем же приёмом, что подложка таббара
     /// (`TabBarUnderlay`), и в ту же сторону — чисто сверху, максимум снизу.
-    private var coverFade: some View {
-        // Полосы разной высоты, обе прижаты к низу: затемнение — макетные 104,
-        // размытие короче и мягче (тюнинг 2026-08-25). Приём тот же, что в шапке:
-        // резкость возвращается выше, чем кончается затемнение, и границы не видно.
+    /// Продолжение кавера вниз — макет `2102:15051`: под кадром встык стоит его же
+    /// зеркальная копия, и вся она вместе с низом кадра затемнена и заблерена.
+    /// Картинка получает визуальное «продолжение», но зеркало не считывается:
+    /// оно под равномерным блюром намертво, а прогрессив-рампа над швом доводит
+    /// низ кадра до того же радиуса — стык блюров не читается.
+    ///
+    /// Все слои выровнены низом к низу кавера и сдвинуты вниз оффсетами: overlay
+    /// не участвует в раскладке, поэтому зеркало просто лежит под инфо-блоком
+    /// (он в VStack позже — рисуется поверх), а его низ тонет в чёрном фоне экрана.
+    /// Слой живёт до `scaleEffect` резины — на оттяге тянется вместе с кавером.
+    private var coverExtension: some View {
         ZStack(alignment: .bottom) {
+            reflection
+                .offset(y: MovieLayout.reflectionHeight)
+
             VariableBlurView(
-                maxBlurRadius: MovieLayout.coverFadeBlur,
+                maxBlurRadius: MovieLayout.reflectionBlur,
                 direction: .blurredBottomClearTop
             )
-            .frame(height: MovieLayout.coverFadeBlurHeight)
+            .frame(height: MovieLayout.reflectionFadeOverlap)
 
             LinearGradient(
-                colors: [.black.opacity(0), .black],
+                stops: [
+                    .init(color: .black.opacity(0), location: 0),
+                    .init(color: .black, location: MovieLayout.reflectionGradientEnd),
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: MovieLayout.coverFadeHeight)
+            .frame(height: MovieLayout.reflectionFadeHeight)
+            .offset(y: MovieLayout.reflectionHeight)
         }
-        .frame(height: MovieLayout.coverFadeHeight, alignment: .bottom)
         .allowsHitTesting(false)
+    }
+
+    /// Зеркальная копия кадра. Источник тот же, что у кавера: чистый кадр из API,
+    /// моку — его постер. Живому тайтлу до загрузки кадра зеркала нет — полоса
+    /// стоит на чёрном, и появление кадра не дёргает: он почти целиком затемнён.
+    ///
+    /// Отражение чистое (`scaleEffect(y: -1)`), без горизонтального зеркала: у шва
+    /// низ кадра должен непрерывно перетекать в свою копию, пока затемнение слабое.
+    @ViewBuilder
+    private var reflection: some View {
+        let source: ArtworkSource? = details.backdrop.map { .remote($0) }
+            ?? (entity.kinopoiskID == nil ? entity.artwork : nil)
+        if let source {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: MovieLayout.reflectionHeight)
+                .overlay { ArtworkImage(source: source).scaledToFill() }
+                .clipped()
+                .scaleEffect(y: -1)
+                .blur(radius: MovieLayout.reflectionBlur, opaque: true)
+                // Второй раз: блюр расползается за кадр, а выше шва ему нельзя —
+                // там низ настоящего кадра со своей рампой.
+                .clipped()
+        }
     }
 
     /// Блок лейбла, аргумента и меты готов к показу: детали доехали.
