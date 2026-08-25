@@ -45,8 +45,9 @@ enum MovieLayout {
     static let infoTrailing: CGFloat = 16
     static let infoSpacing: CGFloat = 16
     static let infoBottom: CGFloat = 24
-    /// Лид уже своего контейнера на 32 — в макете это `padding-right` у текста
-    static let leadInset: CGFloat = 32
+    // Прежний `leadInset = 32` («лид уже своего контейнера» из макета) снят —
+    // правка пользователя 2026-08-25: правое поле всех текстов аргумента и описания
+    // равно общему полю экрана 16, его лиду даёт `infoTrailing`.
     static let metaSpacing: CGFloat = 5
     static let metaDot: CGFloat = 4
 
@@ -244,7 +245,7 @@ struct MovieScreen: View {
             MovieHeader(
                 logo: details.logo,
                 title: entity.title,
-                scrollOffset: scrollOffset
+                scrollOffset: headerScrollOffset
             ) {
                 headerActions
             }
@@ -252,6 +253,34 @@ struct MovieScreen: View {
         .background(Color.black.ignoresSafeArea())
         .overlay(alignment: .bottom) { MovieMainButtons() }
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    // MARK: Резина кавера
+
+    /// Оттяг вниз. Скролл вверх кавер не трогает — он обычным образом уезжает.
+    private var pull: CGFloat { max(0, -scrollOffset) }
+
+    /// Сколько «роста» получает кавер. В жизни равно оттягу; в дебаге к нему
+    /// добавляется подставной (`-debugMoviePull <pt>`), а компенсация смещения
+    /// (`-pull`) остаётся на реальном: подставной оттяг контент вниз не сдвигал,
+    /// и компенсировать ему нечего. Паттерн экрана альбома (`-debugAlbumPull`).
+    private var growth: CGFloat {
+        #if DEBUG
+        pull + CGFloat(UserDefaults.standard.double(forKey: "debugMoviePull"))
+        #else
+        pull
+        #endif
+    }
+
+    /// Шапке оттяг нужен для роста логотипа, и в дебаге подставной обязан доехать
+    /// и до неё — реального жеста из шелла не сделать. Рампам появления сдвиг не
+    /// мешает: на оттяге offset и так меньше нуля, доли стоят в нуле.
+    private var headerScrollOffset: CGFloat {
+        #if DEBUG
+        scrollOffset - CGFloat(UserDefaults.standard.double(forKey: "debugMoviePull"))
+        #else
+        scrollOffset
+        #endif
     }
 
     // MARK: Шапка
@@ -290,6 +319,16 @@ struct MovieScreen: View {
             }
             .clipped()
             .overlay(alignment: .bottom) { coverFade }
+            // Резина оттяга — на чистых transform'ах, как на экране альбома: слой
+            // компенсирует оттяг `offset(y: -pull)` (контент едет вниз, верхняя кромка
+            // кадра стоит на месте), а рост даёт `scaleEffect` с якорем `.top` — низ
+            // тянется ровно на величину оттяга и остаётся приклеен к инфо-блоку.
+            // Полоса `coverFade` внутри растягиваемого поддерева сознательно: она
+            // обязана ехать вместе с низом кадра, снаружи скейла она отстала бы от него
+            // на величину роста. Порядок модификаторов обязателен `scaleEffect → offset`:
+            // наоборот скейл умножил бы и компенсирующее смещение (DECISIONS, альбом).
+            .scaleEffect((MovieLayout.coverHeight + growth) / MovieLayout.coverHeight, anchor: .top)
+            .offset(y: -pull)
     }
 
     /// Нижние 104pt кавера: чёрный градиент под размытием, нарастающим книзу, — стык
@@ -335,7 +374,10 @@ struct MovieScreen: View {
             Text(leadText)
                 .plusMovieLead()
                 .foregroundStyle(Color.fillOne)
-                .padding(.trailing, MovieLayout.leadInset)
+                // Контейнер лида — вся колонка инфо-блока, до общего правого поля 16.
+                // Без растяжки блок кончался бы там, где кончилась самая длинная
+                // строка, и его правый край гулял бы от тайтла к тайтлу.
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             if !details.meta.isEmpty { meta }
             trailerButton

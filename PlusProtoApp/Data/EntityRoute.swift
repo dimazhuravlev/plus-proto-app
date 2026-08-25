@@ -53,6 +53,17 @@ enum EntityRoute: Hashable, Identifiable {
     }
 }
 
+extension MovieSimilarTitle {
+    /// Экран тайтла из блока «Похожее». Формат id — витринный `kp-<id>`: по нему
+    /// `EntityRef.kinopoiskID` достаёт числовой id, и экран грузит живые детали.
+    /// Без постера перехода нет: обложка экрана обязательна, а подставлять чужой
+    /// бандленный кадр нечестно — прецедент «переходить некуда» уже есть у «Моей Волны».
+    var route: EntityRoute? {
+        guard let poster else { return nil }
+        return .movie(EntityRef(id: "kp-\(id)", title: title, subtitle: "", artwork: .remote(poster)))
+    }
+}
+
 extension ShowcaseBlock {
     /// Экран сущности, который открывает карточка. `nil` — переходить некуда:
     /// у «Моей Волны» нет своей сущности, это генератор потока, а не альбом.

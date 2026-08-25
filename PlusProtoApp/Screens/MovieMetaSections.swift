@@ -77,11 +77,24 @@ struct MovieCastSection: View {
 
 // MARK: - Похожее
 
+#if DEBUG
+/// Одноразовость `-debugOpenSimilar` на процесс (см. задачу в секции).
+private enum MovieSimilarDebug {
+    static var fired = false
+}
+#endif
+
 /// `2104:22862` «You Might Also Like» — сетка 3×N: постер 2:3, подпись 18pt.
 /// Ширина карточки считается от ширины холста прототипа (402), а не от замера вью:
 /// читать размер вью, от которого зависит её же раскладка, запрещено (DECISIONS).
+///
+/// Тап по карточке открывает экран того тайтла — **подменой `coveredRoute`**, а не
+/// пушем: карточка фильма живёт слоем поверх хрома, и «другой фильм» — это тот же
+/// слой с другим маршрутом. Стека переходов нет сознательно: кнопки «назад» у экрана
+/// нет по макету, крестик закрывает слой целиком и возвращает на витрину.
 struct MovieSimilarSection: View {
     let titles: [MovieSimilarTitle]
+    @Environment(AppNavigationState.self) private var navigation
 
     private enum Layout {
         static let columns = 3
@@ -117,9 +130,36 @@ struct MovieSimilarSection: View {
             }
             .padding(.horizontal, MovieLayout.sectionSide)
         }
+        #if DEBUG
+        // `-debugOpenSimilar <n>` — открыть n-й похожий тайтл: тапнуть симулятор из
+        // шелла нечем, а подмену слоя иначе не сверить. Срабатывает один раз на
+        // запуск — у нового экрана своя секция «Похожее» с этой же задачей, и без
+        // гашения переходы шли бы по цепочке. Гасится статикой, а не снятием ключа:
+        // ключ запуска живёт в argument domain и перекрывает постоянный домен.
+        .task {
+            let index = UserDefaults.standard.integer(forKey: "debugOpenSimilar")
+            guard index > 0, index <= titles.count, !MovieSimilarDebug.fired else { return }
+            MovieSimilarDebug.fired = true
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let route = titles[index - 1].route else { return }
+            navigation.open(route)
+        }
+        #endif
     }
 
+    /// Карточка с маршрутом — кнопка, без него (нет постера) — просто вью:
+    /// прецедент «переходить некуда» ведёт себя так же у «Моей Волны» на витрине.
+    @ViewBuilder
     private func card(_ title: MovieSimilarTitle) -> some View {
+        if let route = title.route {
+            Button { navigation.open(route) } label: { cardBody(title) }
+                .buttonStyle(PressScaleButtonStyle())
+        } else {
+            cardBody(title)
+        }
+    }
+
+    private func cardBody(_ title: MovieSimilarTitle) -> some View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
 
         return VStack(alignment: .leading, spacing: Layout.captionGap) {

@@ -143,9 +143,11 @@ extension View {
         modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 15, lineHeight: 20, tracking: 0))
     }
 
-    /// Название тайтла на месте логотипа — `2063:11230`: YS Display Bold 28 / lh 32.
-    func plusMovieHeaderTitle() -> some View {
-        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 28, lineHeight: 32, tracking: 0))
+    /// Название тайтла на месте логотипа — `2063:11230`: YS Display Bold. Кегль
+    /// и интерлиньяж приходят снаружи — ступенью от длины названия
+    /// (`MovieHeaderLayout.titleSteps`), макетная пара 28/32 — средняя из них.
+    func plusMovieHeaderTitle(size: CGFloat, lineHeight: CGFloat) -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: size, lineHeight: lineHeight, tracking: 0))
     }
 
     /// Текст секции видеокарточек — YS Display Bold 24 / lh 28.

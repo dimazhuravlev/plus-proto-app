@@ -33,13 +33,14 @@ struct MovieSynopsisSection: View {
     @State private var isExpanded = false
 
     private enum Layout {
-        /// `pl 24 / pr 48 / pt 16 / pb 8` у первого абзаца, зеркально — у второго.
-        /// Прежняя спека (`2101:22593`) давала первому 16 — это другой файл макета.
+        /// Слева шахматно из макета: `pl 24` у первого абзаца, 48 у сдвинутого.
+        /// Справа макет зеркалил (48/16), но у нас правое поле у всех — общее поле
+        /// экрана 16 (правка пользователя 2026-08-25); шахматность осталась слева.
         static let top: CGFloat = 16
         static let bottom: CGFloat = 8
         static let near: CGFloat = 24
         static let far: CGFloat = 48
-        /// Правое поле сдвинутого абзаца — общее поле секции
+        /// Правое поле всех абзацев — общее поле секции
         static let edge: CGFloat = 16
         /// Сколько описания показываем свёрнутым. Считается по всей длине, а не
         /// по числу абзацев: важно, сколько текста на экране, а не на сколько кусков
@@ -63,7 +64,7 @@ struct MovieSynopsisSection: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, shifted ? Layout.far : Layout.near)
-                    .padding(.trailing, shifted ? Layout.edge : Layout.far)
+                    .padding(.trailing, Layout.edge)
                     .padding(.top, Layout.top)
                     .padding(.bottom, Layout.bottom)
             }
@@ -197,7 +198,9 @@ struct MovieDetailsSection: View {
 /// Геометрия совпадает с блоком оценки витрины (figma-screen1 §3.7).
 struct MovieRateSection: View {
     private enum Layout {
-        static let outer: CGFloat = 8
+        /// Поле блока сверху и снизу. Макетные 8 + 16 (правка пользователя
+        /// 2026-08-25): блоку оценки нужен воздух от соседних секций.
+        static let outer: CGFloat = 24
         /// Ряд кнопок 393×92
         static let rowHeight: CGFloat = 92
         static let circle: CGFloat = 52

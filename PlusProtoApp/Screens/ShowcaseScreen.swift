@@ -24,6 +24,11 @@ struct ShowcaseScreen: View {
         // работает и для презентаций, не только для пуша.
         .fullScreenCover(item: $navigation.coveredRoute) { route in
             EntityScreen(route: route)
+                // Маршрут может смениться, пока слой показан: «Похожее» открывает
+                // другой фильм подменой `coveredRoute`. Свежая идентичность
+                // обязательна — без неё новому экрану достаётся @State старого
+                // (стор деталей, скролл, состояние ролика).
+                .id(route)
                 .navigationTransition(.zoom(sourceID: route, in: zoom))
                 #if DEBUG
                 .task {
