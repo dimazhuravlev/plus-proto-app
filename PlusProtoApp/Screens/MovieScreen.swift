@@ -620,7 +620,8 @@ private struct MovieMainButtons: View {
             label(icon: "iconPlay", title: "Смотреть")
             .frame(maxWidth: .infinity)
             .frame(height: MovieLayout.buttonHeight)
-            .background(MoviePlayGradient.fill, in: Capsule(style: .continuous))
+            // Общий акцентный стиль ДС (`2103:15149`): градиент + вспышка + бордер
+            .accentButtonSurface()
         }
         .buttonStyle(PressScaleButtonStyle())
     }
@@ -629,12 +630,9 @@ private struct MovieMainButtons: View {
         Button {} label: {
             label(icon: "iconBookmark", title: "Позже")
             .frame(height: MovieLayout.buttonHeight)
-            .glassSurface(
-                Capsule(style: .continuous),
-                blur: PlusMetrics.buttonBlur,
-                border: .clear,
-                borderWidth: 0
-            )
+            // Дефолтный бордер стекла (white 8% × 0.66) вернулся по макету
+            // `2103:15123` — раньше выключался явно (правка 2026-08-25)
+            .glassSurface(Capsule(style: .continuous), blur: PlusMetrics.buttonBlur)
         }
         .buttonStyle(PressScaleButtonStyle())
     }
@@ -643,7 +641,7 @@ private struct MovieMainButtons: View {
         Button {} label: {
             MovieIcon(name: "iconDownload", box: MovieLayout.buttonIconBox)
             .frame(width: MovieLayout.buttonHeight, height: MovieLayout.buttonHeight)
-            .glassSurface(Circle(), blur: PlusMetrics.buttonBlur, border: .clear, borderWidth: 0)
+            .glassSurface(Circle(), blur: PlusMetrics.buttonBlur)
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel("Скачать")
@@ -660,21 +658,6 @@ private struct MovieMainButtons: View {
         .padding(.leading, MovieLayout.buttonLeading)
         .padding(.trailing, MovieLayout.buttonTrailing)
     }
-}
-
-/// `Gradients/Yango/Accent` — единственная цветная заливка экрана.
-/// CSS из Figma: `linear-gradient(122.13deg, #A332FF 66.8 %, #D633FF 90 %)`.
-/// Ручки переведены в unit-space бокса макета 110×56 — так же, как их хранит сама Figma,
-/// поэтому при растяжении кнопки градиент скашивается ровно как в макете.
-private enum MoviePlayGradient {
-    static let fill = LinearGradient(
-        stops: [
-            .init(color: Color(red: 163 / 255, green: 50 / 255, blue: 255 / 255), location: 0.668),
-            .init(color: Color(red: 214 / 255, green: 51 / 255, blue: 255 / 255), location: 0.900),
-        ],
-        startPoint: UnitPoint(x: 0.027, y: -0.083),
-        endPoint: UnitPoint(x: 0.973, y: 1.083)
-    )
 }
 
 // MARK: - Иконка

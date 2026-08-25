@@ -76,22 +76,8 @@ enum AlbumLayout {
     )
 }
 
-/// Градиент пилюли «Слушать» — `Gradients/Yango/Accent`: 120°, #A332FF 67 % → #D633FF 90 %.
-/// Одноразовый, поэтому живёт у компонента, а не в токенах.
-private enum AlbumPlayGradient {
-    static let start = Color(red: 163 / 255, green: 50 / 255, blue: 255 / 255)
-    static let end = Color(red: 214 / 255, green: 51 / 255, blue: 255 / 255)
-
-    /// Точки подобраны под угол 120° на пилюле ~129×40: ось уходит вправо-вниз,
-    /// весь переход — в правой трети.
-    static var fill: LinearGradient {
-        LinearGradient(
-            stops: [.init(color: start, location: 0.668), .init(color: end, location: 0.9)],
-            startPoint: UnitPoint(x: 0, y: 0),
-            endPoint: UnitPoint(x: 1, y: 1.4)
-        )
-    }
-}
+// Прежний одноразовый градиент пилюли «Слушать» (`Gradients/Yango/Accent`) заменён
+// общим акцентным стилем ДС — `accentButtonSurface()` (правка пользователя 2026-08-25).
 
 // MARK: - Экран
 
@@ -315,7 +301,8 @@ struct AlbumScreen: View {
             .padding(.leading, AlbumLayout.playLeading)
             .padding(.trailing, AlbumLayout.playTrailing)
             .padding(.vertical, AlbumLayout.playVertical)
-            .background(AlbumPlayGradient.fill, in: Capsule())
+            // Общий акцентный стиль ДС (`2103:15149`): градиент + вспышка + бордер
+            .accentButtonSurface()
         }
         .buttonStyle(PressScaleButtonStyle())
     }
