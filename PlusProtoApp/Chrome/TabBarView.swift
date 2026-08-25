@@ -13,14 +13,6 @@ enum TabBarMotion {
     /// граница, на которой переход ещё читается одним непрерывным движением.
     static let activation: Animation = .smooth(duration: 0.26)
 
-    /// Микрозадержка загорания вспышки (правка пользователя 2026-08-25): таб
-    /// переключается сразу, спарк догоняет чуть позже — загорание читается
-    /// **ответом** на смену таба, а не её частью. Гаснет уходящая вспышка без
-    /// задержки, одной анимацией с остальными параметрами таба: уходящему ждать
-    /// нечего, задержка на выходе читалась бы залипанием.
-    static let sparkDelay: Double = 0.1
-    static let sparkIgnite: Animation = activation.delay(sparkDelay)
-
     /// Хаптика тапа по табу — карта MusicPlayer (nav-chrome §11): impact medium
     static let tapHapticIntensity: CGFloat = 0.7
 }
@@ -162,10 +154,6 @@ private struct TabBarItem: View {
             .frame(width: TabBarGeometry.sparkSize.width, height: TabBarGeometry.sparkSize.height)
             .offset(y: TabBarGeometry.sparkCenterOffset + (isActive ? 0 : TabBarGeometry.sparkRise))
             .opacity(isActive ? 1 : 0)
-            // Своя анимация поверх общей для поддерева спарка: загорание — с
-            // микрозадержкой (и подъёмом на `sparkRise`), угасание — без неё,
-            // одной транзакцией с остальными параметрами таба.
-            .animation(isActive ? TabBarMotion.sparkIgnite : TabBarMotion.activation, value: isActive)
             .allowsHitTesting(false)
     }
 }
