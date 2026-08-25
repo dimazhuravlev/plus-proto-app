@@ -12,6 +12,15 @@ enum TabBarMotion {
     /// схлопывается в подмену: сдвиг свечения 7→11pt перестаёт читаться. 0,26s — нижняя
     /// граница, на которой переход ещё читается одним непрерывным движением.
     static let activation: Animation = .smooth(duration: 0.26)
+
+    /// Микрозадержка загорания вспышки (правка пользователя 2026-08-25): таб
+    /// переключается сразу, спарк догоняет чуть позже — загорание читается
+    /// **ответом** на смену таба, а не её частью. Гаснет уходящая вспышка без
+    /// задержки, одной анимацией с остальными параметрами таба: уходящему ждать
+    /// нечего, задержка на выходе читалась бы залипанием.
+    static let sparkDelay: Double = 0.1
+    static let sparkIgnite: Animation = activation.delay(sparkDelay)
+
     /// Хаптика тапа по табу — карта MusicPlayer (nav-chrome §11): impact medium
     static let tapHapticIntensity: CGFloat = 0.7
 }
@@ -32,9 +41,9 @@ private enum TabBarGeometry {
     /// центр спарка выше центра кнопки на 5.5.
     static let sparkSize = CGSize(width: 80, height: 67)
     static let sparkCenterOffset: CGFloat = -5.5
-    /// Ход загорания прежний: неактивная позиция на 4pt ниже активной — та же
-    /// дельта, что была у контейнера старого свечения (7 против 11 от низа кнопки).
-    static let sparkRise: CGFloat = 4
+    /// Ход загорания: неактивная позиция на 3pt ниже активной, подъём едва заметен
+    /// (правка пользователя 2026-08-25; раньше 4 — дельта контейнера старого свечения).
+    static let sparkRise: CGFloat = 3
 }
 
 /// Ряд табов: 5 кнопок 60×62, поля 24, padding-top 4, распределение space-between
@@ -153,6 +162,10 @@ private struct TabBarItem: View {
             .frame(width: TabBarGeometry.sparkSize.width, height: TabBarGeometry.sparkSize.height)
             .offset(y: TabBarGeometry.sparkCenterOffset + (isActive ? 0 : TabBarGeometry.sparkRise))
             .opacity(isActive ? 1 : 0)
+            // Своя анимация поверх общей для поддерева спарка: загорание — с
+            // микрозадержкой (и подъёмом на `sparkRise`), угасание — без неё,
+            // одной транзакцией с остальными параметрами таба.
+            .animation(isActive ? TabBarMotion.sparkIgnite : TabBarMotion.activation, value: isActive)
             .allowsHitTesting(false)
     }
 }
