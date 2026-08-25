@@ -21,7 +21,9 @@ iOS/SwiftUI дизайн-прототип супераппа «Яндекс Пл
 xcodebuild -project PlusProtoApp.xcodeproj -scheme PlusProtoApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -configuration Debug build
 ```
 
-Запуск: `xcrun simctl install booted <DerivedData>/.../PlusProtoApp.app && xcrun simctl launch booted com.dima.PlusProtoApp`. После каждого визуального изменения — скриншот симулятора (`xcrun simctl io booted screenshot`) и сверка с макетом. Агентские скриншоты симулятора здесь — норма.
+Запуск: `xcrun simctl install booted <DerivedData>/.../PlusProtoApp.app && xcrun simctl launch booted com.dima.PlusProtoApp`. Внимание: у каждого worktree свой хеш пути в DerivedData — ставить сборку из своего.
+
+**Верификация — руками пользователя, не агентом** (решение 2026-08-25). Агент: собирает проект всегда; один контрольный скриншот (`xcrun simctl io booted screenshot`) — только для новой вёрстки, впервые собранной по макету; в ответе — короткий чек-лист «что посмотреть». Серии скриншотов по состояниям, пиксельные замеры и прогоны дебаг-флагов — не по умолчанию, а точечно по фидбеку. Дебаг-флаги из кода не удалять — ими воспроизводятся жалобы. Если агент запускал приложение с флагами — в конце обязателен чистый перезапуск без аргументов, чтобы симулятор остался пользователю.
 
 ## Конвенции
 
