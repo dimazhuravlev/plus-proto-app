@@ -62,9 +62,10 @@ enum EntityNavBarGeometry {
     /// Полная высота бара под safe area
     static var barHeight: CGFloat { controlSize + bottomPadding }
 
-    /// Поля — общие для всего хрома, чтобы кнопка «назад» встала по одной вертикали
-    /// с левой кромкой action bar. В MusicPlayer здесь 12, но там и хром другой.
-    static let horizontalPadding = PlusMetrics.screenMargin
+    /// Боковые поля навбара внутренних экранов — 16 (правка пользователя 2026-08-25;
+    /// было `screenMargin` 24 в линию с action bar — теперь навбар живёт общим полем
+    /// контента, как шапка карточки тайтла).
+    static let horizontalPadding: CGFloat = 16
     /// Зазор кнопка ↔ блок сущности. Больше внутреннего: круг кнопки и угол
     /// прямоугольной обложки при 8pt зрительно слипаются.
     static let backToEntityGap: CGFloat = 12
