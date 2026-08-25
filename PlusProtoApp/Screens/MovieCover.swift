@@ -32,6 +32,7 @@ struct MovieTitleLogo: View {
 
     @State private var image: Image?
     @State private var natural: CGSize?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // Бокс держится распоркой, а не самой картинкой. Не украшательство: `.task`
@@ -79,8 +80,13 @@ struct MovieTitleLogo: View {
         image = nil
         natural = nil
         guard let loaded = await ArtworkLoader.shared.image(for: url) else { return }
-        image = Image(uiImage: loaded)
-        natural = loaded.size
+        // Приехавший по сети логотип проявляется, а не вставает резко; кэшированный
+        // (ветка выше) показан с первого кадра — анимировать нечего. Тот же паттерн,
+        // что у чистого кадра кавера (`loadClean`).
+        withAnimation(reduceMotion ? nil : .easeOut(duration: MovieCoverMotion.logoFade)) {
+            image = Image(uiImage: loaded)
+            natural = loaded.size
+        }
     }
 }
 
@@ -104,11 +110,14 @@ struct MovieTitleLogo: View {
 /// имя ролика. Как только `trailer.stream` окажется непустым, играть будет он:
 /// ветка одна, мёртвого кода нет.
 struct MovieTrailerCover: View {
-    /// Постер сущности: с него собран зум-переход с витрины, поэтому первым кадром
-    /// экрана стоит именно он — подменять картинку в момент перехода нельзя.
-    let poster: ArtworkSource
+    /// Постер сущности — **только для моковых тайтлов**: у них чистого кадра не будет
+    /// вовсе, и серый плейсхолдер стоял бы вечно. Живым тайтлам постер не показывается:
+    /// раньше он стоял первым кадром и подменялся чистым кадром — шапка дёргалась
+    /// сменой картинки (правка пользователя 2026-08-25).
+    let poster: ArtworkSource?
     /// Чистый кадр тайтла из API (`backdrop`) — без нанесённого названия и логотипа.
-    /// Приезжает вместе с деталями, то есть уже после перехода, и мягко сменяет постер.
+    /// Пока он едет, кадр держит тёмно-серый плейсхолдер `#141414` (фон макета
+    /// скелетона `2097:13780`); приехав, кадр проявляется за `cleanFade`.
     let backdrop: URL?
     let trailer: MovieTrailer?
 
@@ -180,12 +189,17 @@ struct MovieTrailerCover: View {
         isPlaying && isVideoReady
     }
 
-    /// Неподвижный кадр: постер сущности, а поверх — чистый кадр из API, когда доедет.
+    /// Неподвижный кадр: плейсхолдер (у моков — постер), а поверх — чистый кадр
+    /// из API, когда доедет.
     private var still: some View {
         ZStack {
-            fill {
-                ArtworkImage(source: poster)
-                    .scaledToFill()
+            MovieCoverPlaceholder.color
+
+            if let poster {
+                fill {
+                    ArtworkImage(source: poster)
+                        .scaledToFill()
+                }
             }
 
             if let clean {
@@ -254,6 +268,17 @@ struct MovieTrailerCover: View {
 enum MovieCoverMotion {
     /// Проявление и уход видео по тапу
     static let videoFadeIn: Double = 0.4
-    /// Подмена постера сущности чистым кадром из API, когда он доехал
-    static let cleanFade: Double = 0.35
+    /// Проявление чистого кадра из API поверх серого плейсхолдера — 200мс
+    /// (правка пользователя 2026-08-25, было 350 при подмене постера)
+    static let cleanFade: Double = 0.2
+    /// Проявление логотипа тайтла в шапке: раньше он вставал резко.
+    /// Кэшированный логотип показывается сразу, без анимации, — как чистый кадр.
+    static let logoFade: Double = 0.2
+}
+
+/// Плейсхолдер кадра, пока чистый кадр не доехал. Цвет — фон макета скелетона
+/// (`2097:13780`): не чёрный фон экрана, а тёмно-серая плашка, читающаяся
+/// «здесь будет картинка». Единственное место использования — токен не заводим.
+enum MovieCoverPlaceholder {
+    static let color = Color(red: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255)
 }

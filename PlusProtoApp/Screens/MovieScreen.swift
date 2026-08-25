@@ -151,6 +151,7 @@ struct MovieScreen: View {
     @State private var scrollPosition = ScrollPosition()
     /// Крестик шапки — единственный выход с экрана: кнопки «назад» здесь нет.
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Что показывать прямо сейчас: живые детали, иначе заглушка по названию.
     private var details: MovieDetails {
@@ -312,7 +313,9 @@ struct MovieScreen: View {
             // считает высоту от идеального размера картинки, а не от пропорции макета.
             .overlay {
                 MovieTrailerCover(
-                    poster: entity.artwork,
+                    // Живой тайтл ждёт чистый кадр на сером плейсхолдере; постер
+                    // достаётся только мокам — у них кадра из API не будет вовсе.
+                    poster: entity.kinopoiskID == nil ? entity.artwork : nil,
                     backdrop: details.backdrop,
                     trailer: details.trailer
                 )
@@ -354,7 +357,32 @@ struct MovieScreen: View {
         .allowsHitTesting(false)
     }
 
+    /// Блок лейбла, аргумента, меты и трейлера готов к показу: детали доехали.
+    /// Мок и тайтл не из Кинопоиска показываются сразу — грузить им нечего;
+    /// ошибка сети тоже показывает контент (заглушку деталей) — вечный скелетон хуже.
+    private var infoReady: Bool {
+        store.details != nil || entity.kinopoiskID == nil || store.failure != nil
+    }
+
+    /// Лейбл, аргумент, мета и кнопка трейлера появляются **одномоментно**, когда
+    /// детали доехали, — до того стоит скелетон (правка пользователя 2026-08-25:
+    /// раньше заглушка лида подменялась настоящим текстом и блок дёргался).
+    /// Кроссфейд за `MovieInfoMotion.appear`; обе ветки — дефолтный `.opacity`.
     private var info: some View {
+        Group {
+            if infoReady {
+                infoContent
+            } else {
+                MovieInfoSkeleton()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, MovieLayout.infoLeading)
+        .padding(.trailing, MovieLayout.infoTrailing)
+        .animation(reduceMotion ? nil : .easeOut(duration: MovieInfoMotion.appear), value: infoReady)
+    }
+
+    private var infoContent: some View {
         VStack(alignment: .leading, spacing: MovieLayout.infoSpacing) {
             // В макете здесь «Editor's choice». Редакционных подборок API не отдаёт,
             // поэтому на этом месте самый сильный реальный факт о тайтле — позиция
@@ -382,9 +410,6 @@ struct MovieScreen: View {
             if !details.meta.isEmpty { meta }
             trailerButton
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, MovieLayout.infoLeading)
-        .padding(.trailing, MovieLayout.infoTrailing)
     }
 
     private var meta: some View {
@@ -422,6 +447,59 @@ struct MovieScreen: View {
         // У ролика из API есть своё имя («Джентльмены (2019) — Трейлер дублированный») —
         // на пилюле оно не помещается, но озвучить его VoiceOver стоит.
         .accessibilityLabel(details.trailer?.name ?? "Смотреть трейлер")
+    }
+}
+
+// MARK: - Скелетон инфо-блока
+
+enum MovieInfoMotion {
+    /// Кроссфейд «скелетон → контент» — 150мс по просьбе пользователя (2026-08-25)
+    static let appear: Double = 0.15
+}
+
+/// Скелетон на месте лейбла, аргумента, меты и кнопки трейлера — макет `2097:13780`:
+/// пять полос аргумента высотой 24 с шагом 32 (ширины 214/264/264/216/214) и две
+/// полосы меты высотой 16 (40 и 80, зазор 12). Заливка — `Fill/Nine`, углы прямые —
+/// по рендеру макета (тип ноды скруглённый, но радиус нулевой). Полос лейбла и
+/// трейлера в макете нет — после загрузки блок подрастает, это сознательно.
+private struct MovieInfoSkeleton: View {
+    private enum Layout {
+        static let leadWidths: [CGFloat] = [214, 264, 264, 216, 214]
+        static let leadBarHeight: CGFloat = 24
+        static let leadGap: CGFloat = 8
+        /// Полосы стоят по центрам строк лида: (32 − 24) / 2. С полем сумма высот —
+        /// ровно пять строк лида, стык «скелетон → контент» не прыгает по вертикали.
+        static let leadInset: CGFloat = 4
+        static let metaWidths: [CGFloat] = [40, 80]
+        static let metaBarHeight: CGFloat = 16
+        static let metaGap: CGFloat = 12
+        /// Та же центровка в строке меты высотой 20
+        static let metaInset: CGFloat = 2
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: MovieLayout.infoSpacing) {
+            VStack(alignment: .leading, spacing: Layout.leadGap) {
+                ForEach(Layout.leadWidths.indices, id: \.self) { index in
+                    bar(width: Layout.leadWidths[index], height: Layout.leadBarHeight)
+                }
+            }
+            .padding(.vertical, Layout.leadInset)
+
+            HStack(spacing: Layout.metaGap) {
+                ForEach(Layout.metaWidths.indices, id: \.self) { index in
+                    bar(width: Layout.metaWidths[index], height: Layout.metaBarHeight)
+                }
+            }
+            .padding(.vertical, Layout.metaInset)
+        }
+        .accessibilityLabel("Загрузка")
+    }
+
+    private func bar(width: CGFloat, height: CGFloat) -> some View {
+        Rectangle()
+            .fill(Color.fillNine)
+            .frame(width: width, height: height)
     }
 }
 
