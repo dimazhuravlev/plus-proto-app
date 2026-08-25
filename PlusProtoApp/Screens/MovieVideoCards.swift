@@ -194,27 +194,41 @@ struct MovieVideoSection: View {
             .allowsHitTesting(!isGlowLayer)
     }
 
+    /// Пока кадр карточки едет — болванка того же размера; приехал — карточка
+    /// целиком, кроссфейдом за `MovieVideoMotion.cardAppear` (правка пользователя
+    /// 2026-08-25). Обе ветки — дефолтный `.opacity`.
+    @ViewBuilder
     private func cardView(_ index: Int, _ card: MovieVideoCardMock) -> some View {
-        MovieVideoCard(
-            card: card,
-            clip: Self.clip(for: index),
-            still: stills[index],
-            isActive: activeCard == index,
-            aspect: Layout.cardAspect,
-            radius: Layout.cardRadius
-        ) {
-            playingCard = playingCard == index ? nil : index
-        }
-        // Порог — половина карточки: ниже него на быстром скролле успевали бы
-        // стартовать ролики, которых пользователь даже не увидит.
-        .onScrollVisibilityChange(threshold: 0.5) { isVisible in
-            if isVisible {
-                visibleCards.insert(index)
+        Group {
+            if stills[index] != nil {
+                MovieVideoCard(
+                    card: card,
+                    clip: Self.clip(for: index),
+                    still: stills[index],
+                    isActive: activeCard == index,
+                    aspect: Layout.cardAspect,
+                    radius: Layout.cardRadius
+                ) {
+                    playingCard = playingCard == index ? nil : index
+                }
+                // Порог — половина карточки: ниже него на быстром скролле успевали бы
+                // стартовать ролики, которых пользователь даже не увидит.
+                .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                    if isVisible {
+                        visibleCards.insert(index)
+                    } else {
+                        visibleCards.remove(index)
+                    }
+                }
+                .onDisappear { visibleCards.remove(index) }
             } else {
-                visibleCards.remove(index)
+                MovieVideoCardSkeleton(aspect: Layout.cardAspect, radius: Layout.cardRadius)
             }
         }
-        .onDisappear { visibleCards.remove(index) }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: MovieVideoMotion.cardAppear),
+            value: stills[index] != nil
+        )
     }
 
     /// Свечение карточки — размытая копия её кадра, вылезающая за края.
@@ -263,6 +277,27 @@ struct MovieVideoSection: View {
 }
 
 // MARK: - Карточка
+
+enum MovieVideoMotion {
+    /// Кроссфейд «болванка → карточка», когда кадр приехал, — 300мс по просьбе
+    /// пользователя (2026-08-25)
+    static let cardAppear: Double = 0.3
+}
+
+/// Болванка карточки, пока её кадр едет: тот же скруглённый прямоугольник тех же
+/// пропорций с плейсхолдером цвета кавера — без текстов, контент приходит целиком
+/// одним кроссфейдом. Приём инфо-блока (`MovieInfoSkeleton`), цвет — кавера.
+private struct MovieVideoCardSkeleton: View {
+    let aspect: CGFloat
+    let radius: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(MovieCoverPlaceholder.color)
+            .aspectRatio(aspect, contentMode: .fit)
+            .accessibilityLabel("Загрузка")
+    }
+}
 
 /// Одна видеокарточка: свечение по краям, кадр со скруглением, скрим и подписи.
 ///
