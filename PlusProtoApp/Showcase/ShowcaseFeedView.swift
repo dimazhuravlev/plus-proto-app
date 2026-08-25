@@ -92,11 +92,16 @@ struct ShowcaseFeedView: View {
         // Именно `task(id:)`, а не `onAppear`: замыкание `onAppear` вызывается один раз
         // и держит ту ленту, что была на первом кадре, то есть моковую. Здесь задача
         // перезапускается на каждой подмене блока и всегда видит текущую.
+        //
+        // Срабатываний — не больше двух на процесс (мок-лента + живая): без потолка
+        // каждая пересборка блоков тапала заново и переоткрывала карточку, которую
+        // пользователь только что закрыл (жалоба 2026-08-25).
         .task(id: feed.blocks.map(\.id)) {
             let tapIndex = UserDefaults.standard.integer(forKey: "debugTapBlock")
-            guard tapIndex > 0, tapIndex <= feed.blocks.count else { return }
+            guard tapIndex > 0, tapIndex <= feed.blocks.count, ShowcaseTapDebug.fires < 2 else { return }
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
+            ShowcaseTapDebug.fires += 1
             let block = feed.blocks[tapIndex - 1]
             actionBar.open(block.player)
             // Настоящий тап делает и то, и другое — отладочный обязан повторять его целиком.
@@ -178,6 +183,13 @@ private struct ShowcaseAppear: ViewModifier {
             }
     }
 }
+
+#if DEBUG
+/// Потолок срабатываний `-debugTapBlock` на процесс — см. задачу в `ShowcaseFeedView`.
+private enum ShowcaseTapDebug {
+    static var fires = 0
+}
+#endif
 
 extension View {
     func showcaseAppear() -> some View {

@@ -71,7 +71,11 @@ struct TabBarView: View {
     /// `PressScaleButtonStyle`, но снаружи кнопки — это заведомо более жёсткий случай.
     private func debugTapCycle() async {
         guard UserDefaults.standard.bool(forKey: "debugTapCycle") else { return }
-        while !Task.isCancelled {
+        // Два круга и стоп: цикл существует для записи анимаций, а не вечной жизни.
+        // Бесконечный отбирал таббар у пользователя до перезапуска приложения —
+        // дебаг-флоу обязан заканчиваться сам (жалоба 2026-08-25).
+        for _ in 0..<(AppTab.allCases.count * 2) {
+            guard !Task.isCancelled else { return }
             try? await Task.sleep(for: .milliseconds(1400))
             let next = AppTab(rawValue: (navigation.activeTab.rawValue + 1) % AppTab.allCases.count) ?? .plus
             debugPressed = next
