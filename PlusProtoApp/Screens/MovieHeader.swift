@@ -100,10 +100,16 @@ enum MovieHeaderLayout {
 struct MovieHeader<Actions: View>: View {
     let logo: URL?
     let title: String
+    /// Детали доехали — известно, есть ли у тайтла png-логотип. Пока неизвестно,
+    /// слот стоит пустым: показать текст и подменить его приехавшим png значит
+    /// дёрнуть шапку (правка пользователя 2026-08-25). Как стало известно —
+    /// плавно проявляется либо png, либо текст.
+    let logoResolved: Bool
     /// Сколько уже прокручено. Приходит снаружи: читать свой размер и позицию вью,
     /// от которых зависит её же раскладка, в проекте запрещено (DECISIONS).
     let scrollOffset: CGFloat
     @ViewBuilder var actions: () -> Actions
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -179,12 +185,22 @@ struct MovieHeader<Actions: View>: View {
     @ViewBuilder
     private var logoView: some View {
         Group {
-            if let logo {
-                MovieTitleLogo(url: logo, title: title)
-            } else {
-                titleText
+            // Пока не известно, есть ли png, — пусто: ветка текста, вставшая раньше
+            // времени, подменялась бы приехавшим png. Обе ветки проявляются
+            // дефолтным `.opacity` за общий `logoFade`; png внутри ветки догоняет
+            // собственным фейдом, если картинка едет по сети.
+            if logoResolved {
+                if let logo {
+                    MovieTitleLogo(url: logo, title: title)
+                } else {
+                    titleText
+                }
             }
         }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: MovieCoverMotion.logoFade),
+            value: logoResolved
+        )
         .scaleEffect(logoScale, anchor: .topLeading)
     }
 

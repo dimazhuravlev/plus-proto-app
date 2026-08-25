@@ -246,6 +246,9 @@ struct MovieScreen: View {
             MovieHeader(
                 logo: details.logo,
                 title: entity.title,
+                // Тот же сигнал, что открывает инфо-блок: детали доехали, состав
+                // логотипа известен. Мок и ошибка сети — сразу текст.
+                logoResolved: infoReady,
                 scrollOffset: headerScrollOffset
             ) {
                 headerActions
