@@ -266,7 +266,10 @@ struct MovieVideoSection: View {
     /// По порядку, а не пачкой: верхние карточки нужны раньше нижних, и очередь
     /// загрузок, выстроенная сверху вниз, доставляет их в том же порядке.
     private func loadStills() async {
-        for index in shownCards.indices {
+        // Именно по кадрам, а не по карточкам: во время загрузки деталей каркас
+        // болванок длиннее списка кадров (он вообще пуст), и индекс по карточкам
+        // выходил за его границы — экран падал на первом же открытии.
+        for index in stillURLs.prefix(MovieVideoCardMock.all.count).indices {
             guard let loaded = await ArtworkLoader.shared.image(for: stillURLs[index]) else { continue }
             stills[index] = Image(uiImage: loaded)
         }
