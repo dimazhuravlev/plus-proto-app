@@ -30,9 +30,19 @@ private enum TabBarGeometry {
     /// Кадр спарка активного таба — макет `2004:9386`: бокс 80×67 с верхним левым
     /// углом на (−9.95, −8) от кнопки 60×62. По горизонтали центры совпадают
     /// (сдвиг 0.05pt — хвост округления в макете, не переносим), по вертикали
-    /// центр спарка выше центра кнопки на 5.5.
-    static let sparkSize = CGSize(width: 80, height: 67)
-    static let sparkCenterOffset: CGFloat = -5.5
+    /// центр макетного бокса выше центра кнопки на 5.5.
+    static let sparkBaseSize = CGSize(width: 80, height: 67)
+    /// Увеличение поверх макетного бокса (правка пользователя 2026-08-25):
+    /// кадр растёт от **нижней кромки** вверх и в стороны — она остаётся там же,
+    /// где стояла у макетного бокса.
+    static let sparkScale: CGFloat = 1.15
+    static var sparkSize: CGSize {
+        CGSize(width: sparkBaseSize.width * sparkScale, height: sparkBaseSize.height * sparkScale)
+    }
+    /// Нижняя кромка макетного бокса: центр (−5.5 от центра кнопки) + полвысоты
+    private static var sparkBaseBottom: CGFloat { -5.5 + sparkBaseSize.height / 2 }
+    /// Центр увеличенного кадра пересчитан от неподвижной нижней кромки
+    static var sparkCenterOffset: CGFloat { sparkBaseBottom - sparkSize.height / 2 }
     /// Ход загорания: неактивная позиция на 3pt ниже активной, подъём едва заметен
     /// (правка пользователя 2026-08-25; раньше 4 — дельта контейнера старого свечения).
     static let sparkRise: CGFloat = 3
