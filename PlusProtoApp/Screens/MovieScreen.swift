@@ -156,6 +156,11 @@ struct MovieScreen: View {
     @State private var store = MovieDetailsStore()
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
+    /// Чистый кадр тайтла. Живёт на экране, а не в кавере: тем же кадром рисуется
+    /// зеркало под кавером, и обе картинки обязаны проявиться **одной транзакцией**
+    /// (правка пользователя 2026-08-25). Грузится вручную, а не через `ArtworkImage`:
+    /// тот на время загрузки рисует плейсхолдер-заливку поверх серого фона.
+    @State private var cleanStill: Image?
     /// Крестик шапки — единственный выход с экрана: кнопки «назад» здесь нет.
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -208,6 +213,7 @@ struct MovieScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .task { await store.load(entity) }
+            .task(id: details.backdrop) { await loadCleanStill() }
             .scrollIndicators(.hidden)
             // Экран показан слоем поверх хрома и перекрывает его собой, поэтому
             // поджиматься под него не надо. Инсет приходит по environment из
@@ -319,7 +325,7 @@ struct MovieScreen: View {
                     // Живой тайтл ждёт чистый кадр на сером плейсхолдере; постер
                     // достаётся только мокам — у них кадра из API не будет вовсе.
                     poster: entity.kinopoiskID == nil ? entity.artwork : nil,
-                    backdrop: details.backdrop,
+                    clean: cleanStill,
                     trailer: details.trailer
                 )
             }
@@ -385,23 +391,50 @@ struct MovieScreen: View {
         .allowsHitTesting(false)
     }
 
-    /// Зеркальная копия кадра. Источник тот же, что у кавера: чистый кадр из API,
-    /// моку — его постер. Живому тайтлу до загрузки кадра зеркала нет — полоса
-    /// стоит на чёрном, и появление кадра не дёргает: он почти целиком затемнён.
+    /// Зеркальная копия кадра — **тот же** `cleanStill`, что стоит в кавере: обе
+    /// картинки появляются одной транзакцией `loadCleanStill`, а до загрузки зеркало
+    /// держит тот же серый плейсхолдер — градиент и рампа видны с первого кадра.
+    /// Моку — его постер, сразу и без анимации, как в кавере.
     ///
     /// Отражение чистое (`scaleEffect(y: -1)`), без горизонтального зеркала: у шва
     /// низ кадра должен непрерывно перетекать в свою копию, пока затемнение слабое.
-    @ViewBuilder
     private var reflection: some View {
-        let source: ArtworkSource? = details.backdrop.map { .remote($0) }
-            ?? (entity.kinopoiskID == nil ? entity.artwork : nil)
-        if let source {
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: MovieLayout.reflectionHeight)
-                .overlay { ArtworkImage(source: source).scaledToFill() }
-                .clipped()
-                .scaleEffect(y: -1)
+        ZStack {
+            MovieCoverPlaceholder.color
+
+            Group {
+                if let cleanStill {
+                    Color.clear
+                        .overlay { cleanStill.resizable().scaledToFill() }
+                } else if entity.kinopoiskID == nil {
+                    Color.clear
+                        .overlay { ArtworkImage(source: entity.artwork).scaledToFill() }
+                }
+            }
+            .transition(.opacity)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: MovieLayout.reflectionHeight)
+        .clipped()
+        .scaleEffect(y: -1)
+    }
+
+    /// Загрузка чистого кадра для кавера и зеркала. Кэшированный встаёт сразу,
+    /// приехавший по сети проявляется за `cleanFade` — в обеих точках одновременно,
+    /// потому что состояние одно.
+    private func loadCleanStill() async {
+        guard let backdrop = details.backdrop else {
+            cleanStill = nil
+            return
+        }
+        if let hit = ArtworkLoader.shared.cached(backdrop) {
+            cleanStill = Image(uiImage: hit)
+            return
+        }
+        cleanStill = nil
+        guard let loaded = await ArtworkLoader.shared.image(for: backdrop) else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: MovieCoverMotion.cleanFade)) {
+            cleanStill = Image(uiImage: loaded)
         }
     }
 

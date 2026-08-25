@@ -115,10 +115,11 @@ struct MovieTrailerCover: View {
     /// раньше он стоял первым кадром и подменялся чистым кадром — шапка дёргалась
     /// сменой картинки (правка пользователя 2026-08-25).
     let poster: ArtworkSource?
-    /// Чистый кадр тайтла из API (`backdrop`) — без нанесённого названия и логотипа.
-    /// Пока он едет, кадр держит тёмно-серый плейсхолдер `#141414` (фон макета
-    /// скелетона `2097:13780`); приехав, кадр проявляется за `cleanFade`.
-    let backdrop: URL?
+    /// Чистый кадр тайтла — уже загруженный. Грузит его **экран**, а не кавер:
+    /// тот же кадр стоит зеркалом под кавером, и обе картинки обязаны проявиться
+    /// одной транзакцией (правка пользователя 2026-08-25). Пока `nil`, кадр держит
+    /// тёмно-серый плейсхолдер `#141414` (фон макета скелетона `2097:13780`).
+    let clean: Image?
     let trailer: MovieTrailer?
 
     @State private var playback = LoopingVideoPlayback()
@@ -126,9 +127,6 @@ struct MovieTrailerCover: View {
     /// и видимость слоя, и возврат из фона смотрят сюда.
     @State private var isPlaying = false
     @State private var isVideoReady = false
-    /// Чистый кадр грузится вручную, а не через `ArtworkImage`: тот на время загрузки
-    /// рисует плейсхолдер-заливку, и она перекрыла бы постер серым прямоугольником.
-    @State private var clean: Image?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
@@ -157,7 +155,6 @@ struct MovieTrailerCover: View {
         // Ролик заряжается заранее, но не играет: к моменту тапа он уже разобран,
         // и проявление начинается сразу, а не после разбора файла.
         .task(id: trailer?.stream) { prepare() }
-        .task(id: backdrop) { await loadClean() }
         #if DEBUG
         // `-debugTapCover` — тап по каверу и повторный тап: снять оба состояния
         // из шелла иначе нечем.
@@ -249,20 +246,6 @@ struct MovieTrailerCover: View {
         }
     }
 
-    private func loadClean() async {
-        guard let backdrop else {
-            clean = nil
-            return
-        }
-        if let hit = ArtworkLoader.shared.cached(backdrop) {
-            clean = Image(uiImage: hit)
-            return
-        }
-        guard let loaded = await ArtworkLoader.shared.image(for: backdrop) else { return }
-        withAnimation(fade(MovieCoverMotion.cleanFade)) {
-            clean = Image(uiImage: loaded)
-        }
-    }
 }
 
 enum MovieCoverMotion {
