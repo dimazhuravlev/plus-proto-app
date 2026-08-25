@@ -88,13 +88,14 @@ private enum MovieSimilarDebug {
 /// Ширина карточки считается от ширины холста прототипа (402), а не от замера вью:
 /// читать размер вью, от которого зависит её же раскладка, запрещено (DECISIONS).
 ///
-/// Тап по карточке открывает экран того тайтла **поверх текущего** — пушем в стек
-/// слоя (`coveredPath`), текущий фильм не закрывается (решение пользователя
-/// 2026-08-25, заменило первую версию с подменой `coveredRoute`). Крестик верхнего
-/// экрана возвращает к предыдущему фильму, крестик корневого закрывает слой.
+/// Тап по карточке открывает экран того тайтла **поверх текущего** — вложенным
+/// слоем (`coveredPath` + `CoveredEntityScreen`), текущий фильм не закрывается.
+/// Карточка помечает себя источником зума: экран разворачивается из неё, а
+/// свайп-назад и крестик сворачивают обратно — к предыдущему фильму.
 struct MovieSimilarSection: View {
     let titles: [MovieSimilarTitle]
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(\.entityZoomNamespace) private var zoomNamespace
 
     private enum Layout {
         static let columns = 3
@@ -152,8 +153,16 @@ struct MovieSimilarSection: View {
     @ViewBuilder
     private func card(_ title: MovieSimilarTitle) -> some View {
         if let route = title.route {
-            Button { navigation.open(route) } label: { cardBody(title) }
+            let button = Button { navigation.open(route) } label: { cardBody(title) }
                 .buttonStyle(PressScaleButtonStyle())
+            // Источник зума вложенного слоя. Namespace приходит от `CoveredEntityScreen`;
+            // его может не быть только вне слоя, где секции не бывает, — но падать
+            // из-за этого инварианта вёрстке не положено.
+            if let zoomNamespace {
+                button.matchedTransitionSource(id: route, in: zoomNamespace)
+            } else {
+                button
+            }
         } else {
             cardBody(title)
         }
