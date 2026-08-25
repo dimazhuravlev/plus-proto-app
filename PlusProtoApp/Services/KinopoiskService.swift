@@ -48,6 +48,13 @@ actor KinopoiskService {
 
     // Троттлинг: скользящее окно, заголовок `x-ratelimit-limit: 5` = 5 запросов/сек.
     private var requestTimestamps: [Date] = []
+
+    /// Активный ключ из `APIKeys.kinopoisk`. Суточная квота (200 запросов) — на ключ:
+    /// получив 403, сервис переключается на следующий и повторяет запрос. Индекс
+    /// живёт до конца процесса, новый запуск снова пробует с первого ключа — квота
+    /// суточная, и вчерашний мёртвый ключ сегодня жив. Троттлинг общий, не по ключу:
+    /// проще, а в 5 запросов/сек наш профиль нагрузки не упирается.
+    private var activeKeyIndex = 0
     private let maxRequestsPerWindow = 5
     private let windowDuration: TimeInterval = 1
 
@@ -182,21 +189,28 @@ actor KinopoiskService {
         }
 
         var request = URLRequest(url: url)
-        request.setValue(APIKeys.kinopoisk, forHTTPHeaderField: "X-API-KEY")
         request.setValue("application/json", forHTTPHeaderField: "accept")
         // Остаток квоты нужен на «сейчас» — из кэша он бессмыслен.
         if path.hasSuffix("/token") {
             request.cachePolicy = .reloadIgnoringLocalCacheData
         }
 
-        let (data, response) = try await session.data(for: request)
+        // Один и тот же запрос пробуется ключами по очереди, начиная с активного:
+        // 403 — квота этого ключа кончилась, переключаемся и повторяем. Индекс
+        // сдвигается насовсем: остальным запросам сессии нечего биться в мёртвый ключ.
+        while true {
+            request.setValue(APIKeys.kinopoisk[activeKeyIndex], forHTTPHeaderField: "X-API-KEY")
+            let (data, response) = try await session.data(for: request)
 
-        if let httpResponse = response as? HTTPURLResponse {
+            guard let httpResponse = response as? HTTPURLResponse else { return data }
             switch httpResponse.statusCode {
             case 200...299:
-                break
+                return data
             case 401:
                 throw KinopoiskError.unauthorized
+            case 403 where activeKeyIndex + 1 < APIKeys.kinopoisk.count:
+                activeKeyIndex += 1
+                await throttle()
             case 403:
                 throw KinopoiskError.quotaExceeded
             case 429:
@@ -205,8 +219,6 @@ actor KinopoiskService {
                 throw KinopoiskError.http(httpResponse.statusCode)
             }
         }
-
-        return data
     }
 
     /// Скользящее окно: держим не больше `maxRequestsPerWindow` отметок за последнюю секунду,
