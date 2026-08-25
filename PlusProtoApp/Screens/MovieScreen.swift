@@ -194,13 +194,6 @@ struct MovieScreen: View {
                     if !details.similar.isEmpty {
                         MovieSimilarSection(titles: details.similar)
                     }
-                    #if DEBUG
-                    // ВРЕМЕННО: дамп всех полей API по этому тайтлу. Удаляется вместе
-                    // с `MovieRawFieldsSection.swift` и `KinopoiskService.rawMovieJSON`.
-                    if let id = MovieDetailsStore.debugID ?? entity.kinopoiskID {
-                        MovieRawFieldsSection(movieID: id)
-                    }
-                    #endif
                     // Хром приложения на этом экране спрятан, поэтому весь клиренс под
                     // прибитой панелью действий экран добирает сам.
                     Color.clear.frame(height: MovieLayout.panelClearance)

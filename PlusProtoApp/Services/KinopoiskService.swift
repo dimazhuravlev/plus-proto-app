@@ -152,32 +152,6 @@ actor KinopoiskService {
         try await fetch(path: "/v1.5/token")
     }
 
-    #if DEBUG
-    /// ВРЕМЕННО, вместе с `MovieRawFieldsSection`: сырой ответ по тайтлу без `selectFields`,
-    /// то есть все поля, которые API знает о фильме, — включая те, что модель не разбирает.
-    func rawMovieJSON(id: Int) async throws -> Data {
-        try await fetchData(path: "/v1.4/movie/\(id)")
-    }
-
-    /// ВРЕМЕННО: вся графика тайтла из отдельной ручки — постеры, кадры, обложки,
-    /// скриншоты. В самом тайтле лежат только `poster`, `backdrop` и `logo`.
-    ///
-    /// Сортировка по `type` здесь не косметика: выдача идёт группами по типу, и без неё
-    /// у популярного тайтла в выборку попадают одни постеры (у «Игры престолов» их 170
-    /// из 2113 картинок). Два прохода — с начала и с конца алфавита — покрывают оба края.
-    func rawImagesJSON(movieID: Int, limit: Int, ascending: Bool) async throws -> Data {
-        try await fetchData(
-            path: "/v1.4/image",
-            query: [
-                URLQueryItem(name: "movieId", value: "\(movieID)"),
-                URLQueryItem(name: "limit", value: "\(limit)"),
-                URLQueryItem(name: "sortField", value: "type"),
-                URLQueryItem(name: "sortType", value: ascending ? "1" : "-1")
-            ]
-        )
-    }
-    #endif
-
     // MARK: - Private
 
     /// `selectFields` передаётся повторяющимся параметром, по одному полю на вхождение.
