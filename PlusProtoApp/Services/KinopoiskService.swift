@@ -122,7 +122,12 @@ actor KinopoiskService {
         return response.docs
     }
 
-    /// Кадры (`type=still`) сразу для нескольких тайтлов.
+    /// Кадры (`type=still` и `type=screenshot`) сразу для нескольких тайтлов.
+    ///
+    /// Скриншоты добираются наравне со стиллами (правка 2026-08-25): нативные
+    /// стиллы у КП мелкие (замер: 623×380…1200×798, оригиналы), на ретине это
+    /// апскейл ×2-3 и мыло, а скриншоты — кадры из самого фильма, обычно 1920×1080.
+    /// Отбор по размеру делает `MoviePool.pickStills`.
     ///
     /// `movieId` — повторяющийся параметр, поэтому один запрос покрывает целую пачку
     /// фильмов: иначе кадры стоили бы запроса на тайтл, а квота 200 в сутки этого
@@ -132,6 +137,7 @@ actor KinopoiskService {
         guard !movieIDs.isEmpty else { return [] }
         var query = movieIDs.map { URLQueryItem(name: "movieId", value: "\($0)") }
         query.append(URLQueryItem(name: "type", value: "still"))
+        query.append(URLQueryItem(name: "type", value: "screenshot"))
         query.append(URLQueryItem(name: "limit", value: "\(limit)"))
         query.append(contentsOf: Self.selectFields(["movieId", "url", "width", "height"]))
 

@@ -58,7 +58,7 @@ actor MoviePool {
     /// не даёт переспросить тайтл, и он навсегда остаётся с одним кадром, собранным
     /// по-старому. На симуляторе это лечилось `-debugResetMoviePool`, но на устройстве
     /// такого флага не передашь — отсюда сброс по версии.
-    private static let stillsVersion = 2
+    private static let stillsVersion = 3
 
     private var storage: Storage
     /// Детали карточек, прочитанные с диска. `nil` — файл ещё не открывали.
@@ -137,16 +137,31 @@ actor MoviePool {
     /// кадре, и лишние ссылки в нём никому не нужны.
     static let stillsPerTitle = 5
 
+    /// Ниже этой высоты кадр не берём: кавер и портретные карточки на ретине
+    /// требуют ~1400px по высоте, и мелкий кадр растягивается в мыло — жалоба
+    /// пользователя 2026-08-25 (нативные стиллы КП: замер 623×380…1200×798).
+    static let minStillHeight = 720
+
+    /// Отбор кадров тайтла из выдачи `/v1.4/image` — правила единые для запаса
+    /// и добора на экране (`MovieDetailsStore`): только горизонтальные (вертикальные
+    /// среди still — промо-фотосессии, а не сцены), без мелких, крупные первыми —
+    /// самый большой кадр уходит каверу, — и не больше `stillsPerTitle`.
+    static func pickStills(_ stills: [KinopoiskStill]) -> [KinopoiskStill] {
+        stills
+            .filter { !$0.isPortrait && ($0.height ?? 0) >= minStillHeight }
+            .sorted { ($0.width ?? 0) * ($0.height ?? 0) > ($1.width ?? 0) * ($1.height ?? 0) }
+            .prefix(stillsPerTitle)
+            .map { $0 }
+    }
+
     /// Кладёт кадры пачки. `asked` — все тайтлы, которые спрашивали, включая те,
     /// у которых кадров не нашлось: иначе они попадут в следующую догрузку снова.
     func store(stills: [KinopoiskStill], asked: [Int]) {
         var map = storage.stills ?? [:]
         for (id, group) in Dictionary(grouping: stills, by: \.movieId) {
-            // Только горизонтальные: вертикальные среди `still` — это промо-фотосессии,
-            // а не сцены, и кавер с видеокарточками кропают кадр по-своему.
-            let landscape = group.filter { !$0.isPortrait }
-            guard !landscape.isEmpty else { continue }
-            map[String(id)] = Array(landscape.prefix(Self.stillsPerTitle))
+            let picked = Self.pickStills(group)
+            guard !picked.isEmpty else { continue }
+            map[String(id)] = picked
         }
         storage.stills = map
         storage.stillsAsked = (storage.stillsAsked ?? []).union(asked)
