@@ -15,9 +15,11 @@ enum MovieLayout {
 
     // Зеркальное продолжение кавера — макет `2102:15051` (заменил прежнюю полосу
     // «cover bottom blur» 104/88: теперь у картинки есть визуальное продолжение вниз)
-    /// Зеркальная копия кадра встык под кавером (инстанс `cover` 393×300,
-    /// отражён по вертикали)
-    static let reflectionHeight: CGFloat = 300
+    /// Зеркальная копия кадра встык под кавером — **той же высоты, что и кавер**
+    /// (правка пользователя 2026-08-25; в макете инстанс 393×300). Одинаковая высота
+    /// делает зеркало точной копией кадра: кроп `scaledToFill` совпадает, и шов
+    /// сходится по построению.
+    static var reflectionHeight: CGFloat { coverHeight }
     /// Полоса затемнения и размытия `cover bottom blur` 393×401: заходит на низ
     /// кавера на 101 (y 423 при шве 524) и накрывает зеркало целиком
     static let reflectionFadeOverlap: CGFloat = 101
@@ -338,11 +340,11 @@ struct MovieScreen: View {
     /// становится кромкой — там, где она начинается, резкость обрывается на ровном
     /// месте. Рампа снимает эту границу тем же приёмом, что подложка таббара
     /// (`TabBarUnderlay`), и в ту же сторону — чисто сверху, максимум снизу.
-    /// Продолжение кавера вниз — макет `2102:15051`: под кадром встык стоит его же
-    /// зеркальная копия, и вся она вместе с низом кадра затемнена и заблерена.
-    /// Картинка получает визуальное «продолжение», но зеркало не считывается:
-    /// оно под равномерным блюром намертво, а прогрессив-рампа над швом доводит
-    /// низ кадра до того же радиуса — стык блюров не читается.
+    /// Продолжение кавера вниз — макет `2102:15051` с правками пользователя от
+    /// 2026-08-25: под кадром встык стоит его же зеркальная копия той же высоты,
+    /// и одна полоса затемнения с прогрессив-рампой накрывает её целиком, залезая
+    /// на низ кадра. Картинка получает визуальное «продолжение», которое по мере
+    /// спуска размывается и тонет в чёрном.
     ///
     /// Все слои выровнены низом к низу кавера и сдвинуты вниз оффсетами: overlay
     /// не участвует в раскладке, поэтому зеркало просто лежит под инфо-блоком
@@ -353,20 +355,26 @@ struct MovieScreen: View {
             reflection
                 .offset(y: MovieLayout.reflectionHeight)
 
-            VariableBlurView(
-                maxBlurRadius: MovieLayout.reflectionBlur,
-                direction: .blurredBottomClearTop
-            )
-            .frame(height: MovieLayout.reflectionFadeOverlap)
+            // Затемнение и прогрессив-рампа — **одной полосой одинаковых габаритов**
+            // (правка пользователя 2026-08-25): от низа зеркала через всю его высоту
+            // и на `reflectionFadeOverlap` на низ верхнего кадра. Рампа одна на всю
+            // полосу — отдельного равномерного блюра у зеркала больше нет, максимум
+            // радиуса приходится на самый низ, где всё и так тонет в чёрном.
+            Group {
+                VariableBlurView(
+                    maxBlurRadius: MovieLayout.reflectionBlur,
+                    direction: .blurredBottomClearTop
+                )
 
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0), location: 0),
-                    .init(color: .black, location: MovieLayout.reflectionGradientEnd),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0), location: 0),
+                        .init(color: .black, location: MovieLayout.reflectionGradientEnd),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
             .frame(height: MovieLayout.reflectionFadeHeight)
             .offset(y: MovieLayout.reflectionHeight)
         }
@@ -390,10 +398,6 @@ struct MovieScreen: View {
                 .overlay { ArtworkImage(source: source).scaledToFill() }
                 .clipped()
                 .scaleEffect(y: -1)
-                .blur(radius: MovieLayout.reflectionBlur, opaque: true)
-                // Второй раз: блюр расползается за кадр, а выше шва ему нельзя —
-                // там низ настоящего кадра со своей рампой.
-                .clipped()
         }
     }
 
