@@ -12,13 +12,19 @@ enum MovieLayout {
     // Кавер `I3806:11014;6787:11638`
     /// 393×523.99 — ровно 3:4
     static let coverAspect: CGFloat = 3.0 / 4.0
-    /// «cover bottom blur» 393×104, прижат к низу кавера
+    /// «cover bottom blur» 393×104, прижат к низу кавера. Это высота **затемнения** —
+    /// она осталась макетной; полоса размытия с 2026-08-25 короче и живёт своим числом.
     static let coverFadeHeight: CGFloat = 104
-    /// Пик **прогрессивного** размытия: 0 у верхней кромки полосы, 10 у нижней.
-    /// С равномерным `BACKGROUND_BLUR 10` из панели Figma (= 5 в единицах проекта)
-    /// это число напрямую не сравнивается: рампа доходит до максимума только у самого
-    /// низа, и на глаз она мягче равномерной пятёрки, а не вдвое сильнее.
-    static let coverFadeBlur: CGFloat = 10
+    /// Полоса размытия — короче полосы затемнения, прижата к её низу (тюнинг
+    /// пользователя 2026-08-25; была одной высоты с затемнением). Тот же приём
+    /// разъехавшихся высот, что у шапки (`MovieHeaderLayout.blurMain`).
+    static let coverFadeBlurHeight: CGFloat = 88
+    /// Пик **прогрессивного** размытия: 0 у верхней кромки полосы размытия, максимум
+    /// у нижней. Было макетных 10 — смягчён тюнингом 2026-08-25 заодно с высотой,
+    /// в тон верхней шапке (у неё пик ≈8.5). С равномерным `BACKGROUND_BLUR` из
+    /// панели Figma напрямую не сравнивается: рампа доходит до максимума только
+    /// у самого низа.
+    static let coverFadeBlur: CGFloat = 6
 
     /// Высота кавера — макетные 3:4, и **только** они.
     ///
@@ -338,18 +344,24 @@ struct MovieScreen: View {
     /// месте. Рампа снимает эту границу тем же приёмом, что подложка таббара
     /// (`TabBarUnderlay`), и в ту же сторону — чисто сверху, максимум снизу.
     private var coverFade: some View {
-        ZStack {
+        // Полосы разной высоты, обе прижаты к низу: затемнение — макетные 104,
+        // размытие короче и мягче (тюнинг 2026-08-25). Приём тот же, что в шапке:
+        // резкость возвращается выше, чем кончается затемнение, и границы не видно.
+        ZStack(alignment: .bottom) {
             VariableBlurView(
                 maxBlurRadius: MovieLayout.coverFadeBlur,
                 direction: .blurredBottomClearTop
             )
+            .frame(height: MovieLayout.coverFadeBlurHeight)
+
             LinearGradient(
                 colors: [.black.opacity(0), .black],
                 startPoint: .top,
                 endPoint: .bottom
             )
+            .frame(height: MovieLayout.coverFadeHeight)
         }
-        .frame(height: MovieLayout.coverFadeHeight)
+        .frame(height: MovieLayout.coverFadeHeight, alignment: .bottom)
         .allowsHitTesting(false)
     }
 
