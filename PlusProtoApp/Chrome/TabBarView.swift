@@ -26,13 +26,15 @@ private enum TabBarGeometry {
     static let tileBorderOpacity: (inactive: Double, active: Double) = (0.04, 0.06)
     static let tileBorderWidth: (inactive: CGFloat, active: CGFloat) = (PlusMetrics.hairline, 0.733)
 
-    /// Контейнер свечения, прижат к низу кнопки таба по центру (§6)
-    static let pulseBox = CGSize(width: 50, height: 43)
-    /// Отступ контейнера от низа кнопки — тот самый сдвиг при активации
-    static let pulseBottomInset: (inactive: CGFloat, active: CGFloat) = (7, 11)
-    /// Границы ассета свечения: блюр σ28 раздувает эллипс 50×43 ровно до 162×155 (§6),
-    /// и ассет экспортирован по этим границам — поэтому центры ассета и контейнера совпадают.
-    static let pulseBleed = CGSize(width: 162, height: 155)
+    /// Кадр спарка активного таба — макет `2004:9386`: бокс 80×67 с верхним левым
+    /// углом на (−9.95, −8) от кнопки 60×62. По горизонтали центры совпадают
+    /// (сдвиг 0.05pt — хвост округления в макете, не переносим), по вертикали
+    /// центр спарка выше центра кнопки на 5.5.
+    static let sparkSize = CGSize(width: 80, height: 67)
+    static let sparkCenterOffset: CGFloat = -5.5
+    /// Ход загорания прежний: неактивная позиция на 4pt ниже активной — та же
+    /// дельта, что была у контейнера старого свечения (7 против 11 от низа кнопки).
+    static let sparkRise: CGFloat = 4
 }
 
 /// Ряд табов: 5 кнопок 60×62, поля 24, padding-top 4, распределение space-between
@@ -141,15 +143,15 @@ private struct TabBarItem: View {
         )
     }
 
+    /// Спарк — экспорт из макета (`tab_spark.png`), а не рисование кодом: лучистую
+    /// вспышку из макета `2004:9386` эллипсом с блюром не собрать. Кадр 80×67
+    /// растягивает пиксели ассета (99×84 натуральных) — как image-fill в макете;
+    /// расхождение пропорций 1.3 % на глаз не существует.
     private var pulse: some View {
-        let inset = isActive
-            ? TabBarGeometry.pulseBottomInset.active
-            : TabBarGeometry.pulseBottomInset.inactive
-        let boxCenterFromBottom = inset + TabBarGeometry.pulseBox.height / 2
-        return Image("tabPulseGlow")
+        Image("tabSpark")
             .resizable()
-            .frame(width: TabBarGeometry.pulseBleed.width, height: TabBarGeometry.pulseBleed.height)
-            .offset(y: PlusMetrics.tabItemHeight / 2 - boxCenterFromBottom)
+            .frame(width: TabBarGeometry.sparkSize.width, height: TabBarGeometry.sparkSize.height)
+            .offset(y: TabBarGeometry.sparkCenterOffset + (isActive ? 0 : TabBarGeometry.sparkRise))
             .opacity(isActive ? 1 : 0)
             .allowsHitTesting(false)
     }
