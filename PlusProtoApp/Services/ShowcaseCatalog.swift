@@ -303,8 +303,13 @@ final class ShowcaseCatalog {
         guard let query = ShowcaseSeeds.albumQueries.randomElement(using: &rng) else { return }
         do {
             let albums = try await DeezerService.shared.searchAlbums(query: query, limit: 10)
+            // Случайный из выдачи, а не первый: запросов в пуле всего десяток, и с
+            // жёстким `.first` витрина показывала один и тот же альбом на запрос.
+            // Со случайным выбором тот же пул даёт на порядок больше вариантов,
+            // и это не стоит ни одного лишнего запроса (правка 2026-08-25).
+            let withCover = albums.filter { $0.coverXl != nil }
             guard
-                let album = albums.first(where: { $0.coverXl != nil }) ?? albums.first,
+                let album = withCover.randomElement(using: &rng) ?? albums.randomElement(using: &rng),
                 let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled
             else {
                 failures.append("музыка: по запросу «\(query)» нет обложки")
@@ -322,7 +327,9 @@ final class ShowcaseCatalog {
             // из соседнего альбома пула, чтобы не совпадать с альбомным блоком.
             let vibeQuery = ShowcaseSeeds.albumQueries.filter { $0 != query }.randomElement(using: &rng) ?? query
             let vibeAlbums = try await DeezerService.shared.searchAlbums(query: vibeQuery, limit: 5)
-            let vibeCover = vibeAlbums.compactMap { ($0.coverXl ?? $0.coverBig)?.deezerUpscaled }.first
+            let vibeCover = vibeAlbums
+                .compactMap { ($0.coverXl ?? $0.coverBig)?.deezerUpscaled }
+                .randomElement(using: &rng)
 
             apply(.vibe(VibeBlock(
                 id: "vibe-\(album.id)",
@@ -346,7 +353,11 @@ final class ShowcaseCatalog {
         // без скана выдача бывает пустой — идём по пулу, пока не наберём два тома.
         var found: [GoogleBook] = []
         for query in queries where found.count < 2 {
-            guard let book = try? await BooksService.shared.search(query, limit: 12).first else { continue }
+            guard let volumes = try? await BooksService.shared.search(query, limit: 12), !volumes.isEmpty else { continue }
+            // Случайный том из выдачи, а не первый: запросов в пуле восемь, и с жёстким
+            // `.first` книги на витрине не менялись вовсе (правка 2026-08-25).
+            let withCover = volumes.filter { $0.coverURL != nil }
+            guard let book = withCover.randomElement(using: &rng) ?? volumes.randomElement(using: &rng) else { continue }
             guard !found.contains(where: { $0.id == book.id }) else { continue }
             found.append(book)
         }

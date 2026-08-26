@@ -43,9 +43,6 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugMockFeed") {
             UserDefaults.standard.removeObject(forKey: "debugMockFeed")
         }
-        if !args.contains("-debugFreshFeed") {
-            UserDefaults.standard.removeObject(forKey: "debugFreshFeed")
-        }
         if !args.contains("-debugFrozenFeed") {
             UserDefaults.standard.removeObject(forKey: "debugFrozenFeed")
         }
@@ -101,10 +98,7 @@ struct PlusProtoAppApp: App {
             case "-debugMockFeed":
                 UserDefaults.standard.set(true, forKey: "debugMockFeed")
                 index += 1
-            case "-debugFreshFeed":
-                UserDefaults.standard.set(true, forKey: "debugFreshFeed")
-                index += 1
-            // Кино выбирается случайно на каждый запуск — для скриншотной сверки
+            // Витрина выбирается случайно на каждый запуск — для скриншотной сверки
             // зерно надо уметь зафиксировать.
             case "-debugFrozenFeed":
                 UserDefaults.standard.set(true, forKey: "debugFrozenFeed")
