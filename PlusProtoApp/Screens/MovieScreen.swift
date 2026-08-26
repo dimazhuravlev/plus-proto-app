@@ -98,9 +98,10 @@ enum MovieLayout {
 }
 
 /// Скримы карточки тайтла. Профилей два, и это не небрежность, а два разных места
-/// макета: сглаженный на 16 стопов — у панели кнопок и подписей видеокарточек,
-/// прямая рампа в два стопа — у верхней шапки. У сглаженного стопы дословные из макета:
-/// заменить их линейной интерполяцией значит получить видимый банд.
+/// макета: сглаженный на 16 равномерных стопов — у панели кнопок и подписей
+/// видеокарточек, свой сглаженный профиль с неравномерными позициями — у верхней
+/// шапки. Стопы обоих дословные из макета: заменить их линейной интерполяцией
+/// значит получить видимый банд.
 enum MovieScrim {
     /// Доли альфы от нуля к пику; позиции равномерные, шаг 6.667 %
     private static let profile: [Double] = [
@@ -108,19 +109,40 @@ enum MovieScrim {
         0.557, 0.668, 0.768, 0.853, 0.918, 0.964, 0.991, 1,
     ]
 
-    /// Прямая рампа: шапка тайтла после тюнинга `2063:10865` идёт именно так —
-    /// в дампе заливки ровно два стопа (α 0 → 1) при `opacity` 0.75. Раньше шапка
-    /// делила сглаженный профиль с панелью; теперь профили разошлись.
+    /// Затемнение верхней шапки — `2102:15056`: 16 стопов с **собственными**
+    /// позициями и альфами (кривая с затуханием из Figma), пик 0.6 у верхней кромки.
+    /// Позиции и альфы дословные из CSS макета, поэтому доля пика не выносится
+    /// параметром: у профиля она уже внутри стопов.
     ///
-    /// Оба конца — чёрные, отличаются только альфой: интерполяция от `.clear`
+    /// Раньше здесь стояла прямая рампа в два стопа (α 0 → 1 при `opacity` 0.75) —
+    /// правка пользователя 2026-08-25 заменила её этой кривой.
+    ///
+    /// Все стопы чёрные и отличаются только альфой: интерполяция от `.clear`
     /// (это чёрный с нулевой альфой у другого цвета) дала бы грязь на светлом кавере.
-    static func linear(peak: Double, from start: UnitPoint, to end: UnitPoint) -> LinearGradient {
-        LinearGradient(
-            colors: [.black.opacity(0), .black.opacity(peak)],
-            startPoint: start,
-            endPoint: end
-        )
-    }
+    static let header = LinearGradient(
+        stops: [
+            .init(color: .black.opacity(0), location: 0),
+            .init(color: .black.opacity(0.029), location: 0.10717),
+            .init(color: .black.opacity(0.06), location: 0.19551),
+            .init(color: .black.opacity(0.093), location: 0.26804),
+            .init(color: .black.opacity(0.128), location: 0.32777),
+            .init(color: .black.opacity(0.164), location: 0.3777),
+            .init(color: .black.opacity(0.201), location: 0.42084),
+            .init(color: .black.opacity(0.24), location: 0.46019),
+            .init(color: .black.opacity(0.281), location: 0.49878),
+            .init(color: .black.opacity(0.323), location: 0.5396),
+            .init(color: .black.opacity(0.366), location: 0.58567),
+            .init(color: .black.opacity(0.411), location: 0.64),
+            .init(color: .black.opacity(0.456), location: 0.70558),
+            .init(color: .black.opacity(0.503), location: 0.78544),
+            .init(color: .black.opacity(0.551), location: 0.88258),
+            .init(color: .black.opacity(0.6), location: 1),
+        ],
+        // `linear-gradient(0deg, …)` в CSS растёт снизу вверх: нулевой стоп у низа
+        // полосы, пиковый — у верхней кромки экрана.
+        startPoint: .bottom,
+        endPoint: .top
+    )
 
     /// `startPoint` — конец с нулевой альфой, `endPoint` — с пиковой
     static func gradient(peak: Double, from start: UnitPoint, to end: UnitPoint) -> LinearGradient {

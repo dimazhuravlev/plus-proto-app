@@ -8,12 +8,11 @@ import VariableBlur
 /// логотип тайтла, а пара «поделиться»/«закрыть» прибита к правому верхнему углу
 /// и по скроллу не меняется — это прямо оговорено в спеке для всех прокрученных кадров.
 enum MovieHeaderLayout {
-    /// Высота градиента: основное состояние → компактное. Тюнинг `2063:10865`
-    /// и `2063:10893` — оттуда же пик, профиль и радиус блюра ниже.
-    static let gradientMain: CGFloat = 200
-    static let gradientCompact: CGFloat = 150
-    /// Пик альфы шапки — это `opacity` самой заливки (у панели кнопок свой, 0.92)
-    static let scrimPeak: Double = 0.75
+    /// Высота полосы затемнения — **постоянная** (правка пользователя 2026-08-25;
+    /// прежде 200 в основном состоянии и 150 в компактном, тюнинг `2063:10865`).
+    /// По скроллу больше не меняется: профиль `MovieScrim.header` сам сходит
+    /// в ноль к низу полосы, и ужимать её ради компактной шапки нечего.
+    static let gradientHeight: CGFloat = 130
     /// Логотип в компактном состоянии. В кадрах тюнинга 60 % (бокс 88 → 52.8),
     /// у нас 70 % (правка пользователя 2026-08-25) — мельче логотип терялся.
     static let logoCompactScale: CGFloat = 0.7
@@ -57,39 +56,23 @@ enum MovieHeaderLayout {
     /// (120pt); кап держит рост «немного» даже на самом длинном рывке.
     static let logoPullRamp: CGFloat = 2000
     static let logoPullMaxScale: CGFloat = 1.12
-    /// Полоса размытия **короче полосы градиента** и живёт своей высотой. Затемнение
-    /// остаётся макетным (200/150), размытие кончается выше — эти две вещи здесь
-    /// сознательно разной высоты.
+    /// Полоса размытия **короче полосы затемнения** и живёт своей высотой: резкость
+    /// обязана возвращаться выше, чем кончается затемнение, иначе низ размытой полосы
+    /// читается кромкой посреди кавера.
     ///
-    /// Числа — тюнинг от 2026-08-25 (было 176/132): раз блюр проявляется по скроллу,
-    /// полоса нужна там, где он виден целиком, — у компактной шапки, — и там она
-    /// теперь 110. Основное состояние держит ту же дельту 44, что и раньше:
-    /// скорость, с которой полоса ужимается при схлопывании, не менялась.
-    static let blurMain: CGFloat = 154
-    static let blurCompact: CGFloat = 110
+    /// Постоянная, как и затемнение (правка пользователя 2026-08-25; прежде 154 → 110
+    /// по скроллу). 110 — то самое число, на котором полоса стояла в компактном
+    /// состоянии, то есть там, где блюр виден целиком.
+    static let blurHeight: CGFloat = 110
 
-    /// Размытие идёт **двумя слоями** разной высоты — приём тот же, что у верхнего
-    /// скрима ленты (`PlusChromeMetrics.topScrimBlurSoft/Strong`).
+    /// Пик рампы размытия у верхней кромки — 8 (правка пользователя 2026-08-25).
+    /// Двух слоёв разной высоты больше нет: прежняя пара 6 + 6 набирала
+    /// √(6² + 6²) ≈ 8.5 ради пологого хвоста, но с постоянными высотами и мягким
+    /// профилем затемнения хвост держит сам градиент.
     ///
-    /// Считать надо не по высоте полосы, а по тому, где радиус проходит **порог
-    /// заметности**. Глаз ловит размытие текста примерно с 1pt, а у линейной рампы
-    /// радиус равен единице на высоте `H·(1 − 1/R)`: у прежней одиночной рампы
-    /// 10/200 это 180pt — то есть размывать она начинала почти у самого низа шапки
-    /// и дальше нарастала круто, отчего граница и читалась строкой.
-    ///
-    /// Тихий слой 6 даёт единицу на 5/6 высоты полосы (в компактном состоянии — 92pt)
-    /// и подходит к ней полого. Сильный слой включается с 0.55 высоты и доводит пик
-    /// на верхней кромке до √(6² + 6²) ≈ 8.5 — тюнинг от 2026-08-25, было
-    /// √(6² + 8²) = 10. Прежняя привязка порога к низу бокса логотипа снята вместе
-    /// с постоянным блюром: в покое блюра нет вовсе (см. `backdrop`), и якорить его
-    /// к статичной шапке больше не по чему.
-    ///
-    /// Это пик рампы, а не равномерный радиус: с `BACKGROUND_BLUR 10` из панели
-    /// Figma (= 5 равномерных) напрямую не сравнивается.
-    static let blurSoftRadius: CGFloat = 6
-    static let blurStrongRadius: CGFloat = 6
-    /// Сильный слой кончается раньше тихого — на этом и держится плавность хвоста.
-    static let blurStrongShare: CGFloat = 0.55
+    /// Это пик рампы, а не равномерный радиус: с `BACKGROUND_BLUR` из панели Figma
+    /// напрямую не сравнивается — рампа доходит до максимума только у самой кромки.
+    static let blurRadius: CGFloat = 8
 }
 
 /// Шапка карточки тайтла: градиент, логотип слева, действия справа.
@@ -141,34 +124,24 @@ struct MovieHeader<Actions: View>: View {
     /// эту границу тем же приёмом и в ту же сторону, что верхний скрим ленты
     /// (`TopScrim`), зеркально полосе под кавером.
     ///
-    /// Слоёв размытия два и они разной высоты — так хвост рампы растянут и строки,
-    /// на которой резкость возвращается, не видно. Оба короче полосы градиента,
-    /// поэтому стек выровнен по верху: затемнение доходит до низа шапки, размытие —
-    /// только до логотипа.
+    /// Полоса размытия короче полосы затемнения, поэтому стек выровнен по верху:
+    /// затемнение доходит до низа шапки, размытие кончается выше.
     ///
     /// Порядок слоёв: размытие **под** градиентом, а не над, — размывать нужно кавер,
     /// а не собственную затемняющую заливку.
     private var backdrop: some View {
         ZStack(alignment: .top) {
-            Group {
-                VariableBlurView(
-                    maxBlurRadius: MovieHeaderLayout.blurSoftRadius,
-                    direction: .blurredTopClearBottom
-                )
-                .frame(height: blurHeight)
-
-                VariableBlurView(
-                    maxBlurRadius: MovieHeaderLayout.blurStrongRadius,
-                    direction: .blurredTopClearBottom
-                )
-                .frame(height: blurHeight * MovieHeaderLayout.blurStrongShare)
-            }
+            VariableBlurView(
+                maxBlurRadius: MovieHeaderLayout.blurRadius,
+                direction: .blurredTopClearBottom
+            )
+            .frame(height: MovieHeaderLayout.blurHeight)
             .opacity(blurProgress)
 
-            MovieScrim.linear(peak: MovieHeaderLayout.scrimPeak, from: .bottom, to: .top)
-                .frame(height: gradientHeight)
+            MovieScrim.header
+                .frame(height: MovieHeaderLayout.gradientHeight)
         }
-        .frame(height: gradientHeight, alignment: .top)
+        .frame(height: MovieHeaderLayout.gradientHeight, alignment: .top)
         .allowsHitTesting(false)
     }
 
@@ -241,11 +214,6 @@ struct MovieHeader<Actions: View>: View {
     /// в нуле — ходы логотипа не пересекаются.
     private var pull: CGFloat { max(0, -scrollOffset) }
 
-    private var gradientHeight: CGFloat {
-        MovieHeaderLayout.gradientMain
-            + (MovieHeaderLayout.gradientCompact - MovieHeaderLayout.gradientMain) * compact
-    }
-
     /// Схлопывание по скроллу × рост на оттяге. Перемножение честно, потому что
     /// ходы взаимоисключающие: при оттяге компактная доля — единица, при скролле
     /// вверх единицей становится рост. Якорь у обоих один — `.topLeading`.
@@ -253,13 +221,6 @@ struct MovieHeader<Actions: View>: View {
         let compactScale = 1 + (MovieHeaderLayout.logoCompactScale - 1) * logoCompact
         let pullScale = min(MovieHeaderLayout.logoPullMaxScale, 1 + pull / MovieHeaderLayout.logoPullRamp)
         return compactScale * pullScale
-    }
-
-    /// Полоса размытия ужимается вместе с шапкой, но по своим числам: она короче
-    /// полосы градиента и кончается примерно у низа логотипа.
-    private var blurHeight: CGFloat {
-        MovieHeaderLayout.blurMain
-            + (MovieHeaderLayout.blurCompact - MovieHeaderLayout.blurMain) * compact
     }
 
     /// Доля проявления блюра: 0 в покое, 1 у компактной шапки. Ход тот же, что у
