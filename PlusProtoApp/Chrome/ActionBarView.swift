@@ -567,6 +567,12 @@ private struct SearchPill: View {
             .foregroundStyle(Color.fillOne)
             .plusTitleL()
             .submitLabel(.search)
+            // Без автокоррекции — и, как следствие, без строки автоподсказок
+            // (QuickType): она стояла плашкой прямо под полем и отбирала у выдачи
+            // полсотни пунктов (правка пользователя 2026-08-25). Заглавные буквы
+            // поиску тоже ни к чему.
+            .autocorrectionDisabled(true)
+            .textInputAutocapitalization(.never)
             // opacity 0 в SwiftUI не выключает хит-тест: без этого невидимое поле
             // перехватывало бы касания мимо жеста резины. Гейт тот же, что и у opacity.
             .allowsHitTesting(searchFocused)
