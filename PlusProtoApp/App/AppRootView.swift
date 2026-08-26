@@ -6,6 +6,7 @@ struct AppRootView: View {
     @State private var navigation = AppNavigationState()
     @State private var actionBar = ActionBarState()
     @State private var keyboard = KeyboardObserver()
+    @State private var search = SearchState()
 
     var body: some View {
         ZStack {
@@ -36,6 +37,11 @@ struct AppRootView: View {
                 actionBar.isSearchFocused = false
             }
         }
+        // Выдача поиска — поверх затемнения, но под баром: поле ввода должно
+        // остаться видимым и нажимаемым.
+        .overlay {
+            SearchResultsView()
+        }
         .overlay(alignment: .bottom) {
             BottomChrome()
         }
@@ -54,6 +60,7 @@ struct AppRootView: View {
         .environment(navigation)
         .environment(actionBar)
         .environment(keyboard)
+        .environment(search)
     }
 
     /// Свой `NavigationStack` на каждый таб: путь независимый, хром остаётся снаружи стеков.

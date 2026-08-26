@@ -178,6 +178,31 @@ actor MoviePool {
         loadedDetails()[String(id)]
     }
 
+    /// Поиск по запасу на диске — первый источник кросс-сервисного поиска по кино.
+    ///
+    /// Запас и так лежит локально (около 250 фильмов), поэтому подстрочное совпадение
+    /// по названию стоит ноль запросов и ноль ожидания. В сеть `SearchState` идёт
+    /// только когда здесь нашлось мало: квота Кинопоиска — 200 запросов в сутки
+    /// на ключ, и поиск по мере набора сжёг бы её за вечер.
+    ///
+    /// Сравнение без регистра и диакритики: «ежик» обязан находить «Ёжик».
+    func search(_ text: String, limit: Int) -> [KinopoiskMovie] {
+        let needle = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        guard !needle.isEmpty else { return [] }
+        return storage.movies
+            .filter { movie in
+                [movie.name, movie.alternativeName]
+                    .compactMap { $0 }
+                    .contains { title in
+                        title
+                            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+                            .contains(needle)
+                    }
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     func stats() -> (total: Int, shown: Int, ageDays: Int) {
         (
             storage.movies.count,

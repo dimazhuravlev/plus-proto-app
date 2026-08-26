@@ -134,10 +134,13 @@ struct ActionBarView: View {
     /// Подъём над клавиатурой. Дефолт нужен для превью.
     var raise: ActionBarRaise = .none
     @Environment(ActionBarState.self) private var actionBar
+    /// Текст запроса живёт в `SearchState`, а не в `@State` бара: по нему строится
+    /// выдача, а её показывает отдельный слой (`SearchResultsView`).
+    @Environment(SearchState.self) private var search
     @FocusState private var searchFocused: Bool
-    @State private var query = ""
 
     var body: some View {
+        @Bindable var search = search
         let layout = ActionBarLayout(
             mode: actionBar.mode,
             hasMusic: actionBar.music != nil,
@@ -156,7 +159,7 @@ struct ActionBarView: View {
             SearchPill(
                 layout: layout,
                 searchFocused: $searchFocused,
-                query: $query
+                query: $search.query
             )
             .padding(.leading, layout.screenMargin)
 
@@ -187,6 +190,15 @@ struct ActionBarView: View {
                     searchFocused = true
                 }
             }
+        }
+        .task {
+            // `-debugSearchQuery <текст>` — набрать запрос без клавиатуры: выдачу
+            // из шелла иначе не увидеть, а печатать по одной букве симулятор не даёт.
+            guard let text = UserDefaults.standard.string(forKey: "debugSearchQuery"), !text.isEmpty else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            searchFocused = true
+            search.query = text
         }
         .task {
             // `-debugSearchCycle` — фокус и расфокус поля по кругу. Нужен, чтобы снять

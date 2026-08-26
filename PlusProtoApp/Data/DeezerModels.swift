@@ -53,6 +53,15 @@ struct DeezerAlbumTrack: Decodable, Identifiable {
     let explicitLyrics: Bool?
 }
 
+/// Трек из `/search/track`. От `DeezerAlbumTrack` отличается тем, что несёт свой
+/// альбом и исполнителя: в выдаче поиска трек живёт сам по себе, вне треклиста.
+struct DeezerTrackHit: Decodable, Identifiable {
+    let id: Int
+    let title: String
+    let artist: DeezerArtistBrief?
+    let album: DeezerAlbumBrief?
+}
+
 struct DeezerAlbum: Decodable, Identifiable {
     let id: Int
     let title: String

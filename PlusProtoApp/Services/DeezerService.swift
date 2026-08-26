@@ -65,6 +65,31 @@ actor DeezerService {
         return response.data
     }
 
+    /// Треки для кросс-сервисного поиска. Отдельная ручка, а не фильтр по альбомам:
+    /// у Deezer `/search/track` ранжирует по самому треку, и запрос вроде «Bohemian»
+    /// находит песню, а не альбом с похожим названием.
+    func searchTracks(query: String, limit: Int = 10) async throws -> [DeezerTrackHit] {
+        let response: DeezerListResponse<DeezerTrackHit> = try await fetch(
+            path: "/search/track",
+            query: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ]
+        )
+        return response.data
+    }
+
+    func searchArtists(query: String, limit: Int = 10) async throws -> [DeezerArtistBrief] {
+        let response: DeezerListResponse<DeezerArtistBrief> = try await fetch(
+            path: "/search/artist",
+            query: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ]
+        )
+        return response.data
+    }
+
     /// Плейлист вместе с треками — из него собирается и «Моя Волна», и запас альбомов.
     func playlist(id: Int) async throws -> DeezerPlaylist {
         try await fetch(path: "/playlist/\(id)")
