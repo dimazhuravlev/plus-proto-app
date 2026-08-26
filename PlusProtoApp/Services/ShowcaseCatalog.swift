@@ -27,6 +27,8 @@ final class ShowcaseCatalog {
     private var pickedWatching: KinopoiskMovie?
     /// Горизонтальный кадр выбранного тайтла «продолжить смотреть», если он есть.
     private var watchingStill: KinopoiskStill?
+    /// Кадр сцены показанного фильма — для чипа киноплеера в action bar.
+    private var featuredStill: KinopoiskStill?
 
     /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
     /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после
@@ -52,6 +54,7 @@ final class ShowcaseCatalog {
         let featurable = unseen.filter(Self.isFeaturable)
         pickedFeatured = withStill(featurable).randomElement(using: &rng)
             ?? featurable.randomElement(using: &rng)
+        featuredStill = pickedFeatured.flatMap { snapshot.stills[String($0.id)] }?.first
 
         let watchable = unseen.filter { Self.isWatchable($0) && $0.id != pickedFeatured?.id }
         pickedWatching = withStill(watchable).randomElement(using: &rng)
@@ -116,6 +119,9 @@ final class ShowcaseCatalog {
                 excluding: pickedFeatured?.id,
                 using: &rng
             )
+            if let id = pickedFeatured?.id {
+                featuredStill = await MoviePool.shared.stills(for: id).first
+            }
             if let id = pickedWatching?.id {
                 watchingStill = await MoviePool.shared.stills(for: id).first
             }
@@ -160,6 +166,15 @@ final class ShowcaseCatalog {
                 // моковый постер чужого фильма врёт о контенте, а фильм в витрине
                 // теперь каждый запуск новый — врал бы он каждый раз.
                 poster: .remote(poster),
+                // Чипу киноплеера нужен горизонтальный кадр, а не портретный постер:
+                // кадр сцены → официальный `backdrop` → постер как крайний случай.
+                // Размер `wide`, как у блока «продолжить смотреть»: пресет `frame`
+                // живёт только на `get-ott`, кадры отвечают на него 404.
+                still: .remote(
+                    featuredStill?.url(size: .wide)
+                        ?? movie.backdrop?.url(size: .frame)
+                        ?? poster
+                ),
                 // Подпись `2004:10769` рассчитана на 3 строки по 182.68pt;
                 // `shortDescription` бывает и вдвое длиннее — режем.
                 caption: (movie.shortDescription ?? "").showcaseCaption(maxCharacters: 88),
@@ -470,7 +485,9 @@ private extension ShowcaseBlock {
     /// Всё, что блок покажет картинками, — для прогрева кэша.
     var artworks: [ArtworkSource] {
         switch self {
-        case .movie(let b): [b.poster]
+        // Кадр — не декорация карточки, а картинка чипа киноплеера: без прогрева
+        // он въезжает дырой ровно в момент тапа.
+        case .movie(let b): [b.poster, b.still]
         case .album(let b): [b.cover]
         case .book(let b): [b.render, b.cover]
         case .vibe(let b): [b.cover]

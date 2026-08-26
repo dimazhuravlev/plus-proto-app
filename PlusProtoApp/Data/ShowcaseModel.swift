@@ -72,7 +72,7 @@ enum ShowcaseBlock: Identifiable {
     var player: ShowcasePlayerTarget {
         switch self {
         case .movie(let b):
-            .movie(MovieInProgress(id: b.id, still: b.poster, title: b.title))
+            .movie(MovieInProgress(id: b.id, still: b.still, title: b.title))
         case .album(let b):
             .music(MusicNowPlaying(id: b.id, cover: b.cover, title: b.title, artist: b.subtitle))
         case .book(let b):
@@ -125,6 +125,11 @@ struct MovieBlock {
     let id: String
     let title: String
     let poster: ArtworkSource
+    /// Горизонтальный кадр сцены — им живёт чип киноплеера в action bar (правка
+    /// пользователя 2026-08-25: раньше туда уходил постер, и портретная картинка
+    /// кропалась в чип 88×54). Карточка витрины по-прежнему показывает постер.
+    /// Кадра может не быть — тогда сюда кладётся `backdrop`, а в крайнем случае постер.
+    let still: ArtworkSource
     /// Однострочная редакционная подпись. У Кинопоиска это поле `shortDescription`.
     let caption: String
     /// Подпись тонируется в цвет постера — в макете градиент уводит текст к его палитре.
@@ -279,6 +284,7 @@ extension ShowcaseFeed {
                 id: "perfect-days",
                 title: "Идеальные дни",
                 poster: .asset("mockMoviePoster"),
+                still: .asset("mockChipMovieStill"),
                 caption: "Обыкновенный уборщик ищет красоту в каждом мгновении. Шедевр Вима Вендерса о магии жизни",
                 captionTint: Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
             )),
