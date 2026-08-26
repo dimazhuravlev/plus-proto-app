@@ -65,8 +65,10 @@ enum PlusMetrics {
     static let tabIconTile: CGFloat = 40
     /// Зазор между тайлом и лейблом
     static let tabIconLabelGap: CGFloat = 2
-    /// Высота градиентной подложки таббара (выступает на 110 над баром)
-    static let tabBarUnderlayHeight: CGFloat = 210
+    /// Высота градиентной подложки нижнего хрома — **общая** у таббара и панели
+    /// кнопок карточки тайтла (правка пользователя 2026-08-25: было 210 у таббара
+    /// и 176 у панели, теперь одно число на обе).
+    static let bottomUnderlayHeight: CGFloat = 140
 
     // Action bar
     static let actionBarHeight: CGFloat = 60

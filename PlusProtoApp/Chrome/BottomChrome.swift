@@ -17,9 +17,10 @@ enum PlusChromeMetrics {
         PlusMetrics.actionBarHeight + actionBarToTabsGap + tabsRowHeight
     }
 
-    /// Радиус прогрессивного блюра под нижним хромом. В Figma слой блюра есть, но выставлен
-    /// в 0 — значение взято из `BottomBarV2` MusicPlayer, где та же полоса поверх ленты.
-    static let underlayBlurRadius: CGFloat = 10
+    /// Радиус прогрессивного блюра под нижним хромом — общий у таббара и панели кнопок
+    /// карточки тайтла. В Figma слой блюра есть, но выставлен в 0; прежняя десятка была
+    /// взята из `BottomBarV2` MusicPlayer, 8 — правка пользователя 2026-08-25.
+    static let underlayBlurRadius: CGFloat = 8
 
     /// Отступ от клавиатуры до низа action bar при фокусе поиска (`2021:11248`).
     static let focusKeyboardGap: CGFloat = 12
@@ -154,7 +155,7 @@ struct TabBarUnderlay: View {
             .frame(height: PlusChromeMetrics.underlayBlurHeight)
 
             PlusGradient.tabBarUnderlay
-                .frame(height: PlusMetrics.tabBarUnderlayHeight)
+                .frame(height: PlusMetrics.bottomUnderlayHeight)
         }
         .allowsHitTesting(false)
     }

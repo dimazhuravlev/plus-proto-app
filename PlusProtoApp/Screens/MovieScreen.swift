@@ -69,8 +69,6 @@ enum MovieLayout {
     // вместе с её числами (44/18/22/6/20 и зазором до панели 16).
 
     // Панель `2101:20595`
-    /// Пустая градиентная зона над кнопками
-    static let panelLead: CGFloat = 96
     static let panelSide: CGFloat = 24
     static let panelBottom: CGFloat = 24
     static let panelGap: CGFloat = 8
@@ -85,8 +83,10 @@ enum MovieLayout {
     static let buttonGap: CGFloat = 8
     /// Сколько лента обязана оставить под прибитой панелью
     static var panelClearance: CGFloat { buttonHeight + panelBottom }
-    /// Высота затемняющей подложки: чистый градиент над кнопками + сами кнопки + поле
-    static var panelHeight: CGFloat { panelLead + buttonHeight + panelBottom }
+    /// Высота затемняющей подложки — общая с таббаром (правка пользователя 2026-08-25;
+    /// прежде считалась своей суммой 96 + 56 + 24 = 176). Над кнопками остаётся
+    /// 140 − 56 − 24 = 60 чистого градиента.
+    static var panelHeight: CGFloat { PlusMetrics.bottomUnderlayHeight }
     /// Блюр начинается от верхней кромки кнопок, а не от верха градиента
     static var panelBlurHeight: CGFloat { buttonHeight + panelBottom }
 
