@@ -25,8 +25,11 @@ struct SearchResultsView: View {
         /// Постер кино и книги — 2:3 (макет: 109 × 163.5)
         static let posterAspect: CGFloat = 109.0 / 163.5
         static let coverRadius = PlusRadius.movieChip
-        /// Поля секции: сверху 16 и снизу 12 у заголовка, плюс 8 у самой секции
-        static let sectionVertical: CGFloat = 8
+        /// Собственное поле секции. В макете 8, у нас 2 (правка пользователя
+        /// 2026-08-25): между соседними каруселями оно складывается вдвое и вместе
+        /// с верхним полем заголовка давало 32 — ленты стояли слишком разреженно.
+        /// Поля самого заголовка (16/12) остались макетными.
+        static let sectionVertical: CGFloat = 2
         static let headerTop: CGFloat = 16
         static let headerBottom: CGFloat = 12
         /// Зазор «заголовок ↔ шеврон» из макета
