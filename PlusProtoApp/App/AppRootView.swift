@@ -71,9 +71,17 @@ struct AppRootView: View {
     ///
     /// Пока карточка открыта, слой остаётся под ней — из выдачи всё открывается
     /// слоем поверх (`navigation.open(covering:)`), так что прятать его не нужно.
+    /// Затемнение с блюром — по самому факту открытого поиска, **без оглядки
+    /// на запрос**: экран уходит из фокуса сразу, как поднялась клавиатура, ещё
+    /// до первой буквы. Проверка `isActive` здесь была регрессией — с пустым полем
+    /// фон не появлялся вовсе (жалоба пользователя 2026-08-25).
     private var isSearchShown: Bool {
-        guard search.isActive else { return false }
-        return keyboard.isUp || search.isSuspended
+        keyboard.isUp || search.isSuspended
+    }
+
+    /// Выдача — только когда есть что показывать: минимум два символа запроса.
+    private var isResultsShown: Bool {
+        isSearchShown && search.isActive
     }
 
     /// Свой `NavigationStack` на каждый таб: путь независимый, хром остаётся снаружи стеков.
@@ -122,7 +130,7 @@ struct AppRootView: View {
                     actionBar.isSearchFocused = false
                 }
 
-                SearchResultsView(isShown: isSearchShown)
+                SearchResultsView(isShown: isResultsShown)
             }
             .background(Color.black)
         }
