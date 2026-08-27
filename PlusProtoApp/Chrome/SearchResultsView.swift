@@ -54,9 +54,11 @@ struct SearchResultsView: View {
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                carousel("Музыка", domain: search.music)
-                carousel("Кино", domain: search.movies)
-                carousel("Книги", domain: search.books)
+                // Порядок секций даёт состояние: он ранжируется по релевантности
+                // запросу, когда ответили все три домена (см. `SearchState.sections`).
+                ForEach(search.sections) { section in
+                    carousel(section)
+                }
 
                 if search.isEmptyResult {
                     Text("Ничего не нашлось")
@@ -82,10 +84,11 @@ struct SearchResultsView: View {
     // MARK: Секция
 
     @ViewBuilder
-    private func carousel(_ title: String, domain: SearchState.Domain) -> some View {
+    private func carousel(_ section: SearchState.Section) -> some View {
+        let domain = section.domain
         if domain.isLoading || !domain.hits.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                header(title)
+                header(section.title)
 
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: Layout.cardGap) {
@@ -93,7 +96,7 @@ struct SearchResultsView: View {
                             // Скелетон повторяет форму карточек своей секции, иначе
                             // приход выдачи перекладывал бы ленту.
                             ForEach(0..<Layout.skeletonCards, id: \.self) { _ in
-                                skeletonCard(isPoster: title != "Музыка")
+                                skeletonCard(isPoster: section.isPoster)
                             }
                         } else {
                             ForEach(domain.hits) { hit in card(hit) }

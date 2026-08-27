@@ -50,6 +50,10 @@ final class SearchState {
     /// Ниже этого числа локальных совпадений кино добирается из сети.
     private static let poolEnough = 3
 
+    /// Порядок секций текущего запроса. `nil` — ещё не все домены ответили,
+    /// показываем порядок по умолчанию.
+    private var rankedOrder: [Section.Kind]?
+
     private var searchTask: Task<Void, Never>?
     /// Разобранные выдачи на процесс: возврат к уже набранному запросу бесплатен.
     private var cache: [String: (music: [SearchHit], movies: [SearchHit], books: [SearchHit])] = [:]
@@ -62,6 +66,32 @@ final class SearchState {
     /// Ни один домен ничего не нашёл, и все уже ответили.
     var isEmptyResult: Bool {
         [music, movies, books].allSatisfy { $0.isAnswered && $0.hits.isEmpty }
+    }
+
+    /// Секция выдачи: домен, его заголовок и результаты.
+    struct Section: Identifiable {
+        let id: Kind
+        let title: String
+        let domain: Domain
+
+        enum Kind { case music, movies, books }
+        /// У музыки карточка квадратная, у кино и книг — постер 2:3.
+        var isPoster: Bool { id != .music }
+    }
+
+    /// Секции в порядке показа. Пока ответили не все домены — порядок по умолчанию;
+    /// как ответили все, он **один раз** пересчитывается по релевантности запросу
+    /// (решение пользователя 2026-08-25). Считать на каждый ответ нельзя: домены
+    /// отвечают вразнобой (кино из локального запаса приходит мгновенно, книги —
+    /// через полсекунды), и секции прыгали бы под пальцем.
+    var sections: [Section] {
+        let all = [
+            Section(id: .music, title: "Музыка", domain: music),
+            Section(id: .movies, title: "Кино", domain: movies),
+            Section(id: .books, title: "Книги", domain: books),
+        ]
+        guard let order = rankedOrder else { return all }
+        return order.compactMap { kind in all.first { $0.id == kind } }
     }
 
     private var normalized: String {
@@ -105,6 +135,7 @@ final class SearchState {
         _ = await (musicDone, moviesDone, booksDone)
 
         guard !Task.isCancelled else { return }
+        rankedOrder = Self.order(for: text, music: music, movies: movies, books: books)
         cache[text] = (music.hits, movies.hits, books.hits)
     }
 
@@ -112,12 +143,91 @@ final class SearchState {
         music = Domain()
         movies = Domain()
         books = Domain()
+        rankedOrder = nil
     }
 
     private func apply(_ cached: (music: [SearchHit], movies: [SearchHit], books: [SearchHit])) {
         music = Domain(isLoading: false, hits: cached.music, isAnswered: true)
         movies = Domain(isLoading: false, hits: cached.movies, isAnswered: true)
         books = Domain(isLoading: false, hits: cached.books, isAnswered: true)
+        rankedOrder = Self.order(for: normalized, music: music, movies: movies, books: books)
+    }
+
+    // MARK: - Ранжирование секций
+
+    /// Насколько сильно результат отвечает запросу. Единого скора у трёх API нет
+    /// (Deezer ранжирует по популярности, Кинопоиск и Google Books — по своему),
+    /// и сравнивать их выдачи между собой нечем. Поэтому меру считаем сами —
+    /// по совпадению запроса с названием, а названия у нас уже есть в `SearchHit`.
+    private enum MatchScore {
+        /// Название — это ровно запрос
+        static let exact = 100.0
+        /// Название начинается с запроса («интерстел» → «Интерстеллар»)
+        static let prefix = 70.0
+        /// Запрос — целое слово внутри названия
+        static let word = 45.0
+        /// Запрос где-то внутри названия
+        static let substring = 25.0
+        /// Совпал только подзаголовок — исполнитель, автор, год с жанром
+        static let subtitle = 15.0
+        /// Прибавка за вес результата внутри домена (`SearchHit.authority`).
+        ///
+        /// Ради неё всё и затевалось: на популярный запрос точное совпадение
+        /// названия есть у всех трёх доменов сразу («Интерстеллар» — и фильм,
+        /// и десяток каверов на его саундтрек), и различает их только то,
+        /// насколько результат главный у себя дома.
+        static let authority = 25.0
+        /// Насколько домен должен обойти соседа, чтобы их поменяли местами.
+        /// Без порога секции переставлялись бы от шума в выдаче.
+        static let swap = 10.0
+    }
+
+    private static func order(
+        for text: String,
+        music: Domain,
+        movies: Domain,
+        books: Domain
+    ) -> [Section.Kind] {
+        let scored: [(Section.Kind, Double)] = [
+            (.music, score(text, music)),
+            (.movies, score(text, movies)),
+            (.books, score(text, books)),
+        ]
+        // Сортировка устойчивая по дефолтному порядку: домены с близкими скорами
+        // остаются как были, меняются местами только при разнице больше порога.
+        return scored
+            .enumerated()
+            .sorted { left, right in
+                let delta = left.element.1 - right.element.1
+                if abs(delta) < MatchScore.swap { return left.offset < right.offset }
+                return delta > 0
+            }
+            .map(\.element.0)
+    }
+
+    /// Скор домена — по его **лучшему** результату: качество совпадения плюс вес
+    /// этого результата внутри домена. Пустой домен уходит вниз сам собой.
+    ///
+    /// Число совпадений в скор не входит намеренно: оно награждает объём каталога,
+    /// а не релевантность. Замер на «интерстеллар» (2026-08-25): с надбавкой
+    /// за каждое совпадение музыка набирала 148 против 100 у кино — просто потому,
+    /// что у Deezer нашлось четыре трека с этим названием, а фильм такой один.
+    private static func score(_ text: String, _ domain: Domain) -> Double {
+        let needle = text.folded
+        guard !needle.isEmpty else { return 0 }
+
+        return domain.hits.map { hit -> Double in
+            let title = hit.title.folded
+            let match: Double
+            if title == needle { match = MatchScore.exact }
+            else if title.hasPrefix(needle) { match = MatchScore.prefix }
+            else if title.split(separator: " ").contains(where: { $0 == needle }) { match = MatchScore.word }
+            else if title.contains(needle) { match = MatchScore.substring }
+            else if hit.subtitle.folded.contains(needle) { match = MatchScore.subtitle }
+            else { return 0 }
+            return match + hit.authority * MatchScore.authority
+        }
+        .max() ?? 0
     }
 
     // MARK: - Домены
@@ -179,6 +289,15 @@ final class SearchState {
     }
 }
 
+private extension String {
+    /// Сравнение без регистра и диакритики: «ежик» обязан совпадать с «Ёжик».
+    /// Тот же приём, что у поиска по запасу фильмов (`MoviePool.search`).
+    var folded: String {
+        folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 // MARK: - Мапперы доменов
 
 private extension SearchHit {
@@ -189,6 +308,7 @@ private extension SearchHit {
             title: track.title,
             subtitle: track.artist?.name ?? "",
             artwork: track.album.flatMap { $0.coverBig?.deezerUpscaled }.map { .remote($0) },
+            // `rank` Deezer — 0…1 000 000; у заметного трека он за полмиллиона.
             // Экрана трека нет — ведём на альбом, к которому он принадлежит.
             route: track.album.map { album in
                 .album(EntityRef(
@@ -197,7 +317,8 @@ private extension SearchHit {
                     subtitle: track.artist?.name ?? "",
                     artwork: album.coverBig?.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("mockAlbumCover")
                 ))
-            }
+            },
+            authority: min(1, Double(track.rank ?? 0) / 800_000)
         )
     }
 
@@ -226,7 +347,9 @@ private extension SearchHit {
             subtitle: "Исполнитель",
             artwork: (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled.map { .remote($0) },
             // Экрана исполнителя в проекте нет вовсе — строка не нажимается.
-            route: nil
+            route: nil,
+            // Фанаты растут на порядки, поэтому логарифм: 10 млн — это 1.0.
+            authority: min(1, log10(Double(artist.nbFan ?? 0) + 1) / 7)
         )
     }
 
@@ -245,7 +368,10 @@ private extension SearchHit {
                 title: movie.displayTitle,
                 subtitle: "",
                 artwork: poster.map { ArtworkSource.remote($0) } ?? .asset("mockMoviePoster")
-            ))
+            )),
+            // Топ-250 — сразу максимум; иначе рейтинг Кинопоиска, где 5 — дно шкалы,
+            // а 9 — потолок.
+            authority: movie.top250 != nil ? 1 : min(1, max(0, ((movie.rating?.kp ?? 0) - 5) / 4))
         )
     }
 

@@ -20,6 +20,9 @@ struct DeezerArtistBrief: Decodable, Identifiable {
     let pictureMedium: String?
     let pictureBig: String?
     let pictureXl: String?
+    /// Число фанатов — приходит только у `/search/artist`. Вес исполнителя
+    /// в ранжировании секций поиска.
+    let nbFan: Int?
 }
 
 // MARK: - Album
@@ -60,6 +63,9 @@ struct DeezerTrackHit: Decodable, Identifiable {
     let title: String
     let artist: DeezerArtistBrief?
     let album: DeezerAlbumBrief?
+    /// Популярность трека у Deezer, 0…1 000 000. Нужна ранжированию секций поиска:
+    /// у культового трека и у кавера с тем же названием совпадает всё, кроме неё.
+    let rank: Int?
 }
 
 struct DeezerAlbum: Decodable, Identifiable {
