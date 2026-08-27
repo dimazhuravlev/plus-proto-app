@@ -33,14 +33,14 @@ struct AppRootView: View {
         }
         // Между контентом и хромом: расфокусить надо экран, но не бар с клавиатурой.
         .overlay {
-            SearchOverlay(isActive: keyboard.isUp) {
+            SearchOverlay(isActive: isSearchShown) {
                 actionBar.isSearchFocused = false
             }
         }
         // Выдача поиска — поверх затемнения, но под баром: поле ввода должно
         // остаться видимым и нажимаемым.
         .overlay {
-            SearchResultsView()
+            SearchResultsView(isShown: isSearchShown)
         }
         .overlay(alignment: .bottom) {
             BottomChrome()
@@ -69,6 +69,21 @@ struct AppRootView: View {
         .environment(actionBar)
         .environment(keyboard)
         .environment(search)
+    }
+
+    /// Показан ли поиск — затемнение и выдача разом, они обязаны появляться
+    /// и уходить одним движением.
+    ///
+    /// Драйвер не только клавиатура: пока пользователь ходит по карточке, открытой
+    /// из выдачи, поиск **остаётся жить под ней** и на возврате уже стоит на экране —
+    /// клавиатура догоняет следом. Раньше слой был привязан к клавиатуре, и на
+    /// возврате между закрытием карточки и её подъёмом мелькала витрина.
+    ///
+    /// Пока карточка открыта, слой остаётся под ней — из выдачи всё открывается
+    /// слоем поверх (`navigation.open(covering:)`), так что прятать его не нужно.
+    private var isSearchShown: Bool {
+        guard search.isActive else { return false }
+        return keyboard.isUp || search.isSuspended
     }
 
     /// Свой `NavigationStack` на каждый таб: путь независимый, хром остаётся снаружи стеков.

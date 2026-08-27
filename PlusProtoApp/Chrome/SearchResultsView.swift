@@ -10,6 +10,10 @@ import SwiftUI
 /// Слой живёт **между затемнением и action bar**: расфокусивающий тап по затемнению
 /// остаётся рабочим вокруг выдачи, а бар с полем ввода рисуется поверх и не перекрыт.
 struct SearchResultsView: View {
+    /// Показывать ли слой. Считает корень: признак шире клавиатуры — поиск остаётся
+    /// на экране и пока пользователь возвращается из открытой карточки
+    /// (см. `AppRootView.isSearchShown`).
+    let isShown: Bool
     @Environment(SearchState.self) private var search
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
@@ -43,9 +47,8 @@ struct SearchResultsView: View {
     }
 
     var body: some View {
-        // Выдача живёт только с поднятой клавиатурой — тем же признаком, что и
-        // затемнение под ней (`SearchOverlay`), иначе слои разъезжались бы.
-        if keyboard.isUp && search.isActive {
+        // Признак общий с затемнением (`SearchOverlay`) — иначе слои разъезжались бы.
+        if isShown {
             content
                 .transition(.opacity)
                 #if DEBUG
@@ -165,7 +168,9 @@ struct SearchResultsView: View {
     private func open(_ route: EntityRoute) {
         search.suspend(tab: navigation.activeTab, depth: navigation.depth)
         actionBar.isSearchFocused = false
-        navigation.open(route)
+        // `covering:` — карточка встаёт слоем поверх, даже если обычно пушится:
+        // выдача сама живёт слоем над контентом, и пуш оказался бы под ней.
+        navigation.open(route, covering: true)
     }
 
     private func cardBody(_ hit: SearchHit) -> some View {
