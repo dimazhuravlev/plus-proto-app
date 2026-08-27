@@ -168,9 +168,10 @@ struct SearchResultsView: View {
     private func open(_ route: EntityRoute) {
         search.suspend(tab: navigation.activeTab, depth: navigation.depth)
         actionBar.isSearchFocused = false
-        // `covering:` — карточка встаёт слоем поверх, даже если обычно пушится:
-        // выдача сама живёт слоем над контентом, и пуш оказался бы под ней.
-        navigation.open(route, covering: true)
+        // Обычным способом: карточка фильма встаёт слоем поверх хрома, альбом
+        // и книга пушатся в стек — и там, и там выдача остаётся под открытым
+        // экраном, потому что живёт в корне того же стека (`AppRootView.tabStack`).
+        navigation.open(route)
     }
 
     private func cardBody(_ hit: SearchHit) -> some View {

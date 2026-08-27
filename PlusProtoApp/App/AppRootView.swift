@@ -32,16 +32,6 @@ struct AppRootView: View {
             TopScrim()
         }
         // Между контентом и хромом: расфокусить надо экран, но не бар с клавиатурой.
-        .overlay {
-            SearchOverlay(isActive: isSearchShown) {
-                actionBar.isSearchFocused = false
-            }
-        }
-        // Выдача поиска — поверх затемнения, но под баром: поле ввода должно
-        // остаться видимым и нажимаемым.
-        .overlay {
-            SearchResultsView(isShown: isSearchShown)
-        }
         .overlay(alignment: .bottom) {
             BottomChrome()
         }
@@ -113,6 +103,24 @@ struct AppRootView: View {
         NavigationStack(path: navigation.path(for: tab)) {
             content()
                 .background(Color.black)
+                // Затемнение и выдача живут **в корне стека**, а не слоем над всем
+                // приложением. Так пуш накрывает их собой, а поп открывает обратно —
+                // поиск остаётся под открытым экраном, и на возврате витрина
+                // не мелькает. Снаружи стека этого было не добиться: пуш рисуется
+                // под оверлеями корня, и выдачу приходилось прятать.
+                //
+                // Хром (`BottomChrome`) при этом остаётся выше всех и виден
+                // и на выдаче, и на запушенном экране — как просил пользователь
+                // (2026-08-25): из поиска всё, кроме карточки фильма, открывается
+                // с таббаром и action bar.
+                .overlay {
+                    SearchOverlay(isActive: isSearchShown) {
+                        actionBar.isSearchFocused = false
+                    }
+                }
+                .overlay {
+                    SearchResultsView(isShown: isSearchShown)
+                }
         }
     }
 }
