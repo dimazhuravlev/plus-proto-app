@@ -48,6 +48,20 @@ struct SearchResultsView: View {
         if keyboard.isUp && search.isActive {
             content
                 .transition(.opacity)
+                #if DEBUG
+                // `-debugTapSearchHit` — открыть первую карточку выдачи: тапнуть
+                // по симулятору из шелла нечем, а возврат в поиск иначе не проверить.
+                // В паре с `-debugCloseEntity` даёт полный круг «ушёл — вернулся».
+                .task(id: search.sections.first?.domain.hits.first?.id) {
+                    guard UserDefaults.standard.bool(forKey: "debugTapSearchHit"),
+                          let hit = search.sections.first(where: { !$0.domain.hits.isEmpty })?.domain.hits.first,
+                          let route = hit.route
+                    else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
+                    open(route)
+                }
+                #endif
         }
     }
 
@@ -137,18 +151,21 @@ struct SearchResultsView: View {
     @ViewBuilder
     private func card(_ hit: SearchHit) -> some View {
         if let route = hit.route {
-            Button {
-                // Поиск закрывается вместе с открытием: возвращаться в выдачу
-                // поверх открытого экрана пользователю незачем.
-                actionBar.isSearchFocused = false
-                navigation.open(route)
-            } label: {
+            Button { open(route) } label: {
                 cardBody(hit)
             }
             .buttonStyle(PressScaleButtonStyle())
         } else {
             cardBody(hit)
         }
+    }
+
+    /// Уход в сущность из выдачи. Клавиатура опускается, но сам поиск не сбрасывается:
+    /// запомнили точку, и на возврате поле снова получит фокус с той же выдачей.
+    private func open(_ route: EntityRoute) {
+        search.suspend(tab: navigation.activeTab, depth: navigation.depth)
+        actionBar.isSearchFocused = false
+        navigation.open(route)
     }
 
     private func cardBody(_ hit: SearchHit) -> some View {

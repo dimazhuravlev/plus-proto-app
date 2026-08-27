@@ -54,6 +54,14 @@ final class SearchState {
     /// показываем порядок по умолчанию.
     private var rankedOrder: [Section.Kind]?
 
+    /// Куда пользователь ушёл из выдачи: таб и глубина навигации на момент тапа.
+    /// `nil` — из поиска никуда не уходили.
+    ///
+    /// Запрос и результаты при переходе никуда не деваются (живут здесь же), поэтому
+    /// «вернуть поиск» — это просто вернуть фокус полю: слой выдачи покажет то же,
+    /// что было (правка пользователя 2026-08-25 — раньше поиск закрывался насовсем).
+    private var suspended: (tab: AppTab, depth: Int)?
+
     private var searchTask: Task<Void, Never>?
     /// Разобранные выдачи на процесс: возврат к уже набранному запросу бесплатен.
     private var cache: [String: (music: [SearchHit], movies: [SearchHit], books: [SearchHit])] = [:]
@@ -96,6 +104,25 @@ final class SearchState {
 
     private var normalized: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Уход в сущность и возврат
+
+    /// Запомнить точку, из которой пользователь ушёл в открытую карточку.
+    func suspend(tab: AppTab, depth: Int) {
+        suspended = (tab, depth)
+    }
+
+    /// Пора ли вернуть поиск: пользователь закрыл всё, что открывал из выдачи,
+    /// и оказался ровно там, откуда уходил. Метод «съедает» отметку — восстановление
+    /// одноразовое, иначе поиск лез бы обратно на каждый поп в этом табе.
+    ///
+    /// Таб проверяется вместе с глубиной: уйти можно и переключением таба, и тогда
+    /// возвращать клавиатуру пользователю точно не надо.
+    func consumeResume(tab: AppTab, depth: Int) -> Bool {
+        guard let suspended, suspended.tab == tab, depth <= suspended.depth else { return false }
+        self.suspended = nil
+        return true
     }
 
     // MARK: - Поток поиска

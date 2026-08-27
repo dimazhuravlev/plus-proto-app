@@ -57,6 +57,14 @@ struct AppRootView: View {
         // весь overlay с хромом целиком (включая таббар), и это складывается с ручным
         // сдвигом бара — он улетал вдвое выше клавиатуры. Отступ считает `BottomChrome`.
         .ignoresSafeArea(.keyboard)
+        // Возврат из открытой сущности возвращает и поиск: сам запрос с выдачей
+        // никуда не девались, поэтому достаточно вернуть фокус полю. Слушаем здесь,
+        // а не в баре: глубина навигации — свойство корня, а не хрома.
+        .onChange(of: navigation.depth) { _, depth in
+            if search.consumeResume(tab: navigation.activeTab, depth: depth) {
+                actionBar.isSearchFocused = true
+            }
+        }
         .environment(navigation)
         .environment(actionBar)
         .environment(keyboard)
