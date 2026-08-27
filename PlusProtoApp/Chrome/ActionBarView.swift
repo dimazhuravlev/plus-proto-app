@@ -195,7 +195,11 @@ struct ActionBarView: View {
             // `-debugSearchQuery <текст>` — набрать запрос без клавиатуры: выдачу
             // из шелла иначе не увидеть, а печатать по одной букве симулятор не даёт.
             guard let text = UserDefaults.standard.string(forKey: "debugSearchQuery"), !text.isEmpty else { return }
-            try? await Task.sleep(for: .seconds(1))
+            // `-debugSearchDelay <сек>` отодвигает фокус: чтобы снять поиск, открытый
+            // **с запушенного экрана**, он должен включиться уже после того, как пуш
+            // доехал (отладочный тап витрины сам занимает 2.5с).
+            let delay = UserDefaults.standard.object(forKey: "debugSearchDelay") as? Double ?? 1
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             searchFocused = true
             search.query = text

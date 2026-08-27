@@ -170,7 +170,8 @@ struct SearchResultsView: View {
         actionBar.isSearchFocused = false
         // Обычным способом: карточка фильма встаёт слоем поверх хрома, альбом
         // и книга пушатся в стек — и там, и там выдача остаётся под открытым
-        // экраном, потому что живёт в корне того же стека (`AppRootView.tabStack`).
+        // экраном, потому что живёт на том, с которого поиск открыли
+        // (`SearchLayers`, глубина в `SearchState.hostDepth`).
         navigation.open(route)
     }
 

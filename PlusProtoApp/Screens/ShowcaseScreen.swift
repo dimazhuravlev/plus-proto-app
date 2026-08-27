@@ -42,23 +42,28 @@ struct ShowcaseScreen: View {
                 #endif
         }
         .navigationDestination(for: EntityRoute.self) { route in
-            EntityScreen(route: route)
-                // Нативный зум: миниатюра карточки разворачивается в экран и сворачивается
-                // обратно. `sourceID` — сам маршрут, тот же объект, что и в
-                // `matchedTransitionSource`, поэтому стороны перехода не могут разъехаться.
-                .navigationTransition(.zoom(sourceID: route, in: zoom))
-                #if DEBUG
-                // `-debugCloseEntity` — снять экран через 2с: свернуть зум из шелла нечем,
-                // а обратный ход надо смотреть покадрово так же, как прямой. Задача висит
-                // на самом экране, а не на витрине: витрину под пушем размонтирует,
-                // и её `task` отменяется вместе с ожиданием.
-                .task {
-                    guard UserDefaults.standard.bool(forKey: "debugCloseEntity") else { return }
-                    try? await Task.sleep(for: .seconds(2))
-                    guard !Task.isCancelled else { return }
-                    navigation.pop()
-                }
-                #endif
+            // Слои поиска — и на пуше: поиск, открытый **с** альбома или книги,
+            // обязан лечь поверх них. В корне стека они его не накрывали бы —
+            // пуш рисуется выше корня (жалоба пользователя 2026-08-27).
+            SearchLayers(host: .pushed) {
+                EntityScreen(route: route)
+            }
+            // Нативный зум: миниатюра карточки разворачивается в экран и сворачивается
+            // обратно. `sourceID` — сам маршрут, тот же объект, что и в
+            // `matchedTransitionSource`, поэтому стороны перехода не могут разъехаться.
+            .navigationTransition(.zoom(sourceID: route, in: zoom))
+            #if DEBUG
+            // `-debugCloseEntity` — снять экран через 2с: свернуть зум из шелла нечем,
+            // а обратный ход надо смотреть покадрово так же, как прямой. Задача висит
+            // на самом экране, а не на витрине: витрину под пушем размонтирует,
+            // и её `task` отменяется вместе с ожиданием.
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugCloseEntity") else { return }
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                navigation.pop()
+            }
+            #endif
         }
         .task {
             #if DEBUG

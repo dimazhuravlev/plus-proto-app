@@ -35,9 +35,13 @@ struct ServiceStubScreen: View {
         .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         .navigationDestination(for: ServiceStubRoute.self) { route in
-            switch route {
-            case .detail(let tab):
-                ServiceStubDetailScreen(tab: tab)
+            // Слои поиска несёт сам пуш — как и у экранов сущностей: иначе поиск,
+            // открытый с него, оказался бы под ним.
+            SearchLayers(host: .pushed) {
+                switch route {
+                case .detail(let tab):
+                    ServiceStubDetailScreen(tab: tab)
+                }
             }
         }
         #endif
