@@ -7,6 +7,15 @@ struct AppRootView: View {
     @State private var actionBar = ActionBarState()
     @State private var keyboard = KeyboardObserver()
     @State private var search = SearchState()
+    /// Каталог витрины — здесь, а не в самой витрине: `ShowcaseScreen`
+    /// размонтируется на каждом переключении таба, и лента собиралась бы заново
+    /// (другой фильм, другой альбом, новые запросы). Хром от этого не страдает:
+    /// `@Observable` перерисовывает только тех, кто читает `feed`, а корень
+    /// его не читает.
+    @State private var catalog = ShowcaseCatalog()
+    /// Заставка на запуске. `@State` корня, поэтому показывается ровно один раз
+    /// за процесс: возврат из фона её не воскрешает.
+    @State private var isSplashShown = !SplashTiming.isDisabled
 
     var body: some View {
         ZStack {
@@ -43,6 +52,35 @@ struct AppRootView: View {
             }
             .ignoresSafeArea()
         }
+        // Выше всего, включая плеер: пока витрина собирается, показывать нечего
+        // и трогать нечего. Уходит одной прозрачностью — см. `SplashTiming.fade`.
+        .overlay {
+            if isSplashShown {
+                SplashScreen()
+                    .transition(.opacity)
+                    // Заставка ловит касания на себя: под ней лента уже стоит,
+                    // и случайный тап по невидимой карточке открыл бы экран,
+                    // которого пользователь не выбирал.
+                    .contentShape(.rect)
+                    .onTapGesture {}
+            }
+        }
+        // Сборка витрины идёт **под заставкой** и живёт в корне, а не в самой
+        // витрине: экран таба размонтируется при переключении, а лента должна
+        // собраться один раз за процесс.
+        .task {
+            // Потолок ожидания отдельной задачей: сеть может отвечать минуту
+            // (у `URLSession` свои 20с на запрос), и держать заставку до последнего
+            // нельзя — витрина умеет жить на моках и достраиваться по мере ответов.
+            let deadline = Task {
+                try? await Task.sleep(for: SplashTiming.timeout)
+                guard !Task.isCancelled else { return }
+                hideSplash()
+            }
+            await prepareShowcase()
+            deadline.cancel()
+            hideSplash()
+        }
         // Системное поднятие над клавиатурой отключаем на корне: иначе SwiftUI поднимает
         // весь overlay с хромом целиком (включая таббар), и это складывается с ручным
         // сдвигом бара — он улетал вдвое выше клавиатуры. Отступ считает `BottomChrome`.
@@ -73,6 +111,39 @@ struct AppRootView: View {
         .environment(actionBar)
         .environment(keyboard)
         .environment(search)
+        .environment(catalog)
+    }
+
+    /// Собирает витрину целиком: данные трёх сервисов и картинки первого экрана.
+    ///
+    /// Картинки ждём наравне с данными — в этом весь смысл заставки. Без прогрева
+    /// лента открывается с готовой раскладкой, но пустыми обложками, и они въезжают
+    /// на глазах: с точки зрения пользователя это то же самое мигание.
+    private func prepareShowcase() async {
+        let started = ContinuousClock.now
+
+        #if DEBUG
+        // `-debugMockFeed` — прогон на моках без сети: ждать нечего.
+        if !UserDefaults.standard.bool(forKey: "debugMockFeed") {
+            await catalog.loadIfNeeded()
+            await ArtworkLoader.shared.prewarm(catalog.feed.artworks)
+        }
+        #else
+        await catalog.loadIfNeeded()
+        await ArtworkLoader.shared.prewarm(catalog.feed.artworks)
+        #endif
+
+        // Минимальная выдержка: когда всё пришло из кэша за сотню миллисекунд,
+        // заставка не должна мигнуть и пропасть — это читается сбоем, а не запуском.
+        let elapsed = ContinuousClock.now - started
+        if elapsed < SplashTiming.minimum {
+            try? await Task.sleep(for: SplashTiming.minimum - elapsed)
+        }
+    }
+
+    private func hideSplash() {
+        guard isSplashShown else { return }
+        withAnimation(SplashTiming.fade) { isSplashShown = false }
     }
 
     /// Свой `NavigationStack` на каждый таб: путь независимый, хром остаётся снаружи стеков.

@@ -70,6 +70,26 @@ final class ArtworkLoader {
         }
     }
 
+    /// Прогрев **с ожиданием** — им сплэш держит запуск, пока картинки первого
+    /// экрана не окажутся в памяти. Без него витрина открывается и дозагружает
+    /// обложки на глазах: `preload` возвращается мгновенно и ничего не обещает.
+    ///
+    /// Все разом, а не по очереди: обложек первого экрана меньше десятка,
+    /// а последовательная загрузка сложила бы их задержки в секунды ожидания.
+    func prewarm(_ sources: [ArtworkSource]) async {
+        let pending = Set(sources.compactMap { source -> URL? in
+            guard case .remote(let url, _) = source, cached(url) == nil else { return nil }
+            return url
+        })
+        guard !pending.isEmpty else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            for url in pending {
+                group.addTask { @MainActor in _ = await self.image(for: url) }
+            }
+        }
+    }
+
     /// Цвет, в который уводится градиент подписи рядом с картинкой (figma-screen1 §1).
     /// В макете он снят с постера пипеткой — для живого контента снимаем сами.
     ///

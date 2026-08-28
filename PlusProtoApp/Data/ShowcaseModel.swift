@@ -336,3 +336,30 @@ extension ShowcaseFeed {
         backdrop: .asset("mockBgCollage")
     )
 }
+
+// MARK: - Картинки ленты
+
+extension ShowcaseBlock {
+    /// Всё, что блок покажет картинками, — для прогрева кэша.
+    var artworks: [ArtworkSource] {
+        switch self {
+        // Кадр — не декорация карточки, а картинка чипа киноплеера: без прогрева
+        // он въезжает дырой ровно в момент тапа.
+        case .movie(let b): [b.poster, b.still]
+        case .album(let b): [b.cover]
+        case .book(let b): [b.render, b.cover]
+        case .vibe(let b): [b.cover]
+        case .reading(let b): [b.cover]
+        case .watching(let b): [b.still, b.logo]
+        }
+    }
+}
+
+extension ShowcaseFeed {
+    /// Все картинки первого экрана: блоки, врезки заголовка и фон. По этому списку
+    /// сплэш понимает, что витрину можно показывать, — карточка без обложки
+    /// и есть то мигание, ради которого заставку заводили.
+    var artworks: [ArtworkSource] {
+        blocks.flatMap(\.artworks) + headline.chips.map(\.artwork) + [backdrop]
+    }
+}

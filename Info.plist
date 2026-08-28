@@ -7,5 +7,15 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!-- Системная заставка до первого кадра SwiftUI: без своего цвета она белая,
+	     и запуск начинался вспышкой белого перед фирменным градиентом.
+	     Вложенные ключи `UILaunchScreen` через build settings не задаются —
+	     только файлом (проверено: INFOPLIST_KEY_UILaunchScreen_UIColorName
+	     Xcode игнорирует, в собранный Info.plist приходит пустой словарь). -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>splashLaunch</string>
+	</dict>
 </dict>
 </plist>

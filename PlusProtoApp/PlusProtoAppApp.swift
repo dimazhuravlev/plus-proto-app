@@ -76,6 +76,9 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugAlbumId") {
             UserDefaults.standard.removeObject(forKey: "debugAlbumId")
         }
+        if !args.contains("-debugNoSplash") {
+            UserDefaults.standard.removeObject(forKey: "debugNoSplash")
+        }
 
         var index = 0
         while index < args.count {
@@ -88,6 +91,11 @@ struct PlusProtoAppApp: App {
                 index += 2
             case "-debugSearchFocus":
                 UserDefaults.standard.set(true, forKey: "debugSearchFocus")
+                index += 1
+            // Заставка держит запуск до готовности витрины — отладочным прогонам,
+            // которые снимают кадры по таймеру, она сдвигает всю раскадровку.
+            case "-debugNoSplash":
+                UserDefaults.standard.set(true, forKey: "debugNoSplash")
                 index += 1
             case "-debugSearchCycle":
                 UserDefaults.standard.set(true, forKey: "debugSearchCycle")

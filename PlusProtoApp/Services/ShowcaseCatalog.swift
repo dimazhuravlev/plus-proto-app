@@ -492,18 +492,3 @@ private extension ShowcaseHeadline {
     }
 }
 
-private extension ShowcaseBlock {
-    /// Всё, что блок покажет картинками, — для прогрева кэша.
-    var artworks: [ArtworkSource] {
-        switch self {
-        // Кадр — не декорация карточки, а картинка чипа киноплеера: без прогрева
-        // он въезжает дырой ровно в момент тапа.
-        case .movie(let b): [b.poster, b.still]
-        case .album(let b): [b.cover]
-        case .book(let b): [b.render, b.cover]
-        case .vibe(let b): [b.cover]
-        case .reading(let b): [b.cover]
-        case .watching(let b): [b.still, b.logo]
-        }
-    }
-}

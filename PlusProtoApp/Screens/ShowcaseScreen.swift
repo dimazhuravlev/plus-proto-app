@@ -1,11 +1,12 @@
 import SwiftUI
 
 /// Витрина «Плюс» — главный экран супераппа.
-///
-/// Каталог живёт здесь, а не в `AppRootView`: витрина — единственный его потребитель,
-/// а её сборка не должна инвалидировать хром.
 struct ShowcaseScreen: View {
-    @State private var catalog = ShowcaseCatalog()
+    /// Каталог живёт в корне приложения, а не здесь: витрина размонтируется
+    /// на каждом переключении таба, и вместе с её `@State` пропадала бы вся лента —
+    /// на возврате собирался бы другой фильм, другой альбом и другие книги, да ещё
+    /// и новыми запросами (задача 2026-08-27: контент не должен перезагружаться).
+    @Environment(ShowcaseCatalog.self) private var catalog
     @Environment(AppNavigationState.self) private var navigation
     /// Namespace зум-перехода живёт здесь: и источник (карточка ленты), и назначение
     /// (`navigationDestination`) — потомки этого вью, поэтому пробрасывать его
@@ -65,13 +66,8 @@ struct ShowcaseScreen: View {
             }
             #endif
         }
-        .task {
-            #if DEBUG
-            // `-debugMockFeed` — прогон на моках без сети: сверка вёрстки с макетом
-            // не должна зависеть от того, что сегодня отдали API.
-            guard !UserDefaults.standard.bool(forKey: "debugMockFeed") else { return }
-            #endif
-            await catalog.loadIfNeeded()
-        }
+        // Загрузку витрины держит корень (`AppRootView`): пока она идёт, на экране
+        // стоит заставка, а этот экран за своё время жизни не отвечает — его
+        // размонтирует переключение таба.
     }
 }
