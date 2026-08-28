@@ -103,7 +103,10 @@ struct ShowcaseFeedView: View {
             guard !Task.isCancelled else { return }
             ShowcaseTapDebug.fires += 1
             let block = feed.blocks[tapIndex - 1]
-            actionBar.open(block.player)
+            // Ровно то же, что делает настоящий тап (`open`), а не своя копия его
+            // логики: копия разошлась с оригиналом, когда переход перестал запускать
+            // плеер, и отладочный прогон продолжал показывать чип.
+            open(block)
             // Настоящий тап делает и то, и другое — отладочный обязан повторять его целиком.
             if UserDefaults.standard.bool(forKey: "debugOpenEntity"), let route = block.entityRoute {
                 try? await Task.sleep(for: .seconds(1))
@@ -138,11 +141,17 @@ struct ShowcaseFeedView: View {
             )
     }
 
-    /// Хаптика и перевод action bar в режим сущности. Бар отражает последний
-    /// потреблённый контент, а открытие экрана сущности — это ровно оно.
+    /// Хаптика тапа. **Плеер отсюда больше не запускается**: открыть карточку —
+    /// не то же самое, что включить контент (правка пользователя 2026-08-28).
+    /// Запуск живёт на кнопках самих экранов: «Слушать» в альбоме, «Смотреть»
+    /// в фильме, «Читать» в книге.
+    ///
+    /// Исключение — блок без своего экрана: у «Моей Волны» нет сущности, это
+    /// генератор потока, и кроме запуска музыки тапу нечего делать.
     private func open(_ block: ShowcaseBlock) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+        guard block.entityRoute == nil else { return }
         actionBar.open(block.player)
     }
 

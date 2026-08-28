@@ -186,10 +186,25 @@ struct MovieScreen: View {
     /// Крестик шапки — единственный выход с экрана: кнопки «назад» здесь нет.
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(ActionBarState.self) private var actionBar
 
     /// Что показывать прямо сейчас: живые детали, иначе заглушка по названию.
     private var details: MovieDetails {
         store.details ?? .placeholder(title: entity.title, mock: entity.kinopoiskID == nil)
+    }
+
+    /// «Смотреть» — единственный вход в киноплеер: переход на карточку его больше
+    /// не запускает (правка пользователя 2026-08-28). Чипу нужен **горизонтальный**
+    /// кадр, а не постер: берём тот же, что стоит в кавере, и только если кадра нет —
+    /// обложку, с которой сюда пришли.
+    private func startWatching() {
+        UIImpactFeedbackGenerator(style: .medium)
+            .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+        actionBar.open(.movie(MovieInProgress(
+            id: entity.id,
+            still: details.backdrop.map { ArtworkSource.remote($0) } ?? entity.artwork,
+            title: details.title
+        )))
     }
 
     /// Текст лида — всегда сам аргумент, короткое редакционное описание.
@@ -286,7 +301,18 @@ struct MovieScreen: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .overlay(alignment: .bottom) { MovieMainButtons() }
+        .overlay(alignment: .bottom) { MovieMainButtons(onPlay: startWatching) }
+        #if DEBUG
+        // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
+        // а запуск плеера теперь живёт только на этой кнопке. Раньше секунды —
+        // чтобы успеть до `-debugCloseEntity`, если прогон закрывает экран следом.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugTapPlay") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            startWatching()
+        }
+        #endif
         .toolbar(.hidden, for: .navigationBar)
     }
 
@@ -605,6 +631,10 @@ private struct MovieInfoSkeleton: View {
 /// хром приложения и сквозь пик 0.92 читался текст описания; теперь экран показывается
 /// слоем поверх хрома, и градиент работает так же, как в макете, — до самого низа.
 private struct MovieMainButtons: View {
+    /// Запуск киноплеера. Приходит с экрана: кадр и название знает он, панель —
+    /// только вёрстка.
+    let onPlay: () -> Void
+
     var body: some View {
         HStack(spacing: MovieLayout.panelGap) {
             playButton
@@ -638,7 +668,7 @@ private struct MovieMainButtons: View {
     }
 
     private var playButton: some View {
-        Button {} label: {
+        Button(action: onPlay) {
             label(icon: "iconPlay", title: "Смотреть")
             .frame(maxWidth: .infinity)
             .frame(height: MovieLayout.buttonHeight)

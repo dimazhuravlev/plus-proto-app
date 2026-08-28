@@ -150,6 +150,16 @@ struct AlbumScreen: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        #if DEBUG
+        // `-debugTapPlay` — нажать «Слушать»: тот же флаг, что у «Смотреть»
+        // на карточке фильма и «Читать» в книге.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugTapPlay") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            togglePlayback()
+        }
+        #endif
     }
 
     // MARK: Резиновая шапка

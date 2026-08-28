@@ -80,6 +80,10 @@ struct EntityStubScreen: View {
     var roundArtwork = false
     /// Пропорция обложки: у постера 2:3, у книги 2:3, у альбома квадрат.
     var artworkAspect: CGFloat = 2.0 / 3.0
+    /// Главное действие экрана — то, ради чего сущность открывают: «Читать» у книги.
+    /// Своего экрана с панелью кнопок у заглушки нет, поэтому кнопка одна и стоит
+    /// в потоке под подписями.
+    var primaryAction: EntityPrimaryAction?
 
     /// Прокрутка для рампы навбара.
     @State private var scrollOffset: CGFloat = 0
@@ -107,6 +111,11 @@ struct EntityStubScreen: View {
                         .plusTextM()
                         .foregroundStyle(Color.fillSubtitle)
                         .padding(.top, EntityStubLayout.subtitleTop)
+                }
+
+                if let primaryAction {
+                    actionButton(primaryAction)
+                        .padding(.top, EntityStubLayout.actionTop)
                 }
 
                 Text("Экран сущности пока не спроектирован — проверяется переход.")
@@ -140,6 +149,24 @@ struct EntityStubScreen: View {
         }
         // Системный бар выключен: на пуше он рисовал бы свой back поверх нашего.
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// Пилюля главного действия. Стиль — общий акцентный из ДС (`2103:15149`),
+    /// тот же, что у «Смотреть» на карточке фильма и «Слушать» в альбоме: это
+    /// одна и та же кнопка «включить контент», и выглядеть она обязана одинаково.
+    ///
+    /// Без иконки: у «Читать» своего глифа в наборе нет, а чужой (play из плеера)
+    /// соврал бы о действии.
+    private func actionButton(_ action: EntityPrimaryAction) -> some View {
+        Button(action: action.perform) {
+            Text(action.title)
+                .plusMovieTextBold()
+                .foregroundStyle(Color.fillOne)
+                .padding(.horizontal, EntityStubLayout.actionHorizontal)
+                .frame(height: EntityStubLayout.actionHeight)
+                .accentButtonSurface()
+        }
+        .buttonStyle(PressScaleButtonStyle())
     }
 
     /// Кадр задаёт распорка, а картинка его заполняет.
@@ -186,12 +213,50 @@ private enum EntityStubLayout {
     static let titleTop: CGFloat = 4
     static let subtitleTop: CGFloat = 2
     static let noteTop: CGFloat = 24
+    static let actionTop: CGFloat = 20
+    /// Высота и поля пилюли — как у «Слушать» в альбоме (16/20 при глифе, здесь
+    /// текст один, поэтому поля равные).
+    static let actionHeight: CGFloat = 44
+    static let actionHorizontal: CGFloat = 24
+}
+
+/// Главное действие экрана сущности: подпись пилюли и что она делает.
+struct EntityPrimaryAction {
+    let title: String
+    let perform: () -> Void
 }
 
 struct BookScreen: View {
     let entity: EntityRef
+    @Environment(ActionBarState.self) private var actionBar
 
     var body: some View {
-        EntityStubScreen(entity: entity, kind: "Книга")
+        EntityStubScreen(
+            entity: entity,
+            kind: "Книга",
+            // «Читать» — единственный вход в книжный режим бара: переход на экран
+            // его больше не включает (правка пользователя 2026-08-28).
+            primaryAction: EntityPrimaryAction(title: "Читать", perform: startReading)
+        )
+        #if DEBUG
+        // `-debugTapPlay` — нажать «Читать», как на карточке фильма нажимается
+        // «Смотреть»: из шелла тапнуть нечем.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugTapPlay") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            startReading()
+        }
+        #endif
+    }
+
+    private func startReading() {
+        UIImpactFeedbackGenerator(style: .medium)
+            .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+        actionBar.open(.book(BookInProgress(
+            id: entity.id,
+            cover: entity.artwork,
+            title: entity.title
+        )))
     }
 }
