@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Системная заставка до первого кадра SwiftUI — та же картинка, что рисует
+    `SplashScreen`, поэтому запуск начинается сразу со сплэша, без промежуточного
+    экрана. Storyboard, а не `UILaunchScreen` в Info.plist: тот показывает картинку
+    в её номинальном размере по центру (замер: ровно 375×812pt на экране 402×874,
+    фон по краям), а нам нужен полноэкранный scaleAspectFill — он есть только здесь.
+-->
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="22505" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="EHF-Il-splash">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="22504"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="scn-splash">
+            <objects>
+                <viewController id="EHF-Il-splash" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="vw-splash">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="launchSplash" translatesAutoresizingMaskIntoConstraints="NO" id="img-splash">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="sa-splash"/>
+                        <color key="backgroundColor" name="splashLaunch"/>
+                        <constraints>
+                            <constraint firstItem="img-splash" firstAttribute="top" secondItem="vw-splash" secondAttribute="top" id="cn-top"/>
+                            <constraint firstItem="img-splash" firstAttribute="leading" secondItem="vw-splash" secondAttribute="leading" id="cn-leading"/>
+                            <constraint firstItem="vw-splash" firstAttribute="trailing" secondItem="img-splash" secondAttribute="trailing" id="cn-trailing"/>
+                            <constraint firstItem="vw-splash" firstAttribute="bottom" secondItem="img-splash" secondAttribute="bottom" id="cn-bottom"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="fr-splash" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="launchSplash" width="375" height="812"/>
+        <namedColor name="splashLaunch">
+            <color red="0.76470588235294112" green="0.29803921568627451" blue="0.69019607843137254" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+    </resources>
+</document>
