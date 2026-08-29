@@ -29,6 +29,9 @@ struct MovieDetails {
     let synopsis: [String]
     let rows: [MovieDetailRow]
     let cast: [MovieCastMember]
+    /// Съёмочная группа — та же карусель, что и актёры, но серой строкой у неё
+    /// специальность человека, а не его герой.
+    let crew: [MovieCastMember]
     let similar: [MovieSimilarTitle]
     let trailer: MovieTrailer?
     /// Горизонтальный кадр тайтла — фон верхнего блока, пока не поехало видео.
@@ -38,10 +41,16 @@ struct MovieDetails {
     let cardStills: [URL]
 }
 
+/// Карточка персоны в карусели: имя и серая строка под ним.
 struct MovieCastMember: Identifiable {
     let id: Int
     let name: String
-    /// Роль в этом тайтле; у части персон API её не знает.
+    /// Что стоит под именем: у актёра — его герой, у съёмочной группы — специальность.
+    ///
+    /// У актёров эта строка чаще всего пустая: героя API отдаёт полем `description`,
+    /// а в списочном роуте, которым набирается запас витрины, его нет ни у одной
+    /// персоны (замер 2026-08-29 по 17 827 персонам пула). Выдумывать роль нельзя —
+    /// карточка остаётся с одним именем.
     let role: String?
     let photo: URL?
 }
@@ -71,10 +80,38 @@ extension MovieDetails {
 
     /// Сколько персон доезжает до экрана. Не приватные: по этим же числам `MoviePool`
     /// обрезает запись перед записью на диск — хранить состав, который карточка
-    /// никогда не покажет, незачем. Похожие не режутся вовсе (правка 2026-08-25,
-    /// был потолок 9): секция показывает все, что отдал API.
+    /// никогда не покажет, незачем.
     static let castLimit = 12
     static let directorLimit = 2
+
+    /// Сколько похожих тайтлов показывает секция — ровно три ряда сетки 3×N
+    /// (решение пользователя 2026-08-29; потолок был снят 2026-08-25 и вернулся
+    /// тем же числом). На диске похожие по-прежнему лежат все: режется показ,
+    /// а не запись — вес их записи терпимый, главную тяжесть давали персоны.
+    static let similarLimit = 9
+
+    /// Кого показывает «Съёмочная группа» и в каком порядке. Специальность здесь своя,
+    /// а не из ответа API: `profession` приходит во множественном числе и без «ё»
+    /// («режиссеры»), а под именем человека нужна его роль — «Режиссёр».
+    ///
+    /// Актёров тут нет — у них своя карусель. Актёров дубляжа (`voiceover`) нет тоже:
+    /// это не съёмочная группа, а озвучка, и по числу (медиана 18 на тайтл против
+    /// одного оператора) они вытеснили бы собой всех остальных.
+    static let crewProfessions: [(en: String, ru: String)] = [
+        ("director", "Режиссёр"),
+        ("writer", "Сценарист"),
+        ("operator", "Оператор"),
+        ("composer", "Композитор"),
+        ("producer", "Продюсер"),
+        ("design", "Художник"),
+        ("editor", "Монтажёр"),
+    ]
+
+    /// Потолки съёмочной группы: сколько человек на специальность и сколько всего.
+    /// Продюсеров и художников у тайтла бывает под десяток (медиана по пулу — 4),
+    /// и без потолка на специальность они заняли бы карусель целиком.
+    static let crewPerProfessionLimit = 3
+    static let crewLimit = 12
 
     /// - Parameter stills: горизонтальные кадры тайтла из `/v1.4/image`. Пустой массив —
     ///   кадров у тайтла нет, кавер возьмёт `backdrop`, как раньше.
@@ -88,6 +125,7 @@ extension MovieDetails {
         synopsis = Self.synopsis(movie)
         rows = Self.rows(movie)
         cast = Self.cast(movie)
+        crew = Self.crew(movie)
         similar = Self.similar(movie)
         trailer = Self.trailer(movie)
         // Кадр вместо `backdrop`: это сцена из фильма, а не одна официальная картинка
@@ -218,8 +256,48 @@ extension MovieDetails {
         }
     }
 
+    private static func crew(_ movie: KinopoiskMovie) -> [MovieCastMember] {
+        crewSelection(movie.persons ?? []).enumerated().map { index, picked in
+            MovieCastMember(
+                id: picked.person.id ?? -(index + 1),
+                name: picked.person.displayName ?? "",
+                role: picked.role,
+                photo: picked.person.photoURL
+            )
+        }
+    }
+
+    /// Кто попадёт в «Съёмочную группу» и с какой подписью — по порядку специальностей.
+    ///
+    /// Общая с `MoviePool`: пул обрезает запись до того же набора, и без единого правила
+    /// на диск попадали бы одни персоны, а на экран просились другие. Функция
+    /// идемпотентна — прогон по уже обрезанной записи даёт тот же список.
+    ///
+    /// Один человек часто числится сразу в нескольких профессиях (в пуле 17 827 строк
+    /// состава на 12 446 разных людей), поэтому берём его один раз — по самой старшей
+    /// из них: две одинаковые карточки подряд с разными подписями читаются ошибкой.
+    static func crewSelection(_ persons: [KinopoiskPerson]) -> [(person: KinopoiskPerson, role: String)] {
+        var taken = Set<Int>()
+        var result: [(person: KinopoiskPerson, role: String)] = []
+
+        for profession in crewProfessions {
+            var inProfession = 0
+            for person in persons where person.enProfession == profession.en {
+                guard result.count < crewLimit else { return result }
+                guard inProfession < crewPerProfessionLimit else { break }
+                guard let name = person.displayName, !name.isEmpty else { continue }
+                // Персона без id — её нечем отличить от другой такой же, дублей
+                // среди безымянных для карусели не набирается.
+                if let id = person.id, !taken.insert(id).inserted { continue }
+                inProfession += 1
+                result.append((person, profession.ru))
+            }
+        }
+        return result
+    }
+
     private static func similar(_ movie: KinopoiskMovie) -> [MovieSimilarTitle] {
-        (movie.similarMovies ?? []).compactMap { item in
+        let titles = (movie.similarMovies ?? []).compactMap { item -> MovieSimilarTitle? in
             let title = item.displayTitle
             guard !title.isEmpty else { return nil }
             return MovieSimilarTitle(
@@ -229,6 +307,9 @@ extension MovieDetails {
                 poster: item.poster?.url(size: .small)
             )
         }
+        // Потолок считается после отсева безымянных: иначе выброшенный тайтл
+        // забирал бы с собой место в секции.
+        return Array(titles.prefix(similarLimit))
     }
 
     private static func trailer(_ movie: KinopoiskMovie) -> MovieTrailer? {
@@ -268,6 +349,7 @@ extension MovieDetails {
             synopsis: mock ? Self.mockSynopsis : [],
             rows: mock ? Self.mockRows : [],
             cast: [],
+            crew: [],
             similar: [],
             trailer: nil,
             backdrop: nil,

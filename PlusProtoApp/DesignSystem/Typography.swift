@@ -107,6 +107,15 @@ extension View {
     }
 }
 
+/// Метрики подписи под плиткой. Вынесены из модификатора, потому что нужны не только
+/// рисованию: секции меряют ими текст заранее и по числу строк задают высоту подписи —
+/// иначе ряд берёт высоту первой созданной карточки (см. `MoviePersonSection`).
+enum MovieTileCaptionType {
+    static let family = PlusFont.textMedium
+    static let size: CGFloat = 13
+    static let lineHeight: CGFloat = 18
+}
+
 // MARK: - Карточка тайтла
 
 /// Экран фильма нарисован в другом файле Figma («🎬 Mobile Title Card») и на другом
@@ -163,6 +172,22 @@ extension View {
     /// Подписи оценки и бейджей — Yango Text Bold 13 / lh 18
     func plusMovieCaption() -> some View {
         modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 13, lineHeight: 18, tracking: 0))
+    }
+
+    /// Подписи под плитками карточки тайтла — Yango Text Medium 13 / lh 18.
+    ///
+    /// Один стиль на обе строки подписи, и у персон, и у постеров «Похожего»: белая
+    /// и серая различаются только цветом (решение пользователя 2026-08-29). Отдельно
+    /// от `plusMovieCaption()` (Bold) — полужирная верхняя строка в этой паре читалась
+    /// бы заголовком. Кегль и интерлиньяж живут в `MovieTileCaptionType`: секции
+    /// считают по ним высоту подписи **до** отрисовки.
+    func plusMovieTileCaption() -> some View {
+        modifier(FigmaTextStyle(
+            family: MovieTileCaptionType.family,
+            size: MovieTileCaptionType.size,
+            lineHeight: MovieTileCaptionType.lineHeight,
+            tracking: 0
+        ))
     }
 
     /// Название альбома в шапке его экрана — YS Display Bold 40 / lh 44 (макет `2079:11226`).

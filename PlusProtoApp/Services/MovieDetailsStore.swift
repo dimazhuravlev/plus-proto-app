@@ -87,6 +87,7 @@ final class MovieDetailsStore {
     private func preloadArtwork(_ details: MovieDetails) {
         let urls = [details.backdrop, details.logo, details.trailer?.poster].compactMap { $0 }
             + details.cast.compactMap(\.photo)
+            + details.crew.compactMap(\.photo)
             + details.similar.compactMap(\.poster)
         ArtworkLoader.shared.preload(urls.map { .remote($0) })
     }
