@@ -79,9 +79,9 @@ struct ContinueWatchingCard: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Кадр — интерактивная миниатюра карточки: ✕, логотип и блок оценки
-            // остаются снаружи и в зум-переходе не участвуют.
+            // остаются снаружи и в зум-переходе не участвуют. Миниатюрой себя
+            // помечает сам `AmbilightArtwork` — см. комментарий у него.
             videoFrame
-                .showcaseThumbnail()
                 .showcasePlaced(at: WatchingGeometry.videoOrigin)
 
             projectLogo
@@ -146,38 +146,32 @@ struct ContinueWatchingCard: View {
     /// Поворот обязан быть **общим**: пока кадр и подпись поворачивались каждый своим
     /// `rotationEffect`, они крутились вокруг разных центров и прогресс-бар печатался
     /// двумя разъехавшимися полосами. На нулевом угле дефект пропадал — слои совпадали.
+    /// Поэтому и угол, и слои поверх кадра отдаются `AmbilightArtwork` параметрами:
+    /// он поворачивает их вместе с обложкой и он же метит получившийся кадр
+    /// источником зума.
     ///
     /// Клип по скруглению — только у видео: ореолу нужно торчать за границы кадра,
     /// а подписи хватает отступа 8pt, чтобы не заехать на скругление.
     private var videoFrame: some View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
 
-        return ZStack(alignment: .bottomLeading) {
-            AmbilightArtwork(
-                source: block.still,
-                size: WatchingGeometry.videoSize,
-                glowOpacity: WatchingGeometry.ambilightOpacity,
-                borderWidth: 0
-            )
-            .overlay {
-                ClipLayerView(player: playback.queue) { isVideoReady = true }
-                    .frame(width: WatchingGeometry.videoSize.width, height: WatchingGeometry.videoSize.height)
-                    .opacity(isVideoReady ? 1 : 0)
-                    .animation(WatchingGeometry.videoFadeIn, value: isVideoReady)
-                    .clipShape(shape)
-                    .allowsHitTesting(false)
-            }
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+        return AmbilightArtwork(
+            source: block.still,
+            size: WatchingGeometry.videoSize,
+            rotation: WatchingGeometry.videoRotation,
+            glowOpacity: WatchingGeometry.ambilightOpacity,
+            borderWidth: PlusMetrics.hairline
+        ) {
+            ClipLayerView(player: playback.queue) { isVideoReady = true }
+                .frame(width: WatchingGeometry.videoSize.width, height: WatchingGeometry.videoSize.height)
+                .opacity(isVideoReady ? 1 : 0)
+                .animation(WatchingGeometry.videoFadeIn, value: isVideoReady)
+                .clipShape(shape)
+                .allowsHitTesting(false)
 
             frameCaption
                 .allowsHitTesting(false)
         }
-        .frame(width: WatchingGeometry.videoSize.width, height: WatchingGeometry.videoSize.height)
-        // Кадр стал кнопкой, а внутри него лежат слои шире его самого. Без явной формы
-        // хит-зона раздувалась до 359×156 против видимых 277×156 (замер дампом доступности)
-        // и заезжала на логотип справа.
-        .contentShape(shape)
-        .rotationEffect(WatchingGeometry.videoRotation)
     }
 
     /// Скрим, остаток времени и прогресс — прижаты к низу кадра.

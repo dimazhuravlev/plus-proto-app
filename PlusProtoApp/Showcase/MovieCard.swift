@@ -51,8 +51,9 @@ struct MovieCard: View {
     }
 
     /// Постер — интерактивная миниатюра карточки: он и нажимается, и разворачивается
-    /// в экран фильма. Ореол едет с ним внутри `AmbilightArtwork`, но кадр задаёт постер,
-    /// поэтому зум стартует ровно с его прямоугольника, а не с раздутого свечением бокса.
+    /// в экран фильма. Миниатюрой себя помечает сам `AmbilightArtwork`: граница
+    /// источника зума проходит между постером и его ореолом, и знает о ней он.
+    /// Зум стартует с габарита повёрнутого постера, а не с раздутого свечением бокса.
     private var poster: some View {
         AmbilightArtwork(
             source: block.poster,
@@ -60,7 +61,6 @@ struct MovieCard: View {
             rotation: MovieCardLayout.posterRotation,
             glowOpacity: MovieCardLayout.glowOpacity
         )
-        .showcaseThumbnail()
         .showcasePlaced(at: MovieCardLayout.posterOrigin)
     }
 

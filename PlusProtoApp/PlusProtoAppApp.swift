@@ -61,6 +61,9 @@ struct PlusProtoAppApp: App {
         if !args.contains("-debugHitProbe") {
             UserDefaults.standard.removeObject(forKey: "debugHitProbe")
         }
+        if !args.contains("-debugLayerProbe") {
+            UserDefaults.standard.removeObject(forKey: "debugLayerProbe")
+        }
         if !args.contains("-debugFullPlayer") {
             UserDefaults.standard.removeObject(forKey: "debugFullPlayer")
         }
@@ -127,6 +130,9 @@ struct PlusProtoAppApp: App {
                 index += 1
             case "-debugHitProbe":
                 UserDefaults.standard.set(true, forKey: "debugHitProbe")
+                index += 1
+            case "-debugLayerProbe":
+                UserDefaults.standard.set(true, forKey: "debugLayerProbe")
                 index += 1
             case "-debugFullPlayer":
                 UserDefaults.standard.set(true, forKey: "debugFullPlayer")

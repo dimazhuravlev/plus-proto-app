@@ -39,6 +39,7 @@ struct ShowcaseScreen: View {
                     try? await Task.sleep(for: .seconds(2))
                     guard !Task.isCancelled else { return }
                     navigation.close()
+                    LayerProbe.dumpAfterClose()
                 }
                 #endif
         }
@@ -63,6 +64,7 @@ struct ShowcaseScreen: View {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled else { return }
                 navigation.pop()
+                LayerProbe.dumpAfterClose()
             }
             #endif
         }

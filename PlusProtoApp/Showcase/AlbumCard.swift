@@ -51,7 +51,8 @@ struct AlbumCard: View {
     }
 
     /// Обложка — интерактивная миниатюра карточки: только она нажимается
-    /// и только она разворачивается в экран альбома.
+    /// и только она разворачивается в экран альбома. Миниатюрой себя помечает
+    /// сам `AmbilightArtwork` — см. комментарий у него.
     private var cover: some View {
         AmbilightArtwork(
             source: block.cover,
@@ -59,7 +60,6 @@ struct AlbumCard: View {
             rotation: AlbumCardLayout.coverRotation,
             glowOpacity: AlbumCardLayout.glowOpacity
         )
-        .showcaseThumbnail()
         .showcasePlaced(at: AlbumCardLayout.coverOrigin)
     }
 

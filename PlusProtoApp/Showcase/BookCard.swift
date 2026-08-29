@@ -39,13 +39,13 @@ struct BookCard: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Рендер — интерактивная миниатюра карточки.
+            // Рендер — интерактивная миниатюра карточки. Миниатюрой себя помечает
+            // сам `BookRender`: ореол обязан остаться снаружи источника зума.
             BookRender(
                 cover: block.render,
                 box: BookCardLayout.render,
                 glowOpacity: BookCardLayout.glowOpacity
             )
-            .showcaseThumbnail()
             .showcasePlaced(at: BookCardLayout.renderOrigin)
 
             VStack(alignment: .trailing, spacing: BookCardLayout.captionToButtons) {
