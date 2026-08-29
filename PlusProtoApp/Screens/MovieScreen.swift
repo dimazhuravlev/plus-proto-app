@@ -95,6 +95,10 @@ enum MovieLayout {
     static let sectionHeaderTop: CGFloat = 16
     static let sectionHeaderBottom: CGFloat = 12
     static let sectionSide: CGFloat = 16
+    /// Воздух вокруг пары каруселей персон: над первой, между ними и под второй
+    /// (правка пользователя 2026-08-29). Прибавка к отступам самих секций, а не
+    /// замена им: у остальных секций расстояния прежние.
+    static let personSectionGap: CGFloat = 16
 }
 
 /// Скримы карточки тайтла. Профилей два, и это не небрежность, а два разных места
@@ -236,8 +240,18 @@ struct MovieScreen: View {
                         // едут, секция стоит болванками полным каркасом.
                         isLoading: !infoReady
                     )
-                    if !details.cast.isEmpty {
-                        MovieCastSection(cast: details.cast)
+                    // Пара каруселей персон живёт одним блоком: воздух между ними
+                    // такой же, как над и под, и берётся одним отступом на обе.
+                    if !details.cast.isEmpty || !details.crew.isEmpty {
+                        VStack(alignment: .leading, spacing: MovieLayout.personSectionGap) {
+                            if !details.cast.isEmpty {
+                                MoviePersonSection(title: "В главных ролях", people: details.cast)
+                            }
+                            if !details.crew.isEmpty {
+                                MoviePersonSection(title: "Съёмочная группа", people: details.crew)
+                            }
+                        }
+                        .padding(.vertical, MovieLayout.personSectionGap)
                     }
                     if !details.rows.isEmpty {
                         MovieDetailsSection(rows: details.rows)

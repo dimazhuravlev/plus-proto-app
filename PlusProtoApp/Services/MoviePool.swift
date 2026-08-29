@@ -49,6 +49,8 @@ actor MoviePool {
         var stillsAsked: Set<Int>?
         /// По какому правилу собраны кадры. `nil` — запас старше самих правил.
         var stillsVersion: Int?
+        /// По какому правилу обрезаны детали карточек. `nil` — запас старше правила.
+        var detailsVersion: Int?
     }
 
     /// Версия правил хранения кадров. Поднимать, когда меняется то, что мы от кадров
@@ -59,6 +61,18 @@ actor MoviePool {
     /// по-старому. На симуляторе это лечилось `-debugResetMoviePool`, но на устройстве
     /// такого флага не передашь — отсюда сброс по версии.
     private static let stillsVersion = 3
+
+    /// Версия правил обрезки деталей. Поднимать, когда карточка начинает показывать
+    /// то, чего в обрезанной записи нет.
+    ///
+    /// Здесь, в отличие от кадров, сбрасывается **весь** запас: детали лежат не
+    /// отдельным заказом, а приезжают тем же запросом, что и сами фильмы, и добрать
+    /// на диске выброшенную при записи секцию нечем. Цена — один запрос из суточных
+    /// двухсот на следующем запуске.
+    ///
+    /// 2 — появилась карусель «Съёмочная группа» (2026-08-29): до неё в записи
+    /// оставляли только режиссёров и актёров.
+    private static let detailsVersion = 2
 
     private var storage: Storage
     /// Детали карточек, прочитанные с диска. `nil` — файл ещё не открывали.
@@ -79,6 +93,14 @@ actor MoviePool {
             storage.stills = nil
             storage.stillsAsked = nil
             storage.stillsVersion = Self.stillsVersion
+            save()
+        }
+
+        // Запас обрезан под прежнюю карточку — набираем его заново целиком.
+        if storage.detailsVersion != Self.detailsVersion {
+            storage = Storage(stillsVersion: Self.stillsVersion, detailsVersion: Self.detailsVersion)
+            details = [:]
+            try? FileManager.default.removeItem(at: detailsURL)
             save()
         }
     }
@@ -278,8 +300,12 @@ actor MoviePool {
     private static func detailsCopy(_ movie: KinopoiskMovie) -> KinopoiskMovie {
         var copy = movie
         let persons = movie.persons ?? []
-        copy.persons = Array(persons.filter { $0.enProfession == "director" }.prefix(MovieDetails.directorLimit))
-            + persons.filter { $0.enProfession == "actor" }.prefix(MovieDetails.castLimit)
+        // Кого показывает «Съёмочная группа», решает `MovieDetails`: отбор один и тот же
+        // при записи на диск и при показе, иначе на диск попадали бы одни персоны,
+        // а на экран просились другие. Режиссёры приходят оттуда же — они первые
+        // в порядке специальностей, и строке «Режиссёр» в «Деталях» их хватает.
+        copy.persons = Array(persons.filter { $0.enProfession == "actor" }.prefix(MovieDetails.castLimit))
+            + MovieDetails.crewSelection(persons).map(\.person)
         // Похожие не режутся (правка 2026-08-25): секция показывает все. Вес терпимый —
         // главную тяжесть записи давали персоны, а не похожие.
         return copy
