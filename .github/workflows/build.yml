@@ -1,0 +1,50 @@
+name: Сборка
+
+# Единственная автоматическая проверка проекта: собирается ли ветка.
+# Визуал проверяют глазами в симуляторе — это CI не заменяет и не пытается.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Новый пуш в ветку отменяет её прошлый прогон: ждать сборку устаревшего коммита незачем.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Xcode 26.3
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # На раннере семь версий Xcode, по умолчанию не наша. Берём 26.3 — ту же,
+      # на которой проект собирают локально; если её однажды выкинут из образа,
+      # откатываемся на старшую двадцать шестую, а не падаем на выборе.
+      - name: Выбрать Xcode
+        run: |
+          APP=$(ls -d /Applications/Xcode_26.3*.app 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then APP=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1); fi
+          sudo xcode-select -s "$APP"
+          xcodebuild -version
+
+      # APIKeys.swift в гитигноре, на раннере его нет и быть не должно: секреты в CI
+      # не нужны вовсе. Пустые ключи — рабочее состояние, сборке они не мешают.
+      - name: Ключи-заглушки из шаблона
+        run: cp APIKeys.example.swift PlusProtoApp/APIKeys.swift
+
+      # Generic-назначение: проверяем компиляцию, а не конкретный рантайм симулятора —
+      # иначе образ раннера сменит набор рантаймов и проверка покраснеет на пустом месте.
+      # Подпись выключена: команда разработчика из проекта на раннере не резолвится.
+      - name: Собрать
+        run: |
+          set -o pipefail
+          xcodebuild -project PlusProtoApp.xcodeproj -scheme PlusProtoApp \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
+            build 2>&1 | tail -40
