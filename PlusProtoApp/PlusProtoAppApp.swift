@@ -6,6 +6,11 @@ struct PlusProtoAppApp: App {
     init() {
         FontManager.registerFonts()
         UIWindow.appearance().backgroundColor = .black
+        // Молча уехать на моки — значит оставить нового участника гадать, почему
+        // витрина не меняется от запуска к запуску. Одна строка в консоль на старте.
+        if !APIKeysCheck.isKinopoiskConfigured {
+            print("⚠️ APIKeys.kinopoisk пуст — витрина идёт на моках, сеть не трогаем. Ключ: README, раздел «Ключи»")
+        }
         #if DEBUG
         Self.parseDebugLaunchArguments()
         #endif

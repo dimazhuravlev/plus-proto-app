@@ -122,16 +122,10 @@ struct AppRootView: View {
     private func prepareShowcase() async {
         let started = ContinuousClock.now
 
-        #if DEBUG
-        // `-debugMockFeed` — прогон на моках без сети: ждать нечего.
-        if !UserDefaults.standard.bool(forKey: "debugMockFeed") {
+        if shouldLoadLiveFeed {
             await catalog.loadIfNeeded()
             await ArtworkLoader.shared.prewarm(catalog.feed.artworks)
         }
-        #else
-        await catalog.loadIfNeeded()
-        await ArtworkLoader.shared.prewarm(catalog.feed.artworks)
-        #endif
 
         // Минимальная выдержка: когда всё пришло из кэша за сотню миллисекунд,
         // заставка не должна мигнуть и пропасть — это читается сбоем, а не запуском.
@@ -139,6 +133,17 @@ struct AppRootView: View {
         if elapsed < SplashTiming.minimum {
             try? await Task.sleep(for: SplashTiming.minimum - elapsed)
         }
+    }
+
+    /// Идти ли в сеть за витриной. Ходим, только если есть чем: без ключа Кинопоиска
+    /// каждый запрос вернул бы 401, а лента всё равно осталась бы моковой — так что
+    /// у свежего клона без ключей поведение ровно то же, что под `-debugMockFeed`.
+    private var shouldLoadLiveFeed: Bool {
+        #if DEBUG
+        // `-debugMockFeed` — прогон на моках без сети: ждать нечего.
+        if UserDefaults.standard.bool(forKey: "debugMockFeed") { return false }
+        #endif
+        return APIKeysCheck.isKinopoiskConfigured
     }
 
     private func hideSplash() {
