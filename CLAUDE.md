@@ -28,6 +28,7 @@ xcodebuild -project PlusProtoApp.xcodeproj -scheme PlusProtoApp -destination 'pl
 ## Конвенции
 
 - Общение, коммиты, UI-копия — на русском. Conventional Commits.
+- Ветки, pull request'ы, условие мержа и код-стайл — [CONTRIBUTING.md](CONTRIBUTING.md). В `main` напрямую не пушим: ветка → PR → зелёная сборка → squash merge. Запись в `docs/DECISIONS.md`, разошедшаяся с кодом, — дефект: правда всегда код.
 - Токены: только переиспользуемые значения в `DesignSystem/Tokens.swift`; одноразовые градиенты/тени живут локально у компонента («токен ради единственного вызова не заводим»).
 - Файлы добавляются простым созданием на диске (filesystem-synchronized pbxproj) — проект править не нужно.
 - `APIKeys.swift` в гитигноре; без него проект не соберётся — копия в `_secrets/`, шаблон для новых участников — `APIKeys.example.swift` в корне (в сборку не входит: синхронизирована только папка `PlusProtoApp`). Пустой ключ Кинопоиска — не ошибка: витрина сама идёт на моках (`APIKeysCheck`), сеть не трогается.

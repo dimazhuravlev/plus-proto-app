@@ -121,7 +121,7 @@ scripts/setup.sh первая установка
 ## Как вносить изменения
 
 Ветка → pull request → зелёная сборка → Squash and merge. В `main` напрямую не пушим.
-Весь порядок работы вдвоём, включая разбор конфликтов, — в [CONTRIBUTING.md](CONTRIBUTING.md).
+Правила целиком — [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Коротко про сам код:
 
