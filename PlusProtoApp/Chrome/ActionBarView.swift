@@ -27,6 +27,15 @@ enum ActionBarMotion {
     static let swapBlurRadius: CGFloat = 7
     static let swapScale: CGFloat = 0.9
 
+    /// Появление и уход внутренностей мини-плеера на морфе круг ↔ пилюля: подписи,
+    /// сердце с play и заливка прогресса. Только прозрачность и в обе стороны
+    /// одинаково — двигаться им нечем, они разложены по раскрытой ширине
+    /// (`ActionBarGeometry.miniPlayerExpandedWidth`).
+    ///
+    /// Своя кривая, а не общая морфа: 0.32 на прозрачность — это заметно дольше,
+    /// чем нужно глазу, и элементы висят полупрозрачными почти весь переход.
+    static let miniContentFade: Animation = .easeInOut(duration: 0.2)
+
     /// Кросс-поп смены play↔pause — идея `AnimatedIconButton` из MusicPlayer:
     /// обе иконки в дереве, уходящая утапливается, приходящая выныривает.
     static let iconSwap: Animation = .spring(response: 0.3, dampingFraction: 0.6)
@@ -84,6 +93,23 @@ enum ActionBarGeometry {
     static let focusedScreenMargin: CGFloat = 16
     /// На сколько плеер уезжает вправо, скрываясь за кромкой экрана
     static let trailingEscape: CGFloat = 120
+
+    /// Ширина пилюли в раскрытом виде: бар минус поля, круг поиска и зазор между зонами.
+    ///
+    /// Контент мини-плеера разложен по ней **всегда**, даже когда пилюля сжата в круг:
+    /// иначе подписи и кнопки лежат по текущей ширине пилюли и на раскрытии приезжают
+    /// слева направо вместе с её кромкой (жалоба пользователя 2026-08-29). С фиксированной
+    /// шириной они стоят на своих местах, а морф остаётся чистым: растёт капсула,
+    /// внутренности только проявляются.
+    ///
+    /// Считается от холста прототипа (402), а не замером вью — то же правило, что
+    /// у сетки «Похожего»: мерить анимируемую ширину запрещено (DECISIONS).
+    static var miniPlayerExpandedWidth: CGFloat {
+        PlusMetrics.designWidth
+            - PlusMetrics.screenMargin * 2
+            - PlusMetrics.actionBarCompact
+            - PlusMetrics.actionBarGap
+    }
 }
 
 /// Резина свайпа по полю поиска. Формула из UIScrollView: f(x) = (x·d·c)/(d + c·x),
@@ -258,11 +284,19 @@ struct ActionBarView: View {
 /// ни одной величины, меняющейся чаще, чем раз в переход** (`musicProgress`, `pull`,
 /// угол обложки): иначе каждый тик получит пружину 0.32.
 private struct ActionBarLayout: Equatable {
-    /// nil — зона занимает остаток (гибкая).
-    let searchWidth: CGFloat?
-    /// nil — зона занимает остаток (гибкая).
-    let trailingWidth: CGFloat?
+    /// Ширина правой зоны. **Всегда число**, и это главный инвариант раскладки:
+    /// гибкой в баре может быть только левая зона, поэтому сумма зон по построению
+    /// равна ширине бара, а «обе широкие» — состояние, которого не существует.
+    ///
+    /// Раньше роль гибкой зоны переключалась: в `.music` фиксировали поиск, в остальных
+    /// режимах — плеер. Переключение `nil` ↔ число не интерполируется, и на кадре смены
+    /// обе зоны оказывались гибкими и делили бар пополам: правую сжимало ниже круга,
+    /// пилюля вылезала за неё, и клип срезал обложку слева (жалоба пользователя 2026-08-29).
+    let trailingWidth: CGFloat
     let showMiniPlayer: Bool
+    /// Плеер сейчас круг 60×60. Тап по нему разворачивает бар в музыку, а не открывает
+    /// полноэкранный плеер (правило пользователя 2026-08-29).
+    let isMiniPlayerCompact: Bool
     let showBookChip: Bool
     let showMovieChip: Bool
     let placeholderOpacity: Double
@@ -287,13 +321,14 @@ private struct ActionBarLayout: Equatable {
         // а плеер уезжает вправо за кромку экрана (`2021:11248` — в баре остаётся
         // только поле 370pt при полях 16).
         if raise.isRaised {
-            searchWidth = nil
             trailingWidth = 0
             gap = 0
             // Слои остаются в дереве, чтобы уехать, а не мигнуть исчезновением.
             // Мини-плеер только в своих режимах: иначе в .book/.movie он оказывался
             // активным одновременно с чипом и проявлялся из блюра прямо во время уезда.
             showMiniPlayer = hasMusic && (mode == .music || mode == .search)
+            // Уехавший за кромку плеер тапов не ловит — компактным его звать незачем.
+            isMiniPlayerCompact = false
             showBookChip = mode == .book
             showMovieChip = mode == .movie
             placeholderOpacity = 0
@@ -306,22 +341,20 @@ private struct ActionBarLayout: Equatable {
         switch mode {
         case .search:
             showMiniPlayer = hasMusic
+            isMiniPlayerCompact = hasMusic
             showBookChip = false
             showMovieChip = false
             placeholderOpacity = 1
             trackInfoOpacity = 0
             progressOpacity = 0
             searchIconOnly = false
-            // Поиск гибкий, свёрнутый плеер — фиксированный круг. В макете это 284 + 60
-            // при контенте 352; гибкая зона даёт ту же картинку и переживает любую ширину экрана.
-            searchWidth = nil
-            // Без музыки правой зоны нет вовсе: обе гибкие поделили бы бар пополам
-            // и обрезали плейсхолдер.
+            // Свёрнутый плеер — круг; без музыки правой зоны нет вовсе.
             trailingWidth = hasMusic ? compact : 0
             gap = hasMusic ? PlusMetrics.actionBarGap : 0
 
         case .music:
             showMiniPlayer = hasMusic
+            isMiniPlayerCompact = false
             showBookChip = false
             showMovieChip = false
             // Фокус перехвачен ранним return выше — сюда попадаем только вне фокуса.
@@ -331,39 +364,38 @@ private struct ActionBarLayout: Equatable {
             if !hasMusic {
                 searchIconOnly = false
                 placeholderOpacity = 1
-                searchWidth = nil
                 trailingWidth = 0
                 gap = 0
             } else {
-                // Зеркало режима search: теперь фиксирован поиск, а плеер занимает остаток.
+                // Поле сжимается в круг, плеер занимает раскрытую ширину. Она задана
+                // числом, а не остатком: гибкой остаётся только левая зона (см. выше).
                 searchIconOnly = true
                 placeholderOpacity = 0
-                searchWidth = compact
-                trailingWidth = nil
+                trailingWidth = ActionBarGeometry.miniPlayerExpandedWidth
                 gap = PlusMetrics.actionBarGap
             }
 
         case .book:
             showMiniPlayer = false
+            isMiniPlayerCompact = false
             showBookChip = true
             showMovieChip = false
             placeholderOpacity = 1
             searchIconOnly = false
             trackInfoOpacity = 0
             progressOpacity = 0
-            searchWidth = nil
             trailingWidth = ActionBarGeometry.bookChipAABBWidth
             gap = PlusMetrics.actionBarGap
 
         case .movie:
             showMiniPlayer = false
+            isMiniPlayerCompact = false
             showBookChip = false
             showMovieChip = true
             placeholderOpacity = 1
             searchIconOnly = false
             trackInfoOpacity = 0
             progressOpacity = 0
-            searchWidth = nil
             trailingWidth = ActionBarGeometry.movieChipAABBWidth
             gap = PlusMetrics.actionBarGap
         }
@@ -400,7 +432,7 @@ private struct SearchPill: View {
     /// Сжимается только гибкая капсула: у круга 60pt те же 16pt — это 27% ширины,
     /// и HStack тащил бы за собой мини-плеер каждый кадр.
     private var squeeze: CGFloat {
-        layout.searchWidth == nil ? pull * SearchPullConfig.widthLimit : 0
+        layout.searchIconOnly ? 0 : pull * SearchPullConfig.widthLimit
     }
 
     var body: some View {
@@ -451,8 +483,9 @@ private struct SearchPill: View {
                 .allowsHitTesting(layout.isRaised)
         }
         .padding(.horizontal, ActionBarGeometry.searchPaddingH)
-        .frame(maxWidth: layout.searchWidth == nil ? .infinity : nil)
-        .frame(width: layout.searchWidth)
+        // Левая зона гибкая всегда: она забирает остаток бара после правой.
+        // Ролями зоны больше не меняются — см. `ActionBarLayout.trailingWidth`.
+        .frame(maxWidth: .infinity)
         .frame(height: PlusMetrics.actionBarHeight + stretch)
         .glassPill()
         .clipShape(Capsule(style: .continuous))
@@ -780,7 +813,15 @@ private struct TrailingSlot: View {
     let layout: ActionBarLayout
 
     var body: some View {
-        ZStack {
+        // Каждый слой получает ширину зоны сам (`zoneWidth`), и это несущее правило.
+        // Иначе `ZStack` берёт размер по самому широкому ребёнку — а в зоне лежат все
+        // три плеера разом, включая чип кино 91.5 с нулевой прозрачностью. Мини-плеер
+        // с `maxWidth: .infinity` растягивался по нему: вместо круга 60 выходила
+        // капсула 91.5, обрезанная кромкой экрана (жалоба пользователя 2026-08-29).
+        //
+        // Выравнивание по левой кромке — там же: чип, который шире зоны, обязан
+        // вылезать вправо, где `TrailingClipShape` ничего не режет, а не влево.
+        ZStack(alignment: .leading) {
             if let music = actionBar.music {
                 MiniPlayerPill(
                     item: music,
@@ -790,24 +831,63 @@ private struct TrailingSlot: View {
                     isPlaying: actionBar.isMusicPlaying,
                     isLiked: actionBar.isMusicLiked,
                     onTogglePlay: { actionBar.toggleMusicPlayback() },
-                    onExpand: { actionBar.isFullPlayerOpen = true }
+                    // Из круга разворачиваем плеер в баре, из широкой пилюли —
+                    // открываем полноэкранный (правило пользователя 2026-08-29).
+                    // Полноэкранный из круга не открываем: круг — это свёрнутый
+                    // плеер, и первый тап обязан его развернуть.
+                    onExpand: {
+                        if layout.isMiniPlayerCompact {
+                            actionBar.expandMiniPlayer()
+                        } else {
+                            actionBar.isFullPlayerOpen = true
+                        }
+                    }
                 )
+                .zoneWidth(layout)
                 .blurReplaceLayer(layout.showMiniPlayer)
             }
 
             if let book = actionBar.book {
                 BookChip(cover: book.cover)
+                    .zoneWidth(layout)
                     .blurReplaceLayer(layout.showBookChip)
             }
 
             if let movie = actionBar.movie {
                 MovieChip(still: movie.still)
+                    .zoneWidth(layout)
                     .blurReplaceLayer(layout.showMovieChip)
             }
         }
-        .frame(maxWidth: layout.trailingWidth == nil ? .infinity : nil)
-        .frame(width: layout.trailingWidth)
+        // Ширина зоны — всегда число, поэтому она интерполируется от кадра к кадру
+        // и не может «поделить бар» с гибким полем поиска.
+        //
+        // `alignment: .leading` — не косметика, а лечение: в зоне лежат все три плеера
+        // разом (мини-плеер, чип книги, чип кино), неактивные с нулевой прозрачностью,
+        // и `ZStack` берёт размер по самому широкому из них — чип кино 91.5. Когда зона
+        // уже его (круг 60), `frame` по умолчанию **центрирует** переросток и уводит
+        // содержимое влево на половину разницы, где его срезает `TrailingClipShape`.
+        // Так и получался «обрезанный слева кавер» — но только у тех, у кого payload
+        // кино или книги вообще есть, поэтому ловилось не всегда (жалоба 2026-08-29).
+        .frame(width: layout.trailingWidth, alignment: .leading)
         .frame(height: PlusMetrics.actionBarHeight)
+        #if DEBUG
+        // `-debugBarProbe 1` — надпись поверх правой зоны: заказанная ширина, реальная
+        // отрисованная и режим. Отвечает на вопрос, разъехались ли состояние и геометрия:
+        // на скриншоте сломанного плеера это видно сразу, а гадать по картинке нельзя.
+        // Замер здесь ни на что не влияет — он в overlay и в раскладку не возвращается.
+        .overlay(alignment: .topLeading) {
+            if UserDefaults.standard.bool(forKey: "debugBarProbe") {
+                GeometryReader { proxy in
+                    Text("\(actionBar.mode.rawValue) w\(Int(layout.trailingWidth.rounded()))→\(Int(proxy.size.width.rounded()))\(layout.isRaised ? " up" : "")")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.yellow)
+                        .fixedSize()
+                        .offset(y: -12)
+                }
+            }
+        }
+        #endif
         // Уезд вправо за кромку экрана при фокусе поиска — плеер не исчезает рывком,
         // а уходит из бара. Без `opacity`: гашение по пути превращало уезд в
         // растворение над правым полем, до кромки экрана плеер не доезжал.
@@ -934,11 +1014,22 @@ private struct MiniPlayerPill: View {
         // иначе при сжатии до круга 60pt он распирал бы пилюлю изнутри
         // (обложка + подписи + кнопки требуют ~150pt), и клип резал бы её прямоугольником.
         Color.clear
-            .frame(maxWidth: .infinity)
+            // Пол по ширине — круг 60. Пилюля режет свой контент капсулой, и если
+            // родитель предложит меньше круга, капсула срежет обложку: пользователь
+            // видел «полуовальный обрезанный кавер» после перехода из поисковой
+            // выдачи (жалоба 2026-08-29). Предложить меньше родитель может дважды:
+            // в фокусе поиска зона схлопывается в 0 (плеер уезжает за кромку), и
+            // на любой ширине, где анимация зоны застряла между 0 и 60. Пол делает
+            // обрезку невозможной в обоих случаях: в фокусе круг просто уезжает
+            // целым, а левый вылет за зону срезает `TrailingClipShape`.
+            .frame(minWidth: PlusMetrics.actionBarCompact, maxWidth: .infinity)
             .frame(height: PlusMetrics.actionBarHeight)
             .glassPill()
             .overlay(alignment: .leading) {
                 MiniPlayerProgressFill(progress: progress, opacity: progressOpacity)
+                    // Заливка гаснет и приходит вместе с остальными внутренностями:
+                    // на сужении она иначе доживает до круга полосой в полкруга.
+                    .animation(ActionBarMotion.miniContentFade, value: progressOpacity)
             }
             .overlay(alignment: .leading) { content }
             .clipShape(Capsule(style: .continuous))
@@ -964,13 +1055,17 @@ private struct MiniPlayerPill: View {
                 cover
                 trackInfo
                     .opacity(trackInfoOpacity)
+                    .animation(ActionBarMotion.miniContentFade, value: trackInfoOpacity)
             }
             actions
                 .opacity(trackInfoOpacity)
+                .animation(ActionBarMotion.miniContentFade, value: trackInfoOpacity)
         }
         .padding(.leading, ActionBarGeometry.miniPlayerPaddingLeading)
         .padding(.trailing, ActionBarGeometry.miniPlayerPaddingTrailing)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Раскладка по раскрытой ширине, а не по текущей — см. `miniPlayerExpandedWidth`.
+        // Сжатую пилюлю лишнее просто не видит: его срезает капсула.
+        .frame(width: ActionBarGeometry.miniPlayerExpandedWidth, alignment: .leading)
     }
 
     private var cover: some View {
@@ -1161,6 +1256,13 @@ private struct BlurReplaceLayer: ViewModifier {
 private extension View {
     func blurReplaceLayer(_ isActive: Bool) -> some View {
         modifier(BlurReplaceLayer(isActive: isActive))
+    }
+
+    /// Ширина правой зоны на самом слое. Даёт `ZStack`'у одинаковый размер всех
+    /// детей: без неё стек берёт максимум по ним, и активный слой растягивается
+    /// по неактивному соседу (см. комментарий в `TrailingSlot`).
+    func zoneWidth(_ layout: ActionBarLayout) -> some View {
+        frame(width: layout.trailingWidth, alignment: .leading)
     }
 }
 

@@ -19,6 +19,22 @@ enum AlbumLayout {
     /// Максимальный скейл кавера при оттяге: ширина экрана минус боковые поля 16
     static var coverMaxScale: CGFloat { (PlusMetrics.designWidth - side * 2) / coverSize }
 
+    /// Зазор от нижней кромки кавера до названия. Раньше он был не величиной,
+    /// а остатком квадратной зоны (48.5 = зона 402 минус низ кавера 353.5); две
+    /// правки пользователя 2026-08-29 сделали его сперва вдвое меньше, потом
+    /// ровно 16 — в линию с боковыми полями экрана.
+    static let coverToTitle: CGFloat = 16
+
+    /// На сколько зона укоротилась против прежнего хвоста квадрата (48.5 − 16).
+    /// На столько же сдвинуты пороги навбара.
+    static var coverToTitleShrink: CGFloat { coverArea - coverTop - coverSize - coverToTitle }
+
+    /// Сколько зона кавера занимает в потоке. Отдельно от `coverArea`: сам квадрат
+    /// трогать нельзя — от него считаются фон, резина оттяга и скейл кавера. Фон
+    /// по-прежнему рисуется на всю `coverArea` и заходит под блок названия, но там
+    /// он уже чёрный по градиенту, и захода не видно.
+    static var coverZoneHeight: CGFloat { coverTop + coverSize + coverToTitle }
+
     /// Фон зоны — тот же кавер: blur 30 + чёрный 30 % + градиент к чёрному снизу
     static let backdropBlur: CGFloat = 30
     static let backdropDim: Double = 0.3
@@ -52,8 +68,10 @@ enum AlbumLayout {
     static let moreBox: CGFloat = 20
     static let badgeBox: CGFloat = 16
     static let badgeGap: CGFloat = 4
-    static let diskHeaderTop: CGFloat = 16
-    static let diskHeaderBottom: CGFloat = 8
+
+    /// Дополнительный воздух под низом ленты, сверх клиренса хрома (правка
+    /// пользователя 2026-08-29): последняя карточка не должна упираться в action bar.
+    static let bottomClearance: CGFloat = 48
 
     // Секция «Другие альбомы» `2079:11242`
     static let sectionPad: CGFloat = 8
@@ -67,13 +85,18 @@ enum AlbumLayout {
     static let cardTextTrailing: CGFloat = 8
 
     /// Пороги навбара: подложка приезжает, когда зона кавера почти ушла под бар,
-    /// название — когда под бар уходит сам заголовок (лежит на 402…446).
-    static let navBarThresholds = EntityNavBarThresholds(
-        backgroundStart: 280,
-        backgroundRamp: 80,
-        titleStart: 380,
-        titleRamp: 90
-    )
+    /// название — когда под бар уходит сам заголовок (лежит на 369.5…413.5).
+    /// Оба сдвинуты вверх ровно на то, на сколько укоротился зазор под кавером
+    /// (2026-08-29): пороги считаются в координатах прокрутки, и без сдвига тот же
+    /// момент наступал бы, когда контент уже заметно глубже под баром.
+    static var navBarThresholds: EntityNavBarThresholds {
+        EntityNavBarThresholds(
+            backgroundStart: 280 - coverToTitleShrink,
+            backgroundRamp: 80,
+            titleStart: 380 - coverToTitleShrink,
+            titleRamp: 90
+        )
+    }
 }
 
 // Прежний одноразовый градиент пилюли «Слушать» (`Gradients/Yango/Accent`) заменён
@@ -120,7 +143,11 @@ struct AlbumScreen: View {
             .task { await store.load(entity) }
             .scrollIndicators(.hidden)
             // Хром (таббар + action bar) на этом экране виден — лента едет под ним.
-            .contentMargins(.bottom, PlusChromeMetrics.contentBottomInset, for: .scrollContent)
+            .contentMargins(
+                .bottom,
+                PlusChromeMetrics.contentBottomInset + AlbumLayout.bottomClearance,
+                for: .scrollContent
+            )
             // Зона кавера начинается от физического верха экрана, а не от safe area.
             .ignoresSafeArea(edges: .top)
             .scrollPosition($scrollPosition)
@@ -139,20 +166,24 @@ struct AlbumScreen: View {
             }
             #endif
 
+            // Без правого слота: кнопка поиска из навбара убрана (правка пользователя
+            // 2026-08-29) — поиск живёт в action bar, и вторая точка входа сверху
+            // обещала бы поиск по альбому, которого нет.
             EntityNavBar(
                 title: details.title,
                 artwork: entity.artwork,
                 scrollOffset: scrollOffset,
                 thresholds: AlbumLayout.navBarThresholds
-            ) {
-                GlassIconButton(icon: "iconSearch", accessibilityTitle: "Поиск")
-            }
+            )
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         // `-debugTapPlay` — нажать «Слушать»: тот же флаг, что у «Смотреть»
         // на карточке фильма и «Читать» в книге.
+        //
+        // Срабатывает на КАЖДОМ экране альбома: жалоба пользователя 2026-08-29
+        // воспроизводится именно вторым нажатием — на альбоме, открытом из выдачи.
         .task {
             guard UserDefaults.standard.bool(forKey: "debugTapPlay") else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -210,7 +241,11 @@ struct AlbumScreen: View {
                 .offset(y: AlbumLayout.coverTop - pull)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: AlbumLayout.coverArea)
+        // Выравнивание по верху обязательно: содержимое зоны выше её кадра (фон
+        // рисуется на всю `coverArea`), а `frame(height:)` по умолчанию центрирует
+        // переполнение — кавер уезжал вверх ровно на половину укорочения, и зазор
+        // под ним уменьшался вдвое меньше заказанного.
+        .frame(height: AlbumLayout.coverZoneHeight, alignment: .top)
     }
 
     /// Фон зоны — сам кавер: blur 30, чёрный 30 % и 16-стоповый градиент к чёрному
@@ -290,9 +325,36 @@ struct AlbumScreen: View {
         }
     }
 
-    /// Играет ли сейчас именно этот альбом — от этого зависят глиф и подпись пилюли.
+    /// Все треки альбома подряд: дисков в списке больше нет, а плееру они и не нужны.
+    private var tracks: [AlbumDetails.Track] {
+        details.disks.flatMap { $0 }
+    }
+
+    /// Идентификатор трека для плеера. `open` с тем же id работает как пауза,
+    /// поэтому он обязан быть уникальным на трек, а не на альбом.
+    private func playerID(_ track: AlbumDetails.Track) -> String {
+        "\(entity.id)-t\(track.id)"
+    }
+
+    private func nowPlaying(_ track: AlbumDetails.Track) -> MusicNowPlaying {
+        MusicNowPlaying(
+            id: playerID(track),
+            cover: entity.artwork,
+            title: track.title,
+            artist: details.artist
+        )
+    }
+
+    /// Трек этого альбома, который сейчас в плеере, — играет он или стоит на паузе.
+    private var currentTrack: AlbumDetails.Track? {
+        guard actionBar.mode == .music, let id = actionBar.music?.id else { return nil }
+        return tracks.first { playerID($0) == id }
+    }
+
+    /// Играет ли сейчас этот альбом — от этого зависят глиф и подпись пилюли.
     private var isPlayingThisAlbum: Bool {
-        actionBar.mode == .music && actionBar.music?.id == entity.id && actionBar.isMusicPlaying
+        guard actionBar.mode == .music, actionBar.isMusicPlaying else { return false }
+        return currentTrack != nil || actionBar.music?.id == entity.id
     }
 
     private var playButton: some View {
@@ -317,47 +379,56 @@ struct AlbumScreen: View {
         .buttonStyle(PressScaleButtonStyle())
     }
 
-    /// Тот же вход, что у карточки витрины: `open` с тем же id — пауза/продолжение,
-    /// с другим — запуск альбома. Хаптика — как у тапа по карточке.
-    private func togglePlayback() {
-        UIImpactFeedbackGenerator(style: .medium)
-            .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.open(.music(MusicNowPlaying(
+    /// Что включает пилюля: трек, который уже стоит в плеере (тогда `open` работает
+    /// как пауза или продолжение), иначе первый трек альбома — правка пользователя
+    /// 2026-08-29: раньше кнопка играла «альбом целиком» одной записью.
+    ///
+    /// Пока треки не доехали, играем альбом как прежде: кнопка не имеет права быть
+    /// мёртвой те секунды, что едет ответ Deezer.
+    private var playButtonTarget: MusicNowPlaying {
+        if let track = currentTrack ?? tracks.first {
+            return nowPlaying(track)
+        }
+        return MusicNowPlaying(
             id: entity.id,
             cover: entity.artwork,
             title: details.title,
             artist: details.artist
-        )))
+        )
+    }
+
+    private func togglePlayback() {
+        play(playButtonTarget)
+    }
+
+    /// Тот же вход, что у карточки витрины: `open` с тем же id — пауза/продолжение,
+    /// с другим — запуск. Хаптика — как у тапа по карточке.
+    private func play(_ item: MusicNowPlaying) {
+        UIImpactFeedbackGenerator(style: .medium)
+            .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+        actionBar.open(.music(item))
     }
 
     // MARK: Треклист
 
+    /// Список идёт сразу, без строки «Диск N» (правка пользователя 2026-08-29).
+    /// Поэтому диски склеены в один ряд, а номер строки — сквозной: у Deezer
+    /// `track_position` считается внутри диска, и без заголовков нумерация
+    /// начиналась бы заново посреди списка.
     private var trackList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(details.disks.enumerated()), id: \.offset) { index, tracks in
-                diskHeader(index + 1)
-                ForEach(Array(tracks.enumerated()), id: \.element.id) { rowIndex, track in
-                    trackRow(track, isFirst: rowIndex == 0)
-                }
+            ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
+                trackRow(track, number: index + 1, isFirst: index == 0)
             }
         }
     }
 
-    private func diskHeader(_ number: Int) -> some View {
-        Text("Диск \(number)")
-            .plusTextS()
-            .foregroundStyle(Color.fillSubtitle)
-            .padding(.top, AlbumLayout.diskHeaderTop)
-            .padding(.bottom, AlbumLayout.diskHeaderBottom)
-            .padding(.horizontal, AlbumLayout.side)
-    }
-
-    private func trackRow(_ track: AlbumDetails.Track, isFirst: Bool) -> some View {
+    private func trackRow(_ track: AlbumDetails.Track, number: Int, isFirst: Bool) -> some View {
         HStack(spacing: 0) {
             Color.clear
                 .frame(width: AlbumLayout.popularWidth, height: 1)
 
-            Text("\(track.number)")
+            Text("\(number)")
                 .plusMovieText()
                 .foregroundStyle(Color.fillSubtitle)
                 // Колонка макетных 16pt держит один знак; двузначный номер не переносим,
@@ -405,6 +476,11 @@ struct AlbumScreen: View {
         .overlay(alignment: .top) {
             if isFirst { rowDivider }
         }
+        // Тап по строке включает этот трек (правка пользователя 2026-08-29).
+        // Жестом, а не кнопкой: внутри строки уже живёт своя кнопка «ещё»,
+        // и вложенная пара кнопок делит нажатие непредсказуемо.
+        .contentShape(Rectangle())
+        .onTapGesture { play(nowPlaying(track)) }
     }
 
     private var rowDivider: some View {

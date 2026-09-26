@@ -3,7 +3,7 @@ import SwiftUI
 /// Режим action bar. По решению 2026-08-22 определяется **последним потреблённым
 /// контентом**, а не активным табом: бар — это быстрый возврат к продолжению
 /// прослушивания/просмотра/чтения. Ничего не потреблялось → `search`.
-enum ActionBarMode: Equatable {
+enum ActionBarMode: String, Equatable, Codable {
     case search
     case music
     case movie
@@ -13,7 +13,7 @@ enum ActionBarMode: Equatable {
 /// Откуда берётся картинка. Прототип живёт на двух источниках одновременно:
 /// забандленные моки и картинки из API — различаем здесь, чтобы вёрстка не зависела
 /// от того, приехали живые данные или нет.
-enum ArtworkSource: Hashable {
+enum ArtworkSource: Hashable, Codable {
     case asset(String)
     /// Живая картинка с бандленным фолбэком: пока она грузится и если не загрузится
     /// вовсе, рисуется ассет. Без фолбэка блок мигал бы пустотой на каждом холодном
@@ -39,7 +39,7 @@ enum ArtworkSource: Hashable {
 }
 
 /// Что играет: круглая обложка 48×48 + две строки подписи (figma-actionbar §4.2).
-struct MusicNowPlaying: Equatable {
+struct MusicNowPlaying: Equatable, Codable {
     var id: String
     var cover: ArtworkSource
     var title: String
@@ -48,14 +48,14 @@ struct MusicNowPlaying: Equatable {
 
 /// Что смотрели: кадр 80×46 внутри чипа 88×54 (figma-actionbar §4.4).
 /// Прогресс и подписи чипу не нужны — в макете это просто кадр.
-struct MovieInProgress: Equatable {
+struct MovieInProgress: Equatable, Codable {
     var id: String
     var still: ArtworkSource
     var title: String
 }
 
 /// Что читали: обложка 36×52 внутри чипа 44×60 (figma-actionbar §4.3).
-struct BookInProgress: Equatable {
+struct BookInProgress: Equatable, Codable {
     var id: String
     var cover: ArtworkSource
     var title: String
@@ -68,10 +68,13 @@ struct BookInProgress: Equatable {
 /// только тот подслой бара, который прогресс читает. Это прямо в цель «120 fps на скролле».
 @Observable
 final class ActionBarState {
-    private(set) var mode: ActionBarMode = .search
+    private(set) var mode: ActionBarMode = .search { didSet { persist() } }
 
     init() {
+        restore()
         #if DEBUG
+        // Флаг запуска перекрывает восстановленное состояние: прогон обязан начинаться
+        // с того, что в нём попросили, а не с того, что осталось от прошлой сессии.
         applyDebugLaunchModeIfNeeded()
         #endif
     }
@@ -79,16 +82,20 @@ final class ActionBarState {
     /// Payload'ы не сбрасываются при смене режима.
     /// (никаких if/else-подмен — решение 2026-08-22), значит уходящий элемент должен
     /// оставаться отрисованным до конца анимации, а вернувшийся режим — не мигать пустотой.
-    private(set) var music: MusicNowPlaying?
-    private(set) var movie: MovieInProgress?
-    private(set) var book: BookInProgress?
+    private(set) var music: MusicNowPlaying? { didSet { persist() } }
+    private(set) var movie: MovieInProgress? { didSet { persist() } }
+    private(set) var book: BookInProgress? { didSet { persist() } }
 
     /// Транспорт музыки — отдельными свойствами, а не полями `music`: они меняются
     /// на каждом тике плеера, и при вложении в структуру тик инвалидировал бы
     /// и обложку с подписью.
+    ///
+    /// Прогресс наблюдателя не имеет намеренно: он меняется дважды в секунду, и запись
+    /// на диск на каждый тик была бы дорогой. На диск он уезжает вместе с ближайшим
+    /// событием — паузой, сменой трека, запуском другого контента.
     var musicProgress: Double = 0
-    var isMusicPlaying: Bool = false
-    var isMusicLiked: Bool = false
+    var isMusicPlaying: Bool = false { didSet { persist() } }
+    var isMusicLiked: Bool = false { didSet { persist() } }
 
     /// Полноэкранный плеер раскрыт. Живёт здесь, а не в хроме: морф стартует
     /// из мини-плеера, а закрыть плеер сможет и жест, и будущая кнопка «свернуть».
@@ -143,18 +150,98 @@ final class ActionBarState {
     }
 
     func resumeMovie(_ item: MovieInProgress) {
+        stopMusic()
         movie = item
         mode = .movie
     }
 
     func resumeBook(_ item: BookInProgress) {
+        stopMusic()
         book = item
         mode = .book
+    }
+
+    /// Музыка выключается ровно в двух случаях: вручную кнопкой play/pause и здесь —
+    /// когда включают контент другого типа (правило пользователя 2026-08-29). Плеер
+    /// в баре один, киноплеер и книгоплеер занимают его место, и играющая под ними
+    /// музыка была бы призраком: остановить её стало бы нечем.
+    ///
+    /// Навигация музыку не трогает вовсе — ни переход по табам, ни открытие экрана,
+    /// ни поиск. `music` тут тоже не сбрасывается: payload остаётся, чтобы к треку
+    /// можно было вернуться.
+    private func stopMusic() {
+        isMusicPlaying = false
+        progressTicker?.cancel()
+        progressTicker = nil
     }
 
     /// Контента нет (холодный старт, всё сброшено) — бар в поиске.
     func resetToSearch() {
         mode = .search
+    }
+
+    /// Тап по компактному кругу разворачивает плеер прямо в баре (правило пользователя
+    /// 2026-08-29). Полноэкранный из круга не открываем: круг — это свёрнутый плеер,
+    /// и первый тап по нему обязан его развернуть, а не перепрыгнуть через состояние.
+    func expandMiniPlayer() {
+        guard music != nil else { return }
+        mode = .music
+    }
+
+    // MARK: - Диск
+
+    /// Снимок бара на диске. Восстанавливается на холодном старте, чтобы плеер
+    /// пережил перезапуск (задача пользователя 2026-08-29): бар — это «продолжить
+    /// то, что слушал/смотрел/читал», и терять это на выходе из приложения нельзя.
+    private struct Snapshot: Codable {
+        var mode: ActionBarMode
+        var music: MusicNowPlaying?
+        var movie: MovieInProgress?
+        var book: BookInProgress?
+        var musicProgress: Double
+        var isMusicPlaying: Bool
+        var isMusicLiked: Bool
+    }
+
+    private static let storageKey = "actionBarState"
+
+    /// Пока раскладываем снимок по свойствам, наблюдатели молчат: иначе каждое
+    /// присваивание писало бы на диск то, что мы только что с него прочитали.
+    private var isRestoring = false
+
+    private func persist() {
+        guard !isRestoring else { return }
+        let snapshot = Snapshot(
+            mode: mode,
+            music: music,
+            movie: movie,
+            book: book,
+            musicProgress: musicProgress,
+            isMusicPlaying: isMusicPlaying,
+            isMusicLiked: isMusicLiked
+        )
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+    }
+
+    private func restore() {
+        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data)
+        else { return }
+
+        isRestoring = true
+        defer { isRestoring = false }
+
+        mode = snapshot.mode
+        music = snapshot.music
+        movie = snapshot.movie
+        book = snapshot.book
+        musicProgress = snapshot.musicProgress
+        isMusicLiked = snapshot.isMusicLiked
+        isMusicPlaying = snapshot.isMusicPlaying
+        // Играющий трек обязан и тикать: иначе плеер вернулся бы с крутящимся диском
+        // и стоящим прогрессом.
+        if isMusicPlaying { startProgressTicking() }
     }
 
     /// Переключить воспроизведение. Прогресс тикает редко (2 раза в секунду) —
