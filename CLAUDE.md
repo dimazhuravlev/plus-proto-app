@@ -4,9 +4,9 @@ iOS/SwiftUI дизайн-прототип супераппа «Яндекс Пл
 
 ## Перед любой работой прочитай
 
-0. **[docs/HANDOFF.md](docs/HANDOFF.md)** — состояние проекта и с чего продолжить. Начинай отсюда.
-1. [docs/PLAN.md](docs/PLAN.md) — этапы, статусы, очередь открытых вопросов.
-2. [docs/DECISIONS.md](docs/DECISIONS.md) — лог решений с «почему». Каждое новое решение (своё или пользователя) фиксируй там сразу.
+0. **[docs/HANDOFF.md](docs/HANDOFF.md)** — состояние проекта, открытые задачи, очередь вопросов, отладочные флаги. Начинай отсюда.
+1. [docs/DECISIONS.md](docs/DECISIONS.md) — лог решений с «почему». Каждое новое решение (своё или пользователя) фиксируй там сразу.
+2. [CONTRIBUTING.md](CONTRIBUTING.md) — ветки, pull request'ы, условие мержа, код-стайл.
 3. [docs/research/](docs/research/) — снапшот разведки 2026-08-22 (не редактировать): анализ MusicPlayer (app-skeleton, screens, nav-chrome, data-apis, design-kit, bootstrap), спеки из Фигмы (figma-tokens, figma-tabbar, figma-actionbar, figma-screen1, figma-screen2), history.
 
 ## Фигма
