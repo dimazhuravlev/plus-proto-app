@@ -18,6 +18,11 @@ struct SearchResultsView: View {
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(\.stackZoomNamespace) private var zoom
+
+    #if DEBUG
+    @MainActor private static var didDebugTapHit = false
+    #endif
 
     private enum Layout {
         /// Ширина колонки карусели (макет: контейнер 109 при шаге 117)
@@ -52,16 +57,21 @@ struct SearchResultsView: View {
             content
                 .transition(.opacity)
                 #if DEBUG
-                // `-debugTapSearchHit` — открыть первую карточку выдачи: тапнуть
-                // по симулятору из шелла нечем, а возврат в поиск иначе не проверить.
-                // В паре с `-debugCloseEntity` даёт полный круг «ушёл — вернулся».
+                // `-debugTapSearchHit <n>` — открыть первую карточку n-й непустой
+                // секции выдачи (1 — первая): тапнуть по симулятору из шелла нечем,
+                // а возврат в поиск иначе не проверить. В паре с `-debugCloseEntity`
+                // даёт полный круг «ушёл — вернулся». Один раз за запуск: на возврате
+                // выдача появляется снова, и тап повторился бы по кругу.
                 .task(id: search.sections.first?.domain.hits.first?.id) {
-                    guard UserDefaults.standard.bool(forKey: "debugTapSearchHit"),
-                          let hit = search.sections.first(where: { !$0.domain.hits.isEmpty })?.domain.hits.first,
-                          let route = hit.route
-                    else { return }
+                    let section = UserDefaults.standard.integer(forKey: "debugTapSearchHit")
+                    guard section > 0, !Self.didDebugTapHit else { return }
                     try? await Task.sleep(for: .seconds(2))
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled, !Self.didDebugTapHit else { return }
+                    let filled = search.sections.filter { !$0.domain.hits.isEmpty }
+                    guard filled.indices.contains(section - 1),
+                          let route = filled[section - 1].domain.hits.first?.route
+                    else { return }
+                    Self.didDebugTapHit = true
                     open(route)
                 }
                 #endif
@@ -158,6 +168,10 @@ struct SearchResultsView: View {
                 cardBody(hit)
             }
             .buttonStyle(PressScaleButtonStyle())
+            // Источник зума экрана сущности — как миниатюра на витрине: экран
+            // разворачивается из карточки и на возврате сворачивается обратно в неё.
+            // Без источника зум шёл из центра экрана и сворачивался в никуда.
+            .modifier(SearchZoomSource(route: route, zoom: zoom))
         } else {
             cardBody(hit)
         }
@@ -227,6 +241,20 @@ struct SearchResultsView: View {
         switch kind {
         case .track, .album, .artist: Layout.card
         case .movie, .book: Layout.card / Layout.posterAspect
+        }
+    }
+
+    /// Источник зума — только когда есть namespace (корень приложения).
+    private struct SearchZoomSource: ViewModifier {
+        let route: EntityRoute
+        let zoom: Namespace.ID?
+
+        func body(content: Content) -> some View {
+            if let zoom {
+                content.matchedTransitionSource(id: route, in: zoom)
+            } else {
+                content
+            }
         }
     }
 

@@ -67,4 +67,12 @@ struct CoveredEntityScreen: View {
 /// тот же приём, что у `showcaseThumbnail` витрины.
 extension EnvironmentValues {
     @Entry var entityZoomNamespace: Namespace.ID?
+
+    /// Namespace зума экранов стека: источник — миниатюры витрины и карточки выдачи
+    /// поиска, назначение — `navigationDestination` и слой карточки фильма на витрине.
+    /// Живёт в корне (`AppRootView`): выдача — сосед экрана в `SearchLayers`, а не его
+    /// потомок, и namespace витрины до неё не дотягивался — экран, открытый из выдачи,
+    /// зумился из центра экрана и на возврате сворачивался в никуда (жалоба
+    /// пользователя 2026-10-03: моргал на возврате в поиск).
+    @Entry var stackZoomNamespace: Namespace.ID?
 }

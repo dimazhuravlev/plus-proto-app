@@ -8,10 +8,12 @@ struct ShowcaseScreen: View {
     /// и новыми запросами (задача 2026-08-27: контент не должен перезагружаться).
     @Environment(ShowcaseCatalog.self) private var catalog
     @Environment(AppNavigationState.self) private var navigation
-    /// Namespace зум-перехода живёт здесь: и источник (карточка ленты), и назначение
-    /// (`navigationDestination`) — потомки этого вью, поэтому пробрасывать его
-    /// через environment не нужно.
-    @Namespace private var zoom
+    /// Namespace зум-перехода — общий с выдачей поиска, из корня: экран, открытый
+    /// из выдачи, разворачивается из её карточки и сворачивается обратно в неё.
+    /// Свой — только запасной, если корня нет (превью).
+    @Environment(\.stackZoomNamespace) private var stackZoom
+    @Namespace private var ownZoom
+    private var zoom: Namespace.ID { stackZoom ?? ownZoom }
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -32,6 +34,10 @@ struct ShowcaseScreen: View {
                 // показан (повторный отладочный тап витрины): без неё новому
                 // экрану достаётся @State старого (стор деталей, скролл, ролик).
                 .id(route)
+                // Клавиатуры на экране сущности нет, а открыть его могут прямо из
+                // выдачи, пока она поднята: без этого скролл получал её инсет
+                // на время перехода.
+                .ignoresSafeArea(.keyboard)
                 .navigationTransition(.zoom(sourceID: route, in: zoom))
                 #if DEBUG
                 .task {
@@ -50,6 +56,11 @@ struct ShowcaseScreen: View {
             SearchLayers(host: .pushed) {
                 EntityScreen(route: route)
             }
+            // Пуш живёт в своём хостинг-контроллере, и корневое `ignoresSafeArea(.keyboard)`
+            // до него не доходит: открытый из выдачи экран получал инсет клавиатуры,
+            // пока она уезжала, а на возврате — пока поднималась, и перекладывался
+            // посреди перехода. Выдача на пуше считает отступ клавиатуры сама, как в корне.
+            .ignoresSafeArea(.keyboard)
             // Нативный зум: миниатюра карточки разворачивается в экран и сворачивается
             // обратно. `sourceID` — сам маршрут, тот же объект, что и в
             // `matchedTransitionSource`, поэтому стороны перехода не могут разъехаться.

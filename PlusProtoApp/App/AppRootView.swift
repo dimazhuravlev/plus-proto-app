@@ -7,6 +7,8 @@ struct AppRootView: View {
     @State private var actionBar = ActionBarState()
     @State private var keyboard = KeyboardObserver()
     @State private var search = SearchState()
+    /// Namespace зума экранов стека — см. `EnvironmentValues.stackZoomNamespace`.
+    @Namespace private var stackZoom
     /// Каталог витрины — здесь, а не в самой витрине: `ShowcaseScreen`
     /// размонтируется на каждом переключении таба, и лента собиралась бы заново
     /// (другой фильм, другой альбом, новые запросы). Хром от этого не страдает:
@@ -101,7 +103,18 @@ struct AppRootView: View {
                 search.host(at: depth)
             }
             if search.consumeResume(tab: navigation.activeTab, depth: depth) {
-                actionBar.isSearchFocused = true
+                // Клавиатура — после перехода, не посреди него: см. `SearchState.resumeDelay`.
+                let tab = navigation.activeTab
+                Task { @MainActor in
+                    try? await Task.sleep(for: SearchState.resumeDelay)
+                    // Пока ждали, пользователь мог уйти снова — в другую карточку
+                    // выдачи или в другой таб: тогда клавиатура ему не нужна.
+                    let stillHere = search.isResuming
+                        && navigation.activeTab == tab
+                        && navigation.depth == depth
+                    search.finishResume()
+                    if stillHere { actionBar.isSearchFocused = true }
+                }
             }
         }
         // Поиск прикрепляется к экрану, с которого его открыли, — и к нему же
@@ -116,6 +129,7 @@ struct AppRootView: View {
         .environment(keyboard)
         .environment(search)
         .environment(catalog)
+        .environment(\.stackZoomNamespace, stackZoom)
     }
 
     /// Витрина на экране: таб «Плюс» без пушей. Слой карточки фильма не в счёт —
