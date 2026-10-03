@@ -712,10 +712,10 @@ private struct SearchPlaceholderTicker: View {
     /// изменился, и остаётся.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// По глаголу на сервис — и только они (правка пользователя 2026-10-03: «Найти»
+    /// и «Создать» убраны).
     private static let phrases = [
-        "Найти",
         "Послушать",
-        "Создать",
         "Посмотреть",
         "Почитать",
     ]
