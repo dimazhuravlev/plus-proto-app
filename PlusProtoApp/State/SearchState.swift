@@ -393,9 +393,11 @@ final class SearchState {
         async let albums = try? DeezerService.shared.searchAlbums(query: text, limit: FullLimits.albums)
         async let artists = try? DeezerService.shared.searchArtists(query: text, limit: FullLimits.artists)
         async let playlists = try? DeezerService.shared.searchPlaylists(query: text, limit: FullLimits.playlists)
-        let (foundTracks, foundAlbums, foundArtists, foundPlaylists) = await (
+        let (foundTracks, foundAlbums, allArtists, foundPlaylists) = await (
             tracks ?? [], albums ?? [], artists ?? [], playlists ?? []
         )
+        // Исполнители без фото — вне выдачи (правка пользователя 2026-10-03).
+        let foundArtists = allArtists.filter(\.hasPhoto)
 
         // Вперемешку по одному от каждого вида — как и в карусели.
         let byKind = [
@@ -417,9 +419,11 @@ final class SearchState {
 
         // Колдунщик — исполнитель, чьё имя отвечает запросу; из таких — самый
         // популярный. Не нашлось — колдунщика нет, а не случайный исполнитель.
+        // И только с альбомами: колдунщик без карусели — пустая плашка (правка
+        // пользователя 2026-10-03).
         let needle = text.folded
         guard let best = foundArtists
-            .filter({ Self.nameMatches($0.name.folded, needle) })
+            .filter({ Self.nameMatches($0.name.folded, needle) && ($0.nbAlbum ?? 1) > 0 })
             .max(by: { ($0.nbFan ?? 0) < ($1.nbFan ?? 0) })
         else { return (hits, nil) }
         let artistAlbums = (try? await DeezerService.shared.artistAlbums(id: best.id, limit: FullLimits.wizardAlbums)) ?? []
@@ -427,6 +431,7 @@ final class SearchState {
         let wizardAlbums = artistAlbums
             .filter { albumTitles.insert($0.title.lowercased()).inserted }
             .map(SearchHit.init(album:))
+        guard !wizardAlbums.isEmpty else { return (hits, nil) }
         let artistName = best.name.folded
         let topTrack = hits.first { $0.kind == .track && $0.subtitle.folded == artistName }
         return (hits, MusicWizard(artist: SearchHit(artist: best), albums: wizardAlbums, topTrack: topTrack))
@@ -561,7 +566,8 @@ final class SearchState {
         let byKind = await [
             (tracks ?? []).map(SearchHit.init(track:)),
             (albums ?? []).map(SearchHit.init(album:)),
-            (artists ?? []).map(SearchHit.init(artist:)),
+            // Исполнители без фото — вне выдачи (правка пользователя 2026-10-03).
+            (artists ?? []).filter(\.hasPhoto).map(SearchHit.init(artist:)),
         ]
         var hits: [SearchHit] = []
         // Дубли по паре «название + исполнитель»: у саундтреков трек и альбом
