@@ -75,7 +75,9 @@ struct SearchResultsView: View {
         /// последний пункт уходит в зазор до соседа.
         static let bookPagesInset: CGFloat = 2
         static let bookCoverRadius: CGFloat = 8
-        static let bookPagesRadius: CGFloat = 16
+        /// Скругление серой подложки — 10, у обложки 8 (правка пользователя 2026-10-03;
+        /// в экспорте макета было 16).
+        static let bookPagesRadius: CGFloat = 10
         /// Скошенный верх корешка у подложки: 4.1 % её ширины по горизонтали, 1.93 вниз.
         static let bookSpineBevel = CGSize(width: 0.0406, height: 1.93)
         static let bookPagesFill = Color.white.opacity(0.15)
@@ -112,8 +114,9 @@ struct SearchResultsView: View {
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Порядок секций даёт состояние: он ранжируется по релевантности
-                // запросу, когда ответили все три домена (см. `SearchState.sections`).
+                // Порядок секций даёт состояние: выдача приходит целиком, когда
+                // ответили все три домена, и уже отранжированной по релевантности
+                // запросу (см. `SearchState.sections`) — блоки не переставляются.
                 ForEach(search.sections) { section in
                     carousel(section)
                 }
@@ -126,17 +129,25 @@ struct SearchResultsView: View {
                         .padding(.vertical, Layout.headerTop)
                 }
             }
+            // Кадр списка — во весь экран, а отступ только у содержимого: выдача
+            // **уходит под** поле и клавиатуру и просвечивает сквозь их стекло (правка
+            // пользователя 2026-08-25; прежде кадр поджимался и список обрывался над
+            // баром). Отступ всё равно нужен: без него последняя карточка не
+            // выкручивается из-под клавиатуры.
+            //
+            // Именно отступ содержимого, а не `safeAreaPadding` кадра: тот входит
+            // в минимальную высоту списка, а с клавиатурой он больше места над ней
+            // (553 против 477). Экран-носитель переполнялся, SwiftUI ставил стопку
+            // по центру, и выдача с клавиатурой стояла на 38pt выше, чем без неё
+            // (замер 2026-10-03).
+            .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)
         }
         .scrollIndicators(.hidden)
         // Клавиатура прячется свайпом по выдаче — привычный жест для длинных списков.
         .scrollDismissesKeyboard(.interactively)
-        // Кадр списка — во весь экран, а инсет только у содержимого: выдача **уходит
-        // под** поле и клавиатуру и просвечивает сквозь их стекло (правка пользователя
-        // 2026-08-25; прежде кадр поджимался и список обрывался над баром).
-        // Нижний инсет всё равно нужен: без него последняя карточка не выкручивается
-        // из-под клавиатуры.
-        .safeAreaPadding(.top)
-        .safeAreaPadding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)
+        // Сверху — ровно безопасная зона, без добавки: в макете `2118:17378` выдача
+        // начинается сразу под статус-баром. Прежний `safeAreaPadding(.top)` клал
+        // сверху ещё 16pt системного поля.
     }
 
     // MARK: Секция
@@ -211,7 +222,8 @@ struct SearchResultsView: View {
     }
 
     /// Уход в сущность из выдачи. Клавиатура опускается, но сам поиск не сбрасывается:
-    /// запомнили точку, и на возврате поле снова получит фокус с той же выдачей.
+    /// запомнили точку, и на возврате та же выдача встанет на экран — без клавиатуры,
+    /// с полем внизу (`SearchState.isBrowsing`).
     private func open(_ route: EntityRoute) {
         search.suspend(tab: navigation.activeTab, depth: navigation.depth)
         actionBar.isSearchFocused = false

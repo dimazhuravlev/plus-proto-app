@@ -2,11 +2,13 @@ import SwiftUI
 
 /// Кросс-сервисный поиск: один запрос — выдача сразу по музыке, кино и книгам.
 ///
-/// **Три домена идут параллельно и рендерятся по мере готовности.** Ждать самый
-/// медленный нельзя: Deezer отвечает за 150–300мс, Google Books за 200–400,
-/// Кинопоиск за полсекунды — при последовательном заходе выдача появлялась бы
-/// через секунду с лишним. Каждый загрузчик пишет свой домен, `@Observable`
-/// перерисовывает только его секцию.
+/// **Три домена идут параллельно, а показываются разом.** Выдача собирается
+/// целиком: ждём ответа всех трёх API, считаем порядок секций и публикуем всё одним
+/// присваиванием (правка пользователя 2026-10-03). Прежде каждый домен рисовался
+/// по мере готовности, а порядок, пересчитанный после последнего ответа,
+/// переставлял блоки уже с данными. Запросы при этом параллельны: ждём самый
+/// медленный (Deezer 150–300мс, Google Books 200–400 и его обложки, Кинопоиск
+/// полсекунды), а не их сумму.
 ///
 /// **Ввод дебаунсится**, а не шлёт запрос на каждую букву: у Кинопоиска 200 запросов
 /// в сутки на ключ. По той же причине кино сперва ищется в дисковом запасе
@@ -22,17 +24,37 @@ final class SearchState {
         }
     }
 
-    private(set) var music = Domain()
-    private(set) var movies = Domain()
-    private(set) var books = Domain()
+    /// Выдача на экране: все три домена разом и уже в окончательном порядке.
+    /// Меняется только целиком — одним присваиванием, когда новая выдача собрана.
+    /// `nil` — показывать ещё нечего: на первом запросе на её месте скелетон.
+    private var shown: Results?
+    /// Запрос в пути. Прежняя выдача всё это время стоит как есть: сброс в скелетон
+    /// на каждой букве моргал карточками (жалоба пользователя 2026-10-03), а подмена
+    /// по доменам переставляла блоки с данными.
+    private var isLoading = false
 
-    /// Состояние одного домена выдачи.
+    /// Собранная выдача одного запроса.
+    private struct Results {
+        let order: [Section.Kind]
+        let music: [SearchHit]
+        let movies: [SearchHit]
+        let books: [SearchHit]
+
+        func hits(_ kind: Section.Kind) -> [SearchHit] {
+            switch kind {
+            case .music: music
+            case .movies: movies
+            case .books: books
+            }
+        }
+
+        var isEmpty: Bool { music.isEmpty && movies.isEmpty && books.isEmpty }
+    }
+
+    /// Состояние одного домена выдачи — так секцию видит экран.
     struct Domain {
         var isLoading = false
         var hits: [SearchHit] = []
-        /// Домен уже отвечал на текущий запрос — по этому признаку скелетон
-        /// сменяется либо строками, либо ничем.
-        var isAnswered = false
     }
 
     /// Ищем с двух символов: на одной букве выдача — случайный шум, а запросы
@@ -49,10 +71,6 @@ final class SearchState {
     private static let perKind = 8
     /// Ниже этого числа локальных совпадений кино добирается из сети.
     private static let poolEnough = 3
-
-    /// Порядок секций текущего запроса. `nil` — ещё не все домены ответили,
-    /// показываем порядок по умолчанию.
-    private var rankedOrder: [Section.Kind]?
 
     /// Куда пользователь ушёл из выдачи: таб и глубина навигации на момент тапа.
     /// `nil` — из поиска никуда не уходили.
@@ -73,8 +91,8 @@ final class SearchState {
     private(set) var hostDepth: Int = 0
 
     private var searchTask: Task<Void, Never>?
-    /// Разобранные выдачи на процесс: возврат к уже набранному запросу бесплатен.
-    private var cache: [String: (music: [SearchHit], movies: [SearchHit], books: [SearchHit])] = [:]
+    /// Собранные выдачи на процесс: возврат к уже набранному запросу бесплатен.
+    private var cache: [String: Results] = [:]
 
     /// Есть что показывать слоем выдачи.
     var isActive: Bool {
@@ -83,33 +101,44 @@ final class SearchState {
 
     /// Ни один домен ничего не нашёл, и все уже ответили.
     var isEmptyResult: Bool {
-        [music, movies, books].allSatisfy { $0.isAnswered && $0.hits.isEmpty }
+        shown?.isEmpty ?? false
     }
 
     /// Секция выдачи: домен, его заголовок и результаты.
     struct Section: Identifiable {
         let id: Kind
-        let title: String
         let domain: Domain
 
-        enum Kind { case music, movies, books }
+        enum Kind: CaseIterable {
+            case music, movies, books
+
+            var title: String {
+                switch self {
+                case .music: "Музыка"
+                case .movies: "Кино"
+                case .books: "Книги"
+                }
+            }
+        }
+
+        var title: String { id.title }
         /// У музыки карточка квадратная, у кино и книг — постер 2:3.
         var isPoster: Bool { id != .music }
     }
 
-    /// Секции в порядке показа. Пока ответили не все домены — порядок по умолчанию;
-    /// как ответили все, он **один раз** пересчитывается по релевантности запросу
-    /// (решение пользователя 2026-08-25). Считать на каждый ответ нельзя: домены
-    /// отвечают вразнобой (кино из локального запаса приходит мгновенно, книги —
-    /// через полсекунды), и секции прыгали бы под пальцем.
+    /// Секции в порядке показа. Порядок считается по релевантности запросу
+    /// (решение пользователя 2026-08-25) **до** показа: выдача публикуется, когда
+    /// ответили все три домена, и появляется сразу на своих местах — блоки после
+    /// этого не переставляются (правка пользователя 2026-10-03).
+    ///
+    /// Скелетон первого запроса — три секции в порядке по умолчанию: настоящий
+    /// порядок ещё неизвестен. Пустые домены экран не показывает вовсе.
     var sections: [Section] {
-        let all = [
-            Section(id: .music, title: "Музыка", domain: music),
-            Section(id: .movies, title: "Кино", domain: movies),
-            Section(id: .books, title: "Книги", domain: books),
-        ]
-        guard let order = rankedOrder else { return all }
-        return order.compactMap { kind in all.first { $0.id == kind } }
+        guard let shown else {
+            guard isLoading else { return [] }
+            return Section.Kind.allCases.map { Section(id: $0, domain: Domain(isLoading: true)) }
+        }
+        return shown.order.map { Section(id: $0, domain: Domain(hits: shown.hits($0))) }
     }
 
     private var normalized: String {
@@ -128,8 +157,8 @@ final class SearchState {
     /// Запомнить точку, из которой пользователь ушёл в открытую карточку.
     func suspend(tab: AppTab, depth: Int) {
         suspended = (tab, depth)
-        // Ушли снова, пока возвращались, — отложенный фокус уже не наш.
-        isResuming = false
+        // Под карточкой выдачу держит отметка, а не просмотр.
+        isBrowsing = false
     }
 
     /// Пора ли вернуть поиск: пользователь закрыл всё, что открывал из выдачи,
@@ -137,41 +166,32 @@ final class SearchState {
     /// одноразовое, иначе поиск лез бы обратно на каждый поп в этом табе.
     ///
     /// Таб проверяется вместе с глубиной: уйти можно и переключением таба, и тогда
-    /// возвращать клавиатуру пользователю точно не надо.
+    /// возвращать выдачу пользователю точно не надо.
     ///
-    /// Отметка не гаснет сразу, а переходит в «возвращаемся» (`isResuming`): фокус полю
-    /// отдаётся только после перехода (`resumeDelay`), и всё это время слой выдачи
-    /// обязан стоять под уезжающим экраном.
+    /// Возвращается выдача **без клавиатуры** (`isBrowsing`): поле стоит внизу с тем же
+    /// запросом, тап по нему возвращает ввод (правка пользователя 2026-10-03). Отметка
+    /// и просмотр меняются в одном апдейте — слой выдачи не гаснет ни на кадр.
     func consumeResume(tab: AppTab, depth: Int) -> Bool {
         guard let suspended, suspended.tab == tab, depth <= suspended.depth else { return false }
         self.suspended = nil
-        isResuming = true
+        isBrowsing = true
         return true
     }
 
-    /// Возврат закончился — фокус у поля, слой держит уже он.
-    func finishResume() {
-        isResuming = false
-    }
-
-    /// Между началом попа и фокусом поля.
-    private(set) var isResuming = false
-
-    /// Сколько ждём с фокусом после попа — пока экран сущности сворачивается обратно
-    /// в карточку выдачи. Клавиатура, поднятая посреди зум-перехода, перекладывала
-    /// раскладку под ним, и переход отрисовывал то старый снимок, то новый: экран
-    /// сущности моргал на возврате (жалоба пользователя 2026-10-03, поймано покадрово).
-    static let resumeDelay: Duration = .milliseconds(450)
+    /// Выдача открыта, но поле без фокуса: клавиатуру опустили при непустой выдаче,
+    /// или пользователь вернулся из карточки. Таббара в этом состоянии нет, бар стоит
+    /// на его месте (`BottomChrome`). Гаснет, когда поиск закрыли (крест, смена таба,
+    /// круг плеера) или когда поле снова получило клавиатуру — дальше слой держит она.
+    var isBrowsing = false
 
     /// Поиск ушёл в открытую карточку, но не закрылся: слой выдачи остаётся
-    /// на экране **под** карточкой и всё время, пока она открыта, и на возврате —
-    /// пока поднимается клавиатура.
+    /// на экране **под** карточкой всё время, пока она открыта.
     ///
     /// Глубина здесь намеренно не проверяется: слои живут на экране, с которого
     /// поиск открыли (`hostDepth`), и открытая поверх карточка накрывает их сама.
     /// Пряталась выдача — и мелькала витрина, пока карточка доезжала
     /// (жалоба пользователя 2026-08-25, поймано на видео).
-    var isSuspended: Bool { suspended != nil || isResuming }
+    var isSuspended: Bool { suspended != nil }
 
     // MARK: - Поток поиска
 
@@ -187,17 +207,14 @@ final class SearchState {
         }
 
         if let cached = cache[text] {
-            apply(cached)
+            isLoading = false
+            shown = cached
             return
         }
 
-        // Прежняя выдача стоит, пока не приехала новая: сброс в скелетон на каждой
-        // букве моргал карточками (жалоба пользователя 2026-10-03). Скелетон — только
-        // когда показывать ещё нечего, то есть на первом запросе.
-        for domain in [\SearchState.music, \SearchState.movies, \SearchState.books] {
-            self[keyPath: domain].isLoading = true
-            self[keyPath: domain].isAnswered = false
-        }
+        // Скелетон — только когда показывать ещё нечего, то есть на первом запросе;
+        // уточнение запроса держит прежнюю выдачу до готовности новой.
+        isLoading = true
 
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: Self.debounce)
@@ -207,29 +224,29 @@ final class SearchState {
     }
 
     private func run(_ text: String) async {
-        // Три независимые задачи: домен, который ответил первым, тут же и покажется.
-        async let musicDone: Void = loadMusic(text)
-        async let moviesDone: Void = loadMovies(text)
-        async let booksDone: Void = loadBooks(text)
-        _ = await (musicDone, moviesDone, booksDone)
+        // Запросы параллельны, показ — общий: ждём все три ответа.
+        async let music = fetchMusic(text)
+        async let movies = fetchMovies(text)
+        async let books = fetchBooks(text)
+        let (musicHits, movieHits, bookHits) = await (music, movies, books)
 
         guard !Task.isCancelled else { return }
-        rankedOrder = Self.order(for: text, music: music, movies: movies, books: books)
-        cache[text] = (music.hits, movies.hits, books.hits)
+        let results = Results(
+            order: Self.order(for: text, music: musicHits, movies: movieHits, books: bookHits),
+            music: musicHits,
+            movies: movieHits,
+            books: bookHits
+        )
+        cache[text] = results
+        // Одно присваивание — один кадр: все блоки появляются разом и сразу
+        // в окончательном порядке.
+        shown = results
+        isLoading = false
     }
 
     private func reset() {
-        music = Domain()
-        movies = Domain()
-        books = Domain()
-        rankedOrder = nil
-    }
-
-    private func apply(_ cached: (music: [SearchHit], movies: [SearchHit], books: [SearchHit])) {
-        music = Domain(isLoading: false, hits: cached.music, isAnswered: true)
-        movies = Domain(isLoading: false, hits: cached.movies, isAnswered: true)
-        books = Domain(isLoading: false, hits: cached.books, isAnswered: true)
-        rankedOrder = Self.order(for: normalized, music: music, movies: movies, books: books)
+        shown = nil
+        isLoading = false
     }
 
     // MARK: - Ранжирование секций
@@ -263,9 +280,9 @@ final class SearchState {
 
     private static func order(
         for text: String,
-        music: Domain,
-        movies: Domain,
-        books: Domain
+        music: [SearchHit],
+        movies: [SearchHit],
+        books: [SearchHit]
     ) -> [Section.Kind] {
         let scored: [(Section.Kind, Double)] = [
             (.music, score(text, music)),
@@ -291,11 +308,11 @@ final class SearchState {
     /// а не релевантность. Замер на «интерстеллар» (2026-08-25): с надбавкой
     /// за каждое совпадение музыка набирала 148 против 100 у кино — просто потому,
     /// что у Deezer нашлось четыре трека с этим названием, а фильм такой один.
-    private static func score(_ text: String, _ domain: Domain) -> Double {
+    private static func score(_ text: String, _ hits: [SearchHit]) -> Double {
         let needle = text.folded
         guard !needle.isEmpty else { return 0 }
 
-        return domain.hits.map { hit -> Double in
+        return hits.map { hit -> Double in
             let title = hit.title.folded
             let match: Double
             if title == needle { match = MatchScore.exact }
@@ -311,9 +328,12 @@ final class SearchState {
 
     // MARK: - Домены
 
+    /// Загрузчики доменов ничего не пишут в состояние — только возвращают
+    /// результаты: показывает их `run`, когда собраны все три.
+    ///
     /// Музыка — три ручки Deezer разом: у него нет объединённого поиска, а треки,
     /// альбомы и исполнителей выдача показывает отдельными строками.
-    private func loadMusic(_ text: String) async {
+    private func fetchMusic(_ text: String) async -> [SearchHit] {
         async let tracks = try? DeezerService.shared.searchTracks(query: text, limit: Self.perKind)
         async let albums = try? DeezerService.shared.searchAlbums(query: text, limit: Self.perKind)
         async let artists = try? DeezerService.shared.searchArtists(query: text, limit: Self.perKind)
@@ -339,41 +359,37 @@ final class SearchState {
             }
         }
 
-        guard !Task.isCancelled else { return }
-        music = Domain(isLoading: false, hits: Array(hits.prefix(Self.perSection)), isAnswered: true)
+        return Array(hits.prefix(Self.perSection))
     }
 
     /// Кино — сперва запас на диске, сеть только в добор. Если в запасе уже есть
     /// сколько нужно, поиск по кино не стоит ни одного запроса из квоты.
-    private func loadMovies(_ text: String) async {
+    private func fetchMovies(_ text: String) async -> [SearchHit] {
         let pooled = await MoviePool.shared.search(text, limit: Self.perKind)
-        if !pooled.isEmpty {
-            guard !Task.isCancelled else { return }
-            movies = Domain(isLoading: pooled.count < Self.poolEnough, hits: Array(pooled.map(SearchHit.init(movie:)).prefix(Self.perSection)), isAnswered: true)
+        let local = pooled.map(SearchHit.init(movie:))
+        guard pooled.count < Self.poolEnough, !Task.isCancelled else {
+            return Array(local.prefix(Self.perSection))
         }
-        guard pooled.count < Self.poolEnough else { return }
 
         let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: Self.perKind)) ?? []
-        guard !Task.isCancelled else { return }
         // Сетевые дополняют локальные, дубликаты по id отбрасываем.
         let known = Set(pooled.map(\.id))
-        let hits = pooled.map(SearchHit.init(movie:)) + found.filter { !known.contains($0.id) }.map(SearchHit.init(movie:))
-        movies = Domain(isLoading: false, hits: Array(hits.prefix(Self.perSection)), isAnswered: true)
+        let hits = local + found.filter { !known.contains($0.id) }.map(SearchHit.init(movie:))
+        return Array(hits.prefix(Self.perSection))
     }
 
-    private func loadBooks(_ text: String) async {
+    private func fetchBooks(_ text: String) async -> [SearchHit] {
         let found = (try? await BooksService.shared.search(text, limit: Self.perKind)) ?? []
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return [] }
         var hits = found.prefix(Self.perSection).map(SearchHit.init(book:))
-        // Карточка книги — по пропорциям обложки (макет `2311:25096`), поэтому секция
-        // показывается, когда обложки уже приехали: ширины известны, карусель не
+        // Карточка книги — по пропорциям обложки (макет `2311:25096`), поэтому книги
+        // готовы, когда обложки уже приехали: ширины известны, карусель не
         // перекладывается, а сами обложки встают из кэша без проявления.
         let aspects = await Self.coverAspects(of: hits)
-        guard !Task.isCancelled else { return }
         for index in hits.indices {
             hits[index].artworkAspect = aspects[hits[index].id]
         }
-        books = Domain(isLoading: false, hits: hits, isAnswered: true)
+        return Array(hits)
     }
 
     /// Сколько ждём обложки книг. Не дождались — карточка встаёт на пропорции

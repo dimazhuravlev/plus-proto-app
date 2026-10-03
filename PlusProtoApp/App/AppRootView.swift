@@ -92,37 +92,47 @@ struct AppRootView: View {
         // сдвигом бара — он улетал вдвое выше клавиатуры. Отступ считает `BottomChrome`.
         .ignoresSafeArea(.keyboard)
         // Возврат из открытой сущности возвращает и поиск: сам запрос с выдачей
-        // никуда не девались, поэтому достаточно вернуть фокус полю. Слушаем здесь,
-        // а не в баре: глубина навигации — свойство корня, а не хрома.
+        // никуда не девались, поэтому достаточно вернуть выдачу на экран — без
+        // клавиатуры. Слушаем здесь, а не в баре: глубина навигации — свойство
+        // корня, а не хрома.
         .onChange(of: navigation.depth) { _, depth in
             // Поиск, открытый на пуше, переезжает вместе с пользователем: свайп-назад
             // с альбома клавиатуру не опускает, и слои обязаны оказаться на экране,
             // куда он вернулся. Только пока из выдачи никуда не уходили — там глубина
             // меняется как раз потому, что поиск остался позади.
-            if actionBar.isSearchFocused, !search.isSuspended {
+            // Выдачу без клавиатуры — так же: свайп-назад из неё её не закрывает.
+            if actionBar.isSearchFocused || search.isBrowsing, !search.isSuspended {
                 search.host(at: depth)
             }
-            if search.consumeResume(tab: navigation.activeTab, depth: depth) {
-                // Клавиатура — после перехода, не посреди него: см. `SearchState.resumeDelay`.
-                let tab = navigation.activeTab
-                Task { @MainActor in
-                    try? await Task.sleep(for: SearchState.resumeDelay)
-                    // Пока ждали, пользователь мог уйти снова — в другую карточку
-                    // выдачи или в другой таб: тогда клавиатура ему не нужна.
-                    let stillHere = search.isResuming
-                        && navigation.activeTab == tab
-                        && navigation.depth == depth
-                    search.finishResume()
-                    if stillHere { actionBar.isSearchFocused = true }
-                }
+            // Возврат в выдачу — без клавиатуры: см. `SearchState.consumeResume`.
+            _ = search.consumeResume(tab: navigation.activeTab, depth: depth)
+        }
+        // Выдача без фокуса принадлежит своему табу: на другом табе её слой встал бы
+        // на корне чужого стека.
+        .onChange(of: navigation.activeTab) {
+            search.isBrowsing = false
+        }
+        // Поиск прикрепляется к экрану, с которого его открыли.
+        //
+        // Снятый фокус при непустой выдаче поиск не закрывает: клавиатуру опустили
+        // (свайпом по выдаче или по полю, клавишей «Найти»), а выдача остаётся
+        // на экране, поле с запросом — внизу (правка пользователя 2026-10-03).
+        // Закрывает поиск крест: он стирает запрос раньше, чем снимает фокус.
+        // Уход в карточку выдачи — тоже мимо: там отметка ставится до снятия фокуса.
+        .onChange(of: actionBar.isSearchFocused) { _, focused in
+            if focused {
+                search.host(at: navigation.depth)
+            } else if search.isActive, !search.isSuspended {
+                search.isBrowsing = true
             }
         }
-        // Поиск прикрепляется к экрану, с которого его открыли, — и к нему же
-        // возвращается: `consumeResume` выше выставляет фокус, и глубина берётся
-        // заново, уже после того как экран вернулся.
-        .onChange(of: actionBar.isSearchFocused) { _, focused in
-            guard focused else { return }
-            search.host(at: navigation.depth)
+        // Просмотр выдачи кончается, когда поле получило клавиатуру: дальше слой держит
+        // она, а снятый фокус снова решает — закрыть поиск или вернуть просмотр (выше).
+        // Не на самом фокусе: бар едет по клавиатуре (`BottomChrome.raise`), и между
+        // фокусом и её подъёмом он перекладывался бы из раскладки просмотра
+        // в раскладку режима и обратно.
+        .onChange(of: keyboard.isUp) { _, isUp in
+            if isUp, actionBar.isSearchFocused { search.isBrowsing = false }
         }
         .environment(navigation)
         .environment(actionBar)
@@ -215,6 +225,18 @@ struct AppRootView: View {
                 content()
             }
             .background(Color.black)
+            // Корень стека — свой хостинг-контроллер, и корневое
+            // `ignoresSafeArea(.keyboard)` до него не доходит (как и до пушей).
+            // Поднятая клавиатура поджимала корень, витрина не ужималась, и стопка
+            // вылезала за кадр поровну вверх и вниз: выдача уезжала на 38pt вверх,
+            // а снизу инсет клавиатуры складывался с её собственным отступом.
+            // Отступ от клавиатуры выдача считает сама.
+            .ignoresSafeArea(.keyboard)
+            // Системный бар у корня выключен — у всех табов разом. Витрина его не
+            // прятала: до первого пуша он себя не проявлял, а после попа с экрана
+            // со спрятанным баром корень получал его инсет, и выдача на возврате
+            // съезжала на 54pt вниз (замер 2026-10-03).
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }

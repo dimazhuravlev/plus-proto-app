@@ -170,7 +170,8 @@ struct ActionBarView: View {
         let layout = ActionBarLayout(
             mode: actionBar.mode,
             hasMusic: actionBar.music != nil,
-            raise: raise
+            raise: raise,
+            isBrowsing: search.isBrowsing
         )
 
         // Зазор переехал в padding правой зоны: `spacing` не интерполируется и прыгал
@@ -185,7 +186,8 @@ struct ActionBarView: View {
             SearchPill(
                 layout: layout,
                 searchFocused: $searchFocused,
-                query: $search.query
+                query: $search.query,
+                isBrowsing: $search.isBrowsing
             )
             .padding(.leading, layout.screenMargin)
 
@@ -318,15 +320,20 @@ private struct ActionBarLayout: Equatable {
     let progressOpacity: Double
     /// Фокусная раскладка: поле занимает бар целиком, плеер уезжает за кромку.
     let isRaised: Bool
+    /// Крест в поле — в фокусе и в просмотре выдачи без фокуса: выдача закрывает
+    /// весь экран, затемнения под ней не достать, и крест — единственный выход
+    /// из поиска в одно касание.
+    let showsClear: Bool
     /// Подъём над клавиатурой — свойство ОБЩЕГО предка обеих зон, а не зоны.
     let lift: CGFloat
     let screenMargin: CGFloat
     /// Зазор между зонами (бывший HStack spacing).
     let gap: CGFloat
 
-    init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise) {
+    init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise, isBrowsing: Bool = false) {
         let compact = PlusMetrics.actionBarCompact
         isRaised = raise.isRaised
+        showsClear = raise.isRaised || isBrowsing
         lift = raise.lift
         screenMargin = raise.isRaised ? ActionBarGeometry.focusedScreenMargin : PlusMetrics.screenMargin
 
@@ -351,7 +358,13 @@ private struct ActionBarLayout: Equatable {
             return
         }
 
-        switch mode {
+        // Просмотр выдачи без фокуса показывает поле с запросом. В музыке поле
+        // свёрнуто в круг и запроса не видно — на время просмотра бар раскладывается
+        // как в поиске: поле и круг плеера. Режим при этом не меняется: закрыли
+        // поиск — бар вернулся к плееру.
+        let layoutMode: ActionBarMode = isBrowsing && mode == .music ? .search : mode
+
+        switch layoutMode {
         case .search:
             showMiniPlayer = hasMusic
             isMiniPlayerCompact = hasMusic
@@ -421,6 +434,9 @@ private struct SearchPill: View {
     let layout: ActionBarLayout
     @FocusState.Binding var searchFocused: Bool
     @Binding var query: String
+    /// Выдача открыта без фокуса — поле показывает запрос, а не плейсхолдер.
+    /// Привязка, а не значение: крест закрывает и такой поиск.
+    @Binding var isBrowsing: Bool
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
     /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
@@ -460,14 +476,16 @@ private struct SearchPill: View {
             ZStack(alignment: .leading) {
                 if !layout.searchIconOnly {
                     placeholderStack
-                        .opacity(layout.placeholderOpacity)
+                        .opacity(isBrowsing ? 0 : layout.placeholderOpacity)
+                    focusedPlaceholder
                 }
                 // Поле ввода живёт всегда, но до фокуса невидимо: пересоздавать его
                 // по условию — значит терять фокус и каретку на первом же кадре.
                 // Гейт по сырому фокусу, а не по раскладке: каретка и набранный текст
-                // видны сразу, даже если клавиатура ещё не пришла.
+                // видны сразу, даже если клавиатура ещё не пришла. В просмотре выдачи
+                // без фокуса поле тоже видно — внизу стоит тот запрос, чью выдачу видно.
                 input
-                    .opacity(searchFocused ? 1 : 0)
+                    .opacity(searchFocused || isBrowsing ? 1 : 0)
             }
 
             // Крест живёт в дереве всегда и схлопывается в ноль по ширине.
@@ -480,20 +498,20 @@ private struct SearchPill: View {
             // в той же единственной транзакции бара, что и всё остальное.
             clearButton
                 .scaleEffect(
-                    layout.isRaised ? 1 : ActionBarGeometry.clearCollapsedScale,
+                    layout.showsClear ? 1 : ActionBarGeometry.clearCollapsedScale,
                     anchor: .trailing
                 )
-                .opacity(layout.isRaised ? 1 : 0)
+                .opacity(layout.showsClear ? 1 : 0)
                 // Ширина анимируется, а это проход раскладки на кадр. Здесь он
                 // несущий: без схлопывания ширины крест переполнит контент круга
                 // 60pt и утащит лупу влево — та же ловушка, что описана выше про
                 // общий `spacing`. Бар и так анимирует ширины зон, класс работы
                 // не меняется.
-                .frame(width: layout.isRaised ? ActionBarGeometry.searchIconBox : 0)
-                .padding(.leading, layout.isRaised ? ActionBarGeometry.clearLeadingGap : 0)
+                .frame(width: layout.showsClear ? ActionBarGeometry.searchIconBox : 0)
+                .padding(.leading, layout.showsClear ? ActionBarGeometry.clearLeadingGap : 0)
                 // Схлопнутый крест остаётся в дереве — гасим хит-тест явно, иначе
                 // он ловил бы касания в свёрнутом поле.
-                .allowsHitTesting(layout.isRaised)
+                .allowsHitTesting(layout.showsClear)
         }
         .padding(.horizontal, ActionBarGeometry.searchPaddingH)
         // Левая зона гибкая всегда: она забирает остаток бара после правой.
@@ -612,6 +630,8 @@ private struct SearchPill: View {
     private var input: some View {
         TextField("", text: $query)
             .focused($searchFocused)
+            // Видимую подсказку рисует `focusedPlaceholder`, а VoiceOver читает её здесь.
+            .accessibilityLabel("Поиск по всему")
             .textFieldStyle(.plain)
             .tint(Color.fillOne)
             .foregroundStyle(Color.fillOne)
@@ -629,12 +649,14 @@ private struct SearchPill: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Крест справа: снимает фокус и опускает клавиатуру. В макете 24×24 с полем 18
-    /// от правого края поля — то есть на месте общего внутреннего отступа пилюли.
+    /// Крест справа: снимает фокус и опускает клавиатуру, а в просмотре выдачи
+    /// закрывает её. В макете 24×24 с полем 18 от правого края поля — то есть
+    /// на месте общего внутреннего отступа пилюли.
     private var clearButton: some View {
         Button {
             query = ""
             searchFocused = false
+            isBrowsing = false
         } label: {
             Image("iconCross")
                 .renderingMode(.template)
@@ -655,10 +677,35 @@ private struct SearchPill: View {
             .foregroundStyle(Color.searchIcon)
     }
 
+    /// «Поиск по всему» — в фокусе, пока поле пустое (правка пользователя 2026-10-03).
+    /// Бегущие фразы предлагают сервисы, а в фокусе поле уже ждёт ввода, и подсказка
+    /// одна: искать можно по всему сразу.
+    ///
+    /// Две прозрачности — две разные кривые. Первая гаснет мгновенно: под первой
+    /// буквой (как системный плейсхолдер) и на снятии фокуса — иначе он мигнул бы
+    /// под крестом, который стирает запрос раньше, чем уходит клавиатура. Вторая
+    /// идёт за раскладкой бара: проявляется с задержкой, когда бегущая фраза уже
+    /// погасла (`SearchPlaceholderMotion.focusedIn`), а уходит без анимации —
+    /// возвращающаяся фраза встаёт на пустое место.
+    private var focusedPlaceholder: some View {
+        Text("Поиск по всему")
+            .plusHeadline(.s)
+            .foregroundStyle(Color.searchPlaceholder)
+            .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(searchFocused && query.isEmpty ? 1 : 0)
+            .animation(nil, value: searchFocused && query.isEmpty)
+            .opacity(layout.isRaised ? 1 : 0)
+            .animation(layout.isRaised ? SearchPlaceholderMotion.focusedIn : nil, value: layout.isRaised)
+            .allowsHitTesting(false)
+            // Для VoiceOver подсказка — у самого поля, вторая копия была бы шумом.
+            .accessibilityHidden(true)
+    }
+
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
             // Пауза совпадает с гашением плейсхолдера — значит по раскладке.
-            SearchPlaceholderTicker(isPaused: layout.isRaised)
+            SearchPlaceholderTicker(isPaused: layout.isRaised || isBrowsing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Без `clipped()`: он срезал бы 4pt хода подмены. Границу и так держит
@@ -683,6 +730,10 @@ private enum SearchPlaceholderMotion {
     static let swapGap: Duration = .milliseconds(100)
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
+    /// Плейсхолдер фокуса проявляется **после** бегущей фразы, а не сквозь неё:
+    /// та гаснет кривой клавиатуры (~0.25s) и к 0.15s почти прозрачна. Тот же
+    /// принцип, что у самой подмены фраз, — глаз должен увидеть пустое поле.
+    static let focusedIn: Animation = .easeOut(duration: 0.15).delay(0.15)
 }
 
 /// Плейсхолдеры поиска: подмена со сдвигом на 4pt, уход и приход разведены по времени.
@@ -823,6 +874,7 @@ private struct TrailingClipShape: Shape {
 
 private struct TrailingSlot: View {
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(SearchState.self) private var search
     let layout: ActionBarLayout
 
     var body: some View {
@@ -851,6 +903,10 @@ private struct TrailingSlot: View {
                     // плеер, и первый тап обязан его развернуть.
                     onExpand: {
                         if layout.isMiniPlayerCompact {
+                            // Круг в просмотре выдачи — это выход из неё к плееру:
+                            // пока выдача открыта, бар держит раскладку поиска,
+                            // и развернуть плеер, не закрыв её, нельзя.
+                            search.isBrowsing = false
                             actionBar.expandMiniPlayer()
                         } else {
                             actionBar.openMusicPlayer()

@@ -25,6 +25,13 @@ enum PlusChromeMetrics {
     /// Отступ от клавиатуры до низа action bar при фокусе поиска (`2021:11248`).
     static let focusKeyboardGap: CGFloat = 12
 
+    /// На сколько опускается бар в просмотре выдачи без клавиатуры: таббара там нет,
+    /// и бар встаёт на его место — низом на нижнюю безопасную зону, где стоят низы
+    /// кнопок табов (правка пользователя 2026-10-03).
+    static var browsingDrop: CGFloat {
+        tabsRowHeight + actionBarToTabsGap
+    }
+
     /// Высота слоя блюра — **ниже градиента**: размытие должно начинаться примерно
     /// с середины action bar, иначе лента мылится ещё до того, как заедет под хром.
     /// Считается от физического низа: safe area + ряд табов + зазор + половина бара.
@@ -55,6 +62,12 @@ enum PlusChromeMetrics {
     /// слой мылил бы его в покое.
     static let topScrimBlurSoft: (radius: CGFloat, height: CGFloat) = (4, 72)
     static let topScrimBlurStrong: (radius: CGFloat, height: CGFloat) = (14, 54)
+}
+
+enum BottomChromeMotion {
+    /// Таббар, уходя, ещё и проседает: бар опускается на его место, и встречное
+    /// движение читается как «уступил место», а не как два слоя друг в друге.
+    static let tabBarHideOffset: CGFloat = 16
 }
 
 enum TopScrimMotion {
@@ -91,17 +104,24 @@ struct TopScrim: View {
 struct BottomChrome: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(SearchState.self) private var search
 
     var body: some View {
         VStack(spacing: PlusChromeMetrics.actionBarToTabsGap) {
             // Поднимается только бар. Таббар остаётся на своём месте и уходит
-            // под клавиатуру — гасить его не нужно (решение пользователя 2026-08-23).
+            // под клавиатуру — гасить его не нужно (решение пользователя 2026-08-23);
+            // исключение — выдача поиска, см. `isTabBarHidden`.
             // Подъём уехал ВНУТРЬ бара: он обязан висеть на общем предке обеих зон
             // под той же единственной анимацией, что и ширины зон и уезд плеера.
             ActionBarView(raise: raise)
 
             TabBarView()
-                .allowsHitTesting(!actionBar.isSearchFocused)
+                .opacity(isTabBarHidden ? 0 : 1)
+                .offset(y: isTabBarHidden ? BottomChromeMotion.tabBarHideOffset : 0)
+                // Той же кривой, что едет бар: таббар уходит, пока бар опускается
+                // на его место, и возвращается, пока бар поднимается обратно.
+                .animation(keyboard.motion ?? ActionBarMotion.morph, value: isTabBarHidden)
+                .allowsHitTesting(!actionBar.isSearchFocused && !isTabBarHidden)
         }
         // Системный подъём над клавиатурой выключен: SwiftUI поднял бы весь хром
         // вместе с таббаром, да ещё и сложился бы с нашим сдвигом — бар улетал вдвое выше.
@@ -113,14 +133,29 @@ struct BottomChrome: View {
         .ignoresSafeArea(.keyboard)
     }
 
+    /// Таббара нет, пока на экране выдача поиска: внизу только бар (правка
+    /// пользователя 2026-10-03). В фокусе он гаснет под клавиатурой, как только
+    /// появилась выдача, — поэтому, когда клавиатуру опускают в просмотр, под ней
+    /// уже пусто и мелькать нечему. С пустым запросом таббар стоит под клавиатурой,
+    /// как и раньше (решение 2026-08-23), и закрытие поиска его просто открывает.
+    private var isTabBarHidden: Bool {
+        search.isBrowsing || (actionBar.isSearchFocused && search.isActive)
+    }
+
     /// Единственный источник фокусной геометрии бара: и подъём, и ширины зон, и уезд
     /// плеера считаются отсюда, из ОДНОГО предиката. Драйвер — состояние клавиатуры,
     /// а не флаг фокуса: так оба края перехода (подъём и опускание) начинаются ровно
     /// тогда, когда трогается клавиатура, и всё меняется одним апдейтом.
     ///
     /// Подъём: низ бара встаёт на 12pt над клавиатурой (`2021:11248`).
+    /// В просмотре выдачи без клавиатуры бар, наоборот, опускается на место таббара —
+    /// той же кривой клавиатуры, если она как раз уезжает: одно движение, без остановки
+    /// на обычной высоте.
     private var raise: ActionBarRaise {
-        guard keyboard.isUp else { return .none }
+        guard keyboard.isUp else {
+            guard search.isBrowsing else { return .none }
+            return ActionBarRaise(isRaised: false, lift: PlusChromeMetrics.browsingDrop, motion: keyboard.motion)
+        }
         let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
             + PlusChromeMetrics.tabsRowHeight
             + PlusChromeMetrics.actionBarToTabsGap
