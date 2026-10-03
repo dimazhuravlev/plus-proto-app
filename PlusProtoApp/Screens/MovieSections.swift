@@ -214,14 +214,20 @@ struct MovieRateSection: View {
         /// Ассет эмодзи — картинка, а не глиф: см. `RateBlock` витрины.
         let emoji: String
         let title: String
+        /// Сколько эмодзи улетает из кнопки — как у блока витрины (`RateReaction`)
+        let burst: Int
     }
 
     private static let options = [
-        Option(emoji: "emojiRateDislike", title: "Не зашло"),
-        Option(emoji: "emojiRateMeh", title: "Так себе"),
-        Option(emoji: "emojiRateGood", title: "Хорошо"),
-        Option(emoji: "emojiRateLove", title: "Обожаю"),
+        Option(emoji: "emojiRateDislike", title: "Не зашло", burst: 1),
+        Option(emoji: "emojiRateMeh", title: "Так себе", burst: 1),
+        Option(emoji: "emojiRateGood", title: "Хорошо", burst: 2),
+        Option(emoji: "emojiRateLove", title: "Обожаю", burst: 6),
     ]
+
+    @State private var selected: String?
+    /// Нажатия по кнопкам: каждое — новая стайка эмодзи из этой кнопки
+    @State private var launches: [String: Int] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -229,18 +235,37 @@ struct MovieRateSection: View {
 
             HStack(spacing: 0) {
                 ForEach(MovieRateSection.options) { option in
-                    VStack(spacing: Layout.labelGap) {
-                        Image(option.emoji)
-                            .resizable()
-                            .frame(width: Layout.emoji, height: Layout.emoji)
-                            .frame(width: Layout.circle, height: Layout.circle)
-                            .background(Circle().fill(Color.buttonsSecondary))
-                            .accessibilityHidden(true)
+                    // Тап — реакция, как на витрине: белый фон, стайка эмодзи, хаптик.
+                    Button {
+                        selected = option.id
+                        launches[option.id, default: 0] += 1
+                    } label: {
+                        VStack(spacing: Layout.labelGap) {
+                            RateReactionChip(
+                                emoji: option.emoji,
+                                isSelected: selected == option.id,
+                                diameter: Layout.circle,
+                                emojiSize: Layout.emoji
+                            )
 
-                        Text(option.title)
-                            .plusText(.textS, .semibold)
-                            .foregroundStyle(Color.fillOne)
+                            Text(option.title)
+                                .plusText(.textS, .semibold)
+                                .foregroundStyle(Color.fillOne)
+                        }
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(PressScaleButtonStyle())
+                    .overlay(alignment: .top) {
+                        RateBalloons(
+                            emoji: option.emoji,
+                            emojiSize: Layout.emoji,
+                            diameter: Layout.circle,
+                            burst: option.burst,
+                            launches: launches[option.id] ?? 0
+                        )
+                    }
+                    .accessibilityLabel(option.title)
+                    .accessibilityAddTraits(selected == option.id ? .isSelected : [])
                     .frame(maxWidth: .infinity)
                 }
             }
