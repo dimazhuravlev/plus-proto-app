@@ -30,6 +30,10 @@ struct SearchResultsView: View {
     /// торможение, ни один край не дёргается.
     private enum SectionMotion {
         static let push: Animation = .timingCurve(0.32, 0.72, 0, 1, duration: 0.4)
+        /// Обзор гаснет быстрее, чем въезжает раздел: иначе скелетон раздела 0.4s
+        /// лежал поверх ещё видимых обложек обзора и казался ярче каруселей
+        /// (жалоба пользователя 2026-10-03, поймано на записи).
+        static let overviewFade: Animation = .easeOut(duration: 0.15)
         /// На сколько отъезжает обзор: намёк на глубину, а не полный уезд.
         static let overviewShift: CGFloat = 80
     }
@@ -118,8 +122,8 @@ struct SearchResultsView: View {
         static let skeletonHeaderBar: CGFloat = 16
         static let skeletonHeaderWidth: CGFloat = 96
         /// Обложка проявляется поверх бледной заливки скелетона, без второго,
-        /// яркого серого (правка пользователя 2026-10-03).
-        static let coverAppear: Animation = .easeOut(duration: 0.15)
+        /// яркого серого (правка пользователя 2026-10-03) — общим `PlusSkeleton`.
+        static let coverAppear: Animation = PlusSkeleton.appear
 
         // Карточка книги — макеты `2311:25096` и `2385:33949`: книга в небольшой проекции.
         /// Высота обложки — по размеру карточек; ширина — по её пропорциям, обложка
@@ -153,8 +157,9 @@ struct SearchResultsView: View {
             // возвращает туда же, где пользователь был. Раздел вставляется поверх.
             ZStack {
                 content
-                    .offset(x: search.expanded == nil ? 0 : -SectionMotion.overviewShift)
                     .opacity(search.expanded == nil ? 1 : 0)
+                    .animation(SectionMotion.overviewFade, value: search.expanded)
+                    .offset(x: search.expanded == nil ? 0 : -SectionMotion.overviewShift)
                     .allowsHitTesting(search.expanded == nil)
                     .accessibilityHidden(search.expanded != nil)
 
@@ -331,7 +336,7 @@ struct SearchResultsView: View {
     /// Габарит — как у настоящего заголовка: строка той же высоты и те же поля.
     private var skeletonHeader: some View {
         Rectangle()
-            .fill(Color.fillNine)
+            .fill(PlusSkeleton.fill)
             .frame(width: Layout.skeletonHeaderWidth, height: Layout.skeletonHeaderBar)
             .frame(height: Layout.headerLine)
             .padding(.top, Layout.headerTop)
@@ -417,7 +422,7 @@ struct SearchResultsView: View {
         // Заливка — ровно та же, что у скелетона: карточка встаёт на его место
         // без смены цвета. Плейсхолдер загрузчика прозрачный — у `ArtworkImage`
         // он свой, ярче, и ложился поверх заливки вторым серым.
-        return Color.fillNine
+        return PlusSkeleton.fill
             .frame(width: Layout.card)
             .frame(height: coverHeight(hit.kind))
             .overlay {
@@ -430,7 +435,7 @@ struct SearchResultsView: View {
                 }
             }
             .clipShape(shape)
-            .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .overlay { shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
     }
 
     // MARK: Карточка книги
@@ -497,20 +502,20 @@ struct SearchResultsView: View {
         return ZStack(alignment: .topLeading) {
             pages
                 .fill(Layout.bookPagesFill)
-                .overlay { pages.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+                .overlay { pages.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
                 .frame(
                     width: coverWidth + Layout.bookPagesRight,
                     height: Layout.bookCoverHeight + Layout.bookPagesTop
                 )
 
-            Color.fillNine
+            PlusSkeleton.fill
                 .overlay { cover() }
                 .frame(width: coverWidth, height: Layout.bookCoverHeight)
                 .clipShape(coverShape)
                 .overlay {
                     // Бордер только сверху, справа и снизу: слева корешок.
                     BookCoverEdge(radius: Layout.bookCoverRadius)
-                        .stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
+                        .stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
                 }
                 .overlay(alignment: .leading) {
                     BookHingeShade.gradient
@@ -588,8 +593,8 @@ struct SearchResultsView: View {
             let shape = RoundedRectangle(cornerRadius: Layout.coverRadius, style: .continuous)
             VStack(alignment: .leading, spacing: Layout.coverGap) {
                 shape
-                    .fill(Color.fillNine)
-                    .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+                    .fill(PlusSkeleton.fill)
+                    .overlay { shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
                     .frame(width: Layout.card)
                     .frame(height: kind == .movies ? Layout.card / Layout.posterAspect : Layout.card)
                 skeletonLabel
@@ -602,8 +607,8 @@ struct SearchResultsView: View {
     /// Полоски на месте строк названия и подписи — по центру своих строк.
     private var skeletonLabel: some View {
         VStack(alignment: .leading, spacing: 2 * Layout.skeletonBarInset) {
-            Rectangle().fill(Color.fillNine).frame(width: Layout.skeletonTitleBar, height: Layout.skeletonBar)
-            Rectangle().fill(Color.fillNine).frame(width: Layout.skeletonSubtitleBar, height: Layout.skeletonBar)
+            Rectangle().fill(PlusSkeleton.fill).frame(width: Layout.skeletonTitleBar, height: Layout.skeletonBar)
+            Rectangle().fill(PlusSkeleton.fill).frame(width: Layout.skeletonSubtitleBar, height: Layout.skeletonBar)
         }
         .padding(.top, Layout.skeletonBarInset)
         .frame(maxWidth: .infinity, alignment: .leading)

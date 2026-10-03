@@ -504,11 +504,11 @@ private struct SearchRowThumbnail: View {
 
     var body: some View {
         let shape = self.shape
-        Color.fillNine
+        PlusSkeleton.fill
             .frame(width: Self.width, height: Self.height(hit.kind))
             .overlay {
                 if let source = hit.artwork {
-                    ResolvedArtwork(source: source, appear: .easeOut(duration: 0.15)) { image in
+                    ResolvedArtwork(source: source, appear: PlusSkeleton.appear) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         Color.clear
@@ -519,7 +519,7 @@ private struct SearchRowThumbnail: View {
             .overlay {
                 // У круга исполнителя обводки в макете нет.
                 if hit.kind != .artist {
-                    shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
+                    shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
                 }
             }
     }
@@ -540,12 +540,13 @@ private struct SearchListSkeletonRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // Тот же скелетон, что у карточек каруселей: цвет, хайрлайн, полосы 12.
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.fillNine)
+                .plusSkeleton()
                 .frame(width: SearchRowThumbnail.width, height: thumbHeight)
             VStack(alignment: .leading, spacing: 8) {
-                Rectangle().fill(Color.fillNine).frame(width: 160, height: 12)
-                Rectangle().fill(Color.fillNine).frame(width: 100, height: 12)
+                Rectangle().fill(PlusSkeleton.fill).frame(width: 160, height: 12)
+                Rectangle().fill(PlusSkeleton.fill).frame(width: 100, height: 12)
             }
             Spacer(minLength: 0)
         }
@@ -603,11 +604,10 @@ private struct MusicWizardCard: View {
 
     private var topRow: some View {
         HStack(spacing: 0) {
-            Color.fillNine
+            PlusSkeleton.fill
                 .frame(width: Layout.avatar, height: Layout.avatar)
                 .overlay { artwork(wizard.artist.artwork) }
                 .clipShape(Circle())
-                .overlay { Circle().stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
 
             VStack(alignment: .leading, spacing: -2) {
                 Text(wizard.artist.title)
@@ -667,13 +667,13 @@ private struct MusicWizardCard: View {
     @ViewBuilder
     private func albumCard(_ album: SearchHit) -> some View {
         let card = VStack(alignment: .leading, spacing: 6) {
-            Color.fillNine
+            PlusSkeleton.fill
                 .frame(width: Layout.albumWidth, height: Layout.albumWidth)
                 .overlay { artwork(album.artwork) }
                 .clipShape(RoundedRectangle(cornerRadius: Layout.albumRadius, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: Layout.albumRadius, style: .continuous)
-                        .stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
+                        .stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
                 }
             Text(album.title)
                 .plusText(.textS, .medium)
@@ -709,7 +709,7 @@ private struct MusicWizardCard: View {
     @ViewBuilder
     private func artwork(_ source: ArtworkSource?) -> some View {
         if let source {
-            ResolvedArtwork(source: source, appear: .easeOut(duration: 0.15)) { image in
+            ResolvedArtwork(source: source, appear: PlusSkeleton.appear) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.clear
