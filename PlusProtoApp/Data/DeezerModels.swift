@@ -25,6 +25,19 @@ struct DeezerArtistBrief: Decodable, Identifiable {
     let nbFan: Int?
 }
 
+/// Плейлист из `/search/playlist` — строка полной выдачи музыки.
+struct DeezerPlaylistBrief: Decodable, Identifiable {
+    let id: Int
+    let title: String
+    let pictureBig: String?
+    let pictureXl: String?
+    let user: Owner?
+
+    struct Owner: Decodable {
+        let name: String?
+    }
+}
+
 // MARK: - Album
 
 struct DeezerAlbumBrief: Decodable, Identifiable {

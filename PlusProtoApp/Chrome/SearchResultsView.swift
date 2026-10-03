@@ -22,7 +22,17 @@ struct SearchResultsView: View {
 
     #if DEBUG
     @MainActor private static var didDebugTapHit = false
+    @MainActor private static var didDebugExpand = false
     #endif
+
+    /// Переход в полную выдачу раздела и обратно — как пуш: раздел въезжает справа,
+    /// обзор отъезжает влево и гаснет. Кривая — iOS-шторка: быстрый старт, долгое
+    /// торможение, ни один край не дёргается.
+    private enum SectionMotion {
+        static let push: Animation = .timingCurve(0.32, 0.72, 0, 1, duration: 0.4)
+        /// На сколько отъезжает обзор: намёк на глубину, а не полный уезд.
+        static let overviewShift: CGFloat = 80
+    }
 
     /// Габариты, которые зависят от размера карточек выдачи.
     private struct CardMetrics {
@@ -139,9 +149,42 @@ struct SearchResultsView: View {
     var body: some View {
         // Признак общий с затемнением (`SearchOverlay`) — иначе слои разъезжались бы.
         if isShown {
-            content
-                .transition(.opacity)
+            // Обзор остаётся в дереве под разделом — со своей позицией скролла: «Назад»
+            // возвращает туда же, где пользователь был. Раздел вставляется поверх.
+            ZStack {
+                content
+                    .offset(x: search.expanded == nil ? 0 : -SectionMotion.overviewShift)
+                    .opacity(search.expanded == nil ? 1 : 0)
+                    .allowsHitTesting(search.expanded == nil)
+                    .accessibilityHidden(search.expanded != nil)
+
+                if let kind = search.expanded {
+                    SearchSectionView(kind: kind, open: open, zoom: zoom)
+                        .transition(.move(edge: .trailing))
+                }
+            }
+            .animation(SectionMotion.push, value: search.expanded)
+            .transition(.opacity)
                 #if DEBUG
+                // `-debugExpandSection music|movies|books` — раскрыть раздел, когда
+                // выдача пришла: тапнуть по заголовку из шелла нечем. Один раз за запуск.
+                .task(id: search.sections.first?.domain.hits.first?.id) {
+                    guard let raw = UserDefaults.standard.string(forKey: "debugExpandSection"),
+                          !Self.didDebugExpand,
+                          search.sections.contains(where: { !$0.domain.hits.isEmpty })
+                    else { return }
+                    let kind: SearchState.Section.Kind? = switch raw {
+                    case "music": .music
+                    case "movies": .movies
+                    case "books": .books
+                    default: nil
+                    }
+                    guard let kind else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled, !Self.didDebugExpand else { return }
+                    Self.didDebugExpand = true
+                    search.expand(kind)
+                }
                 // `-debugTapSearchHit <n>` — открыть первую карточку n-й непустой
                 // секции выдачи (1 — первая): тапнуть по симулятору из шелла нечем,
                 // а возврат в поиск иначе не проверить. В паре с `-debugCloseEntity`
@@ -220,7 +263,14 @@ struct SearchResultsView: View {
                 if domain.isLoading {
                     skeletonHeader
                 } else {
-                    header(section.title)
+                    // Заголовок с шевроном — переход в полную выдачу раздела (задача
+                    // пользователя 2026-10-03).
+                    Button { search.expand(section.id) } label: {
+                        header(section.title)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Вся выдача раздела")
                 }
 
                 ScrollView(.horizontal) {
@@ -482,7 +532,7 @@ struct SearchResultsView: View {
     private func labelTrailing(_ kind: SearchHit.Kind) -> CGFloat {
         switch kind {
         case .artist: 0
-        case .track, .album: Layout.labelTrailing
+        case .track, .album, .playlist: Layout.labelTrailing
         case .movie, .book, .director, .writer: Layout.size.posterLabelTrailing
         }
     }
@@ -492,14 +542,15 @@ struct SearchResultsView: View {
     /// фото стояли вровень с книгами (макет пользователя 2026-10-03).
     private func coverHeight(_ kind: SearchHit.Kind) -> CGFloat {
         switch kind {
-        case .track, .album, .artist: Layout.card
+        case .track, .album, .artist, .playlist: Layout.card
         case .movie, .book, .director: Layout.card / Layout.posterAspect
         case .writer: Layout.bookCoverHeight + Layout.bookPagesTop
         }
     }
 
-    /// Источник зума — только когда есть namespace (корень приложения).
-    private struct SearchZoomSource: ViewModifier {
+    /// Источник зума — только когда есть namespace (корень приложения). Общий
+    /// с полной выдачей раздела (`SearchSectionView`).
+    struct SearchZoomSource: ViewModifier {
         let route: EntityRoute
         let zoom: Namespace.ID?
 

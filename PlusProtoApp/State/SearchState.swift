@@ -218,6 +218,7 @@ final class SearchState {
         if let cached = cache[text] {
             isLoading = false
             shown = cached
+            if let expanded { startFull(expanded, text) }
             return
         }
 
@@ -263,11 +264,183 @@ final class SearchState {
         // в окончательном порядке.
         shown = results
         isLoading = false
+        // Раскрытый раздел следует за запросом: поле в баре на экране полной выдачи
+        // живое, набранное меняет и её. Персона раздела берётся из только что
+        // собранного обзора, поэтому полная выдача — после него.
+        if let expanded { startFull(expanded, text) }
     }
 
     private func reset() {
         shown = nil
         isLoading = false
+        // Запрос стёрт — раскрытому разделу показывать нечего.
+        expanded = nil
+        fullTask?.cancel()
+    }
+
+    // MARK: - Полная выдача раздела
+
+    /// Раздел, раскрытый на весь экран — переход по заголовку его карусели (задача
+    /// пользователя 2026-10-03, макет музыки `2440:27920`). `nil` — обзор каруселями.
+    /// Это подэкран слоя выдачи, а не пуш: «Назад» в баре сперва сворачивает его
+    /// к обзору, а вся навигация вокруг поиска (отметка ухода, просмотр, привязка
+    /// к экрану) остаётся прежней.
+    private(set) var expanded: Section.Kind?
+    /// Полная выдача — последняя собранная; к запросу и разделу её сверяет `full(for:)`.
+    private var full: FullResults?
+    private var fullTask: Task<Void, Never>?
+    private var fullCache: [String: FullResults] = [:]
+
+    /// Полная выдача одного раздела по одному запросу.
+    struct FullResults {
+        let kind: Section.Kind
+        let text: String
+        let hits: [SearchHit]
+        /// Колдунщик — только у музыки.
+        let wizard: MusicWizard?
+    }
+
+    /// Колдунщик музыки — самый подходящий запросу исполнитель (макет `2440:29310`):
+    /// фото, имя, play и карусель его альбомов.
+    struct MusicWizard {
+        let artist: SearchHit
+        let albums: [SearchHit]
+        /// Трек этого исполнителя из выдачи — его включает play. Нет — первый альбом.
+        let topTrack: SearchHit?
+    }
+
+    /// Сколько просим у каждой ручки на полной выдаче — больше, чем у карусели.
+    private enum FullLimits {
+        static let tracks = 20
+        static let albums = 15
+        static let artists = 10
+        static let playlists = 10
+        static let movies = 30
+        static let networkMovies = 20
+        /// Меньше стольких фильмов в запасе — добор из сети (квота Кинопоиска).
+        static let poolEnough = 10
+        static let books = 20
+        static let wizardAlbums = 12
+        static let musicTotal = 50
+    }
+
+    /// Раскрыть раздел. Анимацию перехода ведёт слой выдачи.
+    func expand(_ kind: Section.Kind) {
+        expanded = kind
+        startFull(kind, normalized)
+    }
+
+    /// Свернуть к обзору — «Назад» в баре, новый поиск, смена таба.
+    func collapse() {
+        expanded = nil
+    }
+
+    /// Полная выдача раскрытого раздела по текущему запросу; `nil` — ещё собирается.
+    var fullResults: FullResults? {
+        guard let expanded, let full, full.kind == expanded, full.text == normalized else { return nil }
+        return full
+    }
+
+    private func startFull(_ kind: Section.Kind, _ text: String) {
+        fullTask?.cancel()
+        let key = "\(kind)|\(text)"
+        if let cached = fullCache[key] {
+            full = cached
+            return
+        }
+        fullTask = Task { [weak self] in
+            guard let self else { return }
+            let result = await self.loadFull(kind, text)
+            guard !Task.isCancelled else { return }
+            self.fullCache[key] = result
+            self.full = result
+        }
+    }
+
+    private func loadFull(_ kind: Section.Kind, _ text: String) async -> FullResults {
+        switch kind {
+        case .music:
+            let (hits, wizard) = await fetchFullMusic(text)
+            return FullResults(kind: kind, text: text, hits: hits, wizard: wizard)
+        case .movies:
+            let hits = await fetchFullMovies(text)
+            return FullResults(kind: kind, text: text, hits: personFirst(.director, in: shown?.movies, hits), wizard: nil)
+        case .books:
+            let found = (try? await BooksService.shared.search(text, limit: FullLimits.books)) ?? []
+            let hits = found.map(SearchHit.init(book:))
+            return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: shown?.books, hits), wizard: nil)
+        }
+    }
+
+    /// Персона из обзора — первой и в полной выдаче: запрос назвал её саму.
+    private func personFirst(_ kind: SearchHit.Kind, in overview: [SearchHit]?, _ hits: [SearchHit]) -> [SearchHit] {
+        guard let person = overview?.first(where: { $0.kind == kind }) else { return hits }
+        return [person] + hits
+    }
+
+    private func fetchFullMusic(_ text: String) async -> ([SearchHit], MusicWizard?) {
+        async let tracks = try? DeezerService.shared.searchTracks(query: text, limit: FullLimits.tracks)
+        async let albums = try? DeezerService.shared.searchAlbums(query: text, limit: FullLimits.albums)
+        async let artists = try? DeezerService.shared.searchArtists(query: text, limit: FullLimits.artists)
+        async let playlists = try? DeezerService.shared.searchPlaylists(query: text, limit: FullLimits.playlists)
+        let (foundTracks, foundAlbums, foundArtists, foundPlaylists) = await (
+            tracks ?? [], albums ?? [], artists ?? [], playlists ?? []
+        )
+
+        // Вперемешку по одному от каждого вида — как и в карусели.
+        let byKind = [
+            foundTracks.map(SearchHit.init(track:)),
+            foundAlbums.map(SearchHit.init(album:)),
+            foundArtists.map(SearchHit.init(artist:)),
+            foundPlaylists.map(SearchHit.init(playlist:)),
+        ]
+        var hits: [SearchHit] = []
+        var seen: Set<String> = []
+        for index in 0..<(byKind.map(\.count).max() ?? 0) {
+            for kind in byKind where index < kind.count {
+                let hit = kind[index]
+                guard seen.insert((hit.title + "|" + hit.subtitle).lowercased()).inserted else { continue }
+                hits.append(hit)
+            }
+        }
+        hits = Array(hits.prefix(FullLimits.musicTotal))
+
+        // Колдунщик — исполнитель, чьё имя отвечает запросу; из таких — самый
+        // популярный. Не нашлось — колдунщика нет, а не случайный исполнитель.
+        let needle = text.folded
+        guard let best = foundArtists
+            .filter({ Self.nameMatches($0.name.folded, needle) })
+            .max(by: { ($0.nbFan ?? 0) < ($1.nbFan ?? 0) })
+        else { return (hits, nil) }
+        let artistAlbums = (try? await DeezerService.shared.artistAlbums(id: best.id, limit: FullLimits.wizardAlbums)) ?? []
+        var albumTitles: Set<String> = []
+        let wizardAlbums = artistAlbums
+            .filter { albumTitles.insert($0.title.lowercased()).inserted }
+            .map(SearchHit.init(album:))
+        let artistName = best.name.folded
+        let topTrack = hits.first { $0.kind == .track && $0.subtitle.folded == artistName }
+        return (hits, MusicWizard(artist: SearchHit(artist: best), albums: wizardAlbums, topTrack: topTrack))
+    }
+
+    /// Имя отвечает запросу: совпадает, начинается с него или содержит его целым словом.
+    private static func nameMatches(_ name: String, _ needle: String) -> Bool {
+        guard !needle.isEmpty else { return false }
+        return name == needle
+            || name.hasPrefix(needle)
+            || name.split(separator: " ").contains { $0 == needle }
+    }
+
+    private func fetchFullMovies(_ text: String) async -> [SearchHit] {
+        let pooled = await MoviePool.shared.search(text, limit: FullLimits.movies)
+            .filter(Self.isShowableMovie)
+        var hits = pooled.map(SearchHit.init(movie:))
+        guard pooled.count < FullLimits.poolEnough, !Task.isCancelled else { return hits }
+        let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: FullLimits.networkMovies)) ?? []
+        let known = Set(pooled.map(\.id))
+        hits += found
+            .filter { !known.contains($0.id) && Self.isShowableMovie($0) }
+            .map(SearchHit.init(movie:))
+        return hits
     }
 
     // MARK: - Ранжирование секций
@@ -549,6 +722,18 @@ private extension SearchHit {
     /// Писатель или режиссёр: одно имя, фото с Википедии. Не нажимается — экрана
     /// персоны в проекте нет. Вес высокий: совпадение запроса с именем — сильный
     /// сигнал, что секция про него.
+    /// Плейлист — только в полной выдаче: экрана нет, строка не нажимается.
+    init(playlist: DeezerPlaylistBrief) {
+        self.init(
+            id: "playlist-\(playlist.id)",
+            kind: .playlist,
+            title: playlist.title,
+            subtitle: playlist.user?.name ?? "",
+            artwork: (playlist.pictureXl ?? playlist.pictureBig)?.deezerUpscaled.map { .remote($0) },
+            route: nil
+        )
+    }
+
     init(person: WikipediaPeople.Person) {
         self.init(
             id: "person-\(person.pageID)",

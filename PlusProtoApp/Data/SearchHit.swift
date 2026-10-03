@@ -8,6 +8,8 @@ struct SearchHit: Identifiable, Hashable {
         case track
         case album
         case artist
+        /// Только в полной выдаче музыки: своего экрана нет, строка не нажимается.
+        case playlist
         case movie
         case book
         /// Персоны — в каруселях своих доменов: режиссёр в кино, писатель в книгах

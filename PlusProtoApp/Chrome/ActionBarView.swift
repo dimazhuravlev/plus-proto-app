@@ -176,6 +176,12 @@ struct ActionBarView: View {
     /// закрывает, а не переводит в просмотр (см. onChange фокуса). Клавиатура уходит
     /// тем же мягким уходом, что и на скролле выдачи.
     private func exitSearch() {
+        // Из полной выдачи раздела «Назад» сперва возвращает к обзору каруселями —
+        // как назад по стеку; из поиска выходит уже следующее нажатие.
+        if search.expanded != nil {
+            search.collapse()
+            return
+        }
         search.query = ""
         search.isBrowsing = false
         search.dropSuspension()
