@@ -13,29 +13,44 @@ import Foundation
 /// Аннотации нет вовсе (моковая витрина, сеть упала, том без описания) — текст
 /// из макета читалки. Тот же приём, что у блока «продолжить чтение»: пустая
 /// читалка выглядит сломанной, а отрывок макета честно моковый.
+///
+/// Один заход на книгу обслуживает оба экрана: экран книги показывает аннотацию
+/// описанием, читалка — как текст. Повторный запрос из читалки закрывает `URLCache`.
 @MainActor
 @Observable
 final class BookTextStore {
-    private(set) var paragraphs: [String] = []
+    /// Описание на экране книги — аннотация как есть. Пусто — описания нет: моковым
+    /// книгам без своей подписи выдумывать его нельзя.
+    private(set) var annotation: [String] = []
+    /// Текст для читалки.
+    private(set) var pages: [String] = []
     /// Автор из API — если экран, открывший читалку, его не знал.
     private(set) var author: String?
     /// Текст готов. До этого колонка пустая и проявляется целиком, а не набирается
     /// на глазах абзац за абзацем.
     private(set) var isReady = false
 
-    func load(_ book: BookInProgress) async {
+    /// Сколько раз читалка повторяет текст. Длиннее аннотации у API ничего нет,
+    /// а в одну аннотацию прокручивать почти нечего — пользователь попросил
+    /// повторить имеющийся текст трижды (2026-10-03).
+    private static let readerRepeats = 3
+
+    func load(bookID: String) async {
         guard !isReady else { return }
-        if let volumeID = Self.volumeID(for: book.id),
+        var fromAPI: [String] = []
+        if let volumeID = Self.volumeID(for: bookID),
            let volume = try? await BooksService.shared.volume(id: volumeID) {
             author = volume.volumeInfo.authors?.first
-            paragraphs = Self.paragraphs(fromDescription: volume.volumeInfo.description ?? "")
+            fromAPI = Self.paragraphs(fromDescription: volume.volumeInfo.description ?? "")
+                .map(Self.bindingShortWords)
         }
         guard !Task.isCancelled else { return }
-        if paragraphs.isEmpty {
-            paragraphs = Self.mockParagraphs
-            author = author ?? Self.mockAuthors[book.id]
-        }
-        paragraphs = paragraphs.map(Self.bindingShortWords)
+        author = author ?? Self.mockAuthors[bookID]
+        annotation = fromAPI.isEmpty
+            ? Self.mockAnnotations[bookID].map { [Self.bindingShortWords($0)] } ?? []
+            : fromAPI
+        let text = fromAPI.isEmpty ? Self.mockParagraphs.map(Self.bindingShortWords) : fromAPI
+        pages = Array(repeating: text, count: Self.readerRepeats).flatMap { $0 }
         isReady = true
     }
 
@@ -163,5 +178,12 @@ final class BookTextStore {
         "technofeudalism": "Янис Варуфакис",
         "bullshit-jobs": "Дэвид Гребер",
         "debug-book": "Янис Варуфакис",
+    ]
+
+    /// Описание моковой книги на её экране — та же подпись, что у неё на витрине
+    /// (`ShowcaseFeed.personal`). У «Бредовой работы» подписи нет, и описания тоже.
+    private static let mockAnnotations = [
+        "technofeudalism": "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
+        "debug-book": "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
     ]
 }

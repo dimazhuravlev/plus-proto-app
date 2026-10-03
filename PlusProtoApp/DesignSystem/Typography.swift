@@ -214,3 +214,31 @@ extension View {
         modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 16, lineHeight: 25, tracking: 0))
     }
 }
+
+// MARK: - Экран книги
+
+/// Макет `2427:26464` набран линейкой Букмейта: трекинг в процентах кегля
+/// (Headline S — 1.5 %, автор — 2 %, описание — 1 %) и интерлиньяж процентами.
+extension View {
+    /// Название книги — Headline S: YS Display Bold 24 / lh 100 % / трекинг 0.36.
+    ///
+    /// Интерлиньяж меньше натурального (у YS он 1.172 кегля, 28pt против 24), а
+    /// `lineSpacing` умеет только прибавлять — двухстрочное название выходило бы
+    /// на 4pt выше макета. Точную высоту строки, в том числе меньше натуральной,
+    /// задаёт `lineHeight(.exact)` из iOS 26.
+    func plusBookTitle() -> some View {
+        font(.custom(PlusFont.displaySemibold, size: 24))
+            .tracking(0.36)
+            .lineHeight(.exact(points: 24))
+    }
+
+    /// Автор под названием — YS Text Medium 16 / lh normal (19 в макете) / трекинг 0.32
+    func plusBookAuthor() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 16, lineHeight: 19, tracking: 0.32))
+    }
+
+    /// Описание книги — YS Text Medium 16 / lh 140 % / трекинг 0.16
+    func plusBookDescription() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 16, lineHeight: 22.4, tracking: 0.16))
+    }
+}

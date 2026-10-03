@@ -1,4 +1,5 @@
 import SwiftUI
+import VariableBlur
 
 // MARK: - Геометрия
 
@@ -18,6 +19,12 @@ private enum BookReaderLayout {
     static let scrimHeight: CGFloat = 164
     static let scrimTop: CGFloat = -1
     static let scrimSolid: CGFloat = 0.12981
+    /// Прогрессивный блюр под затемнением (просьба пользователя 2026-10-03): текст,
+    /// уходящий под шапку, не только темнеет, но и расплывается. Полоса блюра короче
+    /// затемнения — правило проекта: иначе там, где блюр кончается, резкость
+    /// обрывалась бы на ровном месте посреди ещё видимого текста.
+    static let scrimBlurRadius: CGFloat = 12
+    static let scrimBlurHeight: CGFloat = 140
 
     /// Строка шапки — сразу под статус-баром: кнопка закрытия, обложка, подписи.
     static let headerTop: CGFloat = 57
@@ -76,13 +83,13 @@ struct BookReaderView: View {
             }
         }
         .ignoresSafeArea()
-        .task { await text.load(book) }
+        .task { await text.load(bookID: book.id) }
     }
 
     private var pages: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: BookReaderLayout.paragraphGap) {
-                ForEach(Array(text.paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                ForEach(Array(text.pages.enumerated()), id: \.offset) { _, paragraph in
                     Text(paragraph)
                         .plusBookText()
                         .foregroundStyle(BookReaderLayout.textColor)
@@ -115,16 +122,24 @@ struct BookReaderView: View {
     }
 
     private var scrim: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .black, location: 0),
-                .init(color: .black, location: BookReaderLayout.scrimSolid),
-                .init(color: .black.opacity(0), location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: BookReaderLayout.scrimHeight)
+        ZStack(alignment: .top) {
+            VariableBlurView(
+                maxBlurRadius: BookReaderLayout.scrimBlurRadius,
+                direction: .blurredTopClearBottom
+            )
+            .frame(height: BookReaderLayout.scrimBlurHeight)
+
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: BookReaderLayout.scrimSolid),
+                    .init(color: .black.opacity(0), location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .frame(height: BookReaderLayout.scrimHeight, alignment: .top)
         .offset(y: BookReaderLayout.scrimTop)
         .allowsHitTesting(false)
     }

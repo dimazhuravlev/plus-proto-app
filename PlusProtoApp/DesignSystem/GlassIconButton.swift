@@ -12,10 +12,34 @@ enum GlassIconButtonConfig {
     static let pressDuration: Double = 0.15
 }
 
-/// Круглая стеклянная кнопка 40×40: ассет заполняет бокс 20×20.
+/// Размер круглой кнопки — ось `Size` компонента ДС.
+enum GlassIconButtonSize {
+    /// `11:9189` Size=md 40px: круг 40, глиф 20, стекло кнопок (блюр 20, бордер white 6 %).
+    case md
+    /// `2088:13431` Size=sm 32px: круг 32, глиф 16, блюр 16 и без бордера — так
+    /// компонент нарисован в навбаре экрана книги (`2427:26464`).
+    case sm
+
+    var diameter: CGFloat {
+        switch self {
+        case .md: GlassIconButtonConfig.size
+        case .sm: 32
+        }
+    }
+
+    var iconBox: CGFloat {
+        switch self {
+        case .md: GlassIconButtonConfig.iconBox
+        case .sm: 16
+        }
+    }
+}
+
+/// Круглая стеклянная кнопка: 40×40 с глифом 20 (`md`) или 32×32 с глифом 16 (`sm`).
 /// По решению из DECISIONS логики по тапу пока нет — колбэк опционален.
 struct GlassIconButton: View {
     let icon: String
+    var size: GlassIconButtonSize = .md
     var accessibilityTitle: String = ""
     var action: () -> Void = {}
 
@@ -24,13 +48,26 @@ struct GlassIconButton: View {
             Image(icon)
                 .renderingMode(.template)
                 .resizable()
-                .frame(width: GlassIconButtonConfig.iconBox, height: GlassIconButtonConfig.iconBox)
+                .frame(width: size.iconBox, height: size.iconBox)
                 .foregroundStyle(Color.fillOne)
-                .frame(width: GlassIconButtonConfig.size, height: GlassIconButtonConfig.size)
-                .glassCircle()
+                .frame(width: size.diameter, height: size.diameter)
+                .modifier(GlassIconButtonSurface(size: size))
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(accessibilityTitle)
+    }
+}
+
+private struct GlassIconButtonSurface: ViewModifier {
+    let size: GlassIconButtonSize
+
+    func body(content: Content) -> some View {
+        switch size {
+        case .md:
+            content.glassCircle()
+        case .sm:
+            content.glassSurface(Circle(), blur: 16, border: .clear)
+        }
     }
 }
 

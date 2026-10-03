@@ -52,6 +52,60 @@ struct EntityNavBarThresholds: Equatable {
 
 // MARK: - Геометрия
 
+/// Вариант бара по размеру кнопок.
+enum EntityNavBarControls {
+    /// Круг 40 с глифом 20 — альбом, заглушки сервисов.
+    case regular
+    /// «new navbar» экрана книги (`2427:26464`): круг 32 с глифом 16 (`Size=sm`),
+    /// строка 44 — по 6 сверху и снизу. Поля несимметричные, как в компоненте:
+    /// слева 12 (8 у бара + 4 у левой группы), справа 16.
+    case compact
+
+    var buttonSize: GlassIconButtonSize {
+        switch self {
+        case .regular: .md
+        case .compact: .sm
+        }
+    }
+
+    var controlSize: CGFloat { buttonSize.diameter }
+
+    var topPadding: CGFloat {
+        switch self {
+        case .regular: 0
+        case .compact: 6
+        }
+    }
+
+    var bottomPadding: CGFloat {
+        switch self {
+        case .regular: EntityNavBarGeometry.bottomPadding
+        case .compact: 6
+        }
+    }
+
+    var leadingPadding: CGFloat {
+        switch self {
+        case .regular: EntityNavBarGeometry.horizontalPadding
+        case .compact: 12
+        }
+    }
+
+    var trailingPadding: CGFloat { EntityNavBarGeometry.horizontalPadding }
+
+    /// Шеврон «назад»: у компактного бара он из набора `icons / size16` — жирнее
+    /// обычного, нарисован под мелкий кегль, и уменьшенной копией обычного не является.
+    var backIcon: String {
+        switch self {
+        case .regular: "iconDropleft"
+        case .compact: "iconDropleft16"
+        }
+    }
+
+    /// Высота бара под safe area — на столько экран отодвигает свою шапку.
+    var barHeight: CGFloat { topPadding + controlSize + bottomPadding }
+}
+
 /// Размеры бара. Не `private`: экрану сущности нужен `barHeight`, чтобы отодвинуть
 /// от него свою шапку.
 enum EntityNavBarGeometry {
@@ -103,6 +157,7 @@ struct EntityNavBar<Trailing: View>: View {
     /// Сколько пунктов контента ушло вверх. Экран отдаёт через `trackNavBarScroll`.
     var scrollOffset: CGFloat = 0
     var thresholds: EntityNavBarThresholds = .default
+    var controls: EntityNavBarControls = .regular
     /// `nil` — снять верхний экран стека
     var onBack: (() -> Void)? = nil
     @ViewBuilder var trailing: () -> Trailing
@@ -114,9 +169,11 @@ struct EntityNavBar<Trailing: View>: View {
             Spacer(minLength: 0)
             trailing()
         }
-        .frame(height: EntityNavBarGeometry.controlSize)
-        .padding(.horizontal, EntityNavBarGeometry.horizontalPadding)
-        .padding(.bottom, EntityNavBarGeometry.bottomPadding)
+        .frame(height: controls.controlSize)
+        .padding(.leading, controls.leadingPadding)
+        .padding(.trailing, controls.trailingPadding)
+        .padding(.top, controls.topPadding)
+        .padding(.bottom, controls.bottomPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         // Подложка выше бара и прижата к его низу — так она накрывает статус-бар,
         // не заставляя бар лезть под safe area. Размер бара при этом ни на что
@@ -132,7 +189,7 @@ struct EntityNavBar<Trailing: View>: View {
     /// Кнопка — тот же `GlassIconButton`, что у крестика и сердца: круг 40, бокс глифа 20,
     /// стекло и пресс-стейт совпадали и раньше, просто были переписаны здесь заново.
     private var backButton: some View {
-        GlassIconButton(icon: "iconDropleft", accessibilityTitle: "Назад") {
+        GlassIconButton(icon: controls.backIcon, size: controls.buttonSize, accessibilityTitle: "Назад") {
             if let onBack { onBack() } else { dismiss() }
         }
     }
@@ -166,7 +223,7 @@ struct EntityNavBar<Trailing: View>: View {
 
         return ArtworkImage(source: source)
             .scaledToFill()
-            .frame(width: EntityNavBarGeometry.controlSize, height: EntityNavBarGeometry.controlSize)
+            .frame(width: controls.controlSize, height: controls.controlSize)
             .clipShape(shape)
             .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
     }
@@ -217,6 +274,7 @@ extension EntityNavBar where Trailing == EmptyView {
         isArtworkCircular: Bool = false,
         scrollOffset: CGFloat = 0,
         thresholds: EntityNavBarThresholds = .default,
+        controls: EntityNavBarControls = .regular,
         onBack: (() -> Void)? = nil
     ) {
         self.init(
@@ -225,6 +283,7 @@ extension EntityNavBar where Trailing == EmptyView {
             isArtworkCircular: isArtworkCircular,
             scrollOffset: scrollOffset,
             thresholds: thresholds,
+            controls: controls,
             onBack: onBack
         ) {
             EmptyView()

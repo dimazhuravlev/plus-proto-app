@@ -85,7 +85,7 @@ iOS/SwiftUI **дизайн-прототип супераппа «Яндекс П
 play/pause с живым прогрессом. Внутренние разделы сервисных табов не проектируем —
 там `ServiceStubScreen`.
 
-**Структура кода** (`PlusProtoApp/`): `App/` (точка входа, AppTab, AppRootView) · `Chrome/` (BottomChrome, TabBarView, ActionBarView, SearchOverlay, FullScreenPlayer, EntityNavBar, MoviePlayer, BookReader, ContentPlayerPresenter) · `Showcase/` (лента, 6 карточек, `BookRender`) · `Screens/` (витрина, заглушки сервисов, экраны сущностей) · `DesignSystem/` (токены, типографика, стекло, кнопки, ambilight, `ArtworkImage`/`ResolvedArtwork`) · `State/` · `Data/` (модели витрины, DTO трёх API, `ShowcaseSeeds`, `ShowcaseRotation`) · `Services/` (`KinopoiskService`, `DeezerService`, `BooksService`, `BookTextStore`, `ArtworkLoader`, `ShowcaseCatalog`) · `Fonts/`, `Videos/`, `Assets.xcassets/`.
+**Структура кода** (`PlusProtoApp/`): `App/` (точка входа, AppTab, AppRootView) · `Chrome/` (BottomChrome, TabBarView, ActionBarView, SearchOverlay, FullScreenPlayer, EntityNavBar, MoviePlayer, BookReader, ContentPlayerPresenter) · `Showcase/` (лента, 6 карточек, `BookRender`) · `Screens/` (витрина, заглушки сервисов, экраны фильма, альбома и книги) · `DesignSystem/` (токены, типографика, стекло, кнопки, ambilight, `ArtworkImage`/`ResolvedArtwork`) · `State/` · `Data/` (модели витрины, DTO трёх API, `ShowcaseSeeds`, `ShowcaseRotation`) · `Services/` (`KinopoiskService`, `DeezerService`, `BooksService`, `BookTextStore`, `ArtworkLoader`, `ShowcaseCatalog`) · `Fonts/`, `Videos/`, `Assets.xcassets/`.
 
 ---
 
