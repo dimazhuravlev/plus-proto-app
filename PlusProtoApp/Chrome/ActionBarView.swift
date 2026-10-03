@@ -844,6 +844,7 @@ private struct TrailingSlot: View {
                     isPlaying: actionBar.isMusicPlaying,
                     isLiked: actionBar.isMusicLiked,
                     onTogglePlay: { actionBar.toggleMusicPlayback() },
+                    onToggleLike: { actionBar.toggleMusicLike() },
                     // Из круга разворачиваем плеер в баре, из широкой пилюли —
                     // открываем полноэкранный (правило пользователя 2026-08-29).
                     // Полноэкранный из круга не открываем: круг — это свёрнутый
@@ -1023,6 +1024,7 @@ struct MiniPlayerPill: View {
     let isPlaying: Bool
     let isLiked: Bool
     let onTogglePlay: () -> Void
+    let onToggleLike: () -> Void
     let onExpand: () -> Void
 
     /// Вращение обложки — см. `CoverSpin`.
@@ -1146,7 +1148,7 @@ struct MiniPlayerPill: View {
 
     private var actions: some View {
         HStack(spacing: ActionBarGeometry.miniPlayerActionsGap) {
-            actionIcon("iconLove", liked: isLiked)
+            likeButton
             playPauseButton
         }
         // В book/movie плеер остаётся в дереве прозрачным, а прозрачные вью всё равно
@@ -1184,12 +1186,40 @@ struct MiniPlayerPill: View {
         .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
     }
 
-    private func actionIcon(_ name: String, liked: Bool = false) -> some View {
+    /// Лайк прямо из мини-плеера (просьба пользователя 2026-10-03). Нравится — залитое
+    /// белое сердце, как в полноэкранном плеере (правка того же дня: раньше лайк здесь
+    /// был акцентным контуром); смена — тем же кросс-попом, что у play/pause.
+    private var likeButton: some View {
+        Button {
+            PlayerHaptics.tap()
+            onToggleLike()
+        } label: {
+            ZStack {
+                actionIcon("iconLove")
+                    .opacity(isLiked ? 0 : 1)
+                    .scaleEffect(isLiked ? ActionBarMotion.iconSwapScale : 1)
+                actionIcon("iconLiked")
+                    .opacity(isLiked ? 1 : 0)
+                    .scaleEffect(isLiked ? 1 : ActionBarMotion.iconSwapScale)
+            }
+            .animation(ActionBarMotion.iconSwap, value: isLiked)
+            // Хит-зона крупнее глифа, раскладка — нет: тот же приём, что у play.
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .contentShape(.rect)
+            .padding(.horizontal, -8)
+            .padding(.vertical, -10)
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel(isLiked ? "Убрать из любимых" : "Нравится")
+    }
+
+    private func actionIcon(_ name: String) -> some View {
         Image(name)
             .renderingMode(.template)
             .resizable()
             .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-            .foregroundStyle(liked ? Color.plusAccent : Color.fillOne)
+            .foregroundStyle(Color.fillOne)
     }
 }
 

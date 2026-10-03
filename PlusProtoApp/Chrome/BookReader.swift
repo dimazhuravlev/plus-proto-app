@@ -215,6 +215,7 @@ private struct ReaderMusicPlayer: View {
                 isPlaying: actionBar.isMusicPlaying,
                 isLiked: actionBar.isMusicLiked,
                 onTogglePlay: { actionBar.toggleMusicPlayback() },
+                onToggleLike: { actionBar.toggleMusicLike() },
                 onExpand: { isExpanded.toggle() }
             )
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
