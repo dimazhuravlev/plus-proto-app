@@ -44,12 +44,10 @@ enum PlusChromeMetrics {
 
     // MARK: - Верхний скрим
 
-    /// Высота верхнего скрима от физического верха экрана — `overlay bg` навбара
-    /// (`2004:10781`, figma-screen1 §4): 72pt, чёрный → прозрачный вниз.
-    static let topScrimHeight: CGFloat = 72
-    /// Чёрный у верхней кромки скрима. В макете 50 %, на витрине это читалось слишком
-    /// тёмной полосой под статус-баром — 25 % (правка пользователя 2026-10-03).
-    static let topScrimDim: Double = 0.25
+    /// Затемнения у скрима нет — только блюр. В макете под навбаром витрины градиент
+    /// `overlay bg` (`2004:10781`, figma-screen1 §4: 72pt, чёрный 50 % → прозрачный),
+    /// пользователь сперва ослабил его до 25 %, затем убрал совсем (2026-10-03).
+    ///
     /// Два слоя блюра разной высоты и радиуса — приём `TopNavBarBackground` из MusicPlayer:
     /// слабый и высокий даёт мягкий заход, сильный и низкий — плотность у самого верха.
     /// Выше 72pt не поднимаемся: в MusicPlayer блюр перекрывал градиент, но там под ним
@@ -65,7 +63,7 @@ enum TopScrimMotion {
     static let fade: Animation = .easeInOut(duration: 0.25)
 }
 
-/// Верхний скрим: лента уезжает под статус-бар, поэтому его надо притенить и размыть.
+/// Верхний скрим: лента уезжает под статус-бар, поэтому его надо размыть.
 /// Отдельный слой поверх контента, вне `NavigationStack` — как и нижний хром.
 /// Виден только на витрине: у экранов со своим навбаром блюр — его подложка.
 struct TopScrim: View {
@@ -82,13 +80,6 @@ struct TopScrim: View {
                 direction: .blurredTopClearBottom
             )
             .frame(height: PlusChromeMetrics.topScrimBlurStrong.height)
-
-            LinearGradient(
-                colors: [.black.opacity(PlusChromeMetrics.topScrimDim), .clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: PlusChromeMetrics.topScrimHeight)
         }
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .top)
