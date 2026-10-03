@@ -13,6 +13,11 @@ enum TabBarMotion {
     /// граница, на которой переход ещё читается одним непрерывным движением.
     static let activation: Animation = .smooth(duration: 0.26)
 
+    /// Свечение под иконкой проявляется дольше остального таба — 0.6s против 0.26
+    /// (правка пользователя 2026-10-03: «появлялось плавнее, дольше»). Гаснет оно вместе
+    /// с табом за 0.26s: старое свечение не должно висеть, пока загорается новое.
+    static let glowAppear: Animation = .smooth(duration: 0.6)
+
     /// Хаптика тапа по табу — карта MusicPlayer (nav-chrome §11): impact medium
     static let tapHapticIntensity: CGFloat = 0.7
 }
@@ -168,6 +173,9 @@ private struct TabBarItem: View {
             .frame(width: TabBarGeometry.sparkSize.width, height: TabBarGeometry.sparkSize.height)
             .offset(y: TabBarGeometry.sparkCenterOffset + (isActive ? 0 : TabBarGeometry.sparkRise))
             .opacity(isActive ? 1 : 0)
+            // Своя кривая поверх общей у кнопки: внутренняя анимация перебивает внешнюю
+            // для своего поддерева.
+            .animation(isActive ? TabBarMotion.glowAppear : TabBarMotion.activation, value: isActive)
             .allowsHitTesting(false)
     }
 }
