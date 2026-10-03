@@ -154,9 +154,13 @@ private final class ContentPlayerHostingController<Content: View>: UIHostingCont
 
     /// Свайп вниз уводит слой за пальцем; `onDismiss` — слой уехал за нижнюю кромку.
     func enablePullToDismiss(onDismiss: @escaping () -> Void) {
-        let pull = PullToDismiss(onDismiss: onDismiss)
-        pull.attach(to: view)
-        self.pull = pull
+        pull = PullToDismiss(onDismiss: onDismiss)
+    }
+
+    /// Ленту SwiftUI строит не сразу — свайп цепляется к ней на раскладке, как только она есть.
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        pull?.hookIfNeeded(in: view)
     }
 }
 
@@ -181,6 +185,9 @@ private enum PullToDismissConfig {
     /// Бросок вниз быстрее этого закрывает с любого места; такой же бросок вверх
     /// отменяет закрытие даже за порогом.
     static let flickVelocity: CGFloat = 600
+    /// Строка навбара плеера под статус-баром: потянул за неё — экран едет сразу,
+    /// как бы ни была прокручена лента.
+    static let handleHeight: CGFloat = 44
     /// Уход за кромку после отпускания — быстрый, палец уже всё решил.
     static let slideOutDuration: TimeInterval = 0.3
     /// Возврат, если не дотянул, — спокойнее: экран встаёт на место, а не отскакивает.
@@ -190,68 +197,57 @@ private enum PullToDismissConfig {
     static let cornerRadius: CGFloat = 30
 }
 
-/// Свайп вниз уводит слой за пальцем — один в один, без резины скролла (просьба
-/// пользователя 2026-10-03). Отпустил ниже порога или бросил вниз — слой уезжает
-/// за кромку, иначе встаёт на место.
+/// Свайп вниз уводит весь слой за пальцем — один в один и с первого же пункта хода
+/// (просьбы пользователя 2026-10-03). Отпустил ниже порога или бросил вниз — слой
+/// уезжает за кромку, иначе встаёт на место.
 ///
-/// UIKit-пан на корне слоя, а не жест SwiftUI: двигать надо весь контроллер вместе
-/// со статус-баром и фоном, а скролл должен уступать — пока экран тянут, лента
-/// под пальцем не резинится. Для этого скролл ждёт, пока пан откажется: пан берёт
-/// касание, только если лента у верха и палец пошёл вниз, иначе сразу уступает.
+/// Ведёт его пан самой ленты, а не свой распознаватель. Со своим паном касание делили
+/// двое, и лента успевала уехать вниз резиной раньше, чем трогался экран. Здесь касание
+/// одно: пока лента у верха, ход пальца вниз двигает весь экран, а ленту держим на месте.
+/// Прокрученная лента сперва доезжает до верха, и тем же движением дальше едет экран;
+/// за строку навбара экран тянется сразу при любой прокрутке.
 @MainActor
-private final class PullToDismiss: NSObject, UIGestureRecognizerDelegate {
+private final class PullToDismiss: NSObject {
+    private enum Phase {
+        case idle
+        /// Палец скроллит ленту.
+        case scrolling
+        /// Палец ведёт весь экран, лента стоит.
+        case pulling
+    }
+
     private weak var view: UIView?
     private weak var scrollView: UIScrollView?
     private let onDismiss: () -> Void
     private var animator: UIViewPropertyAnimator?
-    /// Где был слой в момент хвата — подхватить его на возврате, не дёрнув.
+    private var phase = Phase.idle
+    /// Ход пальца, с которого экран едет за ним.
+    private var anchor: CGFloat = 0
+    /// Где держать ленту, пока тянут экран.
+    private var pinnedOffset: CGFloat = 0
+    /// Где был экран в момент хвата — подхватить его на возврате, не дёрнув.
     private var grabOffset: CGFloat = 0
+    /// Экран подхватили на возврате: лента и так у верха, отдавать ей ход нечего.
+    private var isRegrab = false
 
     init(onDismiss: @escaping () -> Void) {
         self.onDismiss = onDismiss
     }
 
-    func attach(to view: UIView) {
+    /// Подцепиться к пану ленты. Зовётся на каждой раскладке слоя, пока лента не найдётся.
+    func hookIfNeeded(in view: UIView) {
         self.view = view
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        pan.delegate = self
-        // Второй палец не перехватывает слой: центроид двух касаний дёрнул бы его.
-        pan.maximumNumberOfTouches = 1
-        view.addGestureRecognizer(pan)
-    }
-
-    // MARK: Решение «тянуть или скроллить»
-
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let view else { return false }
-        let velocity = pan.velocity(in: view.superview)
-        // Оттянутый слой (поймали на возврате) берём в любую сторону по вертикали.
-        if view.transform.ty > 0 { return abs(velocity.y) > abs(velocity.x) }
-        return velocity.y > abs(velocity.x) && isScrolledToTop
-    }
-
-    /// Скролл ленты ждёт отказа пана — иначе оба тронулись бы с одного касания.
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        otherGestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer.view is UIScrollView
-    }
-
-    private var isScrolledToTop: Bool {
-        guard let scrollView = scrollView ?? findScrollView() else { return true }
-        return scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
+        guard scrollView == nil, let found = Self.findScrollView(in: view) else { return }
+        scrollView = found
+        found.panGestureRecognizer.addTarget(self, action: #selector(followPan(_:)))
     }
 
     /// Лента плеера — единственный скролл в слое; SwiftUI держит под ним `UIScrollView`.
-    private func findScrollView() -> UIScrollView? {
-        var queue = view.map { [$0] } ?? []
+    private static func findScrollView(in root: UIView) -> UIScrollView? {
+        var queue = [root]
         while !queue.isEmpty {
             let next = queue.removeFirst()
-            if let found = next as? UIScrollView {
-                scrollView = found
-                return found
-            }
+            if let found = next as? UIScrollView { return found }
             queue.append(contentsOf: next.subviews)
         }
         return nil
@@ -259,25 +255,68 @@ private final class PullToDismiss: NSObject, UIGestureRecognizerDelegate {
 
     // MARK: Ведение
 
-    @objc private func handlePan(_ pan: UIPanGestureRecognizer) {
-        guard let view else { return }
+    /// Вторая цель пана ленты: лента свой ход на этом событии уже сделала, и здесь её
+    /// можно вернуть на место, пока экран едет за пальцем.
+    @objc private func followPan(_ pan: UIPanGestureRecognizer) {
+        guard let view, let scrollView else { return }
         // Мерим в координатах родителя: слой сам едет под пальцем, и в его собственных
         // координатах палец стоял бы на месте.
         let space = view.superview
+        let translation = pan.translation(in: space).y
+        let top = -scrollView.adjustedContentInset.top
+
         switch pan.state {
         case .began:
             // Поймали на возврате — останавливаем там, где он сейчас, и ведём оттуда.
             animator?.stopAnimation(true)
             animator = nil
             grabOffset = view.transform.ty
-            setRounded(true)
+            isRegrab = grabOffset > 0
+            let touchDown = pan.location(in: view).y - translation
+            let fromHandle = touchDown < view.safeAreaInsets.top + PullToDismissConfig.handleHeight
+            let atTop = scrollView.contentOffset.y <= top + 0.5
+            if isRegrab || ((atTop || fromHandle) && translation > 0) {
+                startPulling(from: translation, pin: isRegrab || atTop ? top : scrollView.contentOffset.y)
+            } else {
+                phase = .scrolling
+            }
+
         case .changed:
-            // Вверх за исходное место не пускаем: слой во весь экран, и снизу
-            // открылась бы щель.
-            let offset = max(0, grabOffset + pan.translation(in: space).y)
-            view.transform = CGAffineTransform(translationX: 0, y: offset)
+            switch phase {
+            case .scrolling:
+                // Лента доехала до верха, а палец всё идёт вниз — дальше едет экран.
+                if scrollView.contentOffset.y <= top, pan.velocity(in: space).y > 0 {
+                    startPulling(from: translation, pin: top)
+                    scrollView.contentOffset.y = top
+                }
+            case .pulling:
+                let offset = grabOffset + translation - anchor
+                if offset < 0, !isRegrab {
+                    // Палец ушёл выше точки, с которой тянул, — ход снова у ленты.
+                    view.transform = .identity
+                    setRounded(false)
+                    phase = .scrolling
+                } else {
+                    // Вверх за исходное место экран не едет: он во весь дисплей,
+                    // и снизу открылась бы щель.
+                    view.transform = CGAffineTransform(translationX: 0, y: max(0, offset))
+                    scrollView.contentOffset.y = pinnedOffset
+                }
+            case .idle:
+                break
+            }
+
         case .ended, .cancelled, .failed:
+            let wasPulling = phase == .pulling
+            phase = .idle
+            guard wasPulling else { return }
+            // Лента не докатывается по инерции и не отскакивает от верха — решает экран.
+            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: pinnedOffset), animated: false)
             let offset = view.transform.ty
+            guard offset > 0 else {
+                setRounded(false)
+                return
+            }
             let velocity = pan.velocity(in: space).y
             let flickedDown = velocity > PullToDismissConfig.flickVelocity
             let pulledFar = offset > PullToDismissConfig.dismissDistance
@@ -287,9 +326,17 @@ private final class PullToDismiss: NSObject, UIGestureRecognizerDelegate {
             } else {
                 settle(from: offset, velocity: velocity)
             }
+
         default:
             break
         }
+    }
+
+    private func startPulling(from translation: CGFloat, pin offset: CGFloat) {
+        phase = .pulling
+        anchor = translation
+        pinnedOffset = offset
+        setRounded(true)
     }
 
     /// Уход за нижнюю кромку с той скоростью, с какой его отпустили.

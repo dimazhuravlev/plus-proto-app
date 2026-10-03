@@ -32,7 +32,11 @@ private enum MusicPlayerLayout {
     /// Бейдж 18+ у названия (`6105:61346`).
     static let titleBadge: CGFloat = 20
     static let titleBadgeGap: CGFloat = 8
-    static let titleToArtist: CGFloat = 2
+    /// От строки названия до ряда артиста. Меряем по макету паузы от базовой линии:
+    /// до верха аватара 9pt. В макете их дают зазор 2 и 6.9pt под базовой линией
+    /// Headline L En (32/32, другой шрифт); у нашего L 28/28 под ней 4.4 — остаётся 4.5
+    /// (жалоба пользователя 2026-10-03: при 2 аватар подпирал название).
+    static let titleToArtist: CGFloat = 4.5
     static let artistRowHeight: CGFloat = 40
     static let avatar: CGFloat = 40
     static let avatarToText: CGFloat = 8
@@ -147,6 +151,16 @@ struct MusicPlayerView: View {
     @State private var isRepeating = false
     @State private var isShuffling = true
 
+    /// Год под артистом нужен всегда (правка пользователя 2026-10-03), а знает его только
+    /// экран альбома — у треков очереди и витрины года нет. Мок — год из примера пользователя.
+    private static let fallbackYear = "2005"
+
+    /// Альбом под «Сейчас играет» — тоже всегда. Без альбома трек считаем синглом:
+    /// у витринной карточки альбома название трека и есть название альбома.
+    private static func albumTitle(_ music: MusicNowPlaying) -> String {
+        music.album ?? music.title
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let safeTop = proxy.safeAreaInsets.top
@@ -182,9 +196,9 @@ struct MusicPlayerView: View {
                 Text("Сейчас играет")
                     .plusText(.textS, .medium)
                     .padding(.bottom, MusicPlayerLayout.barCaptionGap)
-                if let album = actionBar.music?.album {
+                if let music = actionBar.music {
                     // 15 Semibold — исключение правил UI kit для хедера навбара.
-                    Text("Альбом «\(album)»")
+                    Text("Альбом «\(Self.albumTitle(music))»")
                         .plusText(.textM, .semibold)
                 }
             }
@@ -295,12 +309,10 @@ struct MusicPlayerView: View {
                 avatar(music.artistPicture ?? music.cover)
                 VStack(alignment: .leading, spacing: MusicPlayerLayout.textStackGap) {
                     FadingLine(text: music.artist, fade: MusicPlayerLayout.artistFade)
-                    if let year = music.year {
-                        Text(year)
-                            .plusText(.textM, .medium)
-                            .foregroundStyle(Color.fillSubtitle)
-                            .lineLimit(1)
-                    }
+                    Text(music.year ?? Self.fallbackYear)
+                        .plusText(.textM, .medium)
+                        .foregroundStyle(Color.fillSubtitle)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: MusicPlayerLayout.rowButtonGap)
@@ -363,17 +375,15 @@ struct MusicPlayerView: View {
         let fullWidth = width + grow
         let shape = Capsule(style: .continuous)
         let progress = actionBar.musicProgress
-        // Догрузка — мок: живого потока нет, полоса чуть впереди позиции, как в макете.
-        let buffered = min(1, progress + 0.3)
         // Слот раскладки — исходные 6pt: подписи времени по бокам не двигаются,
         // дорожка растёт поверх зазоров.
         return Color.clear
             .frame(width: width, height: MusicPlayerLayout.trackHeight)
             .overlay {
+                // Два цвета — подложка и белая позиция. Полосы догрузки из макета нет
+                // (правка пользователя 2026-10-03): живого потока нет, и она только шумела.
                 ZStack(alignment: .leading) {
                     shape.fill(Color.fillTen)
-                    shape.fill(Color.fillNine)
-                        .frame(width: fullWidth * buffered)
                     shape.fill(Color.fillOne)
                         .frame(width: max(height, fullWidth * progress))
                         .opacity(progress > 0 ? 1 : 0)
@@ -764,8 +774,11 @@ private struct FadingLine: View {
     var body: some View {
         ViewThatFits(in: .horizontal) {
             label
+            // `minWidth: 0` обязателен: без него рамка с одним `maxWidth` при узком
+            // предложении берёт ширину текста целиком — и длинная строка распирала ряд
+            // шире экрана, выталкивая аватар и кнопки за кромки (жалоба 2026-10-03).
             label
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .clipped()
                 .mask {
                     HStack(spacing: 0) {
