@@ -174,6 +174,9 @@ final class SearchState {
     func consumeResume(tab: AppTab, depth: Int) -> Bool {
         guard let suspended, suspended.tab == tab, depth <= suspended.depth else { return false }
         self.suspended = nil
+        // Запрос стёрли, пока ходили по карточкам (крестом в поиске, открытом поверх
+        // них), — возвращать нечего. Просмотр без выдачи спрятал бы таббар впустую.
+        guard isActive else { return false }
         isBrowsing = true
         return true
     }

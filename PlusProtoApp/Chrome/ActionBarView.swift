@@ -49,6 +49,8 @@ enum ActionBarMotion {
 /// раскладка зон физически не могут поменяться в разных апдейтах, а значит
 /// и в разных транзакциях. Это и есть гарантия, что бар едет целиком.
 struct ActionBarRaise: Equatable {
+    /// Фокусная раскладка бара — и над клавиатурой, и в просмотре выдачи без неё
+    /// (там бар опущен на место таббара, `lift` положительный).
     var isRaised = false
     var lift: CGFloat = 0
     /// Кривая текущего движения клавиатуры. `nil` — она стоит, и бар едет своим
@@ -170,8 +172,7 @@ struct ActionBarView: View {
         let layout = ActionBarLayout(
             mode: actionBar.mode,
             hasMusic: actionBar.music != nil,
-            raise: raise,
-            isBrowsing: search.isBrowsing
+            raise: raise
         )
 
         // Зазор переехал в padding правой зоны: `spacing` не интерполируется и прыгал
@@ -207,6 +208,16 @@ struct ActionBarView: View {
         // уходила вверх быстрее и на мгновение накрывала его собой.
         .animation(raise.motion ?? ActionBarMotion.morph, value: layout)
         .onChange(of: searchFocused) { _, focused in
+            // Снятый фокус при непустой выдаче — в просмотр без клавиатуры (правка
+            // пользователя 2026-10-03), и **в том же апдейте**, что и сам фокус.
+            // Решение в корне приходило апдейтом позже: слой выдачи на кадр гас,
+            // таббар проявлялся, и под выдачей мелькал экран (жалоба 2026-10-03).
+            // Только если фокус сняли здесь, в поле (скролл выдачи, свайп по полю,
+            // «Найти»): уход в карточку и тап по затемнению снимают его снаружи,
+            // через `actionBar`, и решают за себя сами. Крест стирает запрос раньше.
+            if !focused, actionBar.isSearchFocused, search.isActive, !search.isSuspended {
+                search.isBrowsing = true
+            }
             actionBar.isSearchFocused = focused
         }
         .onChange(of: actionBar.isSearchFocused) { _, focused in
@@ -320,10 +331,11 @@ private struct ActionBarLayout: Equatable {
     let trackInfoOpacity: Double
     let progressOpacity: Double
     /// Фокусная раскладка: поле занимает бар целиком, плеер уезжает за кромку.
+    /// Она же — у просмотра выдачи без клавиатуры (см. `BottomChrome.raise`).
     let isRaised: Bool
-    /// Крест в поле — в фокусе и в просмотре выдачи без фокуса: выдача закрывает
-    /// весь экран, затемнения под ней не достать, и крест — единственный выход
-    /// из поиска в одно касание.
+    /// Крест в поле — в фокусной раскладке, то есть и в просмотре выдачи без фокуса:
+    /// выдача закрывает весь экран, затемнения под ней не достать, и крест —
+    /// единственный выход из поиска в одно касание.
     let showsClear: Bool
     /// Подъём над клавиатурой — свойство ОБЩЕГО предка обеих зон, а не зоны.
     let lift: CGFloat
@@ -331,10 +343,10 @@ private struct ActionBarLayout: Equatable {
     /// Зазор между зонами (бывший HStack spacing).
     let gap: CGFloat
 
-    init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise, isBrowsing: Bool = false) {
+    init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise) {
         let compact = PlusMetrics.actionBarCompact
         isRaised = raise.isRaised
-        showsClear = raise.isRaised || isBrowsing
+        showsClear = raise.isRaised
         lift = raise.lift
         screenMargin = raise.isRaised ? ActionBarGeometry.focusedScreenMargin : PlusMetrics.screenMargin
 
@@ -359,13 +371,7 @@ private struct ActionBarLayout: Equatable {
             return
         }
 
-        // Просмотр выдачи без фокуса показывает поле с запросом. В музыке поле
-        // свёрнуто в круг и запроса не видно — на время просмотра бар раскладывается
-        // как в поиске: поле и круг плеера. Режим при этом не меняется: закрыли
-        // поиск — бар вернулся к плееру.
-        let layoutMode: ActionBarMode = isBrowsing && mode == .music ? .search : mode
-
-        switch layoutMode {
+        switch mode {
         case .search:
             showMiniPlayer = hasMusic
             isMiniPlayerCompact = hasMusic
@@ -890,7 +896,6 @@ private struct TrailingClipShape: Shape {
 
 private struct TrailingSlot: View {
     @Environment(ActionBarState.self) private var actionBar
-    @Environment(SearchState.self) private var search
     let layout: ActionBarLayout
 
     var body: some View {
@@ -919,10 +924,6 @@ private struct TrailingSlot: View {
                     // плеер, и первый тап обязан его развернуть.
                     onExpand: {
                         if layout.isMiniPlayerCompact {
-                            // Круг в просмотре выдачи — это выход из неё к плееру:
-                            // пока выдача открыта, бар держит раскладку поиска,
-                            // и развернуть плеер, не закрыв её, нельзя.
-                            search.isBrowsing = false
                             actionBar.expandMiniPlayer()
                         } else {
                             actionBar.openMusicPlayer()

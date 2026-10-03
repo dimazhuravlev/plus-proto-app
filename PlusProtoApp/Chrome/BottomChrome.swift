@@ -142,19 +142,29 @@ struct BottomChrome: View {
         search.isBrowsing || (actionBar.isSearchFocused && search.isActive)
     }
 
+    /// Просмотр выдачи — или вот-вот он: клавиатура уже уехала, а фокус ещё не снят.
+    /// UIKit сообщает об уходе клавиатуры раньше, чем SwiftUI снимает фокус, и без
+    /// этого бар на кадр брал раскладку режима с плеером и тут же разворачивался
+    /// обратно. Уход в карточку (отметка) и крест (пустой запрос) сюда не попадают.
+    private var isBrowsingLayout: Bool {
+        search.isBrowsing || (actionBar.isSearchFocused && search.isActive && !search.isSuspended)
+    }
+
     /// Единственный источник фокусной геометрии бара: и подъём, и ширины зон, и уезд
     /// плеера считаются отсюда, из ОДНОГО предиката. Драйвер — состояние клавиатуры,
     /// а не флаг фокуса: так оба края перехода (подъём и опускание) начинаются ровно
     /// тогда, когда трогается клавиатура, и всё меняется одним апдейтом.
     ///
     /// Подъём: низ бара встаёт на 12pt над клавиатурой (`2021:11248`).
-    /// В просмотре выдачи без клавиатуры бар, наоборот, опускается на место таббара —
-    /// той же кривой клавиатуры, если она как раз уезжает: одно движение, без остановки
-    /// на обычной высоте.
+    /// В просмотре выдачи без клавиатуры раскладка та же, фокусная: поле во всю ширину
+    /// бара, плееров и чипов нет — они возвращаются, только когда из поиска выходят
+    /// (правка пользователя 2026-10-03). Бар при этом не над клавиатурой, а на месте
+    /// таббара — той же её кривой, если она как раз уезжает: одно движение, без
+    /// остановки на обычной высоте. Переход «просмотр ↔ фокус» меняет только высоту.
     private var raise: ActionBarRaise {
         guard keyboard.isUp else {
-            guard search.isBrowsing else { return .none }
-            return ActionBarRaise(isRaised: false, lift: PlusChromeMetrics.browsingDrop, motion: keyboard.motion)
+            guard isBrowsingLayout else { return .none }
+            return ActionBarRaise(isRaised: true, lift: PlusChromeMetrics.browsingDrop, motion: keyboard.motion)
         }
         let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
             + PlusChromeMetrics.tabsRowHeight
@@ -221,6 +231,11 @@ final class KeyboardObserver {
     private var observers: [NSObjectProtocol] = []
     /// Снимает `motion` после того, как клавиатура доехала.
     private var settle: Task<Void, Never>?
+    /// Длительность последнего настоящего движения клавиатуры — для уходов, которые
+    /// приходят с нулём (см. `drive`). До первого подъёма — системные 0.25.
+    private var lastDuration: Double = 0.25
+    /// Меньше этого — не длительность, а «без анимации» из нотификации.
+    private static let minReportedDuration: Double = 0.05
 
     init() {
         let center = NotificationCenter.default
@@ -262,9 +277,15 @@ final class KeyboardObserver {
     @MainActor
     private func drive(overlap next: CGFloat, up: Bool, from note: Notification) {
         let info = note.userInfo
-        let duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        let reported = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        // Уход, снятый программно (фокус снимает SwiftUI), приходит с нулевой
+        // длительностью, хотя клавиатура уезжает обычной анимацией (замер 2026-10-03:
+        // подъём рапортует 0.383, уход — 0). С нулём бар доезжал за минимальные 0.12
+        // и нырял под клавиатуру — тогда берём длительность её последнего движения.
+        let duration = reported >= Self.minReportedDuration ? reported : lastDuration
+        if reported >= Self.minReportedDuration { lastDuration = reported }
         let rawCurve = info?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int
-        let curve = Self.animation(curve: rawCurve, duration: duration)
+        let curve = Self.animation(curve: rawCurve, duration: duration, leads: up)
 
         motion = curve
         withAnimation(curve) {
@@ -304,8 +325,14 @@ final class KeyboardObserver {
     /// публичных `UIView.AnimationCurve`. Её общепринятая аппроксимация в кубических
     /// коэффициентах — `(0.38, 0.7, 0.125, 1.0)`: резкий старт и долгое торможение.
     /// Остальные значения — стандартные CSS-эквиваленты ease-in-out / in / out / linear.
-    private static func animation(curve raw: Int?, duration rawDuration: Double) -> Animation {
-        let duration = max(0.12, rawDuration - commitLatency)
+    ///
+    /// Фора (`commitLatency`) — только пока клавиатура на экране и бар обязан от неё
+    /// не отстать (`leads`). На уходе форы нет: бар трогается на кадр позже и едет
+    /// полную длительность — то есть чуть отстаёт и остаётся над клавиатурой. С форой
+    /// он её обгонял и на пару кадров нырял под неё, когда ехал на место таббара
+    /// в просмотр выдачи: ход 314 против её 336 (замер записи 2026-10-03).
+    private static func animation(curve raw: Int?, duration rawDuration: Double, leads: Bool) -> Animation {
+        let duration = max(0.12, rawDuration - (leads ? commitLatency : 0))
         return switch raw {
         case 0: .timingCurve(0.42, 0, 0.58, 1, duration: duration)
         case 1: .timingCurve(0.42, 0, 1, 1, duration: duration)
