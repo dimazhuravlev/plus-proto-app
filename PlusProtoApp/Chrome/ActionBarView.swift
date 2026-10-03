@@ -455,6 +455,8 @@ private struct SearchPill: View {
     @State private var isFocusedPlaceholderArmed = false
     /// Шкала волны «Поиск по всему»: 0 — не видно, 1 — вся строка на месте.
     @State private var focusedPlaceholderWave: Double = 0
+    /// Волна в этом фокусе уже сыграна: второй показ (стёрли запрос) — без неё.
+    @State private var didPlayFocusedPlaceholderWave = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
@@ -554,22 +556,32 @@ private struct SearchPill: View {
             if focused, pull != 0 {
                 withAnimation(ActionBarMotion.morph) { pull = 0 }
             }
-            if !focused { isFocusedPlaceholderArmed = false }
+            if !focused {
+                isFocusedPlaceholderArmed = false
+                didPlayFocusedPlaceholderWave = false
+            }
         }
         .onChange(of: searchFocused && layout.isRaised && isBarSettled) { _, ready in
             if ready { isFocusedPlaceholderArmed = true }
         }
-        // Волна запускается заново на каждом показе и гаснет мгновенно: под первой
-        // буквой, на снятии фокуса. Мгновенно — без транзакции, иначе строка таяла
-        // бы обратной волной поверх набранного текста.
+        // Волна — один раз за фокус, когда бар доехал до клавиатуры. Вернулся
+        // плейсхолдер потому, что стёрли запрос, — встаёт сразу, как системный:
+        // стирают десятки раз за сессию, и полсекунды волны каждый раз — шум (ревью
+        // анимации 2026-10-03). Гаснет всегда мгновенно — под первой буквой, на снятии
+        // фокуса; без транзакции, иначе строка таяла бы обратной волной поверх текста.
         .onChange(of: isFocusedPlaceholderShown) { _, shown in
+            var instant = Transaction()
+            instant.disablesAnimations = true
             guard shown else {
-                var instant = Transaction()
-                instant.disablesAnimations = true
                 withTransaction(instant) { focusedPlaceholderWave = 0 }
                 return
             }
-            focusedPlaceholderWave = 0
+            guard !didPlayFocusedPlaceholderWave else {
+                withTransaction(instant) { focusedPlaceholderWave = 1 }
+                return
+            }
+            didPlayFocusedPlaceholderWave = true
+            withTransaction(instant) { focusedPlaceholderWave = 0 }
             withAnimation(.linear(duration: focusedPlaceholderWaveDuration)) {
                 focusedPlaceholderWave = 1
             }
@@ -791,9 +803,11 @@ private enum SearchPlaceholderMotion {
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
     /// фраза погасла вместе с подъёмом, и нахлёста нет. Глиф — 240 мс сильного ease-out
-    /// из прозрачности и на 4pt снизу; соседи стартуют через 20 мс — на 14 знаков вся
-    /// волна ~0.5s. Декоративная: ничего не ждёт её конца.
-    static let focusedWave = HeadlineWave(stagger: 0.02, glyph: 0.24, rise: 4)
+    /// из прозрачности и на 4pt сверху — тем же направлением, каким входят бегущие
+    /// фразы (`swapIn`); соседи стартуют через 20 мс — на 14 знаков вся волна ~0.5s.
+    /// Длиннее бюджета UI в 300 мс сознательно: волну попросили видимой, она ничего
+    /// не блокирует и гаснет мгновенно.
+    static let focusedWave = HeadlineWave(stagger: 0.02, glyph: 0.24, offset: -4)
     /// С «уменьшением движения» — без волны: строка проявляется целиком, прозрачностью
     /// за 250 мс (как было до волны).
     static let focusedReducedFade: Double = 0.25

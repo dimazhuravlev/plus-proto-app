@@ -228,7 +228,8 @@ private struct HeadlineInkRenderer: TextRenderer {
     }
 }
 
-/// Волна появления строки: глиф за глифом, каждый — из прозрачности и чуть снизу.
+/// Волна появления строки: глиф за глифом, каждый — из прозрачности и с небольшим
+/// вертикальным сдвигом.
 /// Числа — у вызывающего (своей анимации у типографики нет).
 ///
 /// Блюра нет намеренно: фильтр на каждый глиф на старте волны подвешивал главный
@@ -239,8 +240,8 @@ struct HeadlineWave: Equatable {
     var stagger: Double
     /// Проявление одного глифа, секунды.
     var glyph: Double
-    /// Подъём глифа на место снизу, pt.
-    var rise: CGFloat
+    /// Начальный сдвиг глифа по вертикали, pt: минус — глиф входит сверху.
+    var offset: CGFloat
 
     /// Вся волна для строки из `glyphs` знаков.
     func total(glyphs: Int) -> Double {
@@ -260,7 +261,7 @@ private struct HeadlineWaveRenderer: TextRenderer, Animatable {
     let wave: HeadlineWave
     /// 0 — строки не видно, 1 — вся на месте.
     var progress: Double
-    /// «Уменьшение движения»: без подъёма, строка проявляется целиком.
+    /// «Уменьшение движения»: без сдвига, строка проявляется целиком.
     let reduceMotion: Bool
 
     var animatableData: Double {
@@ -269,8 +270,8 @@ private struct HeadlineWaveRenderer: TextRenderer, Animatable {
     }
 
     var displayPadding: EdgeInsets {
-        // Запас — и на подъём глифа снизу.
-        let vertical = style.inkOutset + wave.rise
+        // Запас — и на сдвиг глифа.
+        let vertical = style.inkOutset + abs(wave.offset)
         let horizontal = style.size * HeadlineInk.horizontal
         return EdgeInsets(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
     }
@@ -298,7 +299,7 @@ private struct HeadlineWaveRenderer: TextRenderer, Animatable {
                     var glyph = lineContext
                     glyph.opacity = eased
                     if !reduceMotion, eased < 1 {
-                        glyph.translateBy(x: 0, y: (1 - eased) * wave.rise)
+                        glyph.translateBy(x: 0, y: (1 - eased) * wave.offset)
                     }
                     glyph.draw(slice)
                 }
