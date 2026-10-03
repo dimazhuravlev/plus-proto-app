@@ -672,10 +672,11 @@ private struct MarqueeTitle: View {
                     .frame(width: screenWidth)
             } else if reduceMotion {
                 // Без бегущей строки: стоит у поля и гаснет у правого края.
-                line
-                    .offset(x: MusicPlayerLayout.sideInset)
-                    .frame(width: screenWidth, alignment: .leading)
-                    .mask { fadeMask(leading: 0) }
+                faded(leading: 0) {
+                    line
+                        .offset(x: MusicPlayerLayout.sideInset)
+                        .frame(width: screenWidth, alignment: .leading)
+                }
             } else {
                 marquee
             }
@@ -718,17 +719,28 @@ private struct MarqueeTitle: View {
             // и уходит, пока вторая копия доезжает до поля.
             let leading = min(1, min(moved, distance - moved) / MusicPlayerMotion.marqueeFadeRamp)
             // Две копии подряд: когда первая уехала на всю длину с зазором, на её месте
-            // ровно вторая — круг замыкается без скачка.
-            HStack(spacing: MusicPlayerMotion.marqueeGap) {
-                line
-                line
+            // ровно вторая — круг замыкается без скачка. Всё, что за кромками экрана,
+            // прячет маска — отдельный клип не нужен.
+            faded(leading: leading) {
+                HStack(spacing: MusicPlayerMotion.marqueeGap) {
+                    line
+                    line
+                }
+                .offset(x: MusicPlayerLayout.sideInset - moved)
+                .frame(width: screenWidth, alignment: .leading)
             }
-            .offset(x: MusicPlayerLayout.sideInset - moved)
-            .frame(width: screenWidth, alignment: .leading)
-            .mask { fadeMask(leading: leading) }
         }
         .frame(width: screenWidth)
-        .clipped()
+    }
+
+    /// Строка под масками краёв. Маска выше рамки на запас глифов (`inkOutset`):
+    /// по рамке строки она срезала бы хвосты «у», «р» и точки «Й».
+    private func faded(leading: Double, @ViewBuilder content: () -> some View) -> some View {
+        let outset = PlusHeadline.l.inkOutset
+        return content()
+            .padding(.vertical, outset)
+            .mask { fadeMask(leading: leading) }
+            .padding(.vertical, -outset)
     }
 
     /// Маски краёв из макета. `leading` — сила левого затухания, 0…1.

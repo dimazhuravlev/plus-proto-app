@@ -168,6 +168,43 @@ enum PlusHeadline: CaseIterable {
 
     /// Интерлиньяж 100 %: высота строки равна кеглю.
     var lineHeight: CGFloat { size }
+
+    /// Насколько глифы выходят за рамку строк по вертикали — запас области отрисовки
+    /// (`HeadlineInkRenderer`). Нужен и тем, кто сам маскирует или клипует заголовок:
+    /// маска по рамке срежет хвосты так же, как срезал их рендер iOS.
+    var inkOutset: CGFloat { size * HeadlineInk.vertical }
+}
+
+/// Запас под «чернила» YS Display Bold за рамкой строк, в долях кегля. Замер по
+/// метрикам шрифта: базовая линия встаёт на подъём (0.928 кегля от верха строки),
+/// хвосты «р», «у», «Д» уходят на 0.202 вниз — у последней строки это 0.13 кегля
+/// за нижней кромкой; диакритика «Й», «Ё» — до 0.935, почти вровень с верхней.
+/// По горизонтали дальше всех вылезает «j» — 0.08. Запас взят с полуторным избытком.
+private enum HeadlineInk {
+    static let vertical: CGFloat = 0.25
+    static let horizontal: CGFloat = 0.1
+}
+
+/// Рендер заголовков: рисует строки как есть, но разрешает глифам выходить за рамку.
+///
+/// iOS режет отрисовку `Text` по его рамке, а при интерлиньяже 100 % рамка строк ниже
+/// глифов: хвосты последней строки срезались нижней кромкой контейнера (жалоба
+/// пользователя 2026-10-03). `displayPadding` расширяет только область отрисовки —
+/// раскладка прежняя, блок по-прежнему высотой ровно в N кеглей.
+private struct HeadlineInkRenderer: TextRenderer {
+    let size: CGFloat
+
+    var displayPadding: EdgeInsets {
+        let vertical = size * HeadlineInk.vertical
+        let horizontal = size * HeadlineInk.horizontal
+        return EdgeInsets(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
+    }
+
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        for line in layout {
+            context.draw(line)
+        }
+    }
 }
 
 extension View {
@@ -175,10 +212,13 @@ extension View {
     ///
     /// Высота строки точная (`lineHeight(.exact)`, iOS 26): 100 % меньше натурального
     /// интерлиньяжа YS (1.172 кегля), а `lineSpacing` умеет только прибавлять —
-    /// многострочный заголовок шёл бы рыхло.
+    /// многострочный заголовок шёл бы рыхло. Глифы при этом выше строки, и рисует их
+    /// `HeadlineInkRenderer` — с запасом за рамкой, иначе хвосты последней строки
+    /// срезаны.
     func plusHeadline(_ style: PlusHeadline) -> some View {
         font(.custom(PlusFont.displaySemibold, size: style.size))
             .lineHeight(.exact(points: style.lineHeight))
+            .textRenderer(HeadlineInkRenderer(size: style.size))
     }
 }
 
