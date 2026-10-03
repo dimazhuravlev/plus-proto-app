@@ -37,6 +37,11 @@ struct SearchLayers<Content: View>: View {
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
+    /// Глубина этого экрана в стеке — с его появления. Текущая глубина навигации
+    /// для пуша не годится: при открытии карточки из выдачи она растёт в том же
+    /// апдейте, и слой гас раньше, чем карточка его накрывала, — под зумом был голый
+    /// альбом, а у зума пропадал источник (проверка навигации 2026-10-03).
+    @State private var ownDepth: Int?
 
     var body: some View {
         ZStack {
@@ -46,9 +51,13 @@ struct SearchLayers<Content: View>: View {
                 // Тап по затемнению закрывает поиск — и с клавиатурой, и без неё.
                 actionBar.isSearchFocused = false
                 search.isBrowsing = false
+                search.dropSuspension()
             }
 
             SearchResultsView(isShown: isResultsShown)
+        }
+        .onAppear {
+            if ownDepth == nil { ownDepth = navigation.depth }
         }
     }
 
@@ -56,7 +65,7 @@ struct SearchLayers<Content: View>: View {
     private var hostsSearch: Bool {
         switch host {
         case .stackRoot: search.hostDepth == 0
-        case .pushed: search.hostDepth > 0 && search.hostDepth == navigation.depth
+        case .pushed: search.hostDepth > 0 && search.hostDepth == (ownDepth ?? navigation.depth)
         }
     }
 

@@ -154,6 +154,12 @@ final class SearchState {
         hostDepth = depth
     }
 
+    /// Забыть точку ухода в карточку: поиск начали заново (новый фокус), вышли из него
+    /// или ушли на другой таб. Отметка гаснет и сама — на возврате (`consumeResume`).
+    func dropSuspension() {
+        suspended = nil
+    }
+
     /// Запомнить точку, из которой пользователь ушёл в открытую карточку.
     func suspend(tab: AppTab, depth: Int) {
         suspended = (tab, depth)

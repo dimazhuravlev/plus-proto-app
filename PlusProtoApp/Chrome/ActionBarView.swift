@@ -178,9 +178,15 @@ struct ActionBarView: View {
     private func exitSearch() {
         search.query = ""
         search.isBrowsing = false
+        search.dropSuspension()
         if searchFocused {
             keyboard.dismissSmoothly()
             searchFocused = false
+        } else {
+            // Без фокуса тоже пишем: на записи `ActionBarState` повышает режим до поиска,
+            // если поле сейчас круг, — музыку могли включить, пока выдача была открыта
+            // (выдача → альбом → «Слушать» → назад), и без этого поле схлопнулось бы.
+            actionBar.isSearchFocused = false
         }
     }
 
@@ -213,7 +219,9 @@ struct ActionBarView: View {
                 searchFocused: $searchFocused,
                 query: $search.query,
                 isBrowsing: $search.isBrowsing,
-                isBarSettled: raise.motion == nil
+                // Стоит над клавиатурой, а не просто стоит: в просмотре раскладка
+                // тоже фокусная, и крест (фокус полю) взводил волну ещё до подъёма.
+                isBarSettled: keyboard.isUp && raise.motion == nil
             )
             .padding(.leading, layout.backGap)
 

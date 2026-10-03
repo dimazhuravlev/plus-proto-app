@@ -179,7 +179,14 @@ struct BottomChrome: View {
     /// остановки на обычной высоте. Переход «просмотр ↔ фокус» меняет только высоту.
     private var raise: ActionBarRaise {
         guard keyboard.isUp else {
-            guard isBrowsingLayout else { return .none }
+            // Вне поиска — обычная раскладка, но **кривой клавиатуры**, если она как раз
+            // уходит: на «Назад» она уезжает мягким уходом (0.4s ease-in-out), а морф
+            // режимов с быстрым стартом обгонял её, и бар нырял под клавиатуру
+            // (проверка навигации 2026-10-03). Клавиатура стоит — `motion` пустой, и бар
+            // едет своим морфом, как прежде.
+            guard isBrowsingLayout else {
+                return ActionBarRaise(isRaised: false, lift: 0, motion: keyboard.motion)
+            }
             return ActionBarRaise(isRaised: true, lift: PlusChromeMetrics.browsingDrop, motion: keyboard.motion)
         }
         let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
