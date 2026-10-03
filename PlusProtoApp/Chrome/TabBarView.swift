@@ -79,6 +79,17 @@ struct TabBarView: View {
         .padding(.top, PlusChromeMetrics.tabsRowTopPadding)
         .frame(height: PlusChromeMetrics.tabsRowHeight)
         .task { await debugTapCycle() }
+        #if DEBUG
+        // `-debugRetapTab <сек>` — через столько секунд тап по уже активному табу:
+        // поп до корня (или скролл к началу) не проверить без тапа, а шелл не тапает.
+        .task {
+            let delay = UserDefaults.standard.double(forKey: "debugRetapTab")
+            guard delay > 0 else { return }
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            select(navigation.activeTab)
+        }
+        #endif
     }
 
     /// ВРЕМЕННОЕ: шелл симулятор не тапает, поэтому тап воспроизводится синтетически —
