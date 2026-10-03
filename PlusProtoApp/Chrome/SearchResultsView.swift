@@ -208,6 +208,15 @@ struct SearchResultsView: View {
     }
 
     private var content: some View {
+        ZStack {
+            overviewList
+            if search.isEmptyResult {
+                SearchEmptyState()
+            }
+        }
+    }
+
+    private var overviewList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // Порядок секций даёт состояние: выдача приходит целиком, когда
@@ -217,13 +226,6 @@ struct SearchResultsView: View {
                     carousel(section)
                 }
 
-                if search.isEmptyResult {
-                    Text("Ничего не нашлось")
-                        .plusText(.textS, .medium)
-                        .foregroundStyle(Color.fillSubtitle)
-                        .padding(.horizontal, Layout.side)
-                        .padding(.vertical, Layout.headerTop)
-                }
             }
             // Кадр списка — во весь экран, а отступ только у содержимого: выдача
             // **уходит под** поле и клавиатуру и просвечивает сквозь их стекло (правка
@@ -265,11 +267,17 @@ struct SearchResultsView: View {
                 } else {
                     // Заголовок с шевроном — переход в полную выдачу раздела (задача
                     // пользователя 2026-10-03).
-                    Button { search.expand(section.id) } label: {
+                    Button {
+                        search.expand(section.id)
+                        // В полный список — без клавиатуры (правка пользователя
+                        // 2026-10-03): тем же мягким уходом, выдача — в просмотр.
+                        if actionBar.isSearchFocused { keyboard.dismissSmoothly() }
+                    } label: {
                         header(section.title)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(section.title)
                     .accessibilityHint("Вся выдача раздела")
                 }
 
@@ -678,3 +686,41 @@ private enum BookHingeShade {
         endPoint: .trailing
     )
 }
+
+// MARK: - Пустая выдача
+
+/// Пустая выдача — макет `2448:30715`: «Ничего такого / не нашлось», Headline S,
+/// белый 35 %, по центру. По вертикали — ровно посередине между статус-баром и верхом
+/// бара поиска (задача пользователя 2026-10-03): с клавиатурой бар над ней, в просмотре
+/// выдачи — внизу, и текст переезжает вместе с ним — кривой клавиатуры, потому что
+/// отступ считается от её состояния.
+struct SearchEmptyState: View {
+    @Environment(KeyboardObserver.self) private var keyboard
+
+    /// Белый 35 % макета — разовый цвет, токена нет.
+    private static let color = Color.white.opacity(0.35)
+
+    var body: some View {
+        Text("Ничего такого\nне нашлось")
+            .plusHeadline(.s)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(Self.color)
+            // Кадр слоя — безопасная зона: сверху статус-бар уже учтён, снизу
+            // поджимаем до верха бара.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, barInset)
+            .allowsHitTesting(false)
+    }
+
+    /// Сколько бар поиска занимает над нижней безопасной зоной.
+    private var barInset: CGFloat {
+        let safeBottom = PlusChromeMetrics.bottomSafeArea
+        let barTopFromScreenBottom = keyboard.isUp
+            // Бар над клавиатурой: её высота, зазор 12 и сам бар.
+            ? keyboard.overlap + PlusChromeMetrics.focusKeyboardGap + PlusMetrics.actionBarHeight
+            // Просмотр выдачи: бар опущен на место таббара — низом на безопасную зону.
+            : safeBottom + PlusMetrics.actionBarHeight
+        return max(0, barTopFromScreenBottom - safeBottom)
+    }
+}
+

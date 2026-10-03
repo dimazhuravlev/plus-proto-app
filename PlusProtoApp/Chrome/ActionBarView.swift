@@ -749,7 +749,8 @@ private struct SearchPill: View {
             .textFieldStyle(.plain)
             .tint(Color.fillOne)
             .foregroundStyle(Color.fillOne)
-            .plusHeadline(.s)
+            // Не `plusHeadline`: у поля точная строка срезала хвосты букв снизу.
+            .plusHeadlineField(.s)
             .submitLabel(.search)
             // Без автокоррекции — и, как следствие, без строки автоподсказок
             // (QuickType): она стояла плашкой прямо под полем и отбирала у выдачи

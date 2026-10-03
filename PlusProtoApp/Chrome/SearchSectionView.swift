@@ -1,4 +1,5 @@
 import SwiftUI
+import VariableBlur
 
 /// Полная выдача одного раздела — Музыка, Кино или Книги (задача пользователя
 /// 2026-10-03; макет музыки `2440:27920`, кино и книги — те же, с другими фильтрами).
@@ -18,50 +19,70 @@ struct SearchSectionView: View {
     @Environment(ActionBarState.self) private var actionBar
 
     @State private var filter: SearchFilter = .all
+    /// Сколько проскроллено — от него проявляется подложка закреплённых чипсов.
+    @State private var scrolled: CGFloat = 0
     /// Сердца — визуальные, на время экрана: избранного в прототипе нет.
     @State private var liked: Set<String> = []
+    /// Текст выдачи, на который выбран фильтр: новый текст сбрасывает фильтр на «Всю
+    /// музыку», а пропавшая на миг выдача (скелетон) — нет.
+    @State private var filterText: String?
 
     private enum Layout {
         static let side: CGFloat = 16
-        /// Отступ «Ничего не нашлось» — как у обзора.
-        static let emptyVertical: CGFloat = 16
         /// Список кино и книг — на 8 ниже безопасной зоны: столько же, сколько колдунщик
         /// музыки стоит ниже чипсов (`stack` макета, колдунщик на y = 8).
         static let listTop: CGFloat = 8
         static let chipsVertical: CGFloat = 8
-        static let chipGap: CGFloat = 8
+        /// Шаг между чипсами — 6 (правка пользователя 2026-10-03; в макете 8).
+        static let chipGap: CGFloat = 6
+        /// Подложка закреплённых чипсов проявляется за первые 24pt скролла: в покое
+        /// верх экрана не темнеет, а уезжающие под чипсы строки уже размыты.
+        static let backdropRamp: CGFloat = 24
         static let barGap: CGFloat = 12
         static let skeletonRows = 7
     }
 
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                // Фильтры — только у музыки: у кино и книг сразу список (правка
-                // пользователя 2026-10-03).
-                if kind == .music {
-                    chips
-                }
+    /// Переключение фильтров (правка пользователя 2026-10-03): списки сменяются
+    /// кроссфейдом за 300 мс, лента чипсов доезжает до активного.
+    private enum FilterMotion {
+        static let crossfade: Animation = .easeInOut(duration: 0.3)
+        /// Подкрутка ленты к активному чипсу — та же длительность, сильный ease-out:
+        /// лента отвечает сразу и мягко встаёт.
+        static let centerChip: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
+    }
 
-                if let full = search.fullResults {
-                    if filter == .all, let wizard = full.wizard {
-                        MusicWizardCard(wizard: wizard, open: open, zoom: zoom)
-                    }
-                    let rows = full.hits.filter { filter.matches($0.kind) }
-                    if rows.isEmpty {
-                        Text("Ничего не нашлось")
-                            .plusText(.textS, .medium)
-                            .foregroundStyle(Color.fillSubtitle)
-                            .padding(.horizontal, Layout.side)
-                            .padding(.vertical, Layout.emptyVertical)
-                    } else {
-                        ForEach(rows) { hit in
-                            row(hit, isFirst: hit.id == rows.first?.id)
-                        }
-                    }
-                } else {
-                    ForEach(0..<Layout.skeletonRows, id: \.self) { _ in
-                        SearchListSkeletonRow(isPoster: kind != .music)
+    var body: some View {
+        ZStack {
+            sectionList
+            // Пустая выдача — тот же экран, что у обзора: по центру между верхом
+            // и баром поиска.
+            if isEmpty {
+                SearchEmptyState()
+            }
+        }
+    }
+
+    /// Выдача пришла, а показывать нечего — ни строк под фильтром, ни колдунщика.
+    private var isEmpty: Bool {
+        guard let full = search.fullResults else { return false }
+        let hasWizard = filter == .all && full.wizard != nil
+        return !hasWizard && !full.hits.contains { filter.matches($0.kind) }
+    }
+
+    private var sectionList: some View {
+        ScrollView {
+            // Чипсы музыки закреплены — заголовком секции, который липнет к верху
+            // при скролле (правка пользователя 2026-10-03). У кино и книг фильтров нет.
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: kind == .music ? [.sectionHeaders] : []) {
+                Section {
+                    list
+                } header: {
+                    if kind == .music {
+                        chips
+                            .background(alignment: .top) {
+                                PinnedChipsBackdrop()
+                                    .opacity(NavBarRamp.progress(scrolled, start: 0, length: Layout.backdropRamp))
+                            }
                     }
                 }
             }
@@ -72,28 +93,96 @@ struct SearchSectionView: View {
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.never)
-        // Клавиатура уходит с первого движения скролла — как в обзоре.
-        .onScrollPhaseChange { _, phase in
-            guard phase == .interacting, actionBar.isSearchFocused else { return }
-            keyboard.dismissSmoothly()
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top
+        } action: { _, offset in
+            scrolled = offset
         }
-        // Новый запрос — с «Всего»: фильтр прошлого запроса мог оставить пустой список.
-        .onChange(of: search.fullResults?.text) { filter = .all }
+        // Клавиатура уходит с первого движения скролла — как в обзоре; у горизонтальных
+        // лент (чипсы, альбомы колдунщика) — тоже.
+        .modifier(DismissKeyboardOnScroll())
+        // Новый запрос — с «Всей музыки»: фильтр прошлого запроса мог оставить пустой
+        // список. Только когда пришла выдача **другого** текста: прежде фильтр сбрасывался
+        // и на приходе первой выдачи — выбранный над скелетоном чипс тут же гас.
+        .onChange(of: search.fullResults?.text, initial: true) { _, text in
+            guard let text else { return }
+            if let filterText, filterText != text { filter = .all }
+            filterText = text
+        }
+        #if DEBUG
+        // `-debugSearchFilter <n>` — выбрать n-й фильтр музыки (0 — «Всё»), когда
+        // выдача раздела пришла: тапнуть по чипсу из шелла нечем.
+        .task(id: search.fullResults?.text) {
+            let index = UserDefaults.standard.integer(forKey: "debugSearchFilter")
+            let options = SearchFilter.options(for: kind)
+            guard index > 0, options.indices.contains(index), search.fullResults != nil else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            filter = options[index]
+        }
+        #endif
+    }
+
+    /// Содержимое под фильтром — в `ZStack` с идентичностью фильтра: старый список
+    /// гаснет, новый проявляется **на том же месте** (в стопке они встали бы друг
+    /// под другом и переложили ленту посреди перехода).
+    private var list: some View {
+        ZStack(alignment: .top) {
+            filteredContent
+                .id(filter)
+                .transition(.opacity)
+        }
+        .animation(FilterMotion.crossfade, value: filter)
+    }
+
+    @ViewBuilder
+    private var filteredContent: some View {
+        if let full = search.fullResults {
+            VStack(alignment: .leading, spacing: 0) {
+                    if filter == .all, let wizard = full.wizard {
+                        MusicWizardCard(
+                            wizard: wizard,
+                            isLiked: liked.contains(wizard.artist.id),
+                            onLike: { toggleLike(wizard.artist.id) },
+                            open: open,
+                            zoom: zoom
+                        )
+                    }
+                    let rows = full.hits.filter { filter.matches($0.kind) }
+                    // Пусто — экран пустой выдачи поверх (`isEmpty`), список молчит.
+                    ForEach(rows) { hit in
+                        row(hit, isFirst: hit.id == rows.first?.id)
+                    }
+            }
+        } else {
+            ForEach(0..<Layout.skeletonRows, id: \.self) { _ in
+                SearchListSkeletonRow(isPoster: kind != .music)
+            }
+        }
     }
 
     private var chips: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: Layout.chipGap) {
-                ForEach(SearchFilter.options(for: kind), id: \.self) { option in
-                    SearchFilterChip(title: option.title, isActive: option == filter) {
-                        filter = option
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: Layout.chipGap) {
+                    ForEach(SearchFilter.options(for: kind), id: \.self) { option in
+                        SearchFilterChip(title: option.title, isActive: option == filter) {
+                            filter = option
+                        }
+                        .id(option)
                     }
                 }
+                .padding(.horizontal, Layout.side)
+                .padding(.vertical, Layout.chipsVertical)
             }
-            .padding(.horizontal, Layout.side)
-            .padding(.vertical, Layout.chipsVertical)
+            .scrollIndicators(.hidden)
+            .modifier(DismissKeyboardOnScroll())
+            // Выбранный чипс — в центр экрана; у краёв лента упирается в свои поля.
+            .onChange(of: filter) { _, active in
+                withAnimation(FilterMotion.centerChip) {
+                    proxy.scrollTo(active, anchor: .center)
+                }
+            }
         }
-        .scrollIndicators(.hidden)
     }
 
     @ViewBuilder
@@ -118,28 +207,63 @@ struct SearchSectionView: View {
     }
 }
 
+/// Подложка закреплённых чипсов — прогрессивный блюр от самого верха экрана (под
+/// статус-баром тоже едут строки) до чуть ниже чипсов. Без затемнения: тёмный
+/// градиент навбара сущностей здесь убран по правке пользователя 2026-10-03 — как
+/// прежде у навбара витрины.
+private struct PinnedChipsBackdrop: View {
+    /// Насколько подложка уходит выше чипсов — под статус-бар с запасом.
+    private static let above: CGFloat = 80
+    /// И насколько ниже: блюр сходит на нет уже под чипсами, а не на их кромке.
+    private static let below: CGFloat = 24
+    private static let chipsRow: CGFloat = 56
+
+    var body: some View {
+        VariableBlurView(
+            maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
+            direction: .blurredTopClearBottom
+        )
+        .frame(height: Self.above + Self.chipsRow + Self.below)
+        .offset(y: -Self.above)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Скролл начался — клавиатура уходит мягко, как в обзоре выдачи. Общий для
+/// вертикального списка и горизонтальных лент раздела.
+private struct DismissKeyboardOnScroll: ViewModifier {
+    @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(ActionBarState.self) private var actionBar
+
+    func body(content: Content) -> some View {
+        content.onScrollPhaseChange { _, phase in
+            guard phase == .interacting, actionBar.isSearchFocused else { return }
+            keyboard.dismissSmoothly()
+        }
+    }
+}
+
 // MARK: - Фильтры
 
-/// Фильтры полной выдачи — только у музыки, по макету (и «Треки»: треки в списке
-/// есть, а отдельного фильтра в макете не видно). У кино и книг фильтров нет —
-/// правка пользователя 2026-10-03, прежде было «Кино, Режиссёры» и «Книги, Авторы».
+/// Фильтры полной выдачи — только у музыки, ровно по макету: «Вся музыка»,
+/// Исполнители, Альбомы, Плейлисты (треки — в «Всей музыке»). У кино и книг фильтров
+/// нет — правка пользователя 2026-10-03.
 enum SearchFilter: Hashable {
-    case all, artists, albums, playlists, tracks
+    case all, artists, albums, playlists
 
     static func options(for kind: SearchState.Section.Kind) -> [SearchFilter] {
         switch kind {
-        case .music: [.all, .artists, .albums, .playlists, .tracks]
+        case .music: [.all, .artists, .albums, .playlists]
         case .movies, .books: []
         }
     }
 
     var title: String {
         switch self {
-        case .all: "Всё"
+        case .all: "Вся музыка"
         case .artists: "Исполнители"
         case .albums: "Альбомы"
         case .playlists: "Плейлисты"
-        case .tracks: "Треки"
         }
     }
 
@@ -149,9 +273,18 @@ enum SearchFilter: Hashable {
         case .artists: kind == .artist
         case .albums: kind == .album
         case .playlists: kind == .playlist
-        case .tracks: kind == .track
         }
     }
+}
+
+/// Цвета строк и чипсов по макету — разовые, токенов не заводим.
+private enum SearchSectionColors {
+    /// Разделитель строк — Fill/Eight.
+    static let divider = Color.white.opacity(0.15)
+    /// Сердце без лайка — Fill/Five.
+    static let like = Color.white.opacity(0.6)
+    /// Точка-разделитель в подписи — Fill/Seven.
+    static let dot = Color.white.opacity(0.3)
 }
 
 /// Чипс фильтра — `chips-row` макета: 15/20 Semibold, поля 16 × 10, капсула.
@@ -174,17 +307,30 @@ private struct SearchFilterChip: View {
                 .background {
                     if isActive {
                         ZStack {
-                            Self.accent.opacity(0.5)
-                            // Подсветка снизу — радиальный градиент макета.
-                            RadialGradient(
-                                colors: [Self.accent.opacity(0.4), Self.accent.opacity(0)],
-                                center: .bottom,
-                                startRadius: 0,
-                                endRadius: 36
+                            Capsule().fill(
+                                Self.accent.opacity(0.5)
+                                    .shadow(.inner(color: Self.accent.opacity(0.5), radius: 1, y: 1))
                             )
+                            // Подсветка снизу — эллипс макета: центр под нижней кромкой
+                            // (0.505 ширины, 1.15 высоты), радиусы 0.696 ширины и 0.8875 высоты.
+                            GeometryReader { proxy in
+                                let size = proxy.size
+                                let center = UnitPoint(x: 0.505, y: 1.15)
+                                RadialGradient(
+                                    colors: [Self.accent.opacity(0.4), Self.accent.opacity(0)],
+                                    center: center,
+                                    startRadius: 0,
+                                    endRadius: 0.8875 * size.height
+                                )
+                                .scaleEffect(
+                                    x: (0.696 * size.width) / max(0.8875 * size.height, 1),
+                                    y: 1,
+                                    anchor: center
+                                )
+                            }
                         }
                     } else {
-                        Color.white.opacity(0.08)
+                        Color.buttonsSecondary
                     }
                 }
                 .clipShape(Capsule())
@@ -221,12 +367,7 @@ private struct SearchListRow: View {
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(1)
-                if !subtitle.isEmpty {
-                    Text(subtitle)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillSubtitle)
-                        .lineLimit(1)
-                }
+                subtitleLine
             }
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -236,7 +377,7 @@ private struct SearchListRow: View {
                     .renderingMode(.template)
                     .resizable()
                     .frame(width: 20, height: 20)
-                    .foregroundStyle(isLiked ? Color.fillOne : Color.fillFour)
+                    .foregroundStyle(isLiked ? Color.fillOne : SearchSectionColors.like)
                     .padding(10)
                     .contentShape(.rect)
             }
@@ -254,25 +395,50 @@ private struct SearchListRow: View {
 
     private var divider: some View {
         Rectangle()
-            .fill(Color.fillNine)
+            .fill(SearchSectionColors.divider)
             .frame(height: 0.5)
             .padding(.horizontal, 16)
     }
 
-    /// Подпись — вид результата и, где есть, исполнитель, год или автор:
-    /// «Трек · New Order», как в макете.
-    private var subtitle: String {
-        let detail = hit.subtitle
-        func joined(_ label: String) -> String { detail.isEmpty ? label : "\(label) · \(detail)" }
+    /// Подпись — вид результата и, где есть, исполнитель, год или автор, через точку
+    /// 3pt с зазорами 4: «Трек · New Order», как в макете.
+    private var subtitleLine: some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .plusText(.textM, .medium)
+                .foregroundStyle(Color.fillSubtitle)
+                .fixedSize()
+            if showsDetail {
+                Circle()
+                    .fill(SearchSectionColors.dot)
+                    .frame(width: 3, height: 3)
+                Text(hit.subtitle)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillSubtitle)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var label: String {
         switch hit.kind {
-        case .track: return joined("Трек")
-        case .album: return joined("Альбом")
-        case .artist: return "Исполнитель"
-        case .playlist: return "Плейлист"
-        case .movie: return joined("Фильм")
-        case .book: return joined("Книга")
-        case .director: return "Режиссёр"
-        case .writer: return "Писатель"
+        case .track: "Трек"
+        case .album: "Альбом"
+        case .artist: "Исполнитель"
+        case .playlist: "Плейлист"
+        case .movie: "Фильм"
+        case .book: "Книга"
+        case .director: "Режиссёр"
+        case .writer: "Писатель"
+        }
+    }
+
+    /// Деталь после точки — у трека, альбома, фильма и книги, если она есть.
+    private var showsDetail: Bool {
+        guard !hit.subtitle.isEmpty else { return false }
+        switch hit.kind {
+        case .track, .album, .movie, .book: return true
+        default: return false
         }
     }
 }
@@ -310,7 +476,12 @@ private struct SearchRowThumbnail: View {
                 }
             }
             .clipShape(shape)
-            .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .overlay {
+                // У круга исполнителя обводки в макете нет.
+                if hit.kind != .artist {
+                    shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
+                }
+            }
     }
 
     private var shape: AnyShape {
@@ -353,11 +524,13 @@ private struct SearchListSkeletonRow: View {
 /// исполнителя на 20 % поверх тонкой подложки.
 private struct MusicWizardCard: View {
     let wizard: SearchState.MusicWizard
+    /// Лайк — общий со строкой того же исполнителя в списке.
+    let isLiked: Bool
+    let onLike: () -> Void
     let open: (EntityRoute) -> Void
     let zoom: Namespace.ID?
 
     @Environment(ActionBarState.self) private var actionBar
-    @State private var isLiked = false
 
     private enum Layout {
         static let radius: CGFloat = 16
@@ -408,12 +581,12 @@ private struct MusicWizardCard: View {
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button { isLiked.toggle() } label: {
+            Button(action: onLike) {
                 Image(isLiked ? "iconLiked" : "iconLove")
                     .renderingMode(.template)
                     .resizable()
                     .frame(width: 20, height: 20)
-                    .foregroundStyle(isLiked ? Color.fillOne : Color.fillFour)
+                    .foregroundStyle(isLiked ? Color.fillOne : SearchSectionColors.like)
                     .padding(10)
                     .contentShape(.rect)
             }
@@ -428,7 +601,7 @@ private struct MusicWizardCard: View {
                     .frame(width: 20, height: 20)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: Layout.playSize, height: Layout.playSize)
-                    .background(Color.white.opacity(0.08), in: Circle())
+                    .background(Color.buttonsSecondary, in: Circle())
                     .contentShape(Circle())
             }
             .buttonStyle(PressScaleButtonStyle())
@@ -448,6 +621,7 @@ private struct MusicWizardCard: View {
             .padding(.horizontal, Layout.inner)
         }
         .scrollIndicators(.hidden)
+        .modifier(DismissKeyboardOnScroll())
     }
 
     @ViewBuilder
@@ -482,7 +656,10 @@ private struct MusicWizardCard: View {
 
     private var background: some View {
         ZStack {
+            // Фото раздуто втрое до размытия — в карточку попадает его центр, а тинт
+            // не гаснет к краям (в макете слой 1029 × 651 под карточкой 370 × 217).
             artwork(wizard.artist.artwork)
+                .scaleEffect(3)
                 .blur(radius: 60)
                 .opacity(0.2)
             Color.fillNine
@@ -502,15 +679,24 @@ private struct MusicWizardCard: View {
 
     // MARK: Play
 
+    /// Этот исполнитель — то, за чем сейчас бар: музыка в его режиме, а не payload,
+    /// оставшийся под чипом книги или фильма.
+    private var isBarOnThisArtist: Bool {
+        (actionBar.mode == .music || actionBar.mode == .search)
+            && actionBar.music?.artist == wizard.artist.title
+    }
+
     /// Играет ли сейчас этот исполнитель — play превращается в паузу.
     private var isPlayingThis: Bool {
-        actionBar.isMusicPlaying && actionBar.music?.artist == wizard.artist.title
+        actionBar.isMusicPlaying && isBarOnThisArtist
     }
 
     /// Включить исполнителя: его трек из выдачи, а нет — первый альбом. Уже играет —
     /// пауза. Мини-плеер появится в баре, когда из поиска выйдут.
     private func togglePlay() {
-        if actionBar.music?.artist == wizard.artist.title {
+        // Пауза — только если бар за этим исполнителем: в режиме книги или фильма
+        // переключение payload запустило бы музыку-«призрака» без мини-плеера.
+        if isBarOnThisArtist {
             actionBar.toggleMusicPlayback()
             return
         }

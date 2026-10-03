@@ -327,7 +327,12 @@ final class SearchState {
     /// Раскрыть раздел. Анимацию перехода ведёт слой выдачи.
     func expand(_ kind: Section.Kind) {
         expanded = kind
-        startFull(kind, normalized)
+        // Обзор этого текста ещё в пути — полную выдачу запустит он сам, когда соберётся:
+        // персона раздела берётся из него, и раньше времени она была бы от прошлого
+        // запроса.
+        if cache[normalized] != nil {
+            startFull(kind, normalized)
+        }
     }
 
     /// Свернуть к обзору — «Назад» в баре, новый поиск, смена таба.
@@ -335,9 +340,12 @@ final class SearchState {
         expanded = nil
     }
 
-    /// Полная выдача раскрытого раздела по текущему запросу; `nil` — ещё собирается.
+    /// Полная выдача раскрытого раздела; `nil` — первая ещё собирается. Уточнение
+    /// запроса держит прежнюю выдачу раздела до готовности новой — как и обзор
+    /// (правка пользователя 2026-10-03): скелетон на каждой букве сбрасывал список
+    /// и фильтр.
     var fullResults: FullResults? {
-        guard let expanded, let full, full.kind == expanded, full.text == normalized else { return nil }
+        guard let expanded, let full, full.kind == expanded else { return nil }
         return full
     }
 
@@ -352,7 +360,9 @@ final class SearchState {
             guard let self else { return }
             let result = await self.loadFull(kind, text)
             guard !Task.isCancelled else { return }
-            self.fullCache[key] = result
+            // Пустой ответ не кэшируем: за ним бывает сбой сети или 429, и «ничего
+            // не нашлось» залипло бы до перезапуска.
+            if !result.hits.isEmpty { self.fullCache[key] = result }
             self.full = result
         }
     }
@@ -364,11 +374,11 @@ final class SearchState {
             return FullResults(kind: kind, text: text, hits: hits, wizard: wizard)
         case .movies:
             let hits = await fetchFullMovies(text)
-            return FullResults(kind: kind, text: text, hits: personFirst(.director, in: shown?.movies, hits), wizard: nil)
+            return FullResults(kind: kind, text: text, hits: personFirst(.director, in: cache[text]?.movies, hits), wizard: nil)
         case .books:
             let found = (try? await BooksService.shared.search(text, limit: FullLimits.books)) ?? []
             let hits = found.map(SearchHit.init(book:))
-            return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: shown?.books, hits), wizard: nil)
+            return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: cache[text]?.books, hits), wizard: nil)
         }
     }
 
@@ -422,6 +432,19 @@ final class SearchState {
         return (hits, MusicWizard(artist: SearchHit(artist: best), albums: wizardAlbums, topTrack: topTrack))
     }
 
+    /// Ответы сетевого поиска Кинопоиска на процесс. Обзор и полная выдача раздела
+    /// берут одну выдачу на текст (лимит полной, обзору — начало): иначе раскрытый
+    /// раздел тратил второй запрос из 200 в сутки на тот же текст (проверка 2026-10-03).
+    private var kinopoiskRaw: [String: [KinopoiskMovie]] = [:]
+
+    private func kinopoiskMovies(_ text: String) async -> [KinopoiskMovie] {
+        if let cached = kinopoiskRaw[text] { return cached }
+        let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: FullLimits.networkMovies)) ?? []
+        // Пустой — не кэшируем: за ним бывает сбой.
+        if !found.isEmpty { kinopoiskRaw[text] = found }
+        return found
+    }
+
     /// Имя отвечает запросу: совпадает, начинается с него или содержит его целым словом.
     private static func nameMatches(_ name: String, _ needle: String) -> Bool {
         guard !needle.isEmpty else { return false }
@@ -435,7 +458,7 @@ final class SearchState {
             .filter(Self.isShowableMovie)
         var hits = pooled.map(SearchHit.init(movie:))
         guard pooled.count < FullLimits.poolEnough, !Task.isCancelled else { return hits }
-        let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: FullLimits.networkMovies)) ?? []
+        let found = await kinopoiskMovies(text)
         let known = Set(pooled.map(\.id))
         hits += found
             .filter { !known.contains($0.id) && Self.isShowableMovie($0) }
@@ -566,7 +589,7 @@ final class SearchState {
             return Array(local.prefix(Self.perSection))
         }
 
-        let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: Self.perKind)) ?? []
+        let found = Array(await kinopoiskMovies(text).prefix(Self.perKind))
         // Сетевые дополняют локальные, дубликаты по id отбрасываем.
         let known = Set(pooled.map(\.id))
         let network = found
@@ -698,7 +721,11 @@ private extension SearchHit {
     }
 
     init(movie: KinopoiskMovie) {
-        let poster = movie.poster?.url(size: .small)
+        // Часть постеров Кинопоиск отдаёт ссылкой на `image.tmdb.org`, а его у нас режут:
+        // карточка выходила пустой (жалоба пользователя 2026-10-03, «Хичкок: Тень гения»).
+        // Через тот же прокси, что и логотипы тайтлов, — постер на месте.
+        let raw = movie.poster?.url(size: .small)
+        let poster = raw.flatMap { TMDBImageProxy.rewrite($0, width: 300) } ?? raw
         self.init(
             id: "movie-\(movie.id)",
             kind: .movie,
