@@ -298,71 +298,92 @@ final class ShowcaseCatalog {
 
     // MARK: - Музыка
 
+    /// Альбом — из дискографии сида или его «похожих» у Deezer (см. `ShowcaseSeeds.musicArtists`).
+    /// Раньше витрина выбирала из десятка заранее названных альбомов и крутила одни и те же.
     private func loadMusic() async {
         var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.music)
-        guard let query = ShowcaseSeeds.albumQueries.randomElement(using: &rng) else { return }
-        do {
-            let albums = try await DeezerService.shared.searchAlbums(query: query, limit: 10)
-            // Случайный из выдачи, а не первый: запросов в пуле всего десяток, и с
-            // жёстким `.first` витрина показывала один и тот же альбом на запрос.
-            // Со случайным выбором тот же пул даёт на порядок больше вариантов,
-            // и это не стоит ни одного лишнего запроса (правка 2026-08-25).
-            let withCover = albums.filter { $0.coverXl != nil }
-            guard
-                let album = withCover.randomElement(using: &rng) ?? albums.randomElement(using: &rng),
-                let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled
-            else {
-                failures.append("музыка: по запросу «\(query)» нет обложки")
-                return
-            }
+        guard let seed = ShowcaseSeeds.musicArtists.randomElement(using: &rng) else { return }
 
-            apply(.album(AlbumBlock(
-                id: "dz-\(album.id)",
-                cover: .remote(cover, fallback: "mockAlbumCover"),
-                title: album.artist?.name ?? album.title,
-                subtitle: album.title
-            )))
-
-            // «Моя Волна» — не сущность каталога: живой у неё только кавер, и он берётся
-            // из соседнего альбома пула, чтобы не совпадать с альбомным блоком.
-            let vibeQuery = ShowcaseSeeds.albumQueries.filter { $0 != query }.randomElement(using: &rng) ?? query
-            let vibeAlbums = try await DeezerService.shared.searchAlbums(query: vibeQuery, limit: 5)
-            let vibeCover = vibeAlbums
-                .compactMap { ($0.coverXl ?? $0.coverBig)?.deezerUpscaled }
-                .randomElement(using: &rng)
-
-            apply(.vibe(VibeBlock(
-                id: "vibe-\(album.id)",
-                title: "Моя Волна",
-                subtitle: ShowcaseSeeds.vibeSubtitles.randomElement(using: &rng) ?? "",
-                cover: .remote(vibeCover ?? cover, fallback: "mockPlayerCover")
-            )))
-        } catch {
-            failures.append("музыка: \(error.localizedDescription)")
+        // Круг выбора — сид и его соседи. Похожие не доехали — круг из одного сида:
+        // витрина всё равно покажет альбом, просто без разнообразия этого запуска.
+        var circle = [seed]
+        if let related = try? await DeezerService.shared.relatedArtists(
+            id: seed.id,
+            limit: ShowcaseSeeds.relatedArtistsLimit
+        ) {
+            circle += related.map { (name: $0.name, id: $0.id) }
         }
+        circle.shuffle(using: &rng)
+
+        var picked: (artist: String, artistID: Int, album: DeezerAlbumBrief, cover: URL)?
+        for candidate in circle.prefix(ShowcaseSeeds.artistAttempts) {
+            guard let albums = try? await DeezerService.shared.artistAlbums(id: candidate.id) else { continue }
+            let fitting = albums.filter(Self.isShowcaseAlbum)
+            if let album = fitting.randomElement(using: &rng),
+               let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
+                picked = (candidate.name, candidate.id, album, cover)
+                break
+            }
+        }
+        guard let picked else {
+            failures.append("музыка: у «\(seed.name)» и похожих нет студийного альбома с обложкой")
+            return
+        }
+
+        // Дискография артиста отдаёт альбомы без вложенного исполнителя — имя берём из круга.
+        apply(.album(AlbumBlock(
+            id: "dz-\(picked.album.id)",
+            cover: .remote(picked.cover, fallback: "mockAlbumCover"),
+            title: picked.artist,
+            subtitle: picked.album.title
+        )))
+
+        // «Моя Волна» — не сущность каталога: живой у неё только кавер, и он берётся
+        // у другого артиста того же круга — в настроении альбома, но не он сам.
+        var vibeCover: URL?
+        for candidate in circle.filter({ $0.id != picked.artistID }).prefix(ShowcaseSeeds.artistAttempts - 1) {
+            guard let albums = try? await DeezerService.shared.artistAlbums(id: candidate.id) else { continue }
+            vibeCover = albums.compactMap { ($0.coverXl ?? $0.coverBig)?.deezerUpscaled }.randomElement(using: &rng)
+            if vibeCover != nil { break }
+        }
+
+        apply(.vibe(VibeBlock(
+            id: "vibe-\(picked.album.id)",
+            title: "Моя Волна",
+            subtitle: ShowcaseSeeds.vibeSubtitles.randomElement(using: &rng) ?? "",
+            cover: .remote(vibeCover ?? picked.cover, fallback: "mockPlayerCover")
+        )))
+    }
+
+    /// Студийный альбом с обложкой: синглы, EP, концертники и сборники витрине не годятся.
+    private static func isShowcaseAlbum(_ album: DeezerAlbumBrief) -> Bool {
+        guard album.recordType == "album", album.coverXl != nil || album.coverBig != nil else { return false }
+        let words = Set(album.title.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted))
+        return words.isDisjoint(with: ShowcaseSeeds.albumStopWords)
     }
 
     // MARK: - Книги
 
+    /// Книги — случайные тома случайных авторов из `ShowcaseSeeds.bookSeeds`, две книги
+    /// двух разных авторов. Раньше витрина выбирала из восьми заранее названных книг.
     private func loadBooks() async {
         var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.books)
-        let queries = ShowcaseSeeds.bookQueries.shuffled(using: &rng)
-        guard queries.count >= 2 else { return }
+        let seeds = ShowcaseSeeds.bookSeeds.shuffled(using: &rng).prefix(ShowcaseSeeds.bookAttempts)
 
-        // Поиск Google Books по-русски промахивается часто, а после отсева томов
-        // без скана выдача бывает пустой — идём по пулу, пока не наберём два тома.
+        // Поиск Google Books по-русски шумный: книги об авторе, пересказы, журналы,
+        // иноязычные издания при `langRestrict=ru`. Отбираем тома, которые написал сам
+        // автор, по-русски, с описанием, — и идём по сидам, пока не наберём две книги.
         var found: [GoogleBook] = []
-        for query in queries where found.count < 2 {
-            guard let volumes = try? await BooksService.shared.search(query, limit: 12), !volumes.isEmpty else { continue }
-            // Случайный том из выдачи, а не первый: запросов в пуле восемь, и с жёстким
-            // `.first` книги на витрине не менялись вовсе (правка 2026-08-25).
-            let withCover = volumes.filter { $0.coverURL != nil }
-            guard let book = withCover.randomElement(using: &rng) ?? volumes.randomElement(using: &rng) else { continue }
-            guard !found.contains(where: { $0.id == book.id }) else { continue }
+        for seed in seeds where found.count < 2 {
+            guard let volumes = try? await BooksService.shared.search(seed.query, limit: 20) else { continue }
+            let fitting = volumes.filter { Self.isShowcaseBook($0, by: seed.author) }
+            guard let book = fitting.randomElement(using: &rng),
+                  !found.contains(where: { $0.id == book.id })
+            else { continue }
             found.append(book)
         }
         guard found.count == 2 else {
-            failures.append("книги: в пуле из \(queries.count) запросов нашлось \(found.count) томов со сканом")
+            failures.append("книги: за \(seeds.count) запросов нашлось \(found.count) томов")
             return
         }
 
@@ -397,6 +418,19 @@ final class ShowcaseCatalog {
             )))
         }
     }
+
+    /// Том для витрины: написан самим автором сида (фамилия в `authors`), по-русски,
+    /// с описанием под подпись карточки, и это не пересказ. Скан обложки отбирает сервис.
+    private static func isShowcaseBook(_ book: GoogleBook, by surname: String) -> Bool {
+        let info = book.volumeInfo
+        guard info.language == "ru", (info.description?.count ?? 0) >= Self.bookDescriptionMinimum else { return false }
+        guard (info.authors ?? []).contains(where: { $0.localizedCaseInsensitiveContains(surname) }) else { return false }
+        let title = book.title.lowercased()
+        return !ShowcaseSeeds.bookSummaryMarkers.contains { title.contains($0) }
+    }
+
+    /// Описание короче — подпись карточки книги вышла бы в одну строку.
+    private static let bookDescriptionMinimum = 100
 
     // MARK: - Сборка ленты
 

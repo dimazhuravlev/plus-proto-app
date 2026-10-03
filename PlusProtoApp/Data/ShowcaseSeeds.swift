@@ -40,19 +40,67 @@ enum ShowcaseSeeds {
 
     // MARK: - Музыка (Deezer)
 
-    /// Запросы к `/search/album`. Подобраны под настроение витрины из макета —
-    /// «атмосферный постпанк, когда внутри пасмурно».
-    static let albumQueries = [
-        "Joy Division Closer",
-        "The Cure Disintegration",
-        "Interpol Turn On The Bright Lights",
-        "Massive Attack Mezzanine",
-        "Radiohead Kid A",
-        "Portishead Dummy",
-        "Bauhaus In The Flat Field",
-        "Cocteau Twins Heaven or Las Vegas",
-        "Sigur Ros Agaetis Byrjun",
-        "Boards of Canada Music Has the Right to Children",
+    /// Артисты-сиды под настроение витрины из макета — «атмосферный постпанк, когда
+    /// внутри пасмурно»: постпанк и готика, трип-хоп, дрим-поп и шугейз, холодная волна,
+    /// эмбиент. Раньше здесь было десять конкретных альбомов, и витрина крутила одни и те же
+    /// (жалоба пользователя 2026-10-03). Теперь альбом берётся из дискографии сида или его
+    /// «похожих» у Deezer — круг на сотни артистов, а настроение держит сид.
+    ///
+    /// ID, а не имена: поиск по имени промахивается («Slowdive» находил чужой проект,
+    /// «Motorama» — Motörhead, «Burial» — тёзку с полусотней фанатов). Сверены 2026-10-03.
+    static let musicArtists: [(name: String, id: Int)] = [
+        ("Joy Division", 1249),
+        ("The Cure", 381),
+        ("Interpol", 1652),
+        ("Bauhaus", 3657),
+        ("Siouxsie and The Banshees", 1719),
+        ("Echo and the Bunnymen", 166763),
+        ("The Chameleons", 8531),
+        ("Editors", 1181),
+        ("She Past Away", 1289386),
+        ("Molchat Doma", 73228892),
+        ("Кино", 4505880),
+        ("Boy Harsher", 8512914),
+        ("Lebanon Hanover", 4697863),
+        ("Motorama", 582651),
+        ("Massive Attack", 612),
+        ("Portishead", 1069),
+        ("Tricky", 1541),
+        ("Morcheeba", 901),
+        ("Archive", 1334),
+        ("Hooverphonic", 1805),
+        ("Cocteau Twins", 1041),
+        ("Slowdive", 2021),
+        ("Beach House", 75055),
+        ("Mazzy Star", 1306),
+        ("my bloody valentine", 2465),
+        ("Cigarettes After Sex", 9568982),
+        ("Boards of Canada", 1098),
+        ("Sigur Rós", 1417),
+        ("Burial", 6281),
+        ("Air", 369),
+        ("Bonobo", 2108),
+        ("Radiohead", 399),
+        ("Björk", 630),
+        ("Depeche Mode", 545),
+        ("New Order", 2016),
+        ("Chromatics", 17269),
+    ]
+
+    /// Сколько «похожих» Deezer берём в круг выбора: первые двадцать держатся
+    /// настроения сида (замер: у Joy Division это Siouxsie, The Cure, Bauhaus…).
+    static let relatedArtistsLimit = 20
+    /// Сколько артистов круга пробуем, пока не найдётся студийный альбом: у «похожих»
+    /// бывают одни синглы, а каждая попытка — запрос.
+    static let artistAttempts = 4
+
+    /// Слова, по которым альбом из дискографии — не альбом для витрины: концертники,
+    /// сборники, ремиксы, саундтреки. Сравниваются целыми словами — иначе «ost»
+    /// отсеял бы «Lost» и «Ghost».
+    static let albumStopWords: Set<String> = [
+        "live", "remix", "remixes", "remixed", "collection", "collected", "anthology",
+        "essential", "essentials", "soundtrack", "ost", "sessions", "demos", "bootleg",
+        "rarities", "singles", "greatest", "hits", "best", "sampler", "versions",
     ]
 
     /// Подписи «Моей Волны». Волна — не сущность каталога, у неё нет своих данных
@@ -66,18 +114,63 @@ enum ShowcaseSeeds {
 
     // MARK: - Книги (Google Books)
 
-    /// Запросы к `/volumes`. Нон-фикшен, у которого в русском каталоге Google Books
-    /// стабильно есть обложка и описание.
-    static let bookQueries = [
-        "Дэвид Гребер Бредовая работа",
-        "Янис Варуфакис Технофеодализм",
-        "Юваль Ной Харари Sapiens",
-        "Нассим Талеб Чёрный лебедь",
-        "Джеймс Скотт Благими намерениями государства",
-        "Марк Фишер Капиталистический реализм",
-        "Бенедикт Андерсон Воображаемые сообщества",
-        "Рутгер Брегман Утопия для реалистов",
+    /// Сид книжной витрины: запрос к `/volumes` и фамилия автора, которой отбирается
+    /// выдача, — том обязан быть написан этим автором, а не о нём.
+    struct BookSeed {
+        let query: String
+        let author: String
+    }
+
+    /// Нон-фикшен: общество и экономика, история, наука, психология, философия.
+    /// Раньше здесь было восемь конкретных книг, и витрина крутила одни и те же (жалоба
+    /// пользователя 2026-10-03). Теперь запрос — имя автора, и из его книг берётся случайная:
+    /// круг около сотни томов. Состав сверен по живой выдаче 2026-10-03: в сиды попали
+    /// только авторы, у которых находятся тома со сканом обложки и описанием по-русски,
+    /// — пустой запрос стоит секунды загрузки (у Google Books запрос в секунду).
+    /// У кого имя даёт шум — имя вместе с названием книги.
+    static let bookSeeds: [BookSeed] = [
+        BookSeed(query: "Дэвид Гребер", author: "Гребер"),
+        BookSeed(query: "Янис Варуфакис", author: "Варуфакис"),
+        BookSeed(query: "Юваль Ной Харари", author: "Харари"),
+        BookSeed(query: "Нассим Николас Талеб Черный лебедь", author: "Талеб"),
+        BookSeed(query: "Рутгер Брегман", author: "Брегман"),
+        BookSeed(query: "Даниэль Канеман", author: "Канеман"),
+        BookSeed(query: "Джаред Даймонд", author: "Даймонд"),
+        BookSeed(query: "Стивен Пинкер", author: "Пинкер"),
+        BookSeed(query: "Ричард Докинз", author: "Докинз"),
+        BookSeed(query: "Малкольм Гладуэлл", author: "Гладуэлл"),
+        BookSeed(query: "Эрих Фромм", author: "Фромм"),
+        BookSeed(query: "Виктор Франкл", author: "Франкл"),
+        BookSeed(query: "Сьюзен Сонтаг", author: "Сонтаг"),
+        BookSeed(query: "Тома Пикетти", author: "Пикетти"),
+        BookSeed(query: "Шошана Зубофф", author: "Зубофф"),
+        BookSeed(query: "Оливер Сакс", author: "Сакс"),
+        BookSeed(query: "Роберт Сапольски", author: "Сапольски"),
+        BookSeed(query: "Карл Саган", author: "Саган"),
+        BookSeed(query: "Ноам Хомский", author: "Хомский"),
+        BookSeed(query: "Славой Жижек", author: "Жижек"),
+        BookSeed(query: "Ги Дебор", author: "Дебор"),
+        BookSeed(query: "Мэтт Ридли", author: "Ридли"),
+        BookSeed(query: "Стивен Хокинг", author: "Хокинг"),
+        BookSeed(query: "Митио Каку", author: "Каку"),
+        BookSeed(query: "Ричард Талер", author: "Талер"),
+        BookSeed(query: "Дэн Ариели", author: "Ариели"),
+        BookSeed(query: "Лиза Фельдман Барретт", author: "Барретт"),
+        BookSeed(query: "Сиддхартха Мукерджи", author: "Мукерджи"),
+        BookSeed(query: "Франс де Вааль", author: "Вааль"),
+        BookSeed(query: "Тимоти Снайдер", author: "Снайдер"),
+        BookSeed(query: "Питер Франкопан", author: "Франкопан"),
+        BookSeed(query: "Дарон Аджемоглу", author: "Аджемоглу"),
+        BookSeed(query: "Хан Бён Чхоль", author: "Чхоль"),
+        BookSeed(query: "Ален де Боттон", author: "Боттон"),
+        BookSeed(query: "Эстер Дюфло", author: "Дюфло"),
     ]
+
+    /// Сколько сидов пробуем за запуск, пока не наберутся две книги. Каждый — запрос
+    /// и секунда троттла, а витрина собирается под заставкой с потолком 6с.
+    static let bookAttempts = 6
+    /// Пересказы и саммари — не книги автора, хотя автор у них в поле `authors`.
+    static let bookSummaryMarkers = ["краткое изложение", "кратко", "саммари", "summary"]
 
     // MARK: - Данные, которых в API нет
 

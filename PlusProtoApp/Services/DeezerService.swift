@@ -105,6 +105,16 @@ actor DeezerService {
         return response.data
     }
 
+    /// «Похожие» артисты Deezer — круг выбора альбома для витрины: настроение держит
+    /// сид, разнообразие дают его соседи.
+    func relatedArtists(id: Int, limit: Int = 20) async throws -> [DeezerArtistBrief] {
+        let response: DeezerListResponse<DeezerArtistBrief> = try await fetch(
+            path: "/artist/\(id)/related",
+            query: [URLQueryItem(name: "limit", value: "\(limit)")]
+        )
+        return response.data
+    }
+
     /// Дискография артиста — секция «Другие альбомы» на экране альбома.
     func artistAlbums(id: Int, limit: Int = 50) async throws -> [DeezerAlbumBrief] {
         let response: DeezerListResponse<DeezerAlbumBrief> = try await fetch(
