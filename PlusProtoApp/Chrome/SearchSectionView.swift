@@ -234,13 +234,33 @@ struct SearchSectionView: View {
             isLiked: liked.contains(hit.id),
             onLike: { toggleLike(hit.id) }
         )
-        if let route = hit.route {
+        if hit.kind == .track {
+            // Трек из полного списка играет сразу, без перехода в альбом (правка
+            // пользователя 2026-10-03). В карусели обзора трек по-прежнему открывает
+            // альбом. Мини-плеер в поиске не виден — он встанет в бар на выходе.
+            Button { play(hit) } label: { content }
+                .buttonStyle(.plain)
+                .accessibilityHint("Включить трек")
+        } else if let route = hit.route {
             Button { open(route) } label: { content }
                 .buttonStyle(.plain)
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
         } else {
             content
         }
+    }
+
+    /// Включить трек в плеере бара: обложка, название, исполнитель и альбом — из строки.
+    private func play(_ track: SearchHit) {
+        PlayerHaptics.tap()
+        let album: String? = if case .album(let ref) = track.route { ref.title } else { nil }
+        actionBar.startMusic(MusicNowPlaying(
+            id: track.id,
+            cover: track.artwork ?? .asset("mockAlbumCover"),
+            title: track.title,
+            artist: track.subtitle,
+            album: album
+        ))
     }
 
     private func toggleLike(_ id: String) {
