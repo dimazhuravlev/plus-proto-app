@@ -24,32 +24,73 @@ struct SearchResultsView: View {
     @MainActor private static var didDebugTapHit = false
     #endif
 
+    /// Габариты, которые зависят от размера карточек выдачи.
+    private struct CardMetrics {
+        /// Ширина колонки карусели
+        let card: CGFloat
+        /// Высота обложки книги — ширина её карточки идёт от неё по пропорциям обложки
+        let bookCoverHeight: CGFloat
+        /// Карточек в скелетоне: видимые целиком и та, что торчит из-под края
+        let skeletonCards: Int
+        /// Собственное поле секции по вертикали
+        let sectionVertical: CGFloat
+        /// Правое поле подписи у постеров и книг; у квадратов оно всегда 8
+        let posterLabelTrailing: CGFloat
+
+        /// Прежний размер — макеты `2118:17378` (карусели) и `2311:25096` (книги):
+        /// три карточки целиком и четвёртая из-под края. Поле секции 2 вместо
+        /// макетных 8 — правка пользователя 2026-08-25.
+        static let regular = CardMetrics(
+            card: 109,
+            bookCoverHeight: 156,
+            skeletonCards: 4,
+            sectionVertical: 2,
+            posterLabelTrailing: 8
+        )
+        /// Small — макет `2385:33949`: четыре карточки целиком и пятая из-под края
+        /// (шаг 94 на экране 402). Секции стоят вплотную, подпись постера и книги —
+        /// во всю ширину карточки: так в макете.
+        static let small = CardMetrics(
+            card: 86,
+            bookCoverHeight: 128,
+            skeletonCards: 5,
+            sectionVertical: 0,
+            posterLabelTrailing: 0
+        )
+    }
+
     private enum Layout {
-        /// Ширина колонки карусели (макет: контейнер 109 при шаге 117)
-        static let card: CGFloat = 109
+        /// Размер карточек выдачи — small (правка пользователя 2026-10-03, макет
+        /// `2385:33949`). Прежний остаётся `CardMetrics.regular`.
+        static let size = CardMetrics.small
+        /// Ширина колонки карусели
+        static var card: CGFloat { size.card }
         static let cardGap: CGFloat = 8
         /// Боковые поля выдачи — 16, а не общие 24 экрана: в макете `2118:17378`
         /// карусель и заголовки стоят на x = 16 (правка пользователя 2026-10-03).
         static let side: CGFloat = 16
         /// Обложка → подписи
         static let coverGap: CGFloat = 6
-        /// Постер кино и книги — 2:3 (макет: 109 × 163.5)
+        /// Постер кино и книги — 2:3 (макеты: 109 × 163.5, у small 86 × 129)
         static let posterAspect: CGFloat = 109.0 / 163.5
         static let coverRadius = PlusRadius.movieChip
-        /// Собственное поле секции. В макете 8, у нас 2 (правка пользователя
-        /// 2026-08-25): между соседними каруселями оно складывается вдвое и вместе
-        /// с верхним полем заголовка давало 32 — ленты стояли слишком разреженно.
-        /// Поля самого заголовка (16/12) остались макетными.
-        static let sectionVertical: CGFloat = 2
+        /// Собственное поле секции — по размеру карточек (`CardMetrics`). Поля
+        /// самого заголовка (16/12) макетные у обоих размеров.
+        static var sectionVertical: CGFloat { size.sectionVertical }
         static let headerTop: CGFloat = 16
         static let headerBottom: CGFloat = 12
+        /// Строка заголовка — 28, как в `header / static` обоих макетов (56 = 16 + 28
+        /// + 12). Стиль UI kit — 24 при интерлиньяже 100 %, поэтому строку держит рамка,
+        /// а текст стоит по её центру — на той же базовой линии, что в Фигме. Без рамки
+        /// заголовок сидел на 2 выше, а карусель под ним — на 4.
+        static let headerLine: CGFloat = 28
         /// Зазор «заголовок ↔ шеврон» из макета
         static let headerGap: CGFloat = 2
         static let chevronBox: CGFloat = 20
         /// Зазор между низом выдачи и верхом поднятого бара
         static let barGap: CGFloat = 12
-        static let skeletonCards = 4
-        /// Правое поле подписи: в макете текст уже колонки на 8
+        static var skeletonCards: Int { size.skeletonCards }
+        /// Правое поле подписи квадратной карточки: в макете текст уже колонки на 8
         static let labelTrailing: CGFloat = 8
         /// Подпись всегда высотой под максимум — две строки названия и строка
         /// подписи (Text S, 16): скелетон и загруженная карточка одного габарита,
@@ -58,17 +99,22 @@ struct SearchResultsView: View {
         /// Полоски скелетона на месте строк: 12 из 16, по центру строки.
         static let skeletonBar: CGFloat = 12
         static let skeletonBarInset: CGFloat = (PlusTextSize.textS.lineHeight - skeletonBar) / 2
-        /// Полоса на месте заголовка секции: 16 из строки 24 — пропорция та же,
-        /// что у полос подписи. Ширина — под название средней длины.
+        /// Полосы подписи — доли ширины карточки: 88 и 60 у прежней колонки 109,
+        /// у small 69 и 47 — иначе верхняя вылезала бы за карточку.
+        static var skeletonTitleBar: CGFloat { (card * 0.8).rounded() }
+        static var skeletonSubtitleBar: CGFloat { (card * 0.55).rounded() }
+        /// Полоса на месте заголовка секции — 16 по высоте глифов кегля 24 (пропорция
+        /// та же, что у полос подписи). Ширина — под название средней длины.
         static let skeletonHeaderBar: CGFloat = 16
         static let skeletonHeaderWidth: CGFloat = 96
         /// Обложка проявляется поверх бледной заливки скелетона, без второго,
         /// яркого серого (правка пользователя 2026-10-03).
         static let coverAppear: Animation = .easeOut(duration: 0.15)
 
-        // Карточка книги — макет `2311:25096`: книга в небольшой проекции.
-        /// Высота обложки; ширина — по её пропорциям, обложка не режется.
-        static let bookCoverHeight: CGFloat = 156
+        // Карточка книги — макеты `2311:25096` и `2385:33949`: книга в небольшой проекции.
+        /// Высота обложки — по размеру карточек; ширина — по её пропорциям, обложка
+        /// не режется.
+        static var bookCoverHeight: CGFloat { size.bookCoverHeight }
         /// Пропорции, пока своих нет, — постер 2:3.
         static let bookDefaultAspect: CGFloat = 2.0 / 3.0
         /// Крайние пропорции: дальше обложка уже режется — иначе альбомный скан
@@ -209,6 +255,7 @@ struct SearchResultsView: View {
                 .scaleEffect(x: -1)
                 .foregroundStyle(Color.fillSubtitle)
         }
+        .frame(height: Layout.headerLine)
         .padding(.top, Layout.headerTop)
         .padding(.bottom, Layout.headerBottom)
         .padding(.horizontal, Layout.side)
@@ -217,12 +264,12 @@ struct SearchResultsView: View {
     /// Заголовок секции в скелетоне — полоса без шеврона. Название врало бы
     /// о порядке: он известен, только когда ответили все домены, и до этого
     /// секции стоят в порядке по умолчанию (правка пользователя 2026-10-03).
-    /// Габарит — как у настоящего заголовка: строка того же стиля и те же поля.
+    /// Габарит — как у настоящего заголовка: строка той же высоты и те же поля.
     private var skeletonHeader: some View {
         Rectangle()
             .fill(Color.fillNine)
             .frame(width: Layout.skeletonHeaderWidth, height: Layout.skeletonHeaderBar)
-            .frame(height: PlusHeadline.m.lineHeight)
+            .frame(height: Layout.headerLine)
             .padding(.top, Layout.headerTop)
             .padding(.bottom, Layout.headerBottom)
             .padding(.horizontal, Layout.side)
@@ -283,10 +330,15 @@ struct SearchResultsView: View {
                         .lineLimit(1)
                 }
             }
+            // Подпись — своей высоты, а не той, что предлагает рамка 48: строки YS Text
+            // после округления до пикселя чуть выше 16, две строки названия в 48
+            // не влезали на доли пункта, и SwiftUI обрезал их до одной (замер
+            // 2026-10-03, в макете — две). Габарит карточки держит рамка ниже.
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: isArtist ? .center : .leading)
             // В макете подпись уже колонки: длинное название обрывается раньше
-            // правого края карточки.
-            .padding(.trailing, isArtist ? 0 : Layout.labelTrailing)
+            // правого края карточки (у квадратов; см. `labelTrailing`).
+            .padding(.trailing, labelTrailing(hit.kind))
             .frame(height: Layout.labelHeight, alignment: .top)
         }
         .frame(width: Layout.card)
@@ -347,8 +399,10 @@ struct SearchResultsView: View {
                         .lineLimit(1)
                 }
             }
+            // Своей высоты — см. `cardBody`.
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, Layout.labelTrailing)
+            .padding(.trailing, labelTrailing(.book))
             .frame(height: Layout.labelHeight, alignment: .top)
         }
         .frame(width: coverWidth + Layout.bookPagesInset)
@@ -410,6 +464,16 @@ struct SearchResultsView: View {
         )
     }
 
+    /// Правое поле подписи: у квадратов — 8 (текст уже колонки), у исполнителя
+    /// подпись по центру, у постеров и книг — по размеру карточек (в small его нет).
+    private func labelTrailing(_ kind: SearchHit.Kind) -> CGFloat {
+        switch kind {
+        case .artist: 0
+        case .track, .album: Layout.labelTrailing
+        case .movie, .book: Layout.size.posterLabelTrailing
+        }
+    }
+
     /// Квадрат у музыки, постер 2:3 у кино и книг.
     private func coverHeight(_ kind: SearchHit.Kind) -> CGFloat {
         switch kind {
@@ -463,8 +527,8 @@ struct SearchResultsView: View {
     /// Полоски на месте строк названия и подписи — по центру своих строк.
     private var skeletonLabel: some View {
         VStack(alignment: .leading, spacing: 2 * Layout.skeletonBarInset) {
-            Rectangle().fill(Color.fillNine).frame(width: 88, height: Layout.skeletonBar)
-            Rectangle().fill(Color.fillNine).frame(width: 60, height: Layout.skeletonBar)
+            Rectangle().fill(Color.fillNine).frame(width: Layout.skeletonTitleBar, height: Layout.skeletonBar)
+            Rectangle().fill(Color.fillNine).frame(width: Layout.skeletonSubtitleBar, height: Layout.skeletonBar)
         }
         .padding(.top, Layout.skeletonBarInset)
         .frame(maxWidth: .infinity, alignment: .leading)
