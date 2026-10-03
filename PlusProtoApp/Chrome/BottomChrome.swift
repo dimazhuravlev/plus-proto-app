@@ -45,8 +45,11 @@ enum PlusChromeMetrics {
     // MARK: - Верхний скрим
 
     /// Высота верхнего скрима от физического верха экрана — `overlay bg` навбара
-    /// (`2004:10781`, figma-screen1 §4): 72pt, чёрный 50% → прозрачный вниз.
+    /// (`2004:10781`, figma-screen1 §4): 72pt, чёрный → прозрачный вниз.
     static let topScrimHeight: CGFloat = 72
+    /// Чёрный у верхней кромки скрима. В макете 50 %, на витрине это читалось слишком
+    /// тёмной полосой под статус-баром — 25 % (правка пользователя 2026-10-03).
+    static let topScrimDim: Double = 0.25
     /// Два слоя блюра разной высоты и радиуса — приём `TopNavBarBackground` из MusicPlayer:
     /// слабый и высокий даёт мягкий заход, сильный и низкий — плотность у самого верха.
     /// Выше 72pt не поднимаемся: в MusicPlayer блюр перекрывал градиент, но там под ним
@@ -81,7 +84,7 @@ struct TopScrim: View {
             .frame(height: PlusChromeMetrics.topScrimBlurStrong.height)
 
             LinearGradient(
-                colors: [.black.opacity(0.5), .clear],
+                colors: [.black.opacity(PlusChromeMetrics.topScrimDim), .clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
