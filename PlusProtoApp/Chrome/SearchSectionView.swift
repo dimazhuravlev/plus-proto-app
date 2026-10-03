@@ -3,10 +3,10 @@ import SwiftUI
 /// Полная выдача одного раздела — Музыка, Кино или Книги (задача пользователя
 /// 2026-10-03; макет музыки `2440:27920`, кино и книги — те же, с другими фильтрами).
 ///
-/// Сверху вниз: заголовок раздела, чипсы фильтров, у музыки — колдунщик (самый
-/// подходящий исполнитель), дальше список строк. Открывается переходом по заголовку
-/// карусели, живёт подэкраном слоя выдачи (`SearchResultsView`), «Назад» в баре
-/// сворачивает её к обзору.
+/// Заголовка нет (правка макета пользователем 2026-10-03). У музыки сверху чипсы
+/// фильтров и колдунщик (самый подходящий исполнитель), у кино и книг — сразу список.
+/// Открывается переходом по заголовку карусели, живёт подэкраном слоя выдачи
+/// (`SearchResultsView`), «Назад» в баре сворачивает её к обзору.
 struct SearchSectionView: View {
     let kind: SearchState.Section.Kind
     /// Уход в сущность — тот же, что из каруселей: отметка ухода, клавиатура вниз.
@@ -23,10 +23,11 @@ struct SearchSectionView: View {
 
     private enum Layout {
         static let side: CGFloat = 16
-        static let headerTop: CGFloat = 16
-        static let headerBottom: CGFloat = 12
-        /// Строка заголовка — как у `header / static`: 56 = 16 + 28 + 12.
-        static let headerLine: CGFloat = 28
+        /// Отступ «Ничего не нашлось» — как у обзора.
+        static let emptyVertical: CGFloat = 16
+        /// Список кино и книг — на 8 ниже безопасной зоны: столько же, сколько колдунщик
+        /// музыки стоит ниже чипсов (`stack` макета, колдунщик на y = 8).
+        static let listTop: CGFloat = 8
         static let chipsVertical: CGFloat = 8
         static let chipGap: CGFloat = 8
         static let barGap: CGFloat = 12
@@ -36,8 +37,11 @@ struct SearchSectionView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                header
-                chips
+                // Фильтры — только у музыки: у кино и книг сразу список (правка
+                // пользователя 2026-10-03).
+                if kind == .music {
+                    chips
+                }
 
                 if let full = search.fullResults {
                     if filter == .all, let wizard = full.wizard {
@@ -49,18 +53,19 @@ struct SearchSectionView: View {
                             .plusText(.textS, .medium)
                             .foregroundStyle(Color.fillSubtitle)
                             .padding(.horizontal, Layout.side)
-                            .padding(.vertical, Layout.headerTop)
+                            .padding(.vertical, Layout.emptyVertical)
                     } else {
                         ForEach(rows) { hit in
                             row(hit, isFirst: hit.id == rows.first?.id)
                         }
                     }
                 } else {
-                    ForEach(0..<Layout.skeletonRows, id: \.self) { index in
-                        SearchListSkeletonRow(isFirst: index == 0)
+                    ForEach(0..<Layout.skeletonRows, id: \.self) { _ in
+                        SearchListSkeletonRow(isPoster: kind != .music)
                     }
                 }
             }
+            .padding(.top, kind == .music ? 0 : Layout.listTop)
             // Как у обзора: список уходит под поле и клавиатуру, последняя строка
             // выкручивается из-под них.
             .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)
@@ -74,17 +79,6 @@ struct SearchSectionView: View {
         }
         // Новый запрос — с «Всего»: фильтр прошлого запроса мог оставить пустой список.
         .onChange(of: search.fullResults?.text) { filter = .all }
-    }
-
-    private var header: some View {
-        Text(kind.title)
-            .plusHeadline(.m)
-            .foregroundStyle(Color.fillOne)
-            .frame(height: Layout.headerLine)
-            .padding(.top, Layout.headerTop)
-            .padding(.bottom, Layout.headerBottom)
-            .padding(.horizontal, Layout.side)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private var chips: some View {
@@ -126,17 +120,16 @@ struct SearchSectionView: View {
 
 // MARK: - Фильтры
 
-/// Фильтры полной выдачи. Музыка — по макету; кино и книги — по задаче пользователя:
-/// «Кино — Кино, Режиссёры», «Книги — Книги, Авторы»; «Всё» первым у каждого раздела,
-/// как в макете музыки.
+/// Фильтры полной выдачи — только у музыки, по макету (и «Треки»: треки в списке
+/// есть, а отдельного фильтра в макете не видно). У кино и книг фильтров нет —
+/// правка пользователя 2026-10-03, прежде было «Кино, Режиссёры» и «Книги, Авторы».
 enum SearchFilter: Hashable {
-    case all, artists, albums, playlists, tracks, movies, directors, books, writers
+    case all, artists, albums, playlists, tracks
 
     static func options(for kind: SearchState.Section.Kind) -> [SearchFilter] {
         switch kind {
         case .music: [.all, .artists, .albums, .playlists, .tracks]
-        case .movies: [.all, .movies, .directors]
-        case .books: [.all, .books, .writers]
+        case .movies, .books: []
         }
     }
 
@@ -147,10 +140,6 @@ enum SearchFilter: Hashable {
         case .albums: "Альбомы"
         case .playlists: "Плейлисты"
         case .tracks: "Треки"
-        case .movies: "Кино"
-        case .directors: "Режиссёры"
-        case .books: "Книги"
-        case .writers: "Авторы"
         }
     }
 
@@ -161,10 +150,6 @@ enum SearchFilter: Hashable {
         case .albums: kind == .album
         case .playlists: kind == .playlist
         case .tracks: kind == .track
-        case .movies: kind == .movie
-        case .directors: kind == .director
-        case .books: kind == .book
-        case .writers: kind == .writer
         }
     }
 }
@@ -219,7 +204,8 @@ private struct SearchFilterChip: View {
 // MARK: - Строка
 
 /// Строка полной выдачи — `list-item / music` макета: 64 = 8 + обложка 48 + 8,
-/// название и подпись 15/20, сердце справа, разделители 0.5.
+/// название и подпись 15/20, сердце справа, разделители 0.5. У фильма, книги,
+/// режиссёра и писателя обложка — вертикальный постер 48 × 72, строка 88.
 private struct SearchListRow: View {
     let hit: SearchHit
     let isFirst: Bool
@@ -260,7 +246,7 @@ private struct SearchListRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .frame(height: 64)
+        .frame(height: SearchRowThumbnail.height(hit.kind) + 16)
         .overlay(alignment: .bottom) { divider }
         .overlay(alignment: .top) { if isFirst { divider } }
         .contentShape(.rect)
@@ -291,15 +277,29 @@ private struct SearchListRow: View {
     }
 }
 
-/// Обложка строки высотой 48: квадрат у музыки, круг у исполнителя и персон,
-/// постер 2:3 у фильма и книги — ширина по пропорциям, высота строки та же.
+/// Обложка строки шириной 48 — как у альбома и плейлиста: квадрат у музыки, круг
+/// у исполнителя; у фильма, книги, режиссёра и писателя — вертикальный постер 48 × 72
+/// с тем же скруглением 6 (правка пользователя 2026-10-03: «всё то же самое, только
+/// постер вертикальный»).
 private struct SearchRowThumbnail: View {
     let hit: SearchHit
+
+    static let width: CGFloat = 48
+    static func height(_ kind: SearchHit.Kind) -> CGFloat {
+        isPoster(kind) ? 72 : 48
+    }
+
+    static func isPoster(_ kind: SearchHit.Kind) -> Bool {
+        switch kind {
+        case .movie, .book, .director, .writer: true
+        default: false
+        }
+    }
 
     var body: some View {
         let shape = self.shape
         Color.fillNine
-            .frame(width: width, height: 48)
+            .frame(width: Self.width, height: Self.height(hit.kind))
             .overlay {
                 if let source = hit.artwork {
                     ResolvedArtwork(source: source, appear: .easeOut(duration: 0.15)) { image in
@@ -313,31 +313,25 @@ private struct SearchRowThumbnail: View {
             .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
     }
 
-    private var width: CGFloat {
-        switch hit.kind {
-        case .movie, .book: 32
-        default: 48
-        }
-    }
-
     private var shape: AnyShape {
-        switch hit.kind {
-        case .artist, .director, .writer: AnyShape(Circle())
-        case .movie, .book: AnyShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        default: AnyShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
+        hit.kind == .artist
+            ? AnyShape(Circle())
+            : AnyShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
-/// Строка-скелетон — того же габарита, пока полная выдача собирается.
+/// Строка-скелетон — того же габарита, пока полная выдача собирается: у кино
+/// и книг — с вертикальным постером.
 private struct SearchListSkeletonRow: View {
-    let isFirst: Bool
+    let isPoster: Bool
+
+    private var thumbHeight: CGFloat { isPoster ? 72 : 48 }
 
     var body: some View {
         HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.fillNine)
-                .frame(width: 48, height: 48)
+                .frame(width: SearchRowThumbnail.width, height: thumbHeight)
             VStack(alignment: .leading, spacing: 8) {
                 Rectangle().fill(Color.fillNine).frame(width: 160, height: 12)
                 Rectangle().fill(Color.fillNine).frame(width: 100, height: 12)
@@ -346,7 +340,7 @@ private struct SearchListSkeletonRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .frame(height: 64)
+        .frame(height: thumbHeight + 16)
         .accessibilityHidden(true)
     }
 }
