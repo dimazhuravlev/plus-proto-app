@@ -754,8 +754,9 @@ private enum SearchPlaceholderMotion {
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
     /// Проявление «Поиск по всему» — на месте, когда бар уже стоит. К этому времени
-    /// бегущая фраза погасла вместе с подъёмом, и нахлёста нет.
-    static let focusedIn: Animation = .easeOut(duration: 0.15)
+    /// бегущая фраза погасла вместе с подъёмом, и нахлёста нет. Одна прозрачность
+    /// за 250 мс (правка пользователя 2026-10-03; было 150).
+    static let focusedIn: Animation = .easeOut(duration: 0.25)
 }
 
 /// Плейсхолдеры поиска: подмена со сдвигом на 4pt, уход и приход разведены по времени.
