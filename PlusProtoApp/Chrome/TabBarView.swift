@@ -121,8 +121,9 @@ struct TabBarView: View {
         // выдача. Отметка ухода гаснет **до** попа: возврат её уже не найдёт.
         // Так же, как при уходе на другой таб (`AppRootView`, onChange таба).
         // Сброс — мгновенный: карточку стек снимает срезом, и гаснущий 0.3 с поиск
-        // лёг бы поверх контента таба (второе ревью 2026-10-03).
-        if tab == navigation.activeTab {
+        // лёг бы поверх контента таба (второе ревью 2026-10-03). Только когда есть что
+        // снимать: на корне тап — уезд к началу экрана, и ему анимация нужна.
+        if tab == navigation.activeTab, navigation.stackDepth > 0 {
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
