@@ -547,7 +547,7 @@ struct MovieScreen: View {
             // в топ-250 или оценка Кинопоиска. Нет и его — строки просто нет.
             if let accent = details.accent {
                 Text(accent)
-                    .plusMovieText()
+                    .plusText(.textM, .medium)
                     .foregroundStyle(Color.plusAccent)
             }
 
@@ -558,7 +558,7 @@ struct MovieScreen: View {
             // («что происходит» + редакционный вердикт), и обрыв убивает вторую.
             // Под его настоящую длину подобран кегль — см. `MovieLeadType`.
             Text(leadText)
-                .plusMovieLead()
+                .plusHeadline(MovieLeadType.style)
                 .foregroundStyle(Color.fillOne)
                 // Контейнер лида — вся колонка инфо-блока, до общего правого поля 16.
                 // Без растяжки блок кончался бы там, где кончилась самая длинная
@@ -579,7 +579,7 @@ struct MovieScreen: View {
             .reduce(Text(details.meta.first ?? "")) { result, item in
                 result + Text(" • ").foregroundColor(.white.opacity(0.3)) + Text(item)
             }
-            .plusMovieText()
+            .plusText(.textM, .medium)
             .foregroundStyle(Color.fillSubtitle)
     }
 
@@ -729,7 +729,7 @@ private struct MovieMainButtons: View {
         HStack(spacing: MovieLayout.buttonGap) {
             MovieIcon(name: icon, box: MovieLayout.buttonIconBox)
             Text(title)
-                .plusMovieTextBold()
+                .plusText(.textM, .semibold)
                 .foregroundStyle(Color.fillOne)
                 .fixedSize()
         }

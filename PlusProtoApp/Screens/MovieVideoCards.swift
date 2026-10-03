@@ -403,10 +403,10 @@ private struct MovieVideoCard: View {
     private var caption: some View {
         VStack(alignment: .leading, spacing: Self.captionGap) {
             Text(card.title.prefixWords(maxCharacters: Self.titleLimit))
-                .plusMovieCardText()
+                .plusHeadline(.m)
                 .foregroundStyle(Color.fillOne)
             Text(card.subtitle)
-                .plusMovieCardText()
+                .plusHeadline(.m)
                 .foregroundStyle(Color.fillSubtitle)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

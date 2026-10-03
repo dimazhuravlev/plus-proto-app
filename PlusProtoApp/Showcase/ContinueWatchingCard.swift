@@ -51,8 +51,10 @@ private enum RateBlockGeometry {
     static let size = CGSize(width: ShowcaseLayout.designWidth, height: 158)
     static let verticalPadding: CGFloat = 8
     static let horizontalPadding: CGFloat = 16
-    static let titleTop: CGFloat = 16
-    static let titleBottom: CGFloat = 12
+    /// Макетные 16 и 12 — плюс по 3: строка заголовка по шкале UI kit (Headline S,
+    /// 20/20) на 6 ниже макетной 26, и без добавки глиф и ряд эмодзи уехали бы вверх.
+    static let titleTop: CGFloat = 16 + 3
+    static let titleBottom: CGFloat = 12 + 3
     /// Колонка: pt8 pb6 px8, зазор 8
     static let columnTop: CGFloat = 8
     static let columnBottom: CGFloat = 6
@@ -122,7 +124,7 @@ struct ContinueWatchingCard: View {
                 .scaledToFit()
         } placeholder: {
             Text(block.title)
-                .plusTitleL()
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(2)
                 .minimumScaleFactor(0.6)
@@ -180,7 +182,7 @@ struct ContinueWatchingCard: View {
     private var frameCaption: some View {
         VStack(alignment: .leading, spacing: WatchingGeometry.contentGap) {
             Text(block.remaining)
-                .plusTextS()
+                .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)
 
             PlusProgressBar(progress: block.progress, width: WatchingGeometry.trackWidth)
@@ -224,7 +226,7 @@ private struct RateBlock: View {
     var body: some View {
         VStack(spacing: 0) {
             Text("Что думаешь?")
-                .plusTitleL()
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
                 .padding(.top, RateBlockGeometry.titleTop)
                 .padding(.bottom, RateBlockGeometry.titleBottom)
@@ -245,12 +247,12 @@ private struct RateBlock: View {
     private func column(_ option: Option) -> some View {
         VStack(spacing: RateBlockGeometry.columnGap) {
             Text(option.emoji)
-                .plusTitleM()
+                .plusHeadline(.m)
                 .frame(width: RateBlockGeometry.chip, height: RateBlockGeometry.chip)
                 .background(Circle().fill(Color.buttonsSecondary))
 
             GradientText(option.label, from: .fillOne, to: .white.opacity(0.7))
-                .plusTextM()
+                .plusText(.textM, .medium)
         }
         .padding(.top, RateBlockGeometry.columnTop)
         .padding(.bottom, RateBlockGeometry.columnBottom)

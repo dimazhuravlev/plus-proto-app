@@ -615,7 +615,7 @@ private struct SearchPill: View {
             .textFieldStyle(.plain)
             .tint(Color.fillOne)
             .foregroundStyle(Color.fillOne)
-            .plusTitleL()
+            .plusHeadline(.s)
             .submitLabel(.search)
             // Без автокоррекции — и, как следствие, без строки автоподсказок
             // (QuickType): она стояла плашкой прямо под полем и отбирала у выдачи
@@ -681,8 +681,8 @@ private enum SearchPlaceholderMotion {
     /// Пауза между уходом и приходом. Глаз должен увидеть пустое поле — тогда смена
     /// читается как «одна фраза сменила другую», а не как проявление сквозь неё.
     static let swapGap: Duration = .milliseconds(100)
-    /// Интерлиньяж строки плейсхолдера — `plusTitleL()`.
-    static let lineHeight: CGFloat = 26
+    /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
+    static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
 }
 
 /// Плейсхолдеры поиска: подмена со сдвигом на 4pt, уход и приход разведены по времени.
@@ -759,7 +759,7 @@ private struct SearchPlaceholderTicker: View {
     /// будто поле думает, — хотя ничего не происходит.
     private func phrase(_ text: String) -> some View {
         Text(text + "...")
-            .plusTitleL()
+            .plusHeadline(.s)
             .foregroundStyle(Color.searchPlaceholder)
     }
 
@@ -1133,11 +1133,11 @@ struct MiniPlayerPill: View {
     private var trackInfo: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(item.title)
-                .plusTextS()
+                .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(1)
             Text(item.artist)
-                .plusTextS()
+                .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillSubtitle)
                 .lineLimit(1)
         }

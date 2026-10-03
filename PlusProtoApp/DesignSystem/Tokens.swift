@@ -11,6 +11,9 @@ extension Color {
     static let fillSix = Color.white.opacity(0.4)
     /// Fill/Subtitle — вторичный текст (исполнитель в мини-плеере)
     static let fillSubtitle = Color.white.opacity(0.5)
+    /// Fill/Four — текстовые блоки длиннее двух строк: текст читалки, описание книги.
+    /// Один из четырёх цветов текста по правилам типографики UI kit (`7529:2161`).
+    static let fillFour = Color.white.opacity(0.8)
     /// Fill/Nine — бордеры стеклянных поверхностей (0.66pt)
     static let fillNine = Color.white.opacity(0.08)
     /// Fill/Ten — заливка прогресса в мини-плеере

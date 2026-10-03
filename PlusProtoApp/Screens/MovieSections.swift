@@ -9,7 +9,7 @@ struct MovieSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .plusMovieSection()
+            .plusHeadline(.m)
             .foregroundStyle(Color.fillOne)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, MovieLayout.sectionHeaderTop)
@@ -54,7 +54,7 @@ struct MovieSynopsisSection: View {
                 let shifted = index.isMultiple(of: 2) == false
 
                 Text(text)
-                    .plusMovieCardText()
+                    .plusHeadline(.m)
                     .foregroundStyle(Color.fillOne)
                     // Абзац обязан занять свою полную высоту. Без этого он ужимается
                     // под высоту, предложенную снаружи, и SwiftUI режет его многоточием
@@ -171,19 +171,19 @@ struct MovieDetailsSection: View {
     private func line(_ row: MovieDetailRow) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text(row.label)
-                .plusMovieText()
+                .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillOne)
                 .padding(.trailing, Layout.labelInset)
                 .frame(width: Layout.labelWidth, alignment: .leading)
 
             HStack(spacing: Layout.noteGap) {
                 Text(row.value)
-                    .plusMovieText()
+                    .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
 
                 if let note = row.note {
                     Text(note)
-                        .plusMovieText()
+                        .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                 }
             }
@@ -228,12 +228,12 @@ struct MovieRateSection: View {
                 ForEach(MovieRateSection.options) { option in
                     VStack(spacing: Layout.labelGap) {
                         Text(option.emoji)
-                            .plusTitleM()
+                            .plusHeadline(.m)
                             .frame(width: Layout.circle, height: Layout.circle)
                             .background(Circle().fill(Color.buttonsSecondary))
 
                         Text(option.title)
-                            .plusMovieCaption()
+                            .plusText(.textS, .semibold)
                             .foregroundStyle(Color.fillOne)
                     }
                     .frame(maxWidth: .infinity)

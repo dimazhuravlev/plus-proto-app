@@ -108,7 +108,7 @@ struct ContinueReadingCard: View {
     /// а `drawingGroup` запекает их в один растр — под клипом это самое дорогое место карточки.
     private var excerpt: some View {
         Text(block.excerpt)
-            .plusReaderText()
+            .plusText(.textL, .medium)
             .foregroundStyle(Color.fillOne)
             .frame(
                 width: ReadingCardLayout.excerptSize.width,
@@ -139,14 +139,14 @@ struct ContinueReadingCard: View {
         VStack(alignment: .leading, spacing: ReadingCardLayout.timelineRowSpacing) {
             HStack(spacing: ReadingCardLayout.timelineGap) {
                 Text(percentLabel)
-                    .plusTextS()
+                    .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillSubtitle)
 
                 PlusProgressBar(progress: block.progress, width: ReadingCardLayout.trackWidth)
             }
 
             Text(block.remaining)
-                .plusTextS()
+                .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)
         }
     }

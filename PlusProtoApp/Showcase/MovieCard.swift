@@ -67,7 +67,7 @@ struct MovieCard: View {
     /// Градиент уведён в цвет постера с той стороны, где постер лежит (§1)
     private var caption: some View {
         GradientText(block.caption, from: block.captionTint, to: .fillOne)
-            .plusTextM()
+            .plusText(.textM, .medium)
             .frame(width: MovieCardLayout.captionWidth, alignment: .leading)
             .offset(x: MovieCardLayout.captionOrigin.x, y: MovieCardLayout.captionOrigin.y)
     }

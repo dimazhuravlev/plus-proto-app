@@ -22,7 +22,10 @@ private enum AlbumCardLayout {
 
     /// Заголовок и подзаголовок `2004:10763` — слева от обложки, наезжают на её левый нижний угол
     static let titlesOrigin = CGPoint(x: 31, y: 674 - slot.top)
-    static let titlesWidth: CGFloat = 107
+    /// Макетные 107 — плюс 5. Бокс был подобран под трекинг −0.2: «Равноденствие»
+    /// занимало 106.3pt. С трекингом 0 из UI kit слово шире — 109.5pt — и рвалось
+    /// посередине. Подписи и так наезжают на угол обложки, лишние 5pt им не мешают.
+    static let titlesWidth: CGFloat = 112
 
     /// Пара ♥/✕ `2004:10760` — ниже обложки, по её левой трети
     static let buttonsOrigin = CGPoint(x: 122.68, y: 728 - slot.top)
@@ -63,7 +66,7 @@ struct AlbumCard: View {
         .showcasePlaced(at: AlbumCardLayout.coverOrigin)
     }
 
-    /// Обе строки 15/18 без зазора: в макете это две соседние строки одного бокса.
+    /// Обе строки — Text M・15 / Medium без зазора: в макете это две соседние строки одного бокса.
     ///
     /// По две строки на подпись, а не по одной, как в макете: бокс 107pt подобран под
     /// «Аквариум / Равноденствие», а у живых альбомов названия длиннее и обрезались
@@ -72,10 +75,10 @@ struct AlbumCard: View {
     private var titles: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(block.title)
-                .plusTextM()
+                .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillOne)
             Text(block.subtitle)
-                .plusTextM()
+                .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillSubtitle)
         }
         .lineLimit(2)

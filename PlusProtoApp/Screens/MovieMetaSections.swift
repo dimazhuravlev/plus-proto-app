@@ -34,7 +34,7 @@ struct MoviePersonSection: View {
         /// Высота одной строки подписи. Стиль добирает натуральный интервал шрифта до
         /// макетного симметричным вертикальным отступом, поэтому строка занимает ровно
         /// интерлиньяж, а n строк — ровно n интерлиньяжей.
-        static var captionLineHeight: CGFloat { MovieTileCaptionType.lineHeight }
+        static var captionLineHeight: CGFloat { PlusTextSize.textS.lineHeight }
     }
 
     /// Высота подписи под фотографией: строки самого длинного имени секции плюс строки
@@ -72,7 +72,7 @@ struct MoviePersonSection: View {
             // и серой строки получается такой же, как внутри самого имени.
             VStack(alignment: .leading, spacing: 0) {
                 Text(person.name)
-                    .plusMovieTileCaption()
+                    .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(Layout.captionLines)
                     // Строка обязана занять свою полную высоту: без этого её ужимает
@@ -82,7 +82,7 @@ struct MoviePersonSection: View {
 
                 if let role = person.role, !role.isEmpty {
                     Text(role)
-                        .plusMovieTileCaption()
+                        .plusText(.textS, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                         .lineLimit(Layout.captionLines)
                         .fixedSize(horizontal: false, vertical: true)
@@ -122,15 +122,15 @@ struct MoviePersonSection: View {
 /// Линейка подписи: сколько строк займёт текст в колонке плитки — и под
 /// фотографией персоны, и под постером «Похожего».
 ///
-/// Меряет тем же шрифтом и кеглем, которыми текст и рисуется (`MovieTileCaptionType`),
+/// Меряет тем же шрифтом и кеглем, которыми текст и рисуется (Text S・13 / Medium),
 /// поэтому расходиться с раскладкой ей нечем. Потолок подписи — две строки, так что
 /// вопрос сводится к «влезает ли в одну»: всё, что длиннее строки, занимает две и
 /// дальше режется многоточием, и точная раскладка длинного имени не нужна.
 private enum TileCaptionRuler {
     static func lines(_ text: String, width: CGFloat) -> Int {
         guard !text.isEmpty else { return 0 }
-        let font = UIFont(name: MovieTileCaptionType.family, size: MovieTileCaptionType.size)
-            ?? .systemFont(ofSize: MovieTileCaptionType.size)
+        let size = PlusTextSize.textS.size
+        let font = UIFont(name: PlusTextWeight.medium.family, size: size) ?? .systemFont(ofSize: size)
         let singleLine = (text as NSString).size(withAttributes: [.font: font]).width
         return singleLine <= width ? 1 : 2
     }
@@ -254,7 +254,7 @@ struct MovieSimilarSection: View {
             // зазор между ними нулевой (решение пользователя 2026-08-29).
             VStack(alignment: .leading, spacing: 0) {
                 Text(title.title)
-                    .plusMovieTileCaption()
+                    .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(Layout.titleLines)
                     // Название обязано занять свою полную высоту: без этого его ужимает
@@ -263,7 +263,7 @@ struct MovieSimilarSection: View {
 
                 if let year = title.year {
                     Text(year)
-                        .plusMovieTileCaption()
+                        .plusText(.textS, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                         .fixedSize(horizontal: false, vertical: true)
                 }

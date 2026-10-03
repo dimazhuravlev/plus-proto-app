@@ -44,9 +44,6 @@ private enum MoviePlayerLayout {
     static let pillTrailing: CGFloat = 20
     static let pillIconGap: CGFloat = 6
     static let pillIcon: CGFloat = 20
-    /// Подзаголовок шапки — белый 60 %. В палитре такого оттенка нет, и заводить
-    /// его токеном ради одного вызова не стоит.
-    static let subtitleColor = Color.white.opacity(0.6)
     /// Бордер стеклянных кнопок плеера — сырые white 6 %, как у круглой кнопки 40pt
     /// (DECISIONS 2026-08-22): у пилюль-кнопок макета он тот же.
     static let buttonBorder = Color.white.opacity(0.06)
@@ -406,12 +403,12 @@ struct MoviePlayerView: View {
     private var meta: some View {
         VStack(spacing: 0) {
             Text(movie.title)
-                .plusPlayerTitle()
+                .plusText(.textL, .semibold)
                 .foregroundStyle(Color.fillOne)
             if let subtitle = movie.subtitle {
                 Text(subtitle)
-                    .plusMovieText()
-                    .foregroundStyle(MoviePlayerLayout.subtitleColor)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillSubtitle)
             }
         }
         .lineLimit(1)
@@ -477,7 +474,7 @@ struct MoviePlayerView: View {
 
     private func timecode(_ seconds: TimeInterval) -> some View {
         Text(MovieTimecode.text(seconds))
-            .plusMovieTextBold()
+            .plusText(.textM, .semibold)
             // Цифры одной ширины: левая подпись меняется каждую секунду,
             // и без этого её правый край дрожал бы.
             .monospacedDigit()
@@ -551,7 +548,7 @@ struct MoviePlayerView: View {
             HStack(spacing: MoviePlayerLayout.pillIconGap) {
                 MovieIcon(name: icon, box: MoviePlayerLayout.pillIcon)
                 Text(title)
-                    .plusMovieTextBold()
+                    .plusText(.textM, .semibold)
                     .foregroundStyle(Color.fillOne)
                     .fixedSize()
             }

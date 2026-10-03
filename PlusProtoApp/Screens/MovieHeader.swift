@@ -37,18 +37,19 @@ enum MovieHeaderLayout {
     /// в них теряется — настоящие логотипы коротких тайтлов всегда крупные.
     ///
     /// Границы подобраны по колонке 229: кегль каждой ступени держит название
-    /// её верхней границы в двух строках без ужатия. Интерлиньяж везде кегль + 4 —
-    /// пропорция макетной пары 28/32.
-    static let titleSteps: [(maxLength: Int, size: CGFloat, lineHeight: CGFloat)] = [
-        (8, 44, 48),
-        (14, 36, 40),
-        (22, 28, 32),
-        (Int.max, 24, 28),
+    /// её верхней границы в двух строках без ужатия. Кегли — ступени шкалы UI kit
+    /// (Headline XXL…M), интерлиньяж у неё 100 % (было кегль + 4 — пропорция
+    /// макетной пары 28/32, до шкалы 2026-10-03).
+    static let titleSteps: [(maxLength: Int, style: PlusHeadline)] = [
+        (8, .xxl),
+        (14, .xl),
+        (22, .l),
+        (Int.max, .m),
     ]
 
     /// Ступень по длине названия. Последняя ловит всё (`Int.max`) — `!` безопасен.
-    static func titleStep(for title: String) -> (maxLength: Int, size: CGFloat, lineHeight: CGFloat) {
-        titleSteps.first { title.count <= $0.maxLength }!
+    static func titleStep(for title: String) -> PlusHeadline {
+        titleSteps.first { title.count <= $0.maxLength }!.style
     }
 
     /// Рост логотипа на оттяге экрана: кавер под ним тянется, и логотип подрастает
@@ -187,7 +188,7 @@ struct MovieHeader<Actions: View>: View {
     private var titleText: some View {
         let step = MovieHeaderLayout.titleStep(for: title)
         return Text(title)
-            .plusMovieHeaderTitle(size: step.size, lineHeight: step.lineHeight)
+            .plusHeadline(step)
             .foregroundStyle(Color.fillOne)
             .lineLimit(MovieHeaderLayout.titleLines)
             .minimumScaleFactor(0.7)

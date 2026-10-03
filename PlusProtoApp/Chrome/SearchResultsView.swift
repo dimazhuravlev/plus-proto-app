@@ -79,7 +79,7 @@ struct SearchResultsView: View {
 
                 if search.isEmptyResult {
                     Text("Ничего не нашлось")
-                        .plusTextS()
+                        .plusText(.textS, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                         .padding(.horizontal, Layout.side)
                         .padding(.vertical, Layout.headerTop)
@@ -132,7 +132,7 @@ struct SearchResultsView: View {
     private func header(_ title: String) -> some View {
         HStack(spacing: Layout.headerGap) {
             Text(title)
-                .plusMovieSection()
+                .plusHeadline(.m)
                 .foregroundStyle(Color.fillOne)
 
             // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет,
@@ -184,14 +184,14 @@ struct SearchResultsView: View {
 
             VStack(alignment: isArtist ? .center : .leading, spacing: 0) {
                 Text(hit.title)
-                    .plusTextS()
+                    .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(2)
                     .multilineTextAlignment(isArtist ? .center : .leading)
 
                 if !hit.subtitle.isEmpty {
                     Text(hit.subtitle)
-                        .plusTextS()
+                        .plusText(.textS, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                         .lineLimit(1)
                 }

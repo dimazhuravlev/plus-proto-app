@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Текст с горизонтальной градиентной заливкой — в макете так набраны почти все подписи
 /// (figma-screen1 §1): градиент подтянут к той стороне, где лежит обложка.
-/// Типографика навешивается снаружи: `GradientText("…", from: …, to: …).plusTextM()`.
+/// Типографика навешивается снаружи: `GradientText("…", from: …, to: …).plusText(.textM, .medium)`.
 struct GradientText: View {
     private let text: String
     private let gradient: LinearGradient

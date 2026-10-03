@@ -150,7 +150,7 @@ struct EntityNavBar<Trailing: View>: View {
             }
 
             Text(title)
-                .plusTitleL()
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(1)
         }

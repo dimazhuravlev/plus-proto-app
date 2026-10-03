@@ -112,7 +112,7 @@ private struct TabBarItem: View {
         VStack(spacing: PlusMetrics.tabIconLabelGap) {
             tile
             Text(tab.title)
-                .plusTabLabel()
+                .plusText(.textXS, .medium)
                 .foregroundStyle(isActive ? Color.fillOne : Color.fillSix)
         }
         .frame(width: PlusMetrics.tabItemWidth, height: PlusMetrics.tabItemHeight)

@@ -50,7 +50,7 @@ struct BookCard: View {
 
             VStack(alignment: .trailing, spacing: BookCardLayout.captionToButtons) {
                 GradientText(block.caption, from: .fillOne, to: block.captionTint)
-                    .plusTextM()
+                    .plusText(.textM, .medium)
                     .multilineTextAlignment(.trailing)
                     .frame(width: BookCardLayout.captionWidth, alignment: .trailing)
 

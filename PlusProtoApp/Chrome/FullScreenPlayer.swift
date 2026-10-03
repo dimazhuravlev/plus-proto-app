@@ -179,10 +179,10 @@ struct FullScreenPlayer: View {
             // её на глаз — значит потом переделывать.
             VStack(alignment: .leading, spacing: FullPlayerGeometry.titleGap) {
                 Text(item.title)
-                    .plusTitleL()
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
                 Text(item.artist)
-                    .plusTextM()
+                    .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillSubtitle)
             }
             .lineLimit(1)

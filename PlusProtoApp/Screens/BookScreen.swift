@@ -28,10 +28,6 @@ private enum BookScreenLayout {
     static let descriptionTop: CGFloat = 8
     static let descriptionBottom: CGFloat = 16
     static let paragraphGap: CGFloat = 16
-    /// Цвета текста — токены Букмейта (Text/Secondary и Text/Primary): непрозрачные
-    /// серые, в палитре проекта на белом с прозрачностью их нет.
-    static let authorColor = Color(red: 0x74 / 255, green: 0x72 / 255, blue: 0x72 / 255)
-    static let descriptionColor = Color(red: 0xD9 / 255, green: 0xD9 / 255, blue: 0xD9 / 255)
     /// Свечение за обложкой — два градиента во всю ширину экрана, стык на середине
     /// обложки: вверх 164, вниз 160, каждый с прозрачностью 0.4.
     static let glowRise: CGFloat = 164
@@ -165,13 +161,13 @@ struct BookScreen: View {
     private var titles: some View {
         VStack(spacing: BookScreenLayout.titleToAuthor) {
             Text(entity.title)
-                .plusEntityTitle(entity.title)
+                .plusHeadline(EntityTitleType.style(for: entity.title))
                 .foregroundStyle(Color.fillOne)
             // Строка автора держит место и до ответа API: иначе кнопка и описание
             // съехали бы вниз на её высоту прямо на глазах.
             Text(author ?? " ")
-                .plusBookAuthor()
-                .foregroundStyle(BookScreenLayout.authorColor)
+                .plusText(.textM, .medium)
+                .foregroundStyle(Color.fillSubtitle)
                 .opacity(author == nil ? 0 : 1)
         }
         .multilineTextAlignment(.center)
@@ -190,7 +186,7 @@ struct BookScreen: View {
             HStack(spacing: BookScreenLayout.buttonIconGap) {
                 MovieIcon(name: "iconRead", box: BookScreenLayout.buttonIcon)
                 Text("Читать")
-                    .plusMovieTextBold()
+                    .plusText(.textM, .semibold)
                     .foregroundStyle(Color.fillOne)
                     .fixedSize()
             }
@@ -217,8 +213,8 @@ struct BookScreen: View {
             VStack(alignment: .leading, spacing: BookScreenLayout.paragraphGap) {
                 ForEach(Array(text.annotation.enumerated()), id: \.offset) { _, paragraph in
                     Text(paragraph)
-                        .plusBookDescription()
-                        .foregroundStyle(BookScreenLayout.descriptionColor)
+                        .plusText(.textM, .medium)
+                        .foregroundStyle(Color.fillFour)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }

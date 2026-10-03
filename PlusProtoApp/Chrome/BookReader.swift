@@ -8,11 +8,12 @@ import VariableBlur
 private enum BookReaderLayout {
     /// Поля колонки текста: 354 из 402.
     static let textInset: CGFloat = 24
-    static let lineHeight: CGFloat = 25
+    /// Строка текста — Text L・18 / Medium из UI kit (в макете 16/25: кегля 16 в UI kit
+    /// нет, а для длинного чтения из пяти кеглей подходит 18 — и его строка 24 ближе
+    /// всего к макетным 25, ритм колонки почти не меняется).
+    static let lineHeight: CGFloat = PlusTextSize.textL.lineHeight
     /// Абзацы разделены пустой строкой — в макете это пустой абзац высотой в строку.
     static let paragraphGap: CGFloat = lineHeight
-    /// Белый 80 % — оттенка в палитре нет, токен ради одного вызова не заводим.
-    static let textColor = Color.white.opacity(0.8)
 
     /// Затемнение под шапкой: от верхней кромки (с выносом на 1pt, как в макете)
     /// чёрный держится до 13 % высоты и сходит в ноль к низу.
@@ -91,8 +92,9 @@ struct BookReaderView: View {
             VStack(alignment: .leading, spacing: BookReaderLayout.paragraphGap) {
                 ForEach(Array(text.pages.enumerated()), id: \.offset) { _, paragraph in
                     Text(paragraph)
-                        .plusBookText()
-                        .foregroundStyle(BookReaderLayout.textColor)
+                        .plusText(.textL, .medium)
+                        // Fill 4 — цвет UI kit для текстовых блоков длиннее двух строк.
+                        .foregroundStyle(Color.fillFour)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -174,11 +176,11 @@ struct BookReaderView: View {
     private var titles: some View {
         VStack(alignment: .leading, spacing: BookReaderLayout.titleToAuthor) {
             Text(book.title)
-                .plusPlayerTitle()
+                .plusText(.textL, .semibold)
                 .foregroundStyle(Color.fillOne)
             if let author = book.author ?? text.author {
                 Text(author)
-                    .plusMovieText()
+                    .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillSubtitle)
                     .transition(.opacity)
             }
