@@ -24,6 +24,8 @@ extension Color {
     static let buttonsSecondary = Color.white.opacity(0.08)
     /// Plus/Solid One — акцент бренда: заливка прогресс-баров
     static let plusAccent = Color(red: 216 / 255, green: 141 / 255, blue: 252 / 255) // #D88DFC
+    /// Movies — фиолетовый кино: лейбл тайтла у меты, активный чипс фильтров выдачи
+    static let moviesAccent = Color(red: 163 / 255, green: 50 / 255, blue: 255 / 255) // #A332FF
     /// System/iOS Navbar darkBlur — подложка навбара под блюром
     static let navbarDarkBlur = Color(red: 20 / 255, green: 20 / 255, blue: 20 / 255).opacity(0.7) // #141414B2
     /// Плейсхолдер в поле поиска

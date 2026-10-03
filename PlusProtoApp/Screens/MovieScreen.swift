@@ -57,10 +57,11 @@ enum MovieLayout {
     static let infoOverlap: CGFloat = 80
     static let infoLeading: CGFloat = 48
     static let infoTrailing: CGFloat = 16
-    static let infoSpacing: CGFloat = 16
-    /// Фиолетовый лейбл ↔ лид — на 4 плотнее общего шага блока (правка пользователя
-    /// 2026-10-03): лейбл — подпись к лиду, а не отдельная строка блока.
-    static let accentToLead: CGFloat = 12
+    /// Лид ↔ мета — макет `2128:13022`: 12 от низа лида до первой строки меты.
+    static let leadToMeta: CGFloat = 12
+    /// Фиолетовый лейбл ↔ строка меты под ним. Лейбл — первая строка меты,
+    /// а не подпись над лидом (правка пользователя 2026-10-03, тот же макет).
+    static let accentToMeta: CGFloat = 4
     static let infoBottom: CGFloat = 24
     // Прежний `leadInset = 32` («лид уже своего контейнера» из макета) снят —
     // правка пользователя 2026-08-25: правое поле всех текстов аргумента и описания
@@ -544,33 +545,36 @@ struct MovieScreen: View {
     }
 
     private var infoContent: some View {
-        VStack(alignment: .leading, spacing: MovieLayout.infoSpacing) {
-            VStack(alignment: .leading, spacing: MovieLayout.accentToLead) {
-                // В макете здесь «Editor's choice». Редакционных подборок API не отдаёт,
-                // поэтому на этом месте самый сильный реальный факт о тайтле — позиция
-                // в топ-250 или оценка Кинопоиска. Нет и его — строки просто нет.
-                if let accent = details.accent {
-                    Text(accent)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.plusAccent)
+        VStack(alignment: .leading, spacing: MovieLayout.leadToMeta) {
+            // В макете лид — это описание, а название несёт логотип тайтла. Если логотипа
+            // у тайтла нет, правило макета отдаёт название текстом: у нас оно занимает
+            // именно этот слот, а описание целиком остаётся в секции ниже.
+            // Не режется: аргумент Кинопоиска — законченная фраза из двух частей
+            // («что происходит» + редакционный вердикт), и обрыв убивает вторую.
+            // Под его настоящую длину подобран кегль — см. `MovieLeadType`.
+            Text(leadText)
+                .plusHeadline(MovieLeadType.style)
+                .foregroundStyle(Color.fillOne)
+                // Контейнер лида — вся колонка инфо-блока, до общего правого поля 16.
+                // Без растяжки блок кончался бы там, где кончилась самая длинная
+                // строка, и его правый край гулял бы от тайтла к тайтлу.
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if details.accent != nil || !details.meta.isEmpty {
+                VStack(alignment: .leading, spacing: MovieLayout.accentToMeta) {
+                    // Лейбл — над метой, под лидом (макет `2128:13022`, правка пользователя
+                    // 2026-10-03; прежде стоял над лидом). В макете здесь «Best drame
+                    // in the world». Редакционных подборок API не отдаёт, поэтому на этом
+                    // месте самый сильный реальный факт о тайтле — позиция в топ-250 или
+                    // оценка Кинопоиска. Нет и его — строки просто нет.
+                    if let accent = details.accent {
+                        Text(accent)
+                            .plusText(.textM, .medium)
+                            .foregroundStyle(Color.moviesAccent)
+                    }
+                    if !details.meta.isEmpty { meta }
                 }
-
-                // В макете лид — это описание, а название несёт логотип тайтла. Если логотипа
-                // у тайтла нет, правило макета отдаёт название текстом: у нас оно занимает
-                // именно этот слот, а описание целиком остаётся в секции ниже.
-                // Не режется: аргумент Кинопоиска — законченная фраза из двух частей
-                // («что происходит» + редакционный вердикт), и обрыв убивает вторую.
-                // Под его настоящую длину подобран кегль — см. `MovieLeadType`.
-                Text(leadText)
-                    .plusHeadline(MovieLeadType.style)
-                    .foregroundStyle(Color.fillOne)
-                    // Контейнер лида — вся колонка инфо-блока, до общего правого поля 16.
-                    // Без растяжки блок кончался бы там, где кончилась самая длинная
-                    // строка, и его правый край гулял бы от тайтла к тайтлу.
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            if !details.meta.isEmpty { meta }
         }
     }
 
@@ -618,7 +622,7 @@ private struct MovieInfoSkeleton: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MovieLayout.infoSpacing) {
+        VStack(alignment: .leading, spacing: MovieLayout.leadToMeta) {
             VStack(alignment: .leading, spacing: Layout.leadGap) {
                 ForEach(Layout.leadWidths.indices, id: \.self) { index in
                     bar(width: Layout.leadWidths[index], height: Layout.leadBarHeight)

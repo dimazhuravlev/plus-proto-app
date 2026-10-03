@@ -355,8 +355,8 @@ private struct SearchFilterChip: View {
     let isActive: Bool
     let action: () -> Void
 
-    /// Фиолетовый активного чипса — #A332FF макета. Один вызов — токен не заводим.
-    private static let accent = Color(red: 163 / 255, green: 50 / 255, blue: 1)
+    /// Фиолетовый активного чипса — #A332FF макета, общий с лейблом тайтла.
+    private static let accent = Color.moviesAccent
 
     var body: some View {
         Button(action: action) {
