@@ -18,7 +18,13 @@ struct SearchSectionView: View {
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(ActionBarState.self) private var actionBar
 
+    /// Выбранный фильтр — им подсвечен чипс, сразу по нажатию.
     @State private var filter: SearchFilter = .all
+    /// Фильтр показанного списка — догоняет выбранный после того, как старый список
+    /// погас (`FilterMotion`).
+    @State private var shownFilter: SearchFilter = .all
+    @State private var listOpacity: Double = 1
+    @State private var filterSwap: Task<Void, Never>?
     /// Сколько проскроллено — от него проявляется подложка закреплённых чипсов.
     @State private var scrolled: CGFloat = 0
     /// Сердца — визуальные, на время экрана: избранного в прототипе нет.
@@ -42,10 +48,13 @@ struct SearchSectionView: View {
         static let skeletonRows = 7
     }
 
-    /// Переключение фильтров (правка пользователя 2026-10-03): списки сменяются
-    /// кроссфейдом за 300 мс, лента чипсов доезжает до активного.
+    /// Переключение фильтров (правки пользователя 2026-10-03): списки сменяются
+    /// **последовательно** — старый гаснет, затем новый проявляется, всего 300 мс
+    /// (кроссфейд пробовали — не понравился); лента чипсов доезжает до активного.
     private enum FilterMotion {
-        static let crossfade: Animation = .easeInOut(duration: 0.3)
+        static let fadeOutDuration: Duration = .milliseconds(150)
+        static let fadeOut: Animation = .easeIn(duration: 0.15)
+        static let fadeIn: Animation = .easeOut(duration: 0.15)
         /// Подкрутка ленты к активному чипсу — та же длительность, сильный ease-out:
         /// лента отвечает сразу и мягко встаёт.
         static let centerChip: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
@@ -65,12 +74,25 @@ struct SearchSectionView: View {
     /// Выдача пришла, а показывать нечего — ни строк под фильтром, ни колдунщика.
     private var isEmpty: Bool {
         guard let full = search.fullResults else { return false }
-        let hasWizard = filter == .all && full.wizard != nil
-        return !hasWizard && !full.hits.contains { filter.matches($0.kind) }
+        let hasWizard = shownFilter == .all && full.wizard != nil
+        return !hasWizard && !full.hits.contains { shownFilter.matches($0.kind) }
     }
 
     private var sectionList: some View {
+        ScrollViewReader { proxy in
+            sectionScroll
+                .onChange(of: shownFilter) {
+                    // Список невидим — к началу: новый начинается сверху.
+                    proxy.scrollTo(Self.topAnchor, anchor: .top)
+                }
+        }
+    }
+
+    private static let topAnchor = "section-top"
+
+    private var sectionScroll: some View {
         ScrollView {
+            Color.clear.frame(height: 0).id(Self.topAnchor)
             // Чипсы музыки закреплены — заголовком секции, который липнет к верху
             // при скролле (правка пользователя 2026-10-03). У кино и книг фильтров нет.
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: kind == .music ? [.sectionHeaders] : []) {
@@ -106,9 +128,16 @@ struct SearchSectionView: View {
         // и на приходе первой выдачи — выбранный над скелетоном чипс тут же гас.
         .onChange(of: search.fullResults?.text, initial: true) { _, text in
             guard let text else { return }
-            if let filterText, filterText != text { filter = .all }
+            if let filterText, filterText != text {
+                // Новая выдача — сразу на «Всей музыке», без смены по фазам.
+                filterSwap?.cancel()
+                filter = .all
+                shownFilter = .all
+                listOpacity = 1
+            }
             filterText = text
         }
+        .onChange(of: filter) { _, selected in swapList(to: selected) }
         #if DEBUG
         // `-debugSearchFilter <n>` — выбрать n-й фильтр музыки (0 — «Всё»), когда
         // выдача раздела пришла: тапнуть по чипсу из шелла нечем.
@@ -122,23 +151,34 @@ struct SearchSectionView: View {
         #endif
     }
 
-    /// Содержимое под фильтром — в `ZStack` с идентичностью фильтра: старый список
-    /// гаснет, новый проявляется **на том же месте** (в стопке они встали бы друг
-    /// под другом и переложили ленту посреди перехода).
+    /// Содержимое под показанным фильтром; смена — через прозрачность (`swapList`).
     private var list: some View {
-        ZStack(alignment: .top) {
-            filteredContent
-                .id(filter)
-                .transition(.opacity)
+        filteredContent
+            .opacity(listOpacity)
+    }
+
+    /// Старый список гаснет, в паузе подменяется, новый проявляется. Быстрые нажатия
+    /// подряд прерывают незаконченную смену — показан всегда последний выбранный.
+    private func swapList(to selected: SearchFilter) {
+        filterSwap?.cancel()
+        guard selected != shownFilter else {
+            withAnimation(FilterMotion.fadeIn) { listOpacity = 1 }
+            return
         }
-        .animation(FilterMotion.crossfade, value: filter)
+        filterSwap = Task { @MainActor in
+            withAnimation(FilterMotion.fadeOut) { listOpacity = 0 }
+            try? await Task.sleep(for: FilterMotion.fadeOutDuration)
+            guard !Task.isCancelled else { return }
+            shownFilter = selected
+            withAnimation(FilterMotion.fadeIn) { listOpacity = 1 }
+        }
     }
 
     @ViewBuilder
     private var filteredContent: some View {
         if let full = search.fullResults {
             VStack(alignment: .leading, spacing: 0) {
-                    if filter == .all, let wizard = full.wizard {
+                    if shownFilter == .all, let wizard = full.wizard {
                         MusicWizardCard(
                             wizard: wizard,
                             isLiked: liked.contains(wizard.artist.id),
@@ -147,7 +187,7 @@ struct SearchSectionView: View {
                             zoom: zoom
                         )
                     }
-                    let rows = full.hits.filter { filter.matches($0.kind) }
+                    let rows = full.hits.filter { shownFilter.matches($0.kind) }
                     // Пусто — экран пустой выдачи поверх (`isEmpty`), список молчит.
                     ForEach(rows) { hit in
                         row(hit, isFirst: hit.id == rows.first?.id)
