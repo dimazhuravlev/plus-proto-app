@@ -191,9 +191,13 @@ final class SearchState {
             return
         }
 
-        music = Domain(isLoading: true)
-        movies = Domain(isLoading: true)
-        books = Domain(isLoading: true)
+        // Прежняя выдача стоит, пока не приехала новая: сброс в скелетон на каждой
+        // букве моргал карточками (жалоба пользователя 2026-10-03). Скелетон — только
+        // когда показывать ещё нечего, то есть на первом запросе.
+        for domain in [\SearchState.music, \SearchState.movies, \SearchState.books] {
+            self[keyPath: domain].isLoading = true
+            self[keyPath: domain].isAnswered = false
+        }
 
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: Self.debounce)
@@ -360,7 +364,49 @@ final class SearchState {
     private func loadBooks(_ text: String) async {
         let found = (try? await BooksService.shared.search(text, limit: Self.perKind)) ?? []
         guard !Task.isCancelled else { return }
-        books = Domain(isLoading: false, hits: found.prefix(Self.perSection).map(SearchHit.init(book:)), isAnswered: true)
+        var hits = found.prefix(Self.perSection).map(SearchHit.init(book:))
+        // Карточка книги — по пропорциям обложки (макет `2311:25096`), поэтому секция
+        // показывается, когда обложки уже приехали: ширины известны, карусель не
+        // перекладывается, а сами обложки встают из кэша без проявления.
+        let aspects = await Self.coverAspects(of: hits)
+        guard !Task.isCancelled else { return }
+        for index in hits.indices {
+            hits[index].artworkAspect = aspects[hits[index].id]
+        }
+        books = Domain(isLoading: false, hits: hits, isAnswered: true)
+    }
+
+    /// Сколько ждём обложки книг. Не дождались — карточка встаёт на пропорции
+    /// по умолчанию, а обложка проявится, когда приедет.
+    private static let coverWait: Duration = .milliseconds(1500)
+
+    /// Пропорции обложек — с самих картинок: размеров Google Books не отдаёт.
+    private static func coverAspects(of hits: [SearchHit]) async -> [String: CGFloat] {
+        let urls = hits.compactMap { hit in hit.artwork?.remoteURL.map { (hit.id, $0) } }
+        guard !urls.isEmpty else { return [:] }
+        return await withTaskGroup(of: (String, CGFloat?).self) { group in
+            for (id, url) in urls {
+                group.addTask { @MainActor in
+                    let image = await ArtworkLoader.shared.image(for: url)
+                    return (id, image.map { $0.size.width / max($0.size.height, 1) })
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: coverWait)
+                return ("", nil)
+            }
+            var aspects: [String: CGFloat] = [:]
+            var answered = 0
+            for await (id, aspect) in group {
+                // Пустой id — истёк потолок ожидания.
+                guard !id.isEmpty else { break }
+                answered += 1
+                if let aspect { aspects[id] = aspect }
+                if answered == urls.count { break }
+            }
+            group.cancelAll()
+            return aspects
+        }
     }
 }
 

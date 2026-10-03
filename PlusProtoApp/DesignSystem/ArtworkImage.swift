@@ -21,6 +21,10 @@ struct ArtworkImage: View {
 /// витрина мигала бы дырами на каждом холодном старте, а без сети осталась бы пустой.
 struct ResolvedArtwork<Content: View, Placeholder: View>: View {
     let source: ArtworkSource
+    /// Как проявляется картинка, приехавшая из сети. `nil` — сразу, как было везде;
+    /// выдача поиска проявляет обложки за 150 мс. Картинка из памяти встаёт без
+    /// анимации в любом случае — она есть уже на первом кадре.
+    let appear: Animation?
     @ViewBuilder let content: (Image) -> Content
     /// Что показать, если картинки нет вовсе: у источника нет бандленного фолбэка,
     /// а живая не загрузилась. Нужен там, где вместо картинки уместен текст —
@@ -39,10 +43,12 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
     @MainActor
     init(
         source: ArtworkSource,
+        appear: Animation? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.source = source
+        self.appear = appear
         self.content = content
         self.placeholder = placeholder
         let warm = source.remoteURL.flatMap { ArtworkLoader.shared.cached($0) }
@@ -68,7 +74,9 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
             }
             loaded = nil
             if let image = await ArtworkLoader.shared.image(for: url) {
-                loaded = Image(uiImage: image)
+                withAnimation(appear) {
+                    loaded = Image(uiImage: image)
+                }
             }
         }
     }
