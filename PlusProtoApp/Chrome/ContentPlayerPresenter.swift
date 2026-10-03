@@ -38,6 +38,8 @@ final class ContentPlayerPresenter {
     private weak var host: UIViewController?
     private var shownID: ContentPlayer.ID?
     private var isAttached = false
+    /// Слой уже увели свайпом за нижнюю кромку — снимать его надо без перехода.
+    private var isPulledAway = false
 
     /// Начать следить за `ActionBarState.contentPlayer`.
     ///
@@ -79,13 +81,25 @@ final class ContentPlayerPresenter {
             .preferredColorScheme(.dark)
         let controller = ContentPlayerHostingController(rootView: root)
         controller.isImmersive = player.isMovie
-        controller.modalPresentationStyle = .fullScreen
         // С «уменьшением движения» экран не едет через весь дисплей, а проявляется:
         // системная настройка важнее требования к переходу — оно про обычный режим.
         controller.modalTransitionStyle = UIAccessibility.isReduceMotionEnabled
             ? .crossDissolve
             : .coverVertical
         controller.view.backgroundColor = .black
+        if player.isMusic {
+            // Плеер музыки уводится вниз за пальцем, и над ним должен быть виден экран,
+            // с которого его открыли: `.overFullScreen` оставляет тот в окне. У `.fullScreen`
+            // под уехавшим слоем была бы чернота. Статус-бар при этом решает сам плеер.
+            controller.modalPresentationStyle = .overFullScreen
+            controller.modalPresentationCapturesStatusBarAppearance = true
+            controller.enablePullToDismiss { [weak self] in
+                self?.isPulledAway = true
+                actionBar.closeContentPlayer()
+            }
+        } else {
+            controller.modalPresentationStyle = .fullScreen
+        }
         presenter.present(controller, animated: true)
         host = controller
         shownID = player.id
@@ -93,11 +107,15 @@ final class ContentPlayerPresenter {
 
     private func dismiss(animated: Bool) {
         shownID = nil
+        let pulledAway = isPulledAway
+        isPulledAway = false
         guard let host else { return }
         self.host = nil
         // Слой могли уже снять вместе с презентацией под ним — тогда снимать нечего.
         guard host.presentingViewController != nil else { return }
-        host.dismiss(animated: animated)
+        // Уведённый свайпом слой уже за кромкой: второй уход вниз ничего не показал бы,
+        // только держал бы касания, пока идёт переход.
+        host.dismiss(animated: animated && !pulledAway)
     }
 
     /// Самый верхний показанный контроллер окна: корень или верх стопки слоёв.
@@ -131,12 +149,205 @@ private final class ContentPlayerHostingController<Content: View>: UIHostingCont
     /// Альбомный кадр плеера рисуется повёрнутым внутри портрета (см. `MoviePlayerView`):
     /// поверни интерфейс система — повёрнутый холст лёг бы боком.
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+
+    private var pull: PullToDismiss?
+
+    /// Свайп вниз уводит слой за пальцем; `onDismiss` — слой уехал за нижнюю кромку.
+    func enablePullToDismiss(onDismiss: @escaping () -> Void) {
+        let pull = PullToDismiss(onDismiss: onDismiss)
+        pull.attach(to: view)
+        self.pull = pull
+    }
 }
 
 private extension ContentPlayer {
     var isMovie: Bool {
         if case .movie = self { return true }
         return false
+    }
+
+    var isMusic: Bool {
+        if case .music = self { return true }
+        return false
+    }
+}
+
+// MARK: - Свайп вниз
+
+/// Числа свайпа. Пороги закрытия — те же, что были у листа прежнего плеера музыки.
+private enum PullToDismissConfig {
+    /// Отпущен ниже этого — закрывается.
+    static let dismissDistance: CGFloat = 120
+    /// Бросок вниз быстрее этого закрывает с любого места; такой же бросок вверх
+    /// отменяет закрытие даже за порогом.
+    static let flickVelocity: CGFloat = 600
+    /// Уход за кромку после отпускания — быстрый, палец уже всё решил.
+    static let slideOutDuration: TimeInterval = 0.3
+    /// Возврат, если не дотянул, — спокойнее: экран встаёт на место, а не отскакивает.
+    static let settleDuration: TimeInterval = 0.4
+    /// Пока экран оттянут, верхние углы скруглены — как у листа в макете (рамка
+    /// экрана `6105:61569`, радиус 30). В покое углы прячет скругление дисплея.
+    static let cornerRadius: CGFloat = 30
+}
+
+/// Свайп вниз уводит слой за пальцем — один в один, без резины скролла (просьба
+/// пользователя 2026-10-03). Отпустил ниже порога или бросил вниз — слой уезжает
+/// за кромку, иначе встаёт на место.
+///
+/// UIKit-пан на корне слоя, а не жест SwiftUI: двигать надо весь контроллер вместе
+/// со статус-баром и фоном, а скролл должен уступать — пока экран тянут, лента
+/// под пальцем не резинится. Для этого скролл ждёт, пока пан откажется: пан берёт
+/// касание, только если лента у верха и палец пошёл вниз, иначе сразу уступает.
+@MainActor
+private final class PullToDismiss: NSObject, UIGestureRecognizerDelegate {
+    private weak var view: UIView?
+    private weak var scrollView: UIScrollView?
+    private let onDismiss: () -> Void
+    private var animator: UIViewPropertyAnimator?
+    /// Где был слой в момент хвата — подхватить его на возврате, не дёрнув.
+    private var grabOffset: CGFloat = 0
+
+    init(onDismiss: @escaping () -> Void) {
+        self.onDismiss = onDismiss
+    }
+
+    func attach(to view: UIView) {
+        self.view = view
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.delegate = self
+        // Второй палец не перехватывает слой: центроид двух касаний дёрнул бы его.
+        pan.maximumNumberOfTouches = 1
+        view.addGestureRecognizer(pan)
+    }
+
+    // MARK: Решение «тянуть или скроллить»
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let view else { return false }
+        let velocity = pan.velocity(in: view.superview)
+        // Оттянутый слой (поймали на возврате) берём в любую сторону по вертикали.
+        if view.transform.ty > 0 { return abs(velocity.y) > abs(velocity.x) }
+        return velocity.y > abs(velocity.x) && isScrolledToTop
+    }
+
+    /// Скролл ленты ждёт отказа пана — иначе оба тронулись бы с одного касания.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        otherGestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer.view is UIScrollView
+    }
+
+    private var isScrolledToTop: Bool {
+        guard let scrollView = scrollView ?? findScrollView() else { return true }
+        return scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
+    }
+
+    /// Лента плеера — единственный скролл в слое; SwiftUI держит под ним `UIScrollView`.
+    private func findScrollView() -> UIScrollView? {
+        var queue = view.map { [$0] } ?? []
+        while !queue.isEmpty {
+            let next = queue.removeFirst()
+            if let found = next as? UIScrollView {
+                scrollView = found
+                return found
+            }
+            queue.append(contentsOf: next.subviews)
+        }
+        return nil
+    }
+
+    // MARK: Ведение
+
+    @objc private func handlePan(_ pan: UIPanGestureRecognizer) {
+        guard let view else { return }
+        // Мерим в координатах родителя: слой сам едет под пальцем, и в его собственных
+        // координатах палец стоял бы на месте.
+        let space = view.superview
+        switch pan.state {
+        case .began:
+            // Поймали на возврате — останавливаем там, где он сейчас, и ведём оттуда.
+            animator?.stopAnimation(true)
+            animator = nil
+            grabOffset = view.transform.ty
+            setRounded(true)
+        case .changed:
+            // Вверх за исходное место не пускаем: слой во весь экран, и снизу
+            // открылась бы щель.
+            let offset = max(0, grabOffset + pan.translation(in: space).y)
+            view.transform = CGAffineTransform(translationX: 0, y: offset)
+        case .ended, .cancelled, .failed:
+            let offset = view.transform.ty
+            let velocity = pan.velocity(in: space).y
+            let flickedDown = velocity > PullToDismissConfig.flickVelocity
+            let pulledFar = offset > PullToDismissConfig.dismissDistance
+                && velocity > -PullToDismissConfig.flickVelocity
+            if pan.state == .ended, flickedDown || pulledFar {
+                slideOut(from: offset, velocity: velocity)
+            } else {
+                settle(from: offset, velocity: velocity)
+            }
+        default:
+            break
+        }
+    }
+
+    /// Уход за нижнюю кромку с той скоростью, с какой его отпустили.
+    private func slideOut(from offset: CGFloat, velocity: CGFloat) {
+        guard let view else { return }
+        let target = view.bounds.height
+        let animator = UIViewPropertyAnimator(
+            duration: PullToDismissConfig.slideOutDuration,
+            timingParameters: UISpringTimingParameters(
+                dampingRatio: 1,
+                initialVelocity: Self.relativeVelocity(velocity, from: offset, to: target)
+            )
+        )
+        animator.addAnimations {
+            view.transform = CGAffineTransform(translationX: 0, y: target)
+        }
+        animator.addCompletion { [weak self] position in
+            guard position == .end else { return }
+            self?.onDismiss()
+        }
+        animator.startAnimation()
+        self.animator = animator
+    }
+
+    /// Возврат на место, если не дотянул.
+    private func settle(from offset: CGFloat, velocity: CGFloat) {
+        guard let view else { return }
+        let animator = UIViewPropertyAnimator(
+            duration: PullToDismissConfig.settleDuration,
+            timingParameters: UISpringTimingParameters(
+                dampingRatio: 1,
+                initialVelocity: Self.relativeVelocity(velocity, from: offset, to: 0)
+            )
+        )
+        animator.addAnimations {
+            view.transform = .identity
+        }
+        animator.addCompletion { [weak self] position in
+            guard position == .end else { return }
+            self?.setRounded(false)
+        }
+        animator.startAnimation()
+        self.animator = animator
+    }
+
+    /// Скорость пальца в долях оставшегося пути в секунду — так её ждёт пружина.
+    private static func relativeVelocity(_ velocity: CGFloat, from start: CGFloat, to end: CGFloat) -> CGVector {
+        let distance = end - start
+        guard abs(distance) > 1 else { return .zero }
+        return CGVector(dx: 0, dy: velocity / distance)
+    }
+
+    private func setRounded(_ rounded: Bool) {
+        guard let layer = view?.layer else { return }
+        layer.cornerRadius = rounded ? PullToDismissConfig.cornerRadius : 0
+        layer.cornerCurve = .continuous
+        layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        layer.masksToBounds = rounded
     }
 }
 

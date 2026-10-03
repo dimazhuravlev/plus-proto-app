@@ -119,8 +119,6 @@ enum MusicPlayerMotion {
     /// За столько пунктов хода проявляется левое затухание: в покое начало названия
     /// стоит у поля целиком, гаснуть ему незачем.
     static let marqueeFadeRamp: CGFloat = 24
-    /// Свайп вниз от верха: экран оттянут на столько пунктов и отпущен — плеер закрывается.
-    static let pullToClose: CGFloat = 80
 }
 
 // MARK: - Плеер
@@ -129,9 +127,10 @@ enum MusicPlayerMotion {
 ///
 /// Показывается тем же презентером, что киноплеер и читалка: выезжает снизу и уезжает
 /// вниз, без прозрачности и масштаба (правка пользователя 2026-10-03; раньше лист
-/// формился из мини-плеера). Экран прокручивается целиком — обложка, транспорт,
-/// очередь; навбар стоит, а под ним при прокрутке проявляется общая подложка
-/// с прогрессивным блюром (`NavBarBackdrop`).
+/// формился из мини-плеера). Свайп вниз от верха ленты уводит весь экран за пальцем —
+/// это живёт в презентере (`PullToDismiss`), а не здесь. Экран прокручивается
+/// целиком — обложка, транспорт, очередь; навбар стоит, а под ним при прокрутке
+/// проявляется общая подложка с прогрессивным блюром (`NavBarBackdrop`).
 struct MusicPlayerView: View {
     @Environment(ActionBarState.self) private var actionBar
     @State private var scrollOffset: CGFloat = 0
@@ -159,15 +158,6 @@ struct MusicPlayerView: View {
                 }
                 .scrollIndicators(.hidden)
                 .trackNavBarScroll(into: $scrollOffset)
-                // Свайп вниз закрывает плеер, как закрывался прежний лист: экран оттянут
-                // от верха за порог, палец отпущен. Сам экран при этом только едет —
-                // резина скролла, без масштаба, — а уходит штатным переходом вниз.
-                .onScrollPhaseChange { oldPhase, _, context in
-                    let geometry = context.geometry
-                    let pulled = -(geometry.contentOffset.y + geometry.contentInsets.top)
-                    guard oldPhase == .interacting, pulled > MusicPlayerMotion.pullToClose else { return }
-                    actionBar.closeContentPlayer()
-                }
 
                 navBar
                     .padding(.top, safeTop)
