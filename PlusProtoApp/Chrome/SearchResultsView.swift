@@ -323,6 +323,7 @@ struct SearchResultsView: View {
                 .frame(width: Layout.chevronBox, height: Layout.chevronBox)
                 .scaleEffect(x: -1)
                 .foregroundStyle(Color.fillSubtitle)
+                .offset(y: PlusMetrics.headerChevronDrop)
         }
         .frame(height: Layout.headerLine)
         .padding(.top, Layout.headerTop)

@@ -540,6 +540,7 @@ struct MusicPlayerView: View {
                 .frame(width: MusicPlayerLayout.queueChevron, height: MusicPlayerLayout.queueChevron)
                 .scaleEffect(x: -1)
                 .foregroundStyle(Color.fillSubtitle)
+                .offset(y: PlusMetrics.headerChevronDrop)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, MusicPlayerLayout.queueSide)

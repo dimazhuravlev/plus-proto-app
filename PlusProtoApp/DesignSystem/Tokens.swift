@@ -61,6 +61,11 @@ enum PlusMetrics {
     /// Горизонтальные поля экрана: хедер, ряд табов, action bar
     static let screenMargin: CGFloat = 24
 
+    /// Шеврон заголовка секции ниже центра строки на 2pt — к средней линии строчных
+    /// букв, а не к центру кегля (правка пользователя 2026-10-03, «опустить на 2px»).
+    /// Сдвигом отрисовки: раскладка заголовка не меняется. Во всех заголовках с шевроном.
+    static let headerChevronDrop: CGFloat = 2
+
     // Таббар
     static let tabBarHeight: CGFloat = 100
     static let tabItemWidth: CGFloat = 60

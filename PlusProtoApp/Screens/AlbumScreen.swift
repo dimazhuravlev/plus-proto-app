@@ -522,6 +522,7 @@ struct AlbumScreen: View {
                     .frame(width: AlbumLayout.sectionChevronBox, height: AlbumLayout.sectionChevronBox)
                     .scaleEffect(x: -1)
                     .foregroundStyle(Color.fillSubtitle)
+                    .offset(y: PlusMetrics.headerChevronDrop)
             }
             .padding(.top, AlbumLayout.sectionHeaderTop)
             .padding(.bottom, AlbumLayout.sectionHeaderBottom)
