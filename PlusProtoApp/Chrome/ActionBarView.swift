@@ -172,9 +172,7 @@ struct ActionBarView: View {
     @FocusState private var searchFocused: Bool
 
     /// «Назад»: выйти из поиска совсем — стереть запрос, убрать клавиатуру, погасить
-    /// просмотр выдачи. Запрос стирается первым: снятый фокус при пустом поле поиск
-    /// закрывает, а не переводит в просмотр (см. onChange фокуса). Клавиатура уходит
-    /// тем же мягким уходом, что и на скролле выдачи.
+    /// просмотр выдачи. Клавиатура уходит тем же мягким уходом, что и на скролле выдачи.
     private func exitSearch() {
         // Из полной выдачи раздела «Назад» сперва возвращает к обзору каруселями —
         // как назад по стеку; из поиска выходит уже следующее нажатие.
@@ -185,14 +183,17 @@ struct ActionBarView: View {
         search.query = ""
         search.isBrowsing = false
         search.dropSuspension()
-        if searchFocused {
+        let wasFocused = searchFocused
+        // Фокус снимаем снаружи и **раньше поля**: снятый в самом поле фокус уводит
+        // в просмотр без клавиатуры — и с пустым полем тоже, там «Искали недавно»
+        // (см. onChange фокуса). А «Назад» из поиска выходит.
+        // Без фокуса тоже пишем: на записи `ActionBarState` повышает режим до поиска,
+        // если поле сейчас круг, — музыку могли включить, пока выдача была открыта
+        // (выдача → альбом → «Слушать» → назад), и без этого поле схлопнулось бы.
+        actionBar.isSearchFocused = false
+        if wasFocused {
             keyboard.dismissSmoothly()
             searchFocused = false
-        } else {
-            // Без фокуса тоже пишем: на записи `ActionBarState` повышает режим до поиска,
-            // если поле сейчас круг, — музыку могли включить, пока выдача была открыта
-            // (выдача → альбом → «Слушать» → назад), и без этого поле схлопнулось бы.
-            actionBar.isSearchFocused = false
         }
     }
 
@@ -251,9 +252,10 @@ struct ActionBarView: View {
             // Решение в корне приходило апдейтом позже: слой выдачи на кадр гас,
             // таббар проявлялся, и под выдачей мелькал экран (жалоба 2026-10-03).
             // Только если фокус сняли здесь, в поле (скролл выдачи, свайп по полю,
-            // «Найти»): уход в карточку и тап по затемнению снимают его снаружи,
-            // через `actionBar`, и решают за себя сами. Крест стирает запрос раньше.
-            if !focused, actionBar.isSearchFocused, search.isActive, !search.isSuspended {
+            // «Найти»): уход в карточку, тап по затемнению и «Назад» снимают его
+            // снаружи, через `actionBar`, и решают за себя сами. С пустым полем —
+            // тоже просмотр: на экране «Искали недавно» (нулевое состояние 2026-10-03).
+            if !focused, actionBar.isSearchFocused, !search.isSuspended {
                 search.isBrowsing = true
             }
             actionBar.isSearchFocused = focused
@@ -291,8 +293,10 @@ struct ActionBarView: View {
                 try? await Task.sleep(for: .seconds(3))
                 searchFocused = true
                 try? await Task.sleep(for: .seconds(3))
-                // Тем же мягким уходом, что и скролл выдачи: его и снимаем на видео.
-                keyboard.dismissSmoothly()
+                // Выход — как у «Назад»: тем же мягким уходом клавиатуры, что и скролл
+                // выдачи. Голый уход клавиатуры теперь оставляет поиск открытым
+                // в просмотре («Искали недавно», 2026-10-03), и затемнение не уходило бы.
+                exitSearch()
             }
         }
         .task {
@@ -545,6 +549,11 @@ private struct SearchPill: View {
                 if !layout.searchIconOnly {
                     placeholderStack
                         .opacity(isBrowsing ? 0 : layout.placeholderOpacity)
+                        // В просмотр и из него бегущая фраза меняется на «Поиск
+                        // по всему» сразу, без морфа бара: иначе 0.32 с обе строки
+                        // лежали друг на друге (ревью 2026-10-03, возврат из карточки
+                        // в «Искали недавно»). Смену прикрывает движение самого бара.
+                        .animation(nil, value: isBrowsing)
                     focusedPlaceholder
                 }
                 // Поле ввода живёт всегда, но до фокуса невидимо: пересоздавать его
@@ -613,7 +622,22 @@ private struct SearchPill: View {
             }
         }
         .onChange(of: searchFocused && layout.isRaised && isBarSettled) { _, ready in
-            if ready { isFocusedPlaceholderArmed = true }
+            guard ready else { return }
+            // Строка уже «показана», но ждёт взвода (крест в просмотре: фокус есть,
+            // бар только что доехал) — волну запускает взвод. Иначе её запустит
+            // смена показа ниже, как только взвод её включит.
+            let waiting = isFocusedPlaceholderShown && focusedPlaceholderWave == 0
+            isFocusedPlaceholderArmed = true
+            if waiting { playFocusedPlaceholderWave() }
+        }
+        // Из просмотра — в ввод, а строка уже стоит (пустое поле в просмотре): бар
+        // поднимается вместе с ней. Взводим сразу, иначе между концом просмотра
+        // и защёлкой строка гасла бы и проявлялась волной заново.
+        .onChange(of: isBrowsing) { _, browsing in
+            if !browsing, searchFocused, focusedPlaceholderWave == 1 {
+                isFocusedPlaceholderArmed = true
+                didPlayFocusedPlaceholderWave = true
+            }
         }
         // Волна — один раз за фокус, когда бар доехал до клавиатуры. Вернулся
         // плейсхолдер потому, что стёрли запрос, — встаёт сразу, как системный:
@@ -627,21 +651,41 @@ private struct SearchPill: View {
                 withTransaction(instant) { focusedPlaceholderWave = 0 }
                 return
             }
-            guard !didPlayFocusedPlaceholderWave else {
+            // В просмотре без фокуса (возврат из карточки в «Искали недавно») строка
+            // просто стоит: поле никто не открывал.
+            guard searchFocused else {
                 withTransaction(instant) { focusedPlaceholderWave = 1 }
                 return
             }
-            didPlayFocusedPlaceholderWave = true
-            withTransaction(instant) { focusedPlaceholderWave = 0 }
-            withAnimation(.linear(duration: focusedPlaceholderWaveDuration)) {
-                focusedPlaceholderWave = 1
+            // Фокус есть, а бар ещё едет к клавиатуре (крест в просмотре): проявление
+            // на ходу читалось бы выездом снизу — ждём взвода (ревью 2026-10-03).
+            guard isFocusedPlaceholderArmed else {
+                withTransaction(instant) { focusedPlaceholderWave = 0 }
+                return
             }
+            playFocusedPlaceholderWave()
         }
     }
 
-    /// «Поиск по всему» на экране: фокус, бар доехал до клавиатуры, поле пустое.
+    /// «Поиск по всему» в фокусе: волной в первый раз за фокус, дальше — сразу.
+    private func playFocusedPlaceholderWave() {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        guard !didPlayFocusedPlaceholderWave else {
+            withTransaction(instant) { focusedPlaceholderWave = 1 }
+            return
+        }
+        didPlayFocusedPlaceholderWave = true
+        withTransaction(instant) { focusedPlaceholderWave = 0 }
+        withAnimation(.linear(duration: focusedPlaceholderWaveDuration)) {
+            focusedPlaceholderWave = 1
+        }
+    }
+
+    /// «Поиск по всему» на экране: поле пустое, и либо фокус и бар доехал
+    /// до клавиатуры, либо просмотр «Искали недавно» без клавиатуры.
     private var isFocusedPlaceholderShown: Bool {
-        searchFocused && isFocusedPlaceholderArmed && query.isEmpty
+        query.isEmpty && (isBrowsing || (searchFocused && isFocusedPlaceholderArmed))
     }
 
     /// Вся волна — от первого глифа до последнего; с «уменьшением движения» —

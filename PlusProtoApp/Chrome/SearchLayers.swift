@@ -54,7 +54,7 @@ struct SearchLayers<Content: View>: View {
                 search.dropSuspension()
             }
 
-            SearchResultsView(isShown: isResultsShown)
+            SearchResultsView(isShown: isSearchShown)
         }
         .onAppear {
             if ownDepth == nil { ownDepth = navigation.depth }
@@ -84,15 +84,14 @@ struct SearchLayers<Content: View>: View {
     ///
     /// Фокус поля — третий драйвер: слой стоит с первого кадра фокуса, не дожидаясь
     /// клавиатуры. Четвёртый — просмотр выдачи без фокуса (`isBrowsing`): в него поиск
-    /// переходит, когда клавиатуру опустили при непустой выдаче, и им же встречает
-    /// возврат из карточки (правки пользователя 2026-10-03). С пустым запросом уход
-    /// прежний: фокус снят, слой гаснет, когда клавиатура опустилась.
+    /// переходит, когда клавиатуру опустили, и им же встречает возврат из карточки
+    /// (правки пользователя 2026-10-03). С пустым полем — тоже: на экране тогда
+    /// «Искали недавно» (нулевое состояние), а не пустое затемнение.
+    ///
+    /// Слой выдачи стоит с затемнением всегда: с запросом от двух символов в нём
+    /// выдача, короче — «Искали недавно» (`SearchResultsView`).
     private var isSearchShown: Bool {
         hostsSearch && (keyboard.isUp || search.isSuspended || actionBar.isSearchFocused || search.isBrowsing)
     }
 
-    /// Выдача — только когда есть что показывать: минимум два символа запроса.
-    private var isResultsShown: Bool {
-        isSearchShown && search.isActive
-    }
 }

@@ -9,6 +9,9 @@ import SwiftUI
 ///
 /// Слой живёт **между затемнением и action bar**: расфокусивающий тап по затемнению
 /// остаётся рабочим вокруг выдачи, а бар с полем ввода рисуется поверх и не перекрыт.
+///
+/// Пока запрос короче двух символов, на месте выдачи — нулевое состояние: карусель
+/// «Искали недавно» (`SearchRecents`, макет `2118:17378`).
 struct SearchResultsView: View {
     /// Показывать ли слой. Считает корень: признак шире клавиатуры — поиск остаётся
     /// на экране и пока пользователь возвращается из открытой карточки
@@ -19,6 +22,11 @@ struct SearchResultsView: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.stackZoomNamespace) private var zoom
+
+    /// Что в слое — выдача или «Искали недавно». Следует за запросом, пока поиск
+    /// открыт; на закрытии замирает: «Назад» стирает запрос тем же движением, что
+    /// гасит слой, и на гаснущей выдаче на миг проявлялась бы лента «Искали недавно».
+    @State private var showsResults = false
 
     #if DEBUG
     @MainActor private static var didDebugTapHit = false
@@ -36,6 +44,21 @@ struct SearchResultsView: View {
         static let overviewFade: Animation = .easeOut(duration: 0.15)
         /// На сколько отъезжает обзор: намёк на глубину, а не полный уезд.
         static let overviewShift: CGFloat = 80
+    }
+
+    /// Смена «Искали недавно» ↔ выдача на втором символе запроса и обратно —
+    /// почти последовательно: уходящее гаснет быстро, приходящее проявляется чуть
+    /// позже и дольше. Обе стоят в одном месте под статус-баром, и полным кроссфейдом
+    /// две ленты на миг лежали бы друг на друге.
+    private enum RecentsMotion {
+        static let disappear: Animation = .easeOut(duration: 0.12)
+        static let appear: Animation = .easeOut(duration: 0.2).delay(0.08)
+        static var swap: AnyTransition {
+            .asymmetric(
+                insertion: .opacity.animation(appear),
+                removal: .opacity.animation(disappear)
+            )
+        }
     }
 
     /// Габариты, которые зависят от размера карточек выдачи.
@@ -148,68 +171,119 @@ struct SearchResultsView: View {
         static let bookSpineBevel = CGSize(width: 0.0406, height: 1.93)
         static let bookPagesFill = Color.white.opacity(0.15)
         static let bookHingeWidth: CGFloat = 10
+
+        /// «Искали недавно» — лента вперемешку: обложки разной высоты стоят на одном
+        /// низе, а подписи — на одной линии (`cover` макета: 129 и квадрат внизу).
+        /// Бокс — по самой высокой обложке: книга с блоком страниц (130) чуть выше
+        /// постера (129).
+        static var recentsCoverBox: CGFloat {
+            max(card / posterAspect, bookCoverHeight + bookPagesTop)
+        }
     }
+
+    private static let recentsTitle = "Искали недавно"
 
     var body: some View {
         // Признак общий с затемнением (`SearchOverlay`) — иначе слои разъезжались бы.
-        if isShown {
-            // Обзор остаётся в дереве под разделом — со своей позицией скролла: «Назад»
-            // возвращает туда же, где пользователь был. Раздел вставляется поверх.
-            ZStack {
-                content
-                    .opacity(search.expanded == nil ? 1 : 0)
-                    .animation(SectionMotion.overviewFade, value: search.expanded)
-                    .offset(x: search.expanded == nil ? 0 : -SectionMotion.overviewShift)
-                    .allowsHitTesting(search.expanded == nil)
-                    .accessibilityHidden(search.expanded != nil)
+        ZStack {
+            // Распорка под наблюдатели: им нужна живая вью и тогда, когда слоя нет.
+            Color.clear
+                .allowsHitTesting(false)
+                .onChange(of: search.isActive, initial: true) { _, active in
+                    // Пока слой гаснет, поддерево заморожено — менять можно смело.
+                    if isSearchOpen || !isShown { showsResults = active }
+                }
+                .onChange(of: isShown) { _, shown in
+                    // Погасший слой встретит следующее открытие уже нужной лентой.
+                    if !shown { showsResults = search.isActive }
+                }
 
-                if let kind = search.expanded {
-                    SearchSectionView(kind: kind, open: open, zoom: zoom)
-                        .transition(.move(edge: .trailing))
-                }
-            }
-            .animation(SectionMotion.push, value: search.expanded)
-            .transition(.opacity)
-                #if DEBUG
-                // `-debugExpandSection music|movies|books` — раскрыть раздел, когда
-                // выдача пришла: тапнуть по заголовку из шелла нечем. Один раз за запуск.
-                .task(id: search.sections.first?.domain.hits.first?.id) {
-                    guard let raw = UserDefaults.standard.string(forKey: "debugExpandSection"),
-                          !Self.didDebugExpand,
-                          search.sections.contains(where: { !$0.domain.hits.isEmpty })
-                    else { return }
-                    let kind: SearchState.Section.Kind? = switch raw {
-                    case "music": .music
-                    case "movies": .movies
-                    case "books": .books
-                    default: nil
-                    }
-                    guard let kind else { return }
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled, !Self.didDebugExpand else { return }
-                    Self.didDebugExpand = true
-                    search.expand(kind)
-                }
-                // `-debugTapSearchHit <n>` — открыть первую карточку n-й непустой
-                // секции выдачи (1 — первая): тапнуть по симулятору из шелла нечем,
-                // а возврат в поиск иначе не проверить. В паре с `-debugCloseEntity`
-                // даёт полный круг «ушёл — вернулся». Один раз за запуск: на возврате
-                // выдача появляется снова, и тап повторился бы по кругу.
-                .task(id: search.sections.first?.domain.hits.first?.id) {
-                    let section = UserDefaults.standard.integer(forKey: "debugTapSearchHit")
-                    guard section > 0, !Self.didDebugTapHit else { return }
-                    try? await Task.sleep(for: .seconds(2))
-                    guard !Task.isCancelled, !Self.didDebugTapHit else { return }
-                    let filled = search.sections.filter { !$0.domain.hits.isEmpty }
-                    // Первая нажимаемая: персона (первой в карусели) экрана не имеет.
-                    guard filled.indices.contains(section - 1),
-                          let route = filled[section - 1].domain.hits.first(where: { $0.route != nil })?.route
-                    else { return }
-                    Self.didDebugTapHit = true
-                    open(route)
-                }
-                #endif
+            if isShown { layer }
         }
+    }
+
+    /// Поиск открыт: поле в фокусе, просмотр без клавиатуры или уход в карточку.
+    /// Не открыт, а слой ещё стоит — значит, закрывается: его держит уезжающая
+    /// клавиатура.
+    private var isSearchOpen: Bool {
+        actionBar.isSearchFocused || search.isBrowsing || search.isSuspended
+    }
+
+    private var layer: some View {
+        ZStack {
+            if showsResults {
+                results
+                    .transition(RecentsMotion.swap)
+            } else {
+                recentsSection
+                    .transition(RecentsMotion.swap)
+            }
+        }
+        // Слой проявляется и гаснет **той же кривой, что затемнение** под ним
+        // (`SearchOverlayConfig.fade`), — одним движением с экраном поиска. Без
+        // своей анимации он вставал по транзакции, в которой сменился признак:
+        // фокус ставится без анимации, и «Искали недавно» появлялась раньше
+        // затемнения, мгновенно (жалоба пользователя 2026-10-03).
+        .transition(.opacity.animation(SearchOverlayConfig.fade))
+            #if DEBUG
+            // `-debugExpandSection music|movies|books` — раскрыть раздел, когда
+            // выдача пришла: тапнуть по заголовку из шелла нечем. Один раз за запуск.
+            .task(id: search.sections.first?.domain.hits.first?.id) {
+                guard let raw = UserDefaults.standard.string(forKey: "debugExpandSection"),
+                      !Self.didDebugExpand,
+                      search.sections.contains(where: { !$0.domain.hits.isEmpty })
+                else { return }
+                let kind: SearchState.Section.Kind? = switch raw {
+                case "music": .music
+                case "movies": .movies
+                case "books": .books
+                default: nil
+                }
+                guard let kind else { return }
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, !Self.didDebugExpand else { return }
+                Self.didDebugExpand = true
+                search.expand(kind)
+            }
+            // `-debugTapSearchHit <n>` — открыть первую карточку n-й непустой
+            // секции выдачи (1 — первая): тапнуть по симулятору из шелла нечем,
+            // а возврат в поиск иначе не проверить. В паре с `-debugCloseEntity`
+            // даёт полный круг «ушёл — вернулся». Один раз за запуск: на возврате
+            // выдача появляется снова, и тап повторился бы по кругу.
+            .task(id: search.sections.first?.domain.hits.first?.id) {
+                let section = UserDefaults.standard.integer(forKey: "debugTapSearchHit")
+                guard section > 0, !Self.didDebugTapHit else { return }
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, !Self.didDebugTapHit else { return }
+                let filled = search.sections.filter { !$0.domain.hits.isEmpty }
+                // Первая нажимаемая: персона (первой в карусели) экрана не имеет.
+                guard filled.indices.contains(section - 1),
+                      let route = filled[section - 1].domain.hits.first(where: { $0.route != nil })?.route
+                else { return }
+                Self.didDebugTapHit = true
+                open(route)
+            }
+            #endif
+    }
+
+    /// Выдача: обзор каруселями и раскрытый раздел над ним.
+    private var results: some View {
+        // Обзор остаётся в дереве под разделом — со своей позицией скролла: «Назад»
+        // возвращает туда же, где пользователь был. Раздел вставляется поверх.
+        ZStack {
+            content
+                .opacity(search.expanded == nil ? 1 : 0)
+                .animation(SectionMotion.overviewFade, value: search.expanded)
+                .offset(x: search.expanded == nil ? 0 : -SectionMotion.overviewShift)
+                .allowsHitTesting(search.expanded == nil)
+                .accessibilityHidden(search.expanded != nil)
+
+            if let kind = search.expanded {
+                SearchSectionView(kind: kind, open: open, zoom: zoom)
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(SectionMotion.push, value: search.expanded)
     }
 
     private var content: some View {
@@ -219,6 +293,59 @@ struct SearchResultsView: View {
                 SearchEmptyState()
             }
         }
+    }
+
+    // MARK: Искали недавно
+
+    /// Нулевое состояние поиска — одна карусель вперемешку, сразу под статус-баром,
+    /// как первая секция выдачи. Видна всегда: за найденным стоит стартовый набор.
+    ///
+    /// Шеврон в заголовке — по макету (`header / static`); полного списка истории
+    /// пока нет, заголовок не нажимается.
+    private var recentsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header(Self.recentsTitle)
+                .accessibilityAddTraits(.isHeader)
+
+            let recents = search.recents
+            let zoomSources = Self.firstPerRoute(recents)
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: Layout.cardGap) {
+                    ForEach(recents) { hit in
+                        // Тап отсюда историю не переставляет: лента сдвинулась бы
+                        // под зумом открытой карточки, и на возврате он сворачивался
+                        // бы не в ту карточку.
+                        card(
+                            hit,
+                            coverBox: Layout.recentsCoverBox,
+                            remembers: false,
+                            zooms: zoomSources.contains(hit.id)
+                        )
+                    }
+                }
+                .padding(.horizontal, Layout.side)
+            }
+            .scrollIndicators(.hidden)
+            // Как у каруселей выдачи: скролл уводит клавиатуру, поиск остаётся
+            // на экране без неё (`SearchState.isBrowsing`).
+            .onScrollPhaseChange { _, phase in dismissKeyboardOnScroll(phase) }
+        }
+        .padding(.vertical, Layout.sectionVertical)
+        // Пустое место вокруг ленты не ловит касаний: тап мимо неё — по затемнению,
+        // он закрывает поиск.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Карточки, которым быть источником зума: первая на каждый маршрут. Трек ведёт
+    /// на свой альбом, и трек с альбомом в истории — два источника с одним id:
+    /// зум выбирал бы из них наугад (ревью 2026-10-03). Остальные с тем же маршрутом
+    /// открываются без источника — из центра экрана.
+    private static func firstPerRoute(_ hits: [SearchHit]) -> Set<String> {
+        var seen: Set<EntityRoute> = []
+        return Set(hits.filter { hit in
+            guard let route = hit.route else { return false }
+            return seen.insert(route).inserted
+        }.map(\.id))
     }
 
     private var overviewList: some View {
@@ -348,21 +475,37 @@ struct SearchResultsView: View {
 
     // MARK: Карточка
 
+    /// Карточка карусели. `coverBox` — общая высота места под обложку (лента
+    /// вперемешку, «Искали недавно»): обложка стоит на его низу. `remembers` —
+    /// переход кладёт айтем в «Искали недавно» (из выдачи — да, из самой ленты — нет).
+    /// `zooms` — карточка источник зума своего экрана (см. `firstPerRoute`).
     @ViewBuilder
-    private func card(_ hit: SearchHit) -> some View {
+    private func card(
+        _ hit: SearchHit,
+        coverBox: CGFloat? = nil,
+        remembers: Bool = true,
+        zooms: Bool = true
+    ) -> some View {
         if let route = hit.route {
-            Button { open(route) } label: {
-                if hit.kind == .book { bookCardBody(hit) } else { cardBody(hit) }
+            Button {
+                if remembers { search.remember(hit) }
+                open(route)
+            } label: {
+                if hit.kind == .book {
+                    bookCardBody(hit, coverBox: coverBox)
+                } else {
+                    cardBody(hit, coverBox: coverBox)
+                }
             }
             .buttonStyle(PressScaleButtonStyle())
             // Источник зума экрана сущности — как миниатюра на витрине: экран
             // разворачивается из карточки и на возврате сворачивается обратно в неё.
             // Без источника зум шёл из центра экрана и сворачивался в никуда.
-            .modifier(SearchZoomSource(route: route, zoom: zoom))
+            .modifier(SearchZoomSource(route: route, zoom: zooms ? zoom : nil))
         } else if hit.kind == .book {
-            bookCardBody(hit)
+            bookCardBody(hit, coverBox: coverBox)
         } else {
-            cardBody(hit)
+            cardBody(hit, coverBox: coverBox)
         }
     }
 
@@ -379,12 +522,13 @@ struct SearchResultsView: View {
         navigation.open(route)
     }
 
-    private func cardBody(_ hit: SearchHit) -> some View {
+    private func cardBody(_ hit: SearchHit, coverBox: CGFloat? = nil) -> some View {
         // Исполнитель по макету центрирован — и обложка кругом, и подпись по центру.
         let isArtist = hit.kind.isRoundArtwork
 
         return VStack(alignment: isArtist ? .center : .leading, spacing: Layout.coverGap) {
             cover(hit)
+                .frame(height: coverBox, alignment: .bottom)
 
             VStack(alignment: isArtist ? .center : .leading, spacing: 0) {
                 Text(hit.title)
@@ -444,7 +588,7 @@ struct SearchResultsView: View {
     /// Книга в небольшой проекции — макет `2311:25096`: обложка своих пропорций
     /// (ширина карточки по ней, обложка не режется), за ней выглядывает блок страниц,
     /// у корешка — притенённый сгиб.
-    private func bookCardBody(_ hit: SearchHit) -> some View {
+    private func bookCardBody(_ hit: SearchHit, coverBox: CGFloat? = nil) -> some View {
         let coverWidth = Self.bookCoverWidth(hit.artworkAspect)
         return VStack(alignment: .leading, spacing: Layout.coverGap) {
             bookFigure(coverWidth: coverWidth) {
@@ -456,6 +600,7 @@ struct SearchResultsView: View {
                     }
                 }
             }
+            .frame(height: coverBox, alignment: .bottom)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(hit.title)

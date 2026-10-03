@@ -184,6 +184,7 @@ struct SearchSectionView: View {
                             wizard: wizard,
                             isLiked: liked.contains(wizard.artist.id),
                             onLike: { toggleLike(wizard.artist.id) },
+                            remember: search.remember,
                             open: open,
                             zoom: zoom
                         )
@@ -242,7 +243,10 @@ struct SearchSectionView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {
-            Button { open(route) } label: { content }
+            Button {
+                search.remember(hit)
+                open(route)
+            } label: { content }
                 .buttonStyle(.plain)
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
         } else {
@@ -251,8 +255,10 @@ struct SearchSectionView: View {
     }
 
     /// Включить трек в плеере бара: обложка, название, исполнитель и альбом — из строки.
+    /// Трек — в «Искали недавно»: перехода нет, но выбор из выдачи тот же.
     private func play(_ track: SearchHit) {
         PlayerHaptics.tap()
+        search.remember(track)
         let album: String? = if case .album(let ref) = track.route { ref.title } else { nil }
         actionBar.startMusic(MusicNowPlaying(
             id: track.id,
@@ -589,6 +595,8 @@ private struct MusicWizardCard: View {
     /// Лайк — общий со строкой того же исполнителя в списке.
     let isLiked: Bool
     let onLike: () -> Void
+    /// Переход в альбом колдунщика — в «Искали недавно» (`SearchState.remember`).
+    let remember: (SearchHit) -> Void
     let open: (EntityRoute) -> Void
     let zoom: Namespace.ID?
 
@@ -707,7 +715,10 @@ private struct MusicWizardCard: View {
         .contentShape(.rect)
 
         if let route = album.route {
-            Button { open(route) } label: { card }
+            Button {
+                remember(album)
+                open(route)
+            } label: { card }
                 .buttonStyle(PressScaleButtonStyle())
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
         } else {
@@ -762,6 +773,8 @@ private struct MusicWizardCard: View {
             return
         }
         guard let pick = wizard.topTrack ?? wizard.albums.first else { return }
+        // Включённое из колдунщика — в «Искали недавно», как трек, включённый строкой.
+        remember(pick)
         let albumTitle: String? = if case .album(let ref) = pick.route { ref.title } else { nil }
         actionBar.startMusic(MusicNowPlaying(
             id: pick.id,

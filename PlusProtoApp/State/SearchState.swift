@@ -94,6 +94,41 @@ final class SearchState {
     /// Собранные выдачи на процесс: возврат к уже набранному запросу бесплатен.
     private var cache: [String: Results] = [:]
 
+    // MARK: - Искали недавно
+
+    /// Найденное пользователем — во что он перешёл из выдачи, свежее первым.
+    /// Живёт на диске (`SearchRecents`).
+    private var found: [SearchHit] = SearchRecents.load()
+
+    /// Карусель нулевого состояния: найденное, за ним стартовый набор. Пустой
+    /// не бывает — поэтому у поиска всегда есть что показать, и с пустым полем
+    /// он ведёт себя как с выдачей (просмотр без клавиатуры, возврат из карточки).
+    var recents: [SearchHit] { SearchRecents.merged(found) }
+
+    /// Пользователь перешёл в айтем из выдачи — айтем встаёт первым в «Искали недавно».
+    /// Из самой карусели не зовётся: она переставлялась бы под зумом открытой карточки.
+    func remember(_ hit: SearchHit) {
+        found.removeAll { $0.id == hit.id }
+        found.insert(hit, at: 0)
+        found = Array(found.prefix(SearchRecents.limit))
+        SearchRecents.save(found)
+        if hit.kind == .book, hit.artworkAspect == nil { measureCover(of: hit) }
+    }
+
+    /// Пропорции обложки книги, пришедшей без них. Их снимает только обзор каруселей,
+    /// а книга из полного списка встала бы в ленту по 2:3 — с обрезанной обложкой
+    /// (ревью 2026-10-03). Картинка к этому времени обычно уже в кэше загрузчика.
+    private func measureCover(of hit: SearchHit) {
+        Task { [weak self] in
+            guard let aspect = await Self.coverAspects(of: [hit])[hit.id],
+                  let self,
+                  let index = self.found.firstIndex(where: { $0.id == hit.id })
+            else { return }
+            self.found[index].artworkAspect = aspect
+            SearchRecents.save(self.found)
+        }
+    }
+
     /// Есть что показывать слоем выдачи.
     var isActive: Bool {
         normalized.count >= Self.minimumQueryLength
@@ -177,18 +212,19 @@ final class SearchState {
     /// Возвращается выдача **без клавиатуры** (`isBrowsing`): поле стоит внизу с тем же
     /// запросом, тап по нему возвращает ввод (правка пользователя 2026-10-03). Отметка
     /// и просмотр меняются в одном апдейте — слой выдачи не гаснет ни на кадр.
+    ///
+    /// С пустым полем — так же: возвращаться есть куда, в «Искали недавно» (нулевое
+    /// состояние, 2026-10-03). Прежде пустой запрос поиск на возврате закрывал.
     func consumeResume(tab: AppTab, depth: Int) -> Bool {
         guard let suspended, suspended.tab == tab, depth <= suspended.depth else { return false }
         self.suspended = nil
-        // Запрос стёрли, пока ходили по карточкам (крестом в поиске, открытом поверх
-        // них), — возвращать нечего. Просмотр без выдачи спрятал бы таббар впустую.
-        guard isActive else { return false }
         isBrowsing = true
         return true
     }
 
-    /// Выдача открыта, но поле без фокуса: клавиатуру опустили при непустой выдаче,
-    /// или пользователь вернулся из карточки. Таббара в этом состоянии нет, бар стоит
+    /// Выдача открыта, но поле без фокуса: клавиатуру опустили (скроллом, свайпом
+    /// по полю, «Найти»), или пользователь вернулся из карточки. С пустым полем —
+    /// то же самое, только на экране «Искали недавно». Таббара в этом состоянии нет, бар стоит
     /// на его месте (`BottomChrome`). Гаснет, когда поиск закрыли (крест, смена таба,
     /// круг плеера) или когда поле снова получило клавиатуру — дальше слой держит она.
     var isBrowsing = false

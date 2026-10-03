@@ -2,9 +2,10 @@ import SwiftUI
 
 /// Строка единой выдачи. Сервисы разные, строка одна: дальше UI не знает, из какого
 /// API приехал результат, и секции отличаются только заголовком и порядком.
-struct SearchHit: Identifiable, Hashable {
+/// `Codable` — ради истории «Искали недавно» (`SearchRecents`), она хранится на диске.
+struct SearchHit: Identifiable, Hashable, Codable {
     /// Что это. Порядок кейсов — порядок строк внутри музыкальной секции.
-    enum Kind: Hashable {
+    enum Kind: Hashable, Codable {
         case track
         case album
         case artist
