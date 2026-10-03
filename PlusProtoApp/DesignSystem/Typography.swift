@@ -193,8 +193,14 @@ extension View {
     /// Название альбома в шапке его экрана — YS Display Bold 40 / lh 44 (макет `2079:11226`).
     /// Живёт в линейке карточки тайтла: экран альбома набран теми же Yango-метриками
     /// (тексты 15 / lh 20 с нулевым трекингом), что и карточка фильма.
+    ///
+    /// Интерлиньяж меньше натурального (у YS на этом кегле ~47), а `lineSpacing`
+    /// в `FigmaTextStyle` умеет только прибавлять — строки шли с шагом 47 вместо 44,
+    /// и двухстрочное название читалось рыхлым (жалоба пользователя 2026-10-03).
+    /// Точную высоту строки задаёт `lineHeight(.exact)` из iOS 26, как у названия книги.
     func plusAlbumTitle() -> some View {
-        modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 40, lineHeight: 44, tracking: 0))
+        font(.custom(PlusFont.displaySemibold, size: 40))
+            .lineHeight(.exact(points: 44))
     }
 }
 
