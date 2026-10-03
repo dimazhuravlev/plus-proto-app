@@ -109,10 +109,18 @@ struct TabBarView: View {
         // Прежде поп до корня читался возвратом из карточки, и вместо витрины вставала
         // выдача. Отметка ухода гаснет **до** попа: возврат её уже не найдёт.
         // Так же, как при уходе на другой таб (`AppRootView`, onChange таба).
+        // Сброс — мгновенный: карточку стек снимает срезом, и гаснущий 0.3 с поиск
+        // лёг бы поверх контента таба (второе ревью 2026-10-03).
         if tab == navigation.activeTab {
-            search.dropSuspension()
-            search.isBrowsing = false
-            search.collapse()
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                search.dropSuspension()
+                search.isBrowsing = false
+                search.collapse()
+                navigation.select(tab)
+            }
+            return
         }
         navigation.select(tab)
     }

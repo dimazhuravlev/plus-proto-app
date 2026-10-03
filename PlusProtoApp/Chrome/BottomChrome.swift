@@ -121,6 +121,11 @@ struct BottomChrome: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(SearchState.self) private var search
+    /// Клавиатура уже стояла в этом фокусе. Её уход в фокусе — тот, о котором UIKit
+    /// сообщил раньше, чем SwiftUI снял фокус (`isBrowsingLayout`). Свежий фокус —
+    /// в том числе пока клавиатура ещё уезжает после «Назад», затемнения или ухода
+    /// в карточку — сюда не попадает (второе ревью 2026-10-03).
+    @State private var isFocusKeyboardServed = false
 
     var body: some View {
         VStack(spacing: PlusChromeMetrics.actionBarToTabsGap) {
@@ -147,6 +152,14 @@ struct BottomChrome: View {
         // выше экрана и пропал — сдвиг сложился вдвое ровно так, как описано выше.
         // Синхрон с клавиатурой добираем её собственной кривой, см. `KeyboardObserver`.
         .ignoresSafeArea(.keyboard)
+        .onChange(of: keyboard.isUp) { _, isUp in
+            if isUp, actionBar.isSearchFocused { isFocusKeyboardServed = true }
+        }
+        // Выходы («Назад», затемнение, уход в карточку) снимают фокус раньше, чем уходит
+        // клавиатура, — защёлка гаснет до следующего фокуса.
+        .onChange(of: actionBar.isSearchFocused) { _, focused in
+            isFocusKeyboardServed = focused && keyboard.isUp
+        }
     }
 
     /// Таббара нет, пока открыт поиск: внизу только бар (правка пользователя
@@ -164,14 +177,16 @@ struct BottomChrome: View {
     /// обратно. Уход в карточку (отметка) сюда не попадает; выход из поиска — тоже:
     /// «Назад» и затемнение снимают фокус в `actionBar` раньше, чем уходит клавиатура.
     ///
-    /// Только пока клавиатура **уезжает** (`motion` есть, а `isUp` уже нет): на подъёме
-    /// окно то же — фокус есть, клавиатуры ещё нет, — и свежий фокус пустого поля
-    /// сперва опускал бар к месту таббара, а потом поднимал над клавиатурой (ревью
-    /// 2026-10-03). Прежде это окно закрывал непустой запрос — с «Искали недавно»
-    /// его нет.
+    /// Только пока **уезжает клавиатура этого фокуса** (стояла в нём — `isFocusKeyboardServed`,
+    /// и едет — `motion` есть, а `isUp` уже нет): на подъёме окно то же — фокус есть,
+    /// клавиатуры ещё нет, — и свежий фокус пустого поля сперва опускал бар к месту
+    /// таббара, а потом поднимал над клавиатурой (ревью 2026-10-03). Прежде это окно
+    /// закрывал непустой запрос — с «Искали недавно» его нет. Одного `motion` мало:
+    /// фокус, поставленный, пока клавиатура ещё уезжает после «Назад», ловил то же.
     private var isBrowsingLayout: Bool {
         search.isBrowsing
-            || (actionBar.isSearchFocused && !search.isSuspended && keyboard.motion != nil)
+            || (actionBar.isSearchFocused && !search.isSuspended
+                && isFocusKeyboardServed && keyboard.motion != nil)
     }
 
     /// Единственный источник фокусной геометрии бара: и подъём, и ширины зон, и уезд
