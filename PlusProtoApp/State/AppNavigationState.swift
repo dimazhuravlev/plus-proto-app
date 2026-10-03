@@ -38,7 +38,13 @@ final class AppNavigationState {
     /// Считается внутри класса, потому что снаружи `paths` приватны, а `@Observable`
     /// отслеживает чтение — вью, читающая `depth`, обновится на каждый пуш и поп.
     var depth: Int {
-        (paths[activeTab]?.count ?? 0) + (coveredRoute == nil ? 0 : 1 + coveredPath.count)
+        stackDepth + (coveredRoute == nil ? 0 : 1 + coveredPath.count)
+    }
+
+    /// Пуши в стеке активного таба — без слоя поверх хрома. По нему корень понимает,
+    /// на экране ли витрина или запушенный экран со своим навбаром.
+    var stackDepth: Int {
+        paths[activeTab]?.count ?? 0
     }
 
     init() {

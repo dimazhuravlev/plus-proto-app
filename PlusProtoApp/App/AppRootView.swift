@@ -37,8 +37,16 @@ struct AppRootView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
+        // Верхний скрим — только у витрины: она одна уезжает под статус-бар без своего
+        // навбара. У экранов с `EntityNavBar` (альбом, книга, заглушки сервисов) блюр
+        // один — подложка навбара под его кнопками. Скрим лежит оверлеем поверх всего
+        // и мылил бы сами элементы бара: верх обложки в нём (жалоба пользователя
+        // 2026-10-03). Прячется прозрачностью, а не ветвлением: размонтированный
+        // `VariableBlurView` пересоздавался бы на каждом пуше.
         .overlay(alignment: .top) {
             TopScrim()
+                .opacity(showsTopScrim ? 1 : 0)
+                .animation(TopScrimMotion.fade, value: showsTopScrim)
         }
         // Между контентом и хромом: расфокусить надо экран, но не бар с клавиатурой.
         .overlay(alignment: .bottom) {
@@ -116,6 +124,12 @@ struct AppRootView: View {
         .environment(keyboard)
         .environment(search)
         .environment(catalog)
+    }
+
+    /// Витрина на экране: таб «Плюс» без пушей. Слой карточки фильма не в счёт —
+    /// он накрывает скрим собой, и прятать его под ним незачем.
+    private var showsTopScrim: Bool {
+        navigation.activeTab == .plus && navigation.stackDepth == 0
     }
 
     /// Собирает витрину целиком: данные трёх сервисов и картинки первого экрана.

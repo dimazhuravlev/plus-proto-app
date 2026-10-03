@@ -56,8 +56,15 @@ enum PlusChromeMetrics {
     static let topScrimBlurStrong: (radius: CGFloat, height: CGFloat) = (14, 54)
 }
 
+enum TopScrimMotion {
+    /// Скрим уходит и возвращается вместе с пушем экрана со своим навбаром —
+    /// коротким фейдом под зум-переход, а не щелчком на первом кадре.
+    static let fade: Animation = .easeInOut(duration: 0.25)
+}
+
 /// Верхний скрим: лента уезжает под статус-бар, поэтому его надо притенить и размыть.
 /// Отдельный слой поверх контента, вне `NavigationStack` — как и нижний хром.
+/// Виден только на витрине: у экранов со своим навбаром блюр — его подложка.
 struct TopScrim: View {
     var body: some View {
         ZStack(alignment: .top) {
