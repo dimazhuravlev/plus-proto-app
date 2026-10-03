@@ -28,7 +28,9 @@ struct SearchResultsView: View {
         /// Ширина колонки карусели (макет: контейнер 109 при шаге 117)
         static let card: CGFloat = 109
         static let cardGap: CGFloat = 8
-        static let side = PlusMetrics.screenMargin
+        /// Боковые поля выдачи — 16, а не общие 24 экрана: в макете `2118:17378`
+        /// карусель и заголовки стоят на x = 16 (правка пользователя 2026-10-03).
+        static let side: CGFloat = 16
         /// Обложка → подписи
         static let coverGap: CGFloat = 6
         /// Постер кино и книги — 2:3 (макет: 109 × 163.5)
@@ -56,6 +58,10 @@ struct SearchResultsView: View {
         /// Полоски скелетона на месте строк: 12 из 16, по центру строки.
         static let skeletonBar: CGFloat = 12
         static let skeletonBarInset: CGFloat = (PlusTextSize.textS.lineHeight - skeletonBar) / 2
+        /// Полоса на месте заголовка секции: 16 из строки 24 — пропорция та же,
+        /// что у полос подписи. Ширина — под название средней длины.
+        static let skeletonHeaderBar: CGFloat = 16
+        static let skeletonHeaderWidth: CGFloat = 96
         /// Обложка проявляется поверх бледной заливки скелетона, без второго,
         /// яркого серого (правка пользователя 2026-10-03).
         static let coverAppear: Animation = .easeOut(duration: 0.15)
@@ -143,8 +149,11 @@ struct SearchResultsView: View {
             .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)
         }
         .scrollIndicators(.hidden)
-        // Клавиатура прячется свайпом по выдаче — привычный жест для длинных списков.
-        .scrollDismissesKeyboard(.interactively)
+        // Клавиатура уходит с первого движения скролла — и вертикального, и каруселей
+        // (правка пользователя 2026-10-03; прежде — только протяжкой в саму клавиатуру).
+        // Фокус снимается вместе с ней, и выдача остаётся на экране без клавиатуры
+        // (`SearchState.isBrowsing`).
+        .scrollDismissesKeyboard(.immediately)
         // Сверху — ровно безопасная зона, без добавки: в макете `2118:17378` выдача
         // начинается сразу под статус-баром. Прежний `safeAreaPadding(.top)` клал
         // сверху ещё 16pt системного поля.
@@ -157,7 +166,11 @@ struct SearchResultsView: View {
         let domain = section.domain
         if domain.isLoading || !domain.hits.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                header(section.title)
+                if domain.isLoading {
+                    skeletonHeader
+                } else {
+                    header(section.title)
+                }
 
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: Layout.cardGap) {
@@ -199,6 +212,21 @@ struct SearchResultsView: View {
         .padding(.top, Layout.headerTop)
         .padding(.bottom, Layout.headerBottom)
         .padding(.horizontal, Layout.side)
+    }
+
+    /// Заголовок секции в скелетоне — полоса без шеврона. Название врало бы
+    /// о порядке: он известен, только когда ответили все домены, и до этого
+    /// секции стоят в порядке по умолчанию (правка пользователя 2026-10-03).
+    /// Габарит — как у настоящего заголовка: строка того же стиля и те же поля.
+    private var skeletonHeader: some View {
+        Rectangle()
+            .fill(Color.fillNine)
+            .frame(width: Layout.skeletonHeaderWidth, height: Layout.skeletonHeaderBar)
+            .frame(height: PlusHeadline.m.lineHeight)
+            .padding(.top, Layout.headerTop)
+            .padding(.bottom, Layout.headerBottom)
+            .padding(.horizontal, Layout.side)
+            .accessibilityHidden(true)
     }
 
     // MARK: Карточка

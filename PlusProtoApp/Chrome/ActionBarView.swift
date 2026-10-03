@@ -187,7 +187,8 @@ struct ActionBarView: View {
                 layout: layout,
                 searchFocused: $searchFocused,
                 query: $search.query,
-                isBrowsing: $search.isBrowsing
+                isBrowsing: $search.isBrowsing,
+                isBarSettled: raise.motion == nil
             )
             .padding(.leading, layout.screenMargin)
 
@@ -437,6 +438,13 @@ private struct SearchPill: View {
     /// Выдача открыта без фокуса — поле показывает запрос, а не плейсхолдер.
     /// Привязка, а не значение: крест закрывает и такой поиск.
     @Binding var isBrowsing: Bool
+    /// Бар стоит: клавиатура не едет. По этому признаку взводится «Поиск по всему».
+    let isBarSettled: Bool
+
+    /// «Поиск по всему» взведён: в этом фокусе бар уже доехал до клавиатуры.
+    /// Защёлка, а не прямое условие: клавиатура едет и без смены фокуса (переход
+    /// на эмодзи, другая раскладка), и плейсхолдер мигал бы на каждом её сдвиге.
+    @State private var isFocusedPlaceholderArmed = false
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
     /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
@@ -535,6 +543,10 @@ private struct SearchPill: View {
             if focused, pull != 0 {
                 withAnimation(ActionBarMotion.morph) { pull = 0 }
             }
+            if !focused { isFocusedPlaceholderArmed = false }
+        }
+        .onChange(of: searchFocused && layout.isRaised && isBarSettled) { _, ready in
+            if ready { isFocusedPlaceholderArmed = true }
         }
     }
 
@@ -639,10 +651,12 @@ private struct SearchPill: View {
             .submitLabel(.search)
             // Без автокоррекции — и, как следствие, без строки автоподсказок
             // (QuickType): она стояла плашкой прямо под полем и отбирала у выдачи
-            // полсотни пунктов (правка пользователя 2026-08-25). Заглавные буквы
-            // поиску тоже ни к чему.
+            // полсотни пунктов (правка пользователя 2026-08-25).
             .autocorrectionDisabled(true)
-            .textInputAutocapitalization(.never)
+            // Первая буква — заглавная: клавиатура открывается с включённым шифтом
+            // (правка пользователя 2026-10-03; прежде заглавные были выключены
+            // вовсе). Строку подсказок это не возвращает — её держит автокоррекция.
+            .textInputAutocapitalization(.sentences)
             // opacity 0 в SwiftUI не выключает хит-тест: без этого невидимое поле
             // перехватывало бы касания мимо жеста резины. Гейт тот же, что и у opacity.
             .allowsHitTesting(searchFocused)
@@ -681,26 +695,29 @@ private struct SearchPill: View {
     /// Бегущие фразы предлагают сервисы, а в фокусе поле уже ждёт ввода, и подсказка
     /// одна: искать можно по всему сразу.
     ///
-    /// Две прозрачности — две разные кривые. Первая гаснет мгновенно: под первой
-    /// буквой (как системный плейсхолдер) и на снятии фокуса — иначе он мигнул бы
-    /// под крестом, который стирает запрос раньше, чем уходит клавиатура. Вторая
-    /// идёт за раскладкой бара: проявляется с задержкой, когда бегущая фраза уже
-    /// погасла (`SearchPlaceholderMotion.focusedIn`), а уходит без анимации —
-    /// возвращающаяся фраза встаёт на пустое место.
+    /// Своего движения нет: проявляется на месте, когда бар уже доехал до клавиатуры
+    /// (`isFocusedPlaceholderArmed`). Проявление посреди подъёма читалось как выезд
+    /// снизу (правка пользователя 2026-10-03). Гаснет мгновенно — под первой буквой,
+    /// как системный плейсхолдер, и на снятии фокуса, ещё до того, как бар тронулся.
+    /// Анимация меняется только вместе с видимостью, а та — никогда в одном апдейте
+    /// с раскладкой бара, поэтому геометрию она не перехватывает.
     private var focusedPlaceholder: some View {
-        Text("Поиск по всему")
+        let isShown = searchFocused && isFocusedPlaceholderArmed && query.isEmpty
+        return Text("Поиск по всему")
             .plusHeadline(.s)
-            .foregroundStyle(Color.searchPlaceholder)
+            .foregroundStyle(Self.focusedPlaceholderColor)
             .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .opacity(searchFocused && query.isEmpty ? 1 : 0)
-            .animation(nil, value: searchFocused && query.isEmpty)
-            .opacity(layout.isRaised ? 1 : 0)
-            .animation(layout.isRaised ? SearchPlaceholderMotion.focusedIn : nil, value: layout.isRaised)
+            .opacity(isShown ? 1 : 0)
+            .animation(isShown ? SearchPlaceholderMotion.focusedIn : nil, value: isShown)
             .allowsHitTesting(false)
             // Для VoiceOver подсказка — у самого поля, вторая копия была бы шумом.
             .accessibilityHidden(true)
     }
+
+    /// Бледнее бегущих фраз (`searchPlaceholder`, белый 30 %): те зовут в сервисы,
+    /// а эта только подписывает пустое поле (правка пользователя 2026-10-03).
+    private static let focusedPlaceholderColor = Color.white.opacity(0.2)
 
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
@@ -730,10 +747,9 @@ private enum SearchPlaceholderMotion {
     static let swapGap: Duration = .milliseconds(100)
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
-    /// Плейсхолдер фокуса проявляется **после** бегущей фразы, а не сквозь неё:
-    /// та гаснет кривой клавиатуры (~0.25s) и к 0.15s почти прозрачна. Тот же
-    /// принцип, что у самой подмены фраз, — глаз должен увидеть пустое поле.
-    static let focusedIn: Animation = .easeOut(duration: 0.15).delay(0.15)
+    /// Проявление «Поиск по всему» — на месте, когда бар уже стоит. К этому времени
+    /// бегущая фраза погасла вместе с подъёмом, и нахлёста нет.
+    static let focusedIn: Animation = .easeOut(duration: 0.15)
 }
 
 /// Плейсхолдеры поиска: подмена со сдвигом на 4pt, уход и приход разведены по времени.
