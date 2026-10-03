@@ -57,6 +57,7 @@ private enum TabBarGeometry {
 /// (figma-tabbar §2).
 struct TabBarView: View {
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(SearchState.self) private var search
     @State private var debugPressed: AppTab?
 
     var body: some View {
@@ -103,6 +104,16 @@ struct TabBarView: View {
     private func select(_ tab: AppTab) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: TabBarMotion.tapHapticIntensity)
+        // Тап по своему табу — домой, к его контенту: стек уходит на корень, и поиск,
+        // из которого сюда пришли, на корне не встаёт (правка пользователя 2026-10-03).
+        // Прежде поп до корня читался возвратом из карточки, и вместо витрины вставала
+        // выдача. Отметка ухода гаснет **до** попа: возврат её уже не найдёт.
+        // Так же, как при уходе на другой таб (`AppRootView`, onChange таба).
+        if tab == navigation.activeTab {
+            search.dropSuspension()
+            search.isBrowsing = false
+            search.collapse()
+        }
         navigation.select(tab)
     }
 }
