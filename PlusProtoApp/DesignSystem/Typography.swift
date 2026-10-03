@@ -228,7 +228,104 @@ private struct HeadlineInkRenderer: TextRenderer {
     }
 }
 
+/// Волна появления строки: глиф за глифом, каждый — из прозрачности и чуть снизу.
+/// Числа — у вызывающего (своей анимации у типографики нет).
+///
+/// Блюра нет намеренно: фильтр на каждый глиф на старте волны подвешивал главный
+/// поток на ~280 мс — первые глифы проявлялись, а строка вставала целиком рывком
+/// (лог отрисовки 2026-10-03; без блюра — ровные 60 кадров).
+struct HeadlineWave: Equatable {
+    /// Между стартами соседних глифов, секунды.
+    var stagger: Double
+    /// Проявление одного глифа, секунды.
+    var glyph: Double
+    /// Подъём глифа на место снизу, pt.
+    var rise: CGFloat
+
+    /// Вся волна для строки из `glyphs` знаков.
+    func total(glyphs: Int) -> Double {
+        stagger * Double(max(glyphs - 1, 0)) + glyph
+    }
+}
+
+/// Заголовок с волной появления: то же размещение строк, что у `HeadlineInkRenderer`,
+/// плюс у каждого глифа свой отрезок общей шкалы `progress`.
+///
+/// Волна — внутри одного `Text`, а не стопкой `Text` по букве: так целы кернинг,
+/// перенос и базовая линия макета. `progress` идёт линейно (его анимирует вызывающий),
+/// кривую каждого глифа считает рендерер — сильный ease-out (квартика ≈
+/// cubic-bezier(0.25, 1, 0.5, 1)).
+private struct HeadlineWaveRenderer: TextRenderer, Animatable {
+    let style: PlusHeadline
+    let wave: HeadlineWave
+    /// 0 — строки не видно, 1 — вся на месте.
+    var progress: Double
+    /// «Уменьшение движения»: без подъёма, строка проявляется целиком.
+    let reduceMotion: Bool
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var displayPadding: EdgeInsets {
+        // Запас — и на подъём глифа снизу.
+        let vertical = style.inkOutset + wave.rise
+        let horizontal = style.size * HeadlineInk.horizontal
+        return EdgeInsets(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
+    }
+
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        let count = layout.reduce(0) { lines, line in
+            lines + line.reduce(0) { runs, run in runs + run.count }
+        }
+        let time = progress * wave.total(glyphs: count)
+        let target = style.figmaBaseline
+        var index = 0
+        for line in layout {
+            let bounds = line.typographicBounds
+            let baseline = bounds.origin.y - bounds.rect.minY
+            var lineContext = context
+            lineContext.translateBy(x: 0, y: target - baseline)
+            for run in line {
+                for slice in run {
+                    let raw = reduceMotion
+                        ? progress
+                        : min(max((time - wave.stagger * Double(index)) / wave.glyph, 0), 1)
+                    index += 1
+                    guard raw > 0 else { continue }
+                    let eased = 1 - pow(1 - raw, 4)
+                    var glyph = lineContext
+                    glyph.opacity = eased
+                    if !reduceMotion, eased < 1 {
+                        glyph.translateBy(x: 0, y: (1 - eased) * wave.rise)
+                    }
+                    glyph.draw(slice)
+                }
+            }
+        }
+    }
+}
+
 extension View {
+    /// Заголовок по шкале UI kit с волной появления (`HeadlineWave`): `progress`
+    /// анимирует вызывающий — линейно, за `wave.total(glyphs:)`.
+    func plusHeadline(
+        _ style: PlusHeadline,
+        wave: HeadlineWave,
+        progress: Double,
+        reduceMotion: Bool
+    ) -> some View {
+        font(.custom(PlusFont.displaySemibold, size: style.size))
+            .lineHeight(.exact(points: style.lineHeight))
+            .textRenderer(HeadlineWaveRenderer(
+                style: style,
+                wave: wave,
+                progress: progress,
+                reduceMotion: reduceMotion
+            ))
+    }
+
     /// Заголовок по шкале UI kit — Headline XXXL…S.
     ///
     /// Высота строки точная (`lineHeight(.exact)`, iOS 26): 100 % меньше натурального

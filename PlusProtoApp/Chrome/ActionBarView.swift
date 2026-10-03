@@ -453,6 +453,9 @@ private struct SearchPill: View {
     /// Защёлка, а не прямое условие: клавиатура едет и без смены фокуса (переход
     /// на эмодзи, другая раскладка), и плейсхолдер мигал бы на каждом её сдвиге.
     @State private var isFocusedPlaceholderArmed = false
+    /// Шкала волны «Поиск по всему»: 0 — не видно, 1 — вся строка на месте.
+    @State private var focusedPlaceholderWave: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
     /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
@@ -556,6 +559,34 @@ private struct SearchPill: View {
         .onChange(of: searchFocused && layout.isRaised && isBarSettled) { _, ready in
             if ready { isFocusedPlaceholderArmed = true }
         }
+        // Волна запускается заново на каждом показе и гаснет мгновенно: под первой
+        // буквой, на снятии фокуса. Мгновенно — без транзакции, иначе строка таяла
+        // бы обратной волной поверх набранного текста.
+        .onChange(of: isFocusedPlaceholderShown) { _, shown in
+            guard shown else {
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) { focusedPlaceholderWave = 0 }
+                return
+            }
+            focusedPlaceholderWave = 0
+            withAnimation(.linear(duration: focusedPlaceholderWaveDuration)) {
+                focusedPlaceholderWave = 1
+            }
+        }
+    }
+
+    /// «Поиск по всему» на экране: фокус, бар доехал до клавиатуры, поле пустое.
+    private var isFocusedPlaceholderShown: Bool {
+        searchFocused && isFocusedPlaceholderArmed && query.isEmpty
+    }
+
+    /// Вся волна — от первого глифа до последнего; с «уменьшением движения» —
+    /// одна прозрачность строки.
+    private var focusedPlaceholderWaveDuration: Double {
+        reduceMotion
+            ? SearchPlaceholderMotion.focusedReducedFade
+            : SearchPlaceholderMotion.focusedWave.total(glyphs: Self.focusedPlaceholderText.count)
     }
 
     /// Свайп вверх по полю: капсула тянется как резина, на пороге открывается поиск.
@@ -703,21 +734,23 @@ private struct SearchPill: View {
     /// Бегущие фразы предлагают сервисы, а в фокусе поле уже ждёт ввода, и подсказка
     /// одна: искать можно по всему сразу.
     ///
-    /// Своего движения нет: проявляется на месте, когда бар уже доехал до клавиатуры
-    /// (`isFocusedPlaceholderArmed`). Проявление посреди подъёма читалось как выезд
-    /// снизу (правка пользователя 2026-10-03). Гаснет мгновенно — под первой буквой,
+    /// Проявляется волной, глиф за глифом (правка пользователя 2026-10-03), — на месте,
+    /// когда бар уже доехал до клавиатуры (`isFocusedPlaceholderArmed`): проявление
+    /// посреди подъёма читалось как выезд снизу. Гаснет мгновенно — под первой буквой,
     /// как системный плейсхолдер, и на снятии фокуса, ещё до того, как бар тронулся.
-    /// Анимация меняется только вместе с видимостью, а та — никогда в одном апдейте
-    /// с раскладкой бара, поэтому геометрию она не перехватывает.
+    /// Шкала волны меняется только вместе с видимостью, а та — никогда в одном апдейте
+    /// с раскладкой бара, поэтому геометрию её анимация не перехватывает.
     private var focusedPlaceholder: some View {
-        let isShown = searchFocused && isFocusedPlaceholderArmed && query.isEmpty
-        return Text("Поиск по всему")
-            .plusHeadline(.s)
+        Text(Self.focusedPlaceholderText)
+            .plusHeadline(
+                .s,
+                wave: SearchPlaceholderMotion.focusedWave,
+                progress: focusedPlaceholderWave,
+                reduceMotion: reduceMotion
+            )
             .foregroundStyle(Self.focusedPlaceholderColor)
             .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .opacity(isShown ? 1 : 0)
-            .animation(isShown ? SearchPlaceholderMotion.focusedIn : nil, value: isShown)
             .allowsHitTesting(false)
             // Для VoiceOver подсказка — у самого поля, вторая копия была бы шумом.
             .accessibilityHidden(true)
@@ -726,6 +759,7 @@ private struct SearchPill: View {
     /// Бледнее бегущих фраз (`searchPlaceholder`, белый 30 %): те зовут в сервисы,
     /// а эта только подписывает пустое поле (правка пользователя 2026-10-03).
     private static let focusedPlaceholderColor = Color.white.opacity(0.2)
+    private static let focusedPlaceholderText = "Поиск по всему"
 
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
@@ -755,10 +789,14 @@ private enum SearchPlaceholderMotion {
     static let swapGap: Duration = .milliseconds(100)
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
-    /// Проявление «Поиск по всему» — на месте, когда бар уже стоит. К этому времени
-    /// бегущая фраза погасла вместе с подъёмом, и нахлёста нет. Одна прозрачность
-    /// за 250 мс (правка пользователя 2026-10-03; было 150).
-    static let focusedIn: Animation = .easeOut(duration: 0.25)
+    /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
+    /// фраза погасла вместе с подъёмом, и нахлёста нет. Глиф — 240 мс сильного ease-out
+    /// из прозрачности и на 4pt снизу; соседи стартуют через 20 мс — на 14 знаков вся
+    /// волна ~0.5s. Декоративная: ничего не ждёт её конца.
+    static let focusedWave = HeadlineWave(stagger: 0.02, glyph: 0.24, rise: 4)
+    /// С «уменьшением движения» — без волны: строка проявляется целиком, прозрачностью
+    /// за 250 мс (как было до волны).
+    static let focusedReducedFade: Double = 0.25
 }
 
 /// Плейсхолдеры поиска: подмена со сдвигом на 4pt, уход и приход разведены по времени.

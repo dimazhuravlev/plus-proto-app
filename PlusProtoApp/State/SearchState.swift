@@ -381,6 +381,7 @@ final class SearchState {
     /// сколько нужно, поиск по кино не стоит ни одного запроса из квоты.
     private func fetchMovies(_ text: String) async -> [SearchHit] {
         let pooled = await MoviePool.shared.search(text, limit: Self.perKind)
+            .filter(Self.isShowableMovie)
         let local = pooled.map(SearchHit.init(movie:))
         guard pooled.count < Self.poolEnough, !Task.isCancelled else {
             return Array(local.prefix(Self.perSection))
@@ -389,8 +390,18 @@ final class SearchState {
         let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: Self.perKind)) ?? []
         // Сетевые дополняют локальные, дубликаты по id отбрасываем.
         let known = Set(pooled.map(\.id))
-        let hits = local + found.filter { !known.contains($0.id) }.map(SearchHit.init(movie:))
-        return Array(hits.prefix(Self.perSection))
+        let network = found
+            .filter { !known.contains($0.id) && Self.isShowableMovie($0) }
+            .map(SearchHit.init(movie:))
+        return Array((local + network).prefix(Self.perSection))
+    }
+
+    /// Карточка фильма без названия или без постера в карусели — серый пустой
+    /// прямоугольник с одним годом: сетевой поиск Кинопоиска отдаёт и такие записи
+    /// (жалоба пользователя 2026-10-03). Фильтр — и для запаса на диске: дёшево.
+    private static func isShowableMovie(_ movie: KinopoiskMovie) -> Bool {
+        let title = movie.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !title.isEmpty && movie.poster?.url(size: .small) != nil
     }
 
     private func fetchBooks(_ text: String) async -> [SearchHit] {
