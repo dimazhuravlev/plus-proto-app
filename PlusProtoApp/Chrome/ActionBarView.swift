@@ -165,6 +165,7 @@ struct ActionBarView: View {
     /// Текст запроса живёт в `SearchState`, а не в `@State` бара: по нему строится
     /// выдача, а её показывает отдельный слой (`SearchResultsView`).
     @Environment(SearchState.self) private var search
+    @Environment(KeyboardObserver.self) private var keyboard
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -253,7 +254,8 @@ struct ActionBarView: View {
                 try? await Task.sleep(for: .seconds(3))
                 searchFocused = true
                 try? await Task.sleep(for: .seconds(3))
-                searchFocused = false
+                // Тем же мягким уходом, что и скролл выдачи: его и снимаем на видео.
+                keyboard.dismissSmoothly()
             }
         }
         .task {

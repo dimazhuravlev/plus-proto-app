@@ -64,6 +64,21 @@ enum PlusChromeMetrics {
     static let topScrimBlurStrong: (radius: CGFloat, height: CGFloat) = (14, 54)
 }
 
+/// Мягкий уход клавиатуры, который запускаем мы сами (`KeyboardObserver.dismissSmoothly`).
+///
+/// Система на скролле (`scrollDismissesKeyboard`) и SwiftUI на снятии фокуса убирают
+/// клавиатуру резко — за ~0.17s, и нотификация о таком уходе приходит с нулевой
+/// длительностью. Снятый внутри `UIView.animate` фокус клавиатура слушается и уезжает
+/// заданной анимацией (проверено покадрово 2026-10-03), а нотификация по-прежнему
+/// рапортует ноль — поэтому бару ту же кривую отдаём сами.
+enum KeyboardDismissMotion {
+    /// Длительность ухода: вдвое дольше системного, но всё ещё в пределах UI-перехода.
+    static let duration: TimeInterval = 0.4
+    /// Кривая бара — `UIView.AnimationOptions.curveEaseInOut` в кубических
+    /// коэффициентах UIKit: бар едет ровно так же, как клавиатура под ним.
+    static let bar: Animation = .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+}
+
 enum BottomChromeMotion {
     /// Таббар, уходя, ещё и проседает: бар опускается на его место, и встречное
     /// движение читается как «уступил место», а не как два слоя друг в друге.
@@ -236,6 +251,29 @@ final class KeyboardObserver {
     private var lastDuration: Double = 0.25
     /// Меньше этого — не длительность, а «без анимации» из нотификации.
     private static let minReportedDuration: Double = 0.05
+    /// Ближайший уход клавиатуры запустили мы (`dismissSmoothly`) и знаем его кривую.
+    @ObservationIgnored private var isOwnDismissPending = false
+
+    /// Убрать клавиатуру мягко — `KeyboardDismissMotion` вместо резкого системного ухода.
+    /// Фокус снимается через цепочку респондеров, и SwiftUI сбрасывает `FocusState` сам:
+    /// дальше всё как при любом снятом фокусе (просмотр выдачи — в баре).
+    @MainActor
+    func dismissSmoothly() {
+        let resign = {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+        guard isUp else {
+            resign()
+            return
+        }
+        isOwnDismissPending = true
+        UIView.animate(
+            withDuration: KeyboardDismissMotion.duration,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState],
+            animations: { _ = resign() }
+        )
+    }
 
     init() {
         let center = NotificationCenter.default
@@ -282,10 +320,18 @@ final class KeyboardObserver {
         // длительностью, хотя клавиатура уезжает обычной анимацией (замер 2026-10-03:
         // подъём рапортует 0.383, уход — 0). С нулём бар доезжал за минимальные 0.12
         // и нырял под клавиатуру — тогда берём длительность её последнего движения.
-        let duration = reported >= Self.minReportedDuration ? reported : lastDuration
         if reported >= Self.minReportedDuration { lastDuration = reported }
         let rawCurve = info?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int
-        let curve = Self.animation(curve: rawCurve, duration: duration, leads: up)
+        // Свой уход (`dismissSmoothly`): кривую знаем сами — нотификация о нём врёт.
+        // Он приходит двумя нотификациями — сменой кадра и уходом; отметка гаснет на второй.
+        let isOwnDismiss = isOwnDismissPending && next == 0
+        if isOwnDismiss, !up { isOwnDismissPending = false }
+        let duration = isOwnDismiss
+            ? KeyboardDismissMotion.duration
+            : (reported >= Self.minReportedDuration ? reported : lastDuration)
+        let curve = isOwnDismiss
+            ? KeyboardDismissMotion.bar
+            : Self.animation(curve: rawCurve, duration: duration, leads: up)
 
         motion = curve
         withAnimation(curve) {

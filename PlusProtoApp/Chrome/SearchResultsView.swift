@@ -197,9 +197,12 @@ struct SearchResultsView: View {
         .scrollIndicators(.hidden)
         // Клавиатура уходит с первого движения скролла — и вертикального, и каруселей
         // (правка пользователя 2026-10-03; прежде — только протяжкой в саму клавиатуру).
+        // Убираем её сами и мягко (`dismissKeyboardOnScroll`), системный уход выключен:
+        // он резкий — клавиатура падала за ~0.17s, а за ней и поле (жалоба 2026-10-03).
         // Фокус снимается вместе с ней, и выдача остаётся на экране без клавиатуры
         // (`SearchState.isBrowsing`).
-        .scrollDismissesKeyboard(.immediately)
+        .scrollDismissesKeyboard(.never)
+        .onScrollPhaseChange { _, phase in dismissKeyboardOnScroll(phase) }
         // Сверху — ровно безопасная зона, без добавки: в макете `2118:17378` выдача
         // начинается сразу под статус-баром. Прежний `safeAreaPadding(.top)` клал
         // сверху ещё 16pt системного поля.
@@ -233,6 +236,7 @@ struct SearchResultsView: View {
                     .padding(.horizontal, Layout.side)
                 }
                 .scrollIndicators(.hidden)
+                .onScrollPhaseChange { _, phase in dismissKeyboardOnScroll(phase) }
             }
             .padding(.vertical, Layout.sectionVertical)
         }
@@ -462,6 +466,13 @@ struct SearchResultsView: View {
             height: Layout.bookCoverHeight + Layout.bookPagesTop,
             alignment: .topLeading
         )
+    }
+
+    /// Скролл выдачи начался — клавиатура уходит мягко (`KeyboardDismissMotion`).
+    /// Фаза `.interacting`, а не `.tracking`: касание без движения ещё не скролл.
+    private func dismissKeyboardOnScroll(_ phase: ScrollPhase) {
+        guard phase == .interacting, actionBar.isSearchFocused else { return }
+        keyboard.dismissSmoothly()
     }
 
     /// Правое поле подписи: у квадратов — 8 (текст уже колонки), у исполнителя
