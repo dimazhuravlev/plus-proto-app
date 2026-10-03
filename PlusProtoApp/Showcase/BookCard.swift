@@ -6,17 +6,16 @@ import SwiftUI
 private enum BookCardLayout {
     static let slot = ShowcaseLayout.Slot.book
 
-    /// Плоский рендер изометрической книги `2004:10746`: 186×257, в координатах экрана
-    /// x 216→402, y 825.6→1082.6. Пять слоёв со skew не пересобираем — в PNG уже запечён
-    /// поворот −9,47°.
-    static let render = CGSize(width: 186, height: 257)
-
-    /// Книга уходит за правый край экрана, в экспорте только видимая часть, поэтому кадр
-    /// прижат к правому краю (216 + 186 = 402). По низу рендер на 11,33 выходит за слот —
-    /// так в макете, карточку клипать нельзя.
+    /// Центр обложки изометрической книги `2004:10749` в координатах экрана:
+    /// (314.17, 924.02). Кадр рендера отсчитывается от него — см. `BookRender.bounds`.
+    ///
+    /// Прежде кадр стоял от y 825.6 — это верх полоски корешка, а не книги: верх книги —
+    /// правый верхний угол обложки на 799.5, и книга стояла на 26pt ниже макета.
+    /// Правым краем книга уходит за экран (до x 410.6) — так в макете.
+    static let faceCenter = CGPoint(x: 314.17, y: 924.02 - slot.top)
     static let renderOrigin = CGPoint(
-        x: ShowcaseLayout.designWidth - render.width,
-        y: 825.6 - slot.top
+        x: faceCenter.x + BookRender.bounds.minX,
+        y: faceCenter.y + BookRender.bounds.minY
     )
 
     /// Ambilight в экспорт не запечён (§7): дубль рендера в блюре 28, у книги opacity 0.30.
@@ -41,12 +40,8 @@ struct BookCard: View {
         ZStack(alignment: .topLeading) {
             // Рендер — интерактивная миниатюра карточки. Миниатюрой себя помечает
             // сам `BookRender`: ореол обязан остаться снаружи источника зума.
-            BookRender(
-                cover: block.render,
-                box: BookCardLayout.render,
-                glowOpacity: BookCardLayout.glowOpacity
-            )
-            .showcasePlaced(at: BookCardLayout.renderOrigin)
+            BookRender(cover: block.render, glowOpacity: BookCardLayout.glowOpacity)
+                .showcasePlaced(at: BookCardLayout.renderOrigin)
 
             VStack(alignment: .trailing, spacing: BookCardLayout.captionToButtons) {
                 GradientText(block.caption, from: .fillOne, to: block.captionTint)
