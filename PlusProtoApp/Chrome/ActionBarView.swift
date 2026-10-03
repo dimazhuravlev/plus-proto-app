@@ -93,6 +93,9 @@ enum ActionBarGeometry {
     static let chipRotation: Double = 4
     /// Поля бара в фокусе — поле поиска расширяется на 8pt с каждой стороны
     static let focusedScreenMargin: CGFloat = 16
+    /// Кнопка «Назад» в поиске — круг 60 слева от поля, зазор 8 (`2385:34087`).
+    static let backButtonSize: CGFloat = 60
+    static let backButtonGap: CGFloat = 8
     /// На сколько плеер уезжает вправо, скрываясь за кромкой экрана
     static let trailingEscape: CGFloat = 120
 
@@ -168,6 +171,19 @@ struct ActionBarView: View {
     @Environment(KeyboardObserver.self) private var keyboard
     @FocusState private var searchFocused: Bool
 
+    /// «Назад»: выйти из поиска совсем — стереть запрос, убрать клавиатуру, погасить
+    /// просмотр выдачи. Запрос стирается первым: снятый фокус при пустом поле поиск
+    /// закрывает, а не переводит в просмотр (см. onChange фокуса). Клавиатура уходит
+    /// тем же мягким уходом, что и на скролле выдачи.
+    private func exitSearch() {
+        search.query = ""
+        search.isBrowsing = false
+        if searchFocused {
+            keyboard.dismissSmoothly()
+            searchFocused = false
+        }
+    }
+
     var body: some View {
         @Bindable var search = search
         let layout = ActionBarLayout(
@@ -184,7 +200,14 @@ struct ActionBarView: View {
         // систему координат, и он скрывался в чёрной полосе отступа вместо кромки
         // экрана. Значения полей не изменились: 24 в покое, 16 в фокусе (`2021:11283` —
         // search лежит на x=16 шириной 370 при ширине бара 402).
+        //
+        // Зона «Назад» — первой: вне поиска она нулевой ширины, и поле начинается
+        // на тех же полях экрана, что и раньше; в поиске она выдвигается слева тем же
+        // морфом, что и всё остальное (поле — с x = 84, как в `2385:34087`).
         HStack(spacing: 0) {
+            SearchBackButton(layout: layout, action: exitSearch)
+                .padding(.leading, layout.screenMargin)
+
             SearchPill(
                 layout: layout,
                 searchFocused: $searchFocused,
@@ -192,7 +215,7 @@ struct ActionBarView: View {
                 isBrowsing: $search.isBrowsing,
                 isBarSettled: raise.motion == nil
             )
-            .padding(.leading, layout.screenMargin)
+            .padding(.leading, layout.backGap)
 
             TrailingSlot(layout: layout)
         }
@@ -335,10 +358,17 @@ private struct ActionBarLayout: Equatable {
     /// Фокусная раскладка: поле занимает бар целиком, плеер уезжает за кромку.
     /// Она же — у просмотра выдачи без клавиатуры (см. `BottomChrome.raise`).
     let isRaised: Bool
-    /// Крест в поле — в фокусной раскладке, то есть и в просмотре выдачи без фокуса:
-    /// выдача закрывает весь экран, затемнения под ней не достать, и крест —
-    /// единственный выход из поиска в одно касание.
+    /// Место под крест в поле — в фокусной раскладке, то есть и в просмотре выдачи.
+    /// Виден крест только при непустом запросе (`SearchPill.clearButton`): это сброс
+    /// текста, а выход из поиска — кнопка «Назад».
     let showsClear: Bool
+    /// Кнопка «Назад» слева от поля — во всех состояниях поиска: пустой фокус, выдача
+    /// в фокусе и без него (правка пользователя 2026-10-03, макет `2385:34087`).
+    /// Выдача закрывает весь экран, до затемнения не дотянуться — это и есть выход.
+    let showsBack: Bool
+    /// Ширина зоны «Назад» и зазор от неё до поля: 0 вне поиска, 60 + 8 в поиске.
+    let backWidth: CGFloat
+    let backGap: CGFloat
     /// Подъём над клавиатурой — свойство ОБЩЕГО предка обеих зон, а не зоны.
     let lift: CGFloat
     let screenMargin: CGFloat
@@ -349,6 +379,9 @@ private struct ActionBarLayout: Equatable {
         let compact = PlusMetrics.actionBarCompact
         isRaised = raise.isRaised
         showsClear = raise.isRaised
+        showsBack = raise.isRaised
+        backWidth = raise.isRaised ? ActionBarGeometry.backButtonSize : 0
+        backGap = raise.isRaised ? ActionBarGeometry.backButtonGap : 0
         lift = raise.lift
         screenMargin = raise.isRaised ? ActionBarGeometry.focusedScreenMargin : PlusMetrics.screenMargin
 
@@ -519,10 +552,14 @@ private struct SearchPill: View {
             // в той же единственной транзакции бара, что и всё остальное.
             clearButton
                 .scaleEffect(
-                    layout.showsClear ? 1 : ActionBarGeometry.clearCollapsedScale,
+                    isClearVisible ? 1 : ActionBarGeometry.clearCollapsedScale,
                     anchor: .trailing
                 )
-                .opacity(layout.showsClear ? 1 : 0)
+                .opacity(isClearVisible ? 1 : 0)
+                // Появляется с первой буквой и уходит со стёртой — за 250 мс (правка
+                // пользователя 2026-10-03). Своя анимация только на смену текста:
+                // морф бара по-прежнему везёт единственная анимация бара.
+                .animation(SearchClearMotion.fade, value: query.isEmpty)
                 // Ширина анимируется, а это проход раскладки на кадр. Здесь он
                 // несущий: без схлопывания ширины крест переполнит контент круга
                 // 60pt и утащит лупу влево — та же ловушка, что описана выше про
@@ -530,9 +567,9 @@ private struct SearchPill: View {
                 // не меняется.
                 .frame(width: layout.showsClear ? ActionBarGeometry.searchIconBox : 0)
                 .padding(.leading, layout.showsClear ? ActionBarGeometry.clearLeadingGap : 0)
-                // Схлопнутый крест остаётся в дереве — гасим хит-тест явно, иначе
-                // он ловил бы касания в свёрнутом поле.
-                .allowsHitTesting(layout.showsClear)
+                // Схлопнутый и погасший крест остаётся в дереве — гасим хит-тест
+                // явно, иначе он ловил бы касания в свёрнутом поле.
+                .allowsHitTesting(isClearVisible)
         }
         .padding(.horizontal, ActionBarGeometry.searchPaddingH)
         // Левая зона гибкая всегда: она забирает остаток бара после правой.
@@ -714,14 +751,20 @@ private struct SearchPill: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Крест справа: снимает фокус и опускает клавиатуру, а в просмотре выдачи
-    /// закрывает её. В макете 24×24 с полем 18 от правого края поля — то есть
-    /// на месте общего внутреннего отступа пилюли.
+    /// Крест виден в поиске, когда в поле есть хоть один символ.
+    private var isClearVisible: Bool {
+        layout.showsClear && !query.isEmpty
+    }
+
+    /// Крест справа — **сброс текста** (правка пользователя 2026-10-03; выход из поиска
+    /// теперь у кнопки «Назад»). Фокус остаётся: стёрли — набирают новое. В просмотре
+    /// выдачи без клавиатуры поле получает фокус: иначе пустой запрос без клавиатуры
+    /// оставил бы поиск ни в выдаче, ни во вводе. В макете 24×24 с полем 18 от правого
+    /// края поля — на месте общего внутреннего отступа пилюли.
     private var clearButton: some View {
         Button {
             query = ""
-            searchFocused = false
-            isBrowsing = false
+            if !searchFocused { searchFocused = true }
         } label: {
             Image("iconCross")
                 .renderingMode(.template)
@@ -731,7 +774,7 @@ private struct SearchPill: View {
                 .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Очистить поиск")
+        .accessibilityLabel("Стереть запрос")
     }
 
     private var searchIcon: some View {
@@ -803,11 +846,10 @@ private enum SearchPlaceholderMotion {
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
     /// фраза погасла вместе с подъёмом, и нахлёста нет. Глиф — 240 мс сильного ease-out
-    /// из прозрачности и на 4pt сверху — тем же направлением, каким входят бегущие
-    /// фразы (`swapIn`); соседи стартуют через 20 мс — на 14 знаков вся волна ~0.5s.
-    /// Длиннее бюджета UI в 300 мс сознательно: волну попросили видимой, она ничего
-    /// не блокирует и гаснет мгновенно.
-    static let focusedWave = HeadlineWave(stagger: 0.02, glyph: 0.24, offset: -4)
+    /// только из прозрачности, без сдвига (правка пользователя 2026-10-03); соседи
+    /// стартуют через 20 мс — на 14 знаков вся волна ~0.5s. Длиннее бюджета UI в 300 мс
+    /// сознательно: волну попросили видимой, она ничего не блокирует и гаснет мгновенно.
+    static let focusedWave = HeadlineWave(stagger: 0.02, glyph: 0.24)
     /// С «уменьшением движения» — без волны: строка проявляется целиком, прозрачностью
     /// за 250 мс (как было до волны).
     static let focusedReducedFade: Double = 0.25
@@ -914,6 +956,45 @@ private struct SearchPlaceholderTicker: View {
             guard !Task.isCancelled else { return }
             withAnimation(SearchPlaceholderMotion.swapIn) { phase = .visible }
         }
+    }
+}
+
+// MARK: - Назад
+
+/// Появление и уход креста при наборе: сильный ease-out за 250 мс (правка
+/// пользователя 2026-10-03; первая версия — 200).
+private enum SearchClearMotion {
+    static let fade: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.25)
+}
+
+/// Кнопка «Назад» в поиске — стеклянный круг 60 со стрелкой влево (`2385:34087`,
+/// `close button`). Живёт в дереве всегда: вне поиска её зона нулевой ширины, а сама
+/// кнопка уехала за левую кромку экрана — зеркально тому, как плеер в фокусе уезжает
+/// за правую. Так она выдвигается и прячется тем же морфом бара, без вставки по `if`.
+private struct SearchBackButton: View {
+    let layout: ActionBarLayout
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            // Тот же глиф, что у шевронов, — без отзеркаливания он и есть «назад».
+            Image("iconDropleft")
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+                .foregroundStyle(Color.searchIcon)
+                .frame(width: ActionBarGeometry.backButtonSize, height: ActionBarGeometry.backButtonSize)
+                .glassPill()
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel("Назад")
+        .opacity(layout.showsBack ? 1 : 0)
+        .offset(x: layout.showsBack ? 0 : -(ActionBarGeometry.backButtonSize + layout.screenMargin))
+        // Зона растёт вместе с выездом кнопки; кнопка прижата к её правому краю
+        // и в нулевой зоне целиком за кромкой.
+        .frame(width: layout.backWidth, alignment: .trailing)
+        .allowsHitTesting(layout.showsBack)
     }
 }
 
