@@ -292,7 +292,11 @@ struct MoviePlayerView: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clock: MovieClock
-    @State private var ratchet = ScrubRatchet()
+    @State private var ratchet = ScrubRatchet(
+        step: MoviePlayerMotion.scrubTickStep,
+        interval: MoviePlayerMotion.scrubTickInterval,
+        intensity: MoviePlayerMotion.scrubTickIntensity
+    )
     @State private var controlsVisible = true
     /// Счётчик касаний: каждое перезапускает отсчёт до скрытия контролов.
     @State private var touches = 0
@@ -616,58 +620,6 @@ struct MoviePlayerView: View {
         try? await Task.sleep(for: MoviePlayerMotion.controlsIdle)
         guard !Task.isCancelled else { return }
         withAnimation(MoviePlayerMotion.controlsIdleHide) { controlsVisible = false }
-    }
-}
-
-// MARK: - Хаптика
-
-private enum PlayerHaptics {
-    /// Нажатие любой кнопки плеера — impact light, как у play/pause мини-плеера.
-    static func tap() {
-        UIImpactFeedbackGenerator(style: .light)
-            .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
-    }
-}
-
-/// Трещотка перемотки — серия лёгких тиков, пока головка едет под пальцем («как
-/// пулемётная очередь», просьба пользователя 2026-10-03). Тик привязан к ходу
-/// **головки**, а не пальца: у краёв дорожки головка упирается, и очередь стихает
-/// вместе с ней. Частота ограничена сверху — быстрая протяжка даёт ровную очередь,
-/// а не гул, который Taptic Engine всё равно не отыграл бы.
-@MainActor
-private final class ScrubRatchet {
-    private let generator = UIImpactFeedbackGenerator(style: .light)
-    private var lastX: CGFloat?
-    private var travel: CGFloat = 0
-    private var lastTick = Date.distantPast
-
-    /// Положение головки на дорожке, pt. Первый вызов за жест — хват: тик сразу,
-    /// чтобы касание отозвалось ещё до того, как палец сдвинулся.
-    func move(to x: CGFloat) {
-        guard let lastX else {
-            self.lastX = x
-            tick()
-            return
-        }
-        travel += abs(x - lastX)
-        self.lastX = x
-        guard travel >= MoviePlayerMotion.scrubTickStep,
-              Date.now.timeIntervalSince(lastTick) >= MoviePlayerMotion.scrubTickInterval
-        else { return }
-        travel = 0
-        tick()
-    }
-
-    func end() {
-        lastX = nil
-        travel = 0
-    }
-
-    private func tick() {
-        generator.impactOccurred(intensity: MoviePlayerMotion.scrubTickIntensity)
-        lastTick = .now
-        // Следующий тик может прийти через 33мс — движок держим разогретым.
-        generator.prepare()
     }
 }
 

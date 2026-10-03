@@ -62,8 +62,8 @@ struct ActionBarRaise: Equatable {
 // MARK: - Geometry
 
 /// Числа из figma-actionbar §4, которых нет в Tokens.swift.
-/// Не `private`: внутреннюю раскладку мини-плеера читает `FullScreenPlayer` —
-/// морф стартует ровно из кадра его обложки.
+/// Не `private`: ширину развёрнутой пилюли читает мини-плеер читалки —
+/// он разворачивается в тот же размер, что и в баре.
 enum ActionBarGeometry {
     static let searchExpandedWidth: CGFloat = 284
     static let searchPaddingH: CGFloat = 18
@@ -252,13 +252,13 @@ struct ActionBarView: View {
             }
         }
         .task {
-            // `-debugFullPlayer` — раскрыть и свернуть полноэкранный плеер:
-            // морф иначе не снять на видео, тапнуть по пилюле из шелла нечем.
+            // `-debugFullPlayer` — открыть и закрыть полноэкранный плеер музыки:
+            // выезд и уход иначе не снять на видео, тапнуть по пилюле из шелла нечем.
             guard UserDefaults.standard.bool(forKey: "debugFullPlayer") else { return }
             try? await Task.sleep(for: .seconds(2))
-            actionBar.isFullPlayerOpen = true
+            actionBar.openMusicPlayer()
             try? await Task.sleep(for: .seconds(6))
-            actionBar.isFullPlayerOpen = false
+            actionBar.closeContentPlayer()
         }
         .task {
             // `-debugPlayCycle` — play/pause по кругу: инерцию вращения обложки
@@ -852,7 +852,7 @@ private struct TrailingSlot: View {
                         if layout.isMiniPlayerCompact {
                             actionBar.expandMiniPlayer()
                         } else {
-                            actionBar.isFullPlayerOpen = true
+                            actionBar.openMusicPlayer()
                         }
                     }
                 )

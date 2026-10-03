@@ -176,6 +176,29 @@ struct EntityNavBar<Trailing: View>: View {
     }
 
     private var backdrop: some View {
+        NavBarBackdrop()
+            .opacity(backgroundProgress)
+    }
+
+    // MARK: Рампы
+
+    private var backgroundProgress: Double {
+        NavBarRamp.progress(scrollOffset, start: thresholds.backgroundStart, length: thresholds.backgroundRamp)
+    }
+
+    private var entityProgress: Double {
+        NavBarRamp.progress(scrollOffset, start: thresholds.titleStart, length: thresholds.titleRamp)
+    }
+}
+
+// MARK: - Подложка
+
+/// Подложка верхнего навбара: прогрессивный блюр под сглаженным затемнением.
+/// Лежит **под** элементами бара и размывает только контент, уехавший под него.
+/// Общая у `EntityNavBar` и плеера музыки — у обоих блюр один (правило пользователя
+/// 2026-10-03). Прозрачность — по скроллу, её задаёт тот, кто подложку показывает.
+struct NavBarBackdrop: View {
+    var body: some View {
         ZStack(alignment: .top) {
             VariableBlurView(
                 maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
@@ -190,23 +213,15 @@ struct EntityNavBar<Trailing: View>: View {
                 .opacity(EntityNavBarMotion.backdropTint)
         }
         .frame(height: EntityNavBarGeometry.backdropHeight)
-        .opacity(backgroundProgress)
         .allowsHitTesting(false)
     }
+}
 
-    // MARK: Рампы
-
-    private var backgroundProgress: Double {
-        EntityNavBar.ramp(scrollOffset, start: thresholds.backgroundStart, length: thresholds.backgroundRamp)
-    }
-
-    private var entityProgress: Double {
-        EntityNavBar.ramp(scrollOffset, start: thresholds.titleStart, length: thresholds.titleRamp)
-    }
-
+/// Рампы появления по скроллу.
+enum NavBarRamp {
     /// Плавная доля 0→1 как чистая функция от offset. Smoothstep, а не линейка:
     /// у линейной рампы на обоих концах излом, и старт проявления читается щелчком.
-    private static func ramp(_ offset: CGFloat, start: CGFloat, length: CGFloat) -> Double {
+    static func progress(_ offset: CGFloat, start: CGFloat, length: CGFloat) -> Double {
         // Нулевая длина — «постоянное значение» (вариант `.pinned`), а не деление на ноль.
         guard length > 0 else { return offset >= start ? 1 : 0 }
         let u = Double(min(max((offset - start) / length, 0), 1))

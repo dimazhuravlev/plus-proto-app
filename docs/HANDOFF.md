@@ -76,16 +76,17 @@ iOS/SwiftUI **дизайн-прототип супераппа «Яндекс П
 
 Сверх нумерации этапов: zoom-навигация в экраны сущностей из миниатюры карточки,
 экраны фильма, альбома и книги на живых данных, поиск по трём доменам со своим слоем,
-полноэкранный плеер музыки (форминг из мини-плеера, содержимого нет), киноплеер и читалка
-на весь экран (выезжают снизу поверх всего — «Смотреть», «Читать» и чипы бара открывают их
-через `ContentPlayerPresenter`; приложение заперто в портрете, альбомный плеер нарисован
+полноэкранный плеер музыки по макету (обложка-карусель на паузе, таймлайн с трещоткой,
+моковая очередь «Что дальше»), киноплеер и читалка — все трое на весь экран (выезжают
+снизу поверх всего — «Смотреть», «Читать», чипы и широкая пилюля бара открывают их через
+`ContentPlayerPresenter`; приложение заперто в портрете, альбомный плеер нарисован
 повёрнутым), верхний навбар внутренних
 экранов, состояние action bar переживает перезапуск, заставка на время сборки витрины,
 иконка приложения, резиновый свайп по полю поиска, кроссфейд при смене типа плеера,
 play/pause с живым прогрессом. Внутренние разделы сервисных табов не проектируем —
 там `ServiceStubScreen`.
 
-**Структура кода** (`PlusProtoApp/`): `App/` (точка входа, AppTab, AppRootView) · `Chrome/` (BottomChrome, TabBarView, ActionBarView, SearchOverlay, FullScreenPlayer, EntityNavBar, MoviePlayer, BookReader, ContentPlayerPresenter) · `Showcase/` (лента, 6 карточек, `BookRender`) · `Screens/` (витрина, заглушки сервисов, экраны фильма, альбома и книги) · `DesignSystem/` (токены, типографика, стекло, кнопки, ambilight, `ArtworkImage`/`ResolvedArtwork`) · `State/` · `Data/` (модели витрины, DTO трёх API, `ShowcaseSeeds`, `ShowcaseRotation`) · `Services/` (`KinopoiskService`, `DeezerService`, `BooksService`, `BookTextStore`, `ArtworkLoader`, `ShowcaseCatalog`) · `Fonts/`, `Videos/`, `Assets.xcassets/`.
+**Структура кода** (`PlusProtoApp/`): `App/` (точка входа, AppTab, AppRootView) · `Chrome/` (BottomChrome, TabBarView, ActionBarView, SearchOverlay, EntityNavBar, MoviePlayer, MusicPlayer, BookReader, ContentPlayerPresenter) · `Showcase/` (лента, 6 карточек, `BookRender`) · `Screens/` (витрина, заглушки сервисов, экраны фильма, альбома и книги) · `DesignSystem/` (токены, типографика, стекло, кнопки, ambilight, `ArtworkImage`/`ResolvedArtwork`, хаптика плееров) · `State/` · `Data/` (модели витрины, DTO трёх API, `ShowcaseSeeds`, `ShowcaseRotation`, моковая очередь `MusicQueue`) · `Services/` (`KinopoiskService`, `DeezerService`, `BooksService`, `BookTextStore`, `ArtworkLoader`, `ShowcaseCatalog`) · `Fonts/`, `Videos/`, `Assets.xcassets/`.
 
 ---
 
@@ -184,11 +185,11 @@ sleep 3 && xcrun simctl io booted screenshot /tmp/plus.png
 | `-debugMoviePull <pt>` | то же для шапки карточки тайтла |
 | `-debugHitProbe` | через 5с печатает в консоль дерево доступности с кадрами: что нажимается и где |
 | `-debugLayerProbe` | вместе с `-debugCloseEntity` — через 0.4с после закрытия экрана печатает дерево `UIView`: живая вью на экране или системная копия поверх неё |
-| `-debugFullPlayer` | раскрыть полноэкранный плеер через 2с и свернуть через 8с |
-| `-debugFullPlayerNow` | поднять приложение сразу с раскрытым плеером |
+| `-debugFullPlayer` | открыть полноэкранный плеер музыки через 2с и закрыть через 8с — снять выезд и уход |
+| `-debugFullPlayerNow` | поднять приложение сразу с открытым плеером музыки. Нужна музыка в баре: `-debugActionBar music` (пресет — пауза на 42 %, то есть карусель паузы) |
 | `-debugTapPlay 1` | нажать главную кнопку открытого экрана сущности — «Слушать», «Смотреть», «Читать» (две последние открывают киноплеер и читалку). Срабатывает на каждом таком экране: жалобы воспроизводятся вторым нажатием. На фильме и книге — один раз на экземпляр: на закрытии плеера экран возвращается в окно, и `.task` стартует заново |
 | `-debugTapChip 1` | тап по чипу бара через 4с — открыть киноплеер или читалку. Пара к `-debugActionBar movie\|book`. Читалка с мини-плеером музыки: `-debugActionBar search -debugTapBlock 3 -debugOpenEntity -debugTapPlay 1` (пресет `search` поднимает играющую музыку) |
-| `-debugCloseContent 1` | закрыть киноплеер или читалку через 3с — снять уход вниз и проверить, что закрытие доходит до презентера |
+| `-debugCloseContent 1` | закрыть киноплеер, читалку или плеер музыки через 3с — снять уход вниз и проверить, что закрытие доходит до презентера |
 | `-debugTapCover` | тап по каверу тайтла через 4с и повторный через 6с — снять оба состояния. **Не ставить последним аргументом**: голый флаг в конце строки теряется |
 | `-debugTapCard` | то же для первой видеокарточки: тап через 5с, повторный через 6с. Проверять только с `-debugMockFeed`: на живой ленте отладочный тап по блоку перезапускается и открывает другой тайтл |
 | `-debugTapCycle 1` | переключение табов по кругу, два круга и стоп — для записи анимации таббара |

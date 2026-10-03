@@ -39,11 +39,21 @@ enum ArtworkSource: Hashable, Codable {
 }
 
 /// Что играет: круглая обложка 48×48 + две строки подписи (figma-actionbar §4.2).
+/// Опциональные поля — для полноэкранного плеера; их знает только экран альбома,
+/// и снимок бара, записанный до них, по-прежнему читается.
 struct MusicNowPlaying: Equatable, Codable {
     var id: String
     var cover: ArtworkSource
     var title: String
     var artist: String
+    /// Альбом трека — вторая строка навбара плеера («Альбом «…»»).
+    var album: String? = nil
+    /// Год альбома — серая строка под артистом.
+    var year: String? = nil
+    /// Фото артиста — кружок у строки артиста. Нет — там обложка трека.
+    var artistPicture: ArtworkSource? = nil
+    /// Бейдж 18+ у названия. Опционал ради старых снимков: `nil` читается как «нет».
+    var isExplicit: Bool? = nil
 }
 
 /// Что смотрели: кадр 80×46 внутри чипа 88×54 (figma-actionbar §4.4).
@@ -73,9 +83,12 @@ struct BookInProgress: Equatable, Codable {
     var author: String? = nil
 }
 
-/// Что развёрнуто на весь экран поверх приложения: киноплеер или читалка.
+/// Что развёрнуто на весь экран поверх приложения: плеер музыки, киноплеер или читалка.
 /// Показывает их `ContentPlayerPresenter` — одной точкой входа для всех кнопок.
 enum ContentPlayer: Equatable, Identifiable {
+    /// Полноэкранный плеер музыки. Что играет, он читает из бара сам: трек может
+    /// смениться, пока плеер открыт («Дальше», дизлайк, строка очереди).
+    case music
     case movie(MovieInProgress)
     /// `showsMusic` фиксируется в момент запуска: мини-плеер музыки в читалке есть,
     /// только если музыка играла, когда читалку открыли (правило пользователя
@@ -85,6 +98,7 @@ enum ContentPlayer: Equatable, Identifiable {
 
     var id: String {
         switch self {
+        case .music: "music"
         case .movie(let item): "movie-" + item.id
         case .reader(let item, _): "reader-" + item.id
         }
@@ -127,13 +141,13 @@ final class ActionBarState {
     var isMusicPlaying: Bool = false { didSet { persist() } }
     var isMusicLiked: Bool = false { didSet { persist() } }
 
-    /// Полноэкранный плеер раскрыт. Живёт здесь, а не в хроме: морф стартует
-    /// из мини-плеера, а закрыть плеер сможет и жест, и будущая кнопка «свернуть».
-    var isFullPlayerOpen: Bool = false
-
-    /// Открытый киноплеер или читалка. На диск не пишется: после перезапуска
-    /// приложение поднимается на экране, а не посреди фильма.
+    /// Открытый плеер музыки, киноплеер или читалка. На диск не пишется: после
+    /// перезапуска приложение поднимается на экране, а не посреди фильма.
     private(set) var contentPlayer: ContentPlayer?
+
+    /// Палец на таймлайне плеера музыки: тикер прогресса молчит, иначе он тянул бы
+    /// заливку вперёд из-под пальца дважды в секунду.
+    var isMusicScrubbing = false
 
     /// Поиск в фокусе: поле расширяется, плеер сжимается в круг 60×60, бар поднимается
     /// над клавиатурой. Не локальный стейт бара, потому что таббар уезжает под клавиатуру
@@ -169,7 +183,8 @@ final class ActionBarState {
     }
 
     /// Мок-длительность трека: живого аудио нет, от неё считается шаг прогресса.
-    private static let mockTrackDuration: TimeInterval = 210
+    /// Не приватная: от неё полноэкранный плеер считает таймкоды.
+    static let musicDuration: TimeInterval = 210
     /// Шаг тика — дважды в секунду. Чаще не нужно: заливка между тиками анимируется.
     private static let progressTick: TimeInterval = 0.5
     private var progressTicker: Task<Void, Never>?
@@ -300,7 +315,9 @@ final class ActionBarState {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Self.progressTick))
                 guard let self, self.isMusicPlaying else { return }
-                let step = Self.progressTick / Self.mockTrackDuration
+                // Палец на таймлайне — позиция за ним, тикер не вмешивается.
+                guard !self.isMusicScrubbing else { continue }
+                let step = Self.progressTick / Self.musicDuration
                 self.musicProgress = (self.musicProgress + step).truncatingRemainder(dividingBy: 1)
             }
         }
@@ -325,6 +342,34 @@ final class ActionBarState {
         case .book(let item):
             read(item)
         }
+    }
+
+    // MARK: - Плеер музыки
+
+    /// Открыть полноэкранный плеер музыки — тап по широкой пилюле мини-плеера.
+    func openMusicPlayer() {
+        guard music != nil else { return }
+        contentPlayer = .music
+    }
+
+    /// Перемотка таймлайном плеера: позиция трека долей, 0…1.
+    func seekMusic(to fraction: Double) {
+        musicProgress = min(max(0, fraction), 1)
+    }
+
+    /// «Назад»: трек с начала. Предыдущего трека у мока нет — история не хранится.
+    func restartTrack() {
+        musicProgress = 0
+    }
+
+    /// «Дальше» и дизлайк: следующий трек из очереди «Что дальше».
+    func skipToNext() {
+        guard let next = MusicQueue.upcoming(after: music?.id).first else { return }
+        startMusic(next.nowPlaying)
+    }
+
+    func toggleMusicLike() {
+        isMusicLiked.toggle()
     }
 
     // MARK: - Киноплеер и читалка
@@ -360,6 +405,8 @@ final class ActionBarState {
             if let moviePosition, movie?.id == item.id {
                 movie?.position = moviePosition
             }
+        case .music:
+            break
         case .reader:
             // Музыку поставили на паузу прямо в читалке — бар больше не за ней,
             // и последним потреблённым становится книга. Играет — бар остаётся
@@ -424,8 +471,8 @@ extension ActionBarState {
         default:
             break
         }
-        if UserDefaults.standard.bool(forKey: "debugFullPlayerNow") {
-            isFullPlayerOpen = true
+        if UserDefaults.standard.bool(forKey: "debugFullPlayerNow"), music != nil {
+            contentPlayer = .music
         }
     }
 

@@ -341,7 +341,11 @@ struct AlbumScreen: View {
             id: playerID(track),
             cover: entity.artwork,
             title: track.title,
-            artist: details.artist
+            artist: details.artist,
+            album: details.title,
+            year: details.year,
+            artistPicture: details.artistPicture,
+            isExplicit: track.isExplicit
         )
     }
 
@@ -393,7 +397,9 @@ struct AlbumScreen: View {
             id: entity.id,
             cover: entity.artwork,
             title: details.title,
-            artist: details.artist
+            artist: details.artist,
+            year: details.year,
+            artistPicture: details.artistPicture
         )
     }
 
