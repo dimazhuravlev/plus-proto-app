@@ -204,20 +204,23 @@ struct MovieRateSection: View {
         /// Ряд кнопок 393×92
         static let rowHeight: CGFloat = 92
         static let circle: CGFloat = 52
+        /// Эмодзи — 24, как глиф кегля 24 (Title S макета), которым он был текстом.
+        static let emoji: CGFloat = 24
         static let labelGap: CGFloat = 8
     }
 
     private struct Option: Identifiable {
         var id: String { title }
+        /// Ассет эмодзи — картинка, а не глиф: см. `RateBlock` витрины.
         let emoji: String
         let title: String
     }
 
     private static let options = [
-        Option(emoji: "👎", title: "Не зашло"),
-        Option(emoji: "😐", title: "Так себе"),
-        Option(emoji: "👍", title: "Хорошо"),
-        Option(emoji: "😍", title: "Обожаю"),
+        Option(emoji: "emojiRateDislike", title: "Не зашло"),
+        Option(emoji: "emojiRateMeh", title: "Так себе"),
+        Option(emoji: "emojiRateGood", title: "Хорошо"),
+        Option(emoji: "emojiRateLove", title: "Обожаю"),
     ]
 
     var body: some View {
@@ -227,10 +230,12 @@ struct MovieRateSection: View {
             HStack(spacing: 0) {
                 ForEach(MovieRateSection.options) { option in
                     VStack(spacing: Layout.labelGap) {
-                        Text(option.emoji)
-                            .plusHeadline(.m)
+                        Image(option.emoji)
+                            .resizable()
+                            .frame(width: Layout.emoji, height: Layout.emoji)
                             .frame(width: Layout.circle, height: Layout.circle)
                             .background(Circle().fill(Color.buttonsSecondary))
+                            .accessibilityHidden(true)
 
                         Text(option.title)
                             .plusText(.textS, .semibold)

@@ -211,17 +211,24 @@ struct ContinueWatchingCard: View {
 /// Только вёрстка и пресс-стейт — оценка ничего не отправляет и карточку не скрывает.
 private struct RateBlock: View {
     private struct Option: Identifiable {
+        /// Ассет эмодзи. Картинка, а не глиф шрифта: эмодзи-шрифт симулятора iOS 26.3
+        /// рисует вместо них квадраты с «?» (жалоба пользователя 2026-10-03, повторная),
+        /// а демо идёт именно на симуляторе. PNG сняты с Apple Color Emoji macOS —
+        /// на устройстве глиф был бы тот же.
         let emoji: String
         let label: String
         var id: String { label }
     }
 
     private let options = [
-        Option(emoji: "👎", label: "Нет"),
-        Option(emoji: "😐", label: "Ну такое"),
-        Option(emoji: "👍", label: "Супер"),
-        Option(emoji: "😍", label: "Шедевр"),
+        Option(emoji: "emojiRateDislike", label: "Нет"),
+        Option(emoji: "emojiRateMeh", label: "Ну такое"),
+        Option(emoji: "emojiRateGood", label: "Супер"),
+        Option(emoji: "emojiRateLove", label: "Шедевр"),
     ]
+
+    /// Эмодзи — 24, как глиф кегля 24 (Title S макета), которым он был текстом.
+    private static let emojiSize: CGFloat = 24
 
     var body: some View {
         VStack(spacing: 0) {
@@ -246,10 +253,12 @@ private struct RateBlock: View {
 
     private func column(_ option: Option) -> some View {
         VStack(spacing: RateBlockGeometry.columnGap) {
-            Text(option.emoji)
-                .plusHeadline(.m)
+            Image(option.emoji)
+                .resizable()
+                .frame(width: Self.emojiSize, height: Self.emojiSize)
                 .frame(width: RateBlockGeometry.chip, height: RateBlockGeometry.chip)
                 .background(Circle().fill(Color.buttonsSecondary))
+                .accessibilityHidden(true)
 
             GradientText(option.label, from: .fillOne, to: .white.opacity(0.7))
                 .plusText(.textM, .medium)
