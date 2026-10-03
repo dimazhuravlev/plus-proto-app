@@ -197,3 +197,20 @@ extension View {
         modifier(FigmaTextStyle(family: PlusFont.displaySemibold, size: 40, lineHeight: 44, tracking: 0))
     }
 }
+
+// MARK: - Киноплеер и читалка
+
+/// Макеты `2311:27039` (киноплеер) и `2311:27488` (читалка) набраны той же Yango-линейкой,
+/// что и карточка тайтла: подписи 15 / lh 20 и кнопки берут `plusMovieText()`
+/// и `plusMovieTextBold()`. Своих стилей у них два.
+extension View {
+    /// Название в шапке плеера и читалки — Text L・18/Semibold: Yango Text Semibold 18 / lh 24
+    func plusPlayerTitle() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.textSemibold, size: 18, lineHeight: 24, tracking: 0))
+    }
+
+    /// Текст книги в читалке — YS Text Medium 16 / lh 25
+    func plusBookText() -> some View {
+        modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 16, lineHeight: 25, tracking: 0))
+    }
+}

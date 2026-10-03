@@ -1,0 +1,206 @@
+import SwiftUI
+
+// MARK: - Геометрия
+
+/// Числа макета `2311:27488`. Координаты — от физического верха экрана, как у всех
+/// экранов проекта: шапка и затемнение лежат поверх текста, текст уезжает под них.
+private enum BookReaderLayout {
+    /// Поля колонки текста: 354 из 402.
+    static let textInset: CGFloat = 24
+    static let lineHeight: CGFloat = 25
+    /// Абзацы разделены пустой строкой — в макете это пустой абзац высотой в строку.
+    static let paragraphGap: CGFloat = lineHeight
+    /// Белый 80 % — оттенка в палитре нет, токен ради одного вызова не заводим.
+    static let textColor = Color.white.opacity(0.8)
+
+    /// Затемнение под шапкой: от верхней кромки (с выносом на 1pt, как в макете)
+    /// чёрный держится до 13 % высоты и сходит в ноль к низу.
+    static let scrimHeight: CGFloat = 164
+    static let scrimTop: CGFloat = -1
+    static let scrimSolid: CGFloat = 0.12981
+
+    /// Строка шапки — сразу под статус-баром: кнопка закрытия, обложка, подписи.
+    static let headerTop: CGFloat = 57
+    static let headerSide: CGFloat = 16
+    static let closeToCover: CGFloat = 8
+    static let coverSize = CGSize(width: 28, height: 40)
+    static let coverCorner: CGFloat = 2
+    static let coverToTitle: CGFloat = 8
+    /// Подпись автора заходит на строку названия: 24 + 20 − 4 = 40, ровно высота обложки.
+    static let titleToAuthor: CGFloat = -4
+
+    /// Первая строка в покое стоит в хвосте затемнения — на последних 25pt градиента,
+    /// где он уже почти прозрачен: выше она тонула бы в чёрном, ниже оставляла бы
+    /// под шапкой пустую полосу. Макет рисует колонку уже прокрученной, покоя в нём нет.
+    static var textTop: CGFloat { scrimTop + scrimHeight - lineHeight }
+
+    /// Мини-плеер музыки — круг 60 в правом нижнем углу с полями 16.
+    static let musicInset: CGFloat = 16
+    /// Воздух под последней строкой, когда текст докручен до конца.
+    static let textTail: CGFloat = 24
+    /// Без мини-плеера последняя строка выходит из-под home indicator.
+    static let homeIndicatorClearance: CGFloat = 34
+}
+
+enum BookReaderMotion {
+    /// Текст проявляется целиком, когда готов, — одним фейдом, без движения:
+    /// колонка не должна набираться на глазах абзац за абзацем.
+    static let textAppear: Animation = .easeOut(duration: 0.2)
+}
+
+// MARK: - Читалка
+
+/// Читалка — макет `2311:27488`: текст книги во всю колонку, вертикальная прокрутка,
+/// шапка с книгой поверх затемнения.
+///
+/// Мини-плеер музыки в углу есть, только если музыка играла в момент запуска
+/// (`ContentPlayer.reader(_, showsMusic:)`, правило пользователя 2026-10-03):
+/// читать под музыку — штатный сценарий, и управлять ею надо не выходя из книги.
+struct BookReaderView: View {
+    let book: BookInProgress
+    let showsMusic: Bool
+    @Environment(ActionBarState.self) private var actionBar
+    @State private var text = BookTextStore()
+    @State private var isMusicExpanded = false
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.black
+            pages
+            scrim
+            header
+            if showsMusic {
+                ReaderMusicPlayer(isExpanded: $isMusicExpanded)
+                    .padding(BookReaderLayout.musicInset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+        }
+        .ignoresSafeArea()
+        .task { await text.load(book) }
+    }
+
+    private var pages: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: BookReaderLayout.paragraphGap) {
+                ForEach(Array(text.paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                    Text(paragraph)
+                        .plusBookText()
+                        .foregroundStyle(BookReaderLayout.textColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, BookReaderLayout.textInset)
+            .padding(.top, BookReaderLayout.textTop)
+            .padding(.bottom, textBottom)
+            .opacity(text.isReady ? 1 : 0)
+            .animation(BookReaderMotion.textAppear, value: text.isReady)
+        }
+        .scrollIndicators(.hidden)
+        // Отступы колонки отмеряются от физических кромок, как в макете, —
+        // системные поля безопасной зоны поверх них не нужны.
+        .ignoresSafeArea()
+        .onScrollPhaseChange { _, phase in
+            // Вернулся к чтению — плеер сворачивается обратно в круг:
+            // развёрнутый, он закрывает низ колонки.
+            guard phase.isScrolling, isMusicExpanded else { return }
+            isMusicExpanded = false
+        }
+    }
+
+    private var textBottom: CGFloat {
+        let clearance = showsMusic
+            ? BookReaderLayout.musicInset + PlusMetrics.actionBarCompact
+            : BookReaderLayout.homeIndicatorClearance
+        return clearance + BookReaderLayout.textTail
+    }
+
+    private var scrim: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: BookReaderLayout.scrimSolid),
+                .init(color: .black.opacity(0), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: BookReaderLayout.scrimHeight)
+        .offset(y: BookReaderLayout.scrimTop)
+        .allowsHitTesting(false)
+    }
+
+    private var header: some View {
+        HStack(spacing: BookReaderLayout.closeToCover) {
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть") {
+                actionBar.closeContentPlayer()
+            }
+            HStack(spacing: BookReaderLayout.coverToTitle) {
+                cover
+                titles
+            }
+            .accessibilityElement(children: .combine)
+        }
+        .padding(.top, BookReaderLayout.headerTop)
+        .padding(.horizontal, BookReaderLayout.headerSide)
+    }
+
+    /// Кадр задаёт распорка, картинка его заполняет — идиома проекта: наоборот
+    /// `scaledToFill` отдал бы наверх размер картинки, а не обложки.
+    private var cover: some View {
+        let shape = RoundedRectangle(cornerRadius: BookReaderLayout.coverCorner, style: .continuous)
+        return Color.clear
+            .frame(width: BookReaderLayout.coverSize.width, height: BookReaderLayout.coverSize.height)
+            .overlay { ArtworkImage(source: book.cover).scaledToFill() }
+            .clipShape(shape)
+    }
+
+    /// Подписи прижаты к верху бокса обложки, а не центрированы по ней: автор может
+    /// доехать из API позже названия, и центрированное название прыгнуло бы вверх.
+    private var titles: some View {
+        VStack(alignment: .leading, spacing: BookReaderLayout.titleToAuthor) {
+            Text(book.title)
+                .plusPlayerTitle()
+                .foregroundStyle(Color.fillOne)
+            if let author = book.author ?? text.author {
+                Text(author)
+                    .plusMovieText()
+                    .foregroundStyle(Color.fillSubtitle)
+                    .transition(.opacity)
+            }
+        }
+        .lineLimit(1)
+        .frame(height: BookReaderLayout.coverSize.height, alignment: .top)
+        .animation(BookReaderMotion.textAppear, value: text.author)
+    }
+}
+
+// MARK: - Музыка в читалке
+
+/// Мини-плеер музыки — тот же компонент, что в action bar, в компактном варианте
+/// (`2338:18126`): круг 60 с обложкой. Тап разворачивает его в пилюлю с подписями
+/// и play/pause, как круг в баре (правило 2026-08-29). Свернуть — тапом по пилюле
+/// или прокруткой текста: полноэкранного плеера музыки поверх читалки нет, поэтому
+/// широкая пилюля здесь ведёт обратно в круг, а не дальше.
+private struct ReaderMusicPlayer: View {
+    @Environment(ActionBarState.self) private var actionBar
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        if let music = actionBar.music {
+            MiniPlayerPill(
+                item: music,
+                trackInfoOpacity: isExpanded ? 1 : 0,
+                progressOpacity: isExpanded ? 1 : 0,
+                progress: actionBar.musicProgress,
+                isPlaying: actionBar.isMusicPlaying,
+                isLiked: actionBar.isMusicLiked,
+                onTogglePlay: { actionBar.toggleMusicPlayback() },
+                onExpand: { isExpanded.toggle() }
+            )
+            // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
+            // левый уезжает, внутренности только проявляются.
+            .frame(width: isExpanded ? ActionBarGeometry.miniPlayerExpandedWidth : PlusMetrics.actionBarCompact)
+            .animation(ActionBarMotion.morph, value: isExpanded)
+        }
+    }
+}

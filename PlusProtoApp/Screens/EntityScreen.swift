@@ -229,22 +229,28 @@ struct EntityPrimaryAction {
 struct BookScreen: View {
     let entity: EntityRef
     @Environment(ActionBarState.self) private var actionBar
+    #if DEBUG
+    /// `-debugTapPlay` уже нажал «Читать» на этом экране: читалка открывается
+    /// поверх, и на её закрытии экран возвращается в окно — `.task` стартует заново.
+    @State private var didDebugTapPlay = false
+    #endif
 
     var body: some View {
         EntityStubScreen(
             entity: entity,
             kind: "Книга",
-            // «Читать» — единственный вход в книжный режим бара: переход на экран
-            // его больше не включает (правка пользователя 2026-08-28).
+            // «Читать» открывает читалку и кладёт книгу в бар: переход на экран
+            // ни того, ни другого не делает (правка пользователя 2026-08-28).
             primaryAction: EntityPrimaryAction(title: "Читать", perform: startReading)
         )
         #if DEBUG
         // `-debugTapPlay` — нажать «Читать», как на карточке фильма нажимается
         // «Смотреть»: из шелла тапнуть нечем.
         .task {
-            guard UserDefaults.standard.bool(forKey: "debugTapPlay") else { return }
+            guard UserDefaults.standard.bool(forKey: "debugTapPlay"), !didDebugTapPlay else { return }
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
+            didDebugTapPlay = true
             startReading()
         }
         #endif
@@ -256,7 +262,10 @@ struct BookScreen: View {
         actionBar.open(.book(BookInProgress(
             id: entity.id,
             cover: entity.artwork,
-            title: entity.title
+            title: entity.title,
+            // Из поиска книга приходит с автором, с витрины — без: тогда его
+            // дотянет из API сама читалка (`BookTextStore`).
+            author: entity.subtitle.isEmpty ? nil : entity.subtitle
         )))
     }
 }

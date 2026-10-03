@@ -191,23 +191,30 @@ struct MovieScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(ActionBarState.self) private var actionBar
+    #if DEBUG
+    /// `-debugTapPlay` уже нажал «Смотреть» на этом экране — см. задачу в `body`.
+    @State private var didDebugTapPlay = false
+    #endif
 
     /// Что показывать прямо сейчас: живые детали, иначе заглушка по названию.
     private var details: MovieDetails {
         store.details ?? .placeholder(title: entity.title, mock: entity.kinopoiskID == nil)
     }
 
-    /// «Смотреть» — единственный вход в киноплеер: переход на карточку его больше
-    /// не запускает (правка пользователя 2026-08-28). Чипу нужен **горизонтальный**
-    /// кадр, а не постер: берём тот же, что стоит в кавере, и только если кадра нет —
-    /// обложку, с которой сюда пришли.
+    /// «Смотреть» открывает киноплеер поверх карточки и кладёт фильм в чип бара:
+    /// переход на карточку плеер больше не запускает (правка пользователя 2026-08-28).
+    /// Чипу нужен **горизонтальный** кадр, а не постер: берём тот же, что стоит
+    /// в кавере, и только если кадра нет — обложку, с которой сюда пришли. Шапке
+    /// и таймлайну плеера — год с жанром и хронометраж, пока детали знает экран.
     private func startWatching() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
         actionBar.open(.movie(MovieInProgress(
             id: entity.id,
             still: details.backdrop.map { ArtworkSource.remote($0) } ?? entity.artwork,
-            title: details.title
+            title: details.title,
+            subtitle: details.playerSubtitle,
+            runtime: details.runtime
         )))
     }
 
@@ -320,10 +327,15 @@ struct MovieScreen: View {
         // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
         // а запуск плеера теперь живёт только на этой кнопке. Раньше секунды —
         // чтобы успеть до `-debugCloseEntity`, если прогон закрывает экран следом.
+        //
+        // Один раз на экран: плеер открывается поверх карточки, и на его закрытии
+        // карточка возвращается в окно — `.task` стартует заново и нажал бы снова,
+        // а с `-debugCloseContent` прогон крутился бы по кругу.
         .task {
-            guard UserDefaults.standard.bool(forKey: "debugTapPlay") else { return }
+            guard UserDefaults.standard.bool(forKey: "debugTapPlay"), !didDebugTapPlay else { return }
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
+            didDebugTapPlay = true
             startWatching()
         }
         #endif

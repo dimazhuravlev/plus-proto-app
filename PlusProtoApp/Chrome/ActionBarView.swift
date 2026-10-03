@@ -269,6 +269,19 @@ struct ActionBarView: View {
                 actionBar.toggleMusicPlayback()
             }
         }
+        .task {
+            // `-debugTapChip 1` — тап по чипу кино или книги: киноплеер и читалку
+            // из бара иначе не открыть, тапнуть по симулятору из шелла нечем.
+            // Пара к `-debugActionBar movie|book`. Задержка — с запасом на заставку.
+            guard UserDefaults.standard.bool(forKey: "debugTapChip") else { return }
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            switch actionBar.mode {
+            case .movie: if let movie = actionBar.movie { actionBar.watch(movie) }
+            case .book: if let book = actionBar.book { actionBar.read(book) }
+            case .search, .music: break
+            }
+        }
         #endif
     }
 }
@@ -847,16 +860,23 @@ private struct TrailingSlot: View {
                 .blurReplaceLayer(layout.showMiniPlayer)
             }
 
+            // Чипы — «продолжить читать» и «продолжить смотреть»: тап открывает
+            // читалку и киноплеер (в макете они и нарисованы развёрнутыми
+            // именно под этот переход, DECISIONS 2026-08-22).
             if let book = actionBar.book {
-                BookChip(cover: book.cover)
-                    .zoneWidth(layout)
-                    .blurReplaceLayer(layout.showBookChip)
+                ChipButton(title: book.title, action: { actionBar.read(book) }) {
+                    BookChip(cover: book.cover)
+                }
+                .zoneWidth(layout)
+                .blurReplaceLayer(layout.showBookChip)
             }
 
             if let movie = actionBar.movie {
-                MovieChip(still: movie.still)
-                    .zoneWidth(layout)
-                    .blurReplaceLayer(layout.showMovieChip)
+                ChipButton(title: movie.title, action: { actionBar.watch(movie) }) {
+                    MovieChip(still: movie.still)
+                }
+                .zoneWidth(layout)
+                .blurReplaceLayer(layout.showMovieChip)
             }
         }
         // Ширина зоны — всегда число, поэтому она интерполируется от кадра к кадру
@@ -993,7 +1013,9 @@ private struct CoverSpin {
     }
 }
 
-private struct MiniPlayerPill: View {
+/// Не `private`: тот же мини-плеер в компактном варианте живёт в читалке
+/// (`BookReaderView`) — круг, который разворачивается в пилюлю.
+struct MiniPlayerPill: View {
     let item: MusicNowPlaying
     let trackInfoOpacity: Double
     let progressOpacity: Double
@@ -1191,6 +1213,26 @@ private struct MiniPlayerProgressFill: View {
 }
 
 // MARK: - Chips
+
+/// Нажимаемый чип: пресс-стейт стеклянных кнопок и хаптика «включить контент» —
+/// та же, что у «Смотреть» и «Читать» на экранах сущностей.
+private struct ChipButton<Label: View>: View {
+    let title: String
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium)
+                .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+            action()
+        } label: {
+            label()
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel(title)
+    }
+}
 
 private struct BookChip: View {
     let cover: ArtworkSource
