@@ -9,7 +9,7 @@ struct MovieSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .plusMovieSection()
+            .plusHeadline(.m)
             .foregroundStyle(Color.fillOne)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, MovieLayout.sectionHeaderTop)
@@ -54,7 +54,7 @@ struct MovieSynopsisSection: View {
                 let shifted = index.isMultiple(of: 2) == false
 
                 Text(text)
-                    .plusMovieCardText()
+                    .plusHeadline(.m)
                     .foregroundStyle(Color.fillOne)
                     // Абзац обязан занять свою полную высоту. Без этого он ужимается
                     // под высоту, предложенную снаружи, и SwiftUI режет его многоточием
@@ -171,19 +171,19 @@ struct MovieDetailsSection: View {
     private func line(_ row: MovieDetailRow) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text(row.label)
-                .plusMovieText()
+                .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillOne)
                 .padding(.trailing, Layout.labelInset)
                 .frame(width: Layout.labelWidth, alignment: .leading)
 
             HStack(spacing: Layout.noteGap) {
                 Text(row.value)
-                    .plusMovieText()
+                    .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
 
                 if let note = row.note {
                     Text(note)
-                        .plusMovieText()
+                        .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                 }
             }
@@ -204,21 +204,30 @@ struct MovieRateSection: View {
         /// Ряд кнопок 393×92
         static let rowHeight: CGFloat = 92
         static let circle: CGFloat = 52
+        /// Эмодзи — 24, как глиф кегля 24 (Title S макета), которым он был текстом.
+        static let emoji: CGFloat = 24
         static let labelGap: CGFloat = 8
     }
 
     private struct Option: Identifiable {
         var id: String { title }
+        /// Ассет эмодзи — картинка, а не глиф: см. `RateBlock` витрины.
         let emoji: String
         let title: String
+        /// Сколько эмодзи улетает из кнопки — как у блока витрины (`RateReaction`)
+        let burst: Int
     }
 
     private static let options = [
-        Option(emoji: "👎", title: "Не зашло"),
-        Option(emoji: "😐", title: "Так себе"),
-        Option(emoji: "👍", title: "Хорошо"),
-        Option(emoji: "😍", title: "Обожаю"),
+        Option(emoji: "emojiRateDislike", title: "Не зашло", burst: 1),
+        Option(emoji: "emojiRateMeh", title: "Так себе", burst: 1),
+        Option(emoji: "emojiRateGood", title: "Хорошо", burst: 2),
+        Option(emoji: "emojiRateLove", title: "Обожаю", burst: 6),
     ]
+
+    @State private var selected: String?
+    /// Нажатия по кнопкам: каждое — новая стайка эмодзи из этой кнопки
+    @State private var launches: [String: Int] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -226,16 +235,37 @@ struct MovieRateSection: View {
 
             HStack(spacing: 0) {
                 ForEach(MovieRateSection.options) { option in
-                    VStack(spacing: Layout.labelGap) {
-                        Text(option.emoji)
-                            .plusTitleM()
-                            .frame(width: Layout.circle, height: Layout.circle)
-                            .background(Circle().fill(Color.buttonsSecondary))
+                    // Тап — реакция, как на витрине: белый фон, стайка эмодзи, хаптик.
+                    Button {
+                        selected = option.id
+                        launches[option.id, default: 0] += 1
+                    } label: {
+                        VStack(spacing: Layout.labelGap) {
+                            RateReactionChip(
+                                emoji: option.emoji,
+                                isSelected: selected == option.id,
+                                diameter: Layout.circle,
+                                emojiSize: Layout.emoji
+                            )
 
-                        Text(option.title)
-                            .plusMovieCaption()
-                            .foregroundStyle(Color.fillOne)
+                            Text(option.title)
+                                .plusText(.textS, .semibold)
+                                .foregroundStyle(Color.fillOne)
+                        }
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(PressScaleButtonStyle())
+                    .overlay(alignment: .top) {
+                        RateBalloons(
+                            emoji: option.emoji,
+                            emojiSize: Layout.emoji,
+                            diameter: Layout.circle,
+                            burst: option.burst,
+                            launches: launches[option.id] ?? 0
+                        )
+                    }
+                    .accessibilityLabel(option.title)
+                    .accessibilityAddTraits(selected == option.id ? .isSelected : [])
                     .frame(maxWidth: .infinity)
                 }
             }

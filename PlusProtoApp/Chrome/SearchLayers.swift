@@ -37,16 +37,27 @@ struct SearchLayers<Content: View>: View {
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
+    /// Глубина этого экрана в стеке — с его появления. Текущая глубина навигации
+    /// для пуша не годится: при открытии карточки из выдачи она растёт в том же
+    /// апдейте, и слой гас раньше, чем карточка его накрывала, — под зумом был голый
+    /// альбом, а у зума пропадал источник (проверка навигации 2026-10-03).
+    @State private var ownDepth: Int?
 
     var body: some View {
         ZStack {
             content
 
             SearchOverlay(isActive: isSearchShown) {
+                // Тап по затемнению закрывает поиск — и с клавиатурой, и без неё.
                 actionBar.isSearchFocused = false
+                search.isBrowsing = false
+                search.dropSuspension()
             }
 
-            SearchResultsView(isShown: isResultsShown)
+            SearchResultsView(isShown: isSearchShown)
+        }
+        .onAppear {
+            if ownDepth == nil { ownDepth = navigation.depth }
         }
     }
 
@@ -54,7 +65,7 @@ struct SearchLayers<Content: View>: View {
     private var hostsSearch: Bool {
         switch host {
         case .stackRoot: search.hostDepth == 0
-        case .pushed: search.hostDepth > 0 && search.hostDepth == navigation.depth
+        case .pushed: search.hostDepth > 0 && search.hostDepth == (ownDepth ?? navigation.depth)
         }
     }
 
@@ -70,12 +81,17 @@ struct SearchLayers<Content: View>: View {
     /// на запрос**: экран уходит из фокуса сразу, как поднялась клавиатура, ещё
     /// до первой буквы. Проверка `isActive` здесь была регрессией — с пустым полем
     /// фон не появлялся вовсе (жалоба пользователя 2026-08-25).
+    ///
+    /// Фокус поля — третий драйвер: слой стоит с первого кадра фокуса, не дожидаясь
+    /// клавиатуры. Четвёртый — просмотр выдачи без фокуса (`isBrowsing`): в него поиск
+    /// переходит, когда клавиатуру опустили, и им же встречает возврат из карточки
+    /// (правки пользователя 2026-10-03). С пустым полем — тоже: на экране тогда
+    /// «Искали недавно» (нулевое состояние), а не пустое затемнение.
+    ///
+    /// Слой выдачи стоит с затемнением всегда: с запросом от двух символов в нём
+    /// выдача, короче — «Искали недавно» (`SearchResultsView`).
     private var isSearchShown: Bool {
-        hostsSearch && (keyboard.isUp || search.isSuspended)
+        hostsSearch && (keyboard.isUp || search.isSuspended || actionBar.isSearchFocused || search.isBrowsing)
     }
 
-    /// Выдача — только когда есть что показывать: минимум два символа запроса.
-    private var isResultsShown: Bool {
-        isSearchShown && search.isActive
-    }
 }

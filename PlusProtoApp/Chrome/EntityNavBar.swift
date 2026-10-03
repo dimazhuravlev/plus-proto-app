@@ -21,7 +21,9 @@ enum EntityNavBarMotion {
     static let entityRise: CGFloat = 8
 
     /// Множитель затемнения подложки. Градиент таббара в пике даёт чёрный 0.90 —
-    /// поверх глобального `TopScrim` (чёрный 50%) это уже сплошная плашка.
+    /// это уже сплошная плашка, а под баром контент должен угадываться.
+    /// Глобального `TopScrim` поверх бара больше нет (2026-10-03): подложка — единственный
+    /// слой затемнения и блюра у экранов со своим навбаром.
     static let backdropTint: Double = 0.8
 }
 
@@ -66,9 +68,11 @@ enum EntityNavBarGeometry {
     /// было `screenMargin` 24 в линию с action bar — теперь навбар живёт общим полем
     /// контента, как шапка карточки тайтла).
     static let horizontalPadding: CGFloat = 16
-    /// Зазор кнопка ↔ блок сущности. Больше внутреннего: круг кнопки и угол
-    /// прямоугольной обложки при 8pt зрительно слипаются.
-    static let backToEntityGap: CGFloat = 12
+    /// Зазор кнопка ↔ обложка сущности — 8, правило пользователя 2026-10-03.
+    /// Было 12: казалось, что круг кнопки и угол прямоугольной обложки при 8pt
+    /// зрительно слипаются. Тем же зазором отделены друг от друга и остальные
+    /// элементы строки — блок сущности и слот действий справа.
+    static let backToEntityGap: CGFloat = 8
     /// Зазор обложка ↔ название — как в мини-плеере action bar
     static let coverTitleGap: CGFloat = 8
     /// Скругление прямоугольной обложки: тот же радиус, что у чипа кино в баре
@@ -146,7 +150,7 @@ struct EntityNavBar<Trailing: View>: View {
             }
 
             Text(title)
-                .plusTitleL()
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(1)
         }
@@ -172,6 +176,29 @@ struct EntityNavBar<Trailing: View>: View {
     }
 
     private var backdrop: some View {
+        NavBarBackdrop()
+            .opacity(backgroundProgress)
+    }
+
+    // MARK: Рампы
+
+    private var backgroundProgress: Double {
+        NavBarRamp.progress(scrollOffset, start: thresholds.backgroundStart, length: thresholds.backgroundRamp)
+    }
+
+    private var entityProgress: Double {
+        NavBarRamp.progress(scrollOffset, start: thresholds.titleStart, length: thresholds.titleRamp)
+    }
+}
+
+// MARK: - Подложка
+
+/// Подложка верхнего навбара: прогрессивный блюр под сглаженным затемнением.
+/// Лежит **под** элементами бара и размывает только контент, уехавший под него.
+/// Общая у `EntityNavBar` и плеера музыки — у обоих блюр один (правило пользователя
+/// 2026-10-03). Прозрачность — по скроллу, её задаёт тот, кто подложку показывает.
+struct NavBarBackdrop: View {
+    var body: some View {
         ZStack(alignment: .top) {
             VariableBlurView(
                 maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
@@ -186,23 +213,15 @@ struct EntityNavBar<Trailing: View>: View {
                 .opacity(EntityNavBarMotion.backdropTint)
         }
         .frame(height: EntityNavBarGeometry.backdropHeight)
-        .opacity(backgroundProgress)
         .allowsHitTesting(false)
     }
+}
 
-    // MARK: Рампы
-
-    private var backgroundProgress: Double {
-        EntityNavBar.ramp(scrollOffset, start: thresholds.backgroundStart, length: thresholds.backgroundRamp)
-    }
-
-    private var entityProgress: Double {
-        EntityNavBar.ramp(scrollOffset, start: thresholds.titleStart, length: thresholds.titleRamp)
-    }
-
+/// Рампы появления по скроллу.
+enum NavBarRamp {
     /// Плавная доля 0→1 как чистая функция от offset. Smoothstep, а не линейка:
     /// у линейной рампы на обоих концах излом, и старт проявления читается щелчком.
-    private static func ramp(_ offset: CGFloat, start: CGFloat, length: CGFloat) -> Double {
+    static func progress(_ offset: CGFloat, start: CGFloat, length: CGFloat) -> Double {
         // Нулевая длина — «постоянное значение» (вариант `.pinned`), а не деление на ноль.
         guard length > 0 else { return offset >= start ? 1 : 0 }
         let u = Double(min(max((offset - start) / length, 0), 1))

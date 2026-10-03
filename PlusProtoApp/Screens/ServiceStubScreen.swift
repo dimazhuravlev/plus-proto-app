@@ -10,7 +10,7 @@ struct ServiceStubScreen: View {
 
             VStack(spacing: 24) {
                 Text(tab.title)
-                    .plusHeadline()
+                    .plusHeadline(.xl)
                     .foregroundStyle(Color.fillSix)
 
                 #if DEBUG
@@ -18,7 +18,7 @@ struct ServiceStubScreen: View {
                 // табов. Удалить, когда у сервисных табов появится содержимое.
                 NavigationLink(value: ServiceStubRoute.detail(tab)) {
                     Text("Проверить стек")
-                        .plusTextM()
+                        .plusText(.textM, .medium)
                         .foregroundStyle(Color.plusAccent)
                 }
                 #endif
@@ -60,7 +60,7 @@ private struct ServiceStubDetailScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             Text("Пуш в стеке «\(tab.title)»")
-                .plusTextM()
+                .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillOne)
         }
         .overlay(alignment: .top) {

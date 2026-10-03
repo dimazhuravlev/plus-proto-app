@@ -5,7 +5,7 @@ import SwiftUI
 /// Плоская структура, а не ссылка на блок витрины: экран сущности переживает
 /// пересборку ленты (живые данные приезжают асинхронно и подменяют блоки),
 /// и держать в пути навигации то, что может исчезнуть, нельзя.
-struct EntityRef: Hashable {
+struct EntityRef: Hashable, Codable {
     var id: String
     var title: String
     var subtitle: String
@@ -15,7 +15,7 @@ struct EntityRef: Hashable {
 /// Куда ведёт тап по карточке витрины. `Hashable` нужен дважды: как значение
 /// `NavigationPath` и как `sourceID` зум-перехода — обе стороны перехода
 /// адресуются одним и тем же значением, поэтому рассинхрон невозможен.
-enum EntityRoute: Hashable, Identifiable {
+enum EntityRoute: Hashable, Identifiable, Codable {
     case movie(EntityRef)
     case book(EntityRef)
     case album(EntityRef)

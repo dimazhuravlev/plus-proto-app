@@ -25,6 +25,10 @@ struct MovieDetails {
     let lead: String
     /// «2019 · криминал · 1 ч 53 мин · Великобритания · 18+»
     let meta: [String]
+    /// Хронометраж в секундах — длина таймлайна киноплеера. `nil` — API его не отдал.
+    let runtime: TimeInterval?
+    /// Вторая строка шапки киноплеера: «2019 • криминал». Пусто — шапка в одну строку.
+    let playerSubtitle: String?
     /// Абзацы полного описания, уже нарезанные под макет.
     let synopsis: [String]
     let rows: [MovieDetailRow]
@@ -122,6 +126,8 @@ extension MovieDetails {
         accent = Self.accent(movie)
         lead = Self.lead(movie)
         meta = Self.meta(movie)
+        runtime = movie.movieLength.flatMap { $0 > 0 ? TimeInterval($0 * 60) : nil }
+        playerSubtitle = Self.playerSubtitle(movie)
         synopsis = Self.synopsis(movie)
         rows = Self.rows(movie)
         cast = Self.cast(movie)
@@ -179,6 +185,14 @@ extension MovieDetails {
         if let country = movie.countries?.first?.name { items.append(country) }
         if let age = movie.ageRating { items.append("\(age)+") }
         return items
+    }
+
+    /// Шапка плеера узкая — колонка 375pt по центру верхней полосы, поэтому из меты
+    /// туда едут только год и жанр: остальное на первом экране фильма уже прочитано.
+    /// Разделитель тот же, что в мете карточки.
+    private static func playerSubtitle(_ movie: KinopoiskMovie) -> String? {
+        let items = [movie.year.map { "\($0)" }, movie.genres?.first?.name].compactMap { $0 }
+        return items.isEmpty ? nil : items.joined(separator: " • ")
     }
 
     /// Абзацы описания. У Кинопоиска это сплошной текст — режем по границам
@@ -346,6 +360,10 @@ extension MovieDetails {
             accent: mock ? "Выбор редакции" : nil,
             lead: title,
             meta: mock ? ["2024", "драма", "1 ч 58 мин", "16+"] : [],
+            // Те же моковые факты, что в мете: живому тайтлу до ответа API
+            // хронометраж не выдумываем — плеер возьмёт длительность из макета.
+            runtime: mock ? 118 * 60 : nil,
+            playerSubtitle: mock ? "2024 • драма" : nil,
             synopsis: mock ? Self.mockSynopsis : [],
             rows: mock ? Self.mockRows : [],
             cast: [],
@@ -426,9 +444,6 @@ private extension String {
         return String(self[...stop])
     }
 
-    /// Режет сплошной текст на абзацы по границам предложений, набирая примерно
-    /// `targetLength` символов на абзац. Предложение не разрывается: макет ставит
-    /// абзацы в шахматном порядке, и обрыв на полуслове там читается опечаткой.
     /// Точка в конце фразы: в макете её нет ни у аргумента, ни у абзацев описания.
     /// Восклицательный и вопросительный знаки — часть интонации, их оставляем.
     var withoutTrailingPeriod: String {
@@ -438,7 +453,15 @@ private extension String {
         }
         return trimmed
     }
+}
 
+extension String {
+    /// Режет сплошной текст на абзацы по границам предложений, набирая примерно
+    /// `targetLength` символов на абзац. Предложение не разрывается: макет ставит
+    /// абзацы в шахматном порядке, и обрыв на полуслове там читается опечаткой.
+    ///
+    /// Не приватный: тем же способом читалка (`BookTextStore`) режет аннотацию книги,
+    /// которую Google отдаёт одной строкой.
     func paragraphs(targetLength: Int) -> [String] {
         var sentences: [String] = []
         var current = ""

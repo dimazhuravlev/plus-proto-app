@@ -11,6 +11,9 @@ extension Color {
     static let fillSix = Color.white.opacity(0.4)
     /// Fill/Subtitle — вторичный текст (исполнитель в мини-плеере)
     static let fillSubtitle = Color.white.opacity(0.5)
+    /// Fill/Four — текстовые блоки длиннее двух строк: текст читалки, описание книги.
+    /// Один из четырёх цветов текста по правилам типографики UI kit (`7529:2161`).
+    static let fillFour = Color.white.opacity(0.8)
     /// Fill/Nine — бордеры стеклянных поверхностей (0.66pt)
     static let fillNine = Color.white.opacity(0.08)
     /// Fill/Ten — заливка прогресса в мини-плеере
@@ -21,6 +24,8 @@ extension Color {
     static let buttonsSecondary = Color.white.opacity(0.08)
     /// Plus/Solid One — акцент бренда: заливка прогресс-баров
     static let plusAccent = Color(red: 216 / 255, green: 141 / 255, blue: 252 / 255) // #D88DFC
+    /// Movies — фиолетовый кино: лейбл тайтла у меты, активный чипс фильтров выдачи
+    static let moviesAccent = Color(red: 163 / 255, green: 50 / 255, blue: 255 / 255) // #A332FF
     /// System/iOS Navbar darkBlur — подложка навбара под блюром
     static let navbarDarkBlur = Color(red: 20 / 255, green: 20 / 255, blue: 20 / 255).opacity(0.7) // #141414B2
     /// Плейсхолдер в поле поиска
@@ -57,6 +62,11 @@ enum PlusMetrics {
 
     /// Горизонтальные поля экрана: хедер, ряд табов, action bar
     static let screenMargin: CGFloat = 24
+
+    /// Шеврон заголовка секции ниже центра строки на 2pt — к средней линии строчных
+    /// букв, а не к центру кегля (правка пользователя 2026-10-03, «опустить на 2px»).
+    /// Сдвигом отрисовки: раскладка заголовка не меняется. Во всех заголовках с шевроном.
+    static let headerChevronDrop: CGFloat = 2
 
     // Таббар
     static let tabBarHeight: CGFloat = 100

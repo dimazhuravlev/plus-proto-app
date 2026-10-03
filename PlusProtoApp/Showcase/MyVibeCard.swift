@@ -180,11 +180,11 @@ struct MyVibeCard: View {
     private var textColumn: some View {
         VStack(alignment: .leading, spacing: VibeGeometry.textGap) {
             GradientText(block.title, from: .fillOne, to: .white.opacity(0.7))
-                .plusTextM()
+                .plusText(.textM, .medium)
                 .frame(width: VibeGeometry.titleWidth, alignment: .leading)
 
             GradientText(block.subtitle, from: .fillOne, to: .white.opacity(0.6))
-                .plusTextM()
+                .plusText(.textM, .medium)
                 .frame(width: VibeGeometry.subtitleWidth, alignment: .leading)
                 .opacity(VibeGeometry.subtitleOpacity)
 

@@ -13,6 +13,11 @@ enum TabBarMotion {
     /// граница, на которой переход ещё читается одним непрерывным движением.
     static let activation: Animation = .smooth(duration: 0.26)
 
+    /// Свечение под иконкой проявляется дольше остального таба — 0.6s против 0.26
+    /// (правка пользователя 2026-10-03: «появлялось плавнее, дольше»). Гаснет оно вместе
+    /// с табом за 0.26s: старое свечение не должно висеть, пока загорается новое.
+    static let glowAppear: Animation = .smooth(duration: 0.6)
+
     /// Хаптика тапа по табу — карта MusicPlayer (nav-chrome §11): impact medium
     static let tapHapticIntensity: CGFloat = 0.7
 }
@@ -52,6 +57,7 @@ private enum TabBarGeometry {
 /// (figma-tabbar §2).
 struct TabBarView: View {
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(SearchState.self) private var search
     @State private var debugPressed: AppTab?
 
     var body: some View {
@@ -73,6 +79,17 @@ struct TabBarView: View {
         .padding(.top, PlusChromeMetrics.tabsRowTopPadding)
         .frame(height: PlusChromeMetrics.tabsRowHeight)
         .task { await debugTapCycle() }
+        #if DEBUG
+        // `-debugRetapTab <сек>` — через столько секунд тап по уже активному табу:
+        // поп до корня (или скролл к началу) не проверить без тапа, а шелл не тапает.
+        .task {
+            let delay = UserDefaults.standard.double(forKey: "debugRetapTab")
+            guard delay > 0 else { return }
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            select(navigation.activeTab)
+        }
+        #endif
     }
 
     /// ВРЕМЕННОЕ: шелл симулятор не тапает, поэтому тап воспроизводится синтетически —
@@ -98,6 +115,25 @@ struct TabBarView: View {
     private func select(_ tab: AppTab) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: TabBarMotion.tapHapticIntensity)
+        // Тап по своему табу — домой, к его контенту: стек уходит на корень, и поиск,
+        // из которого сюда пришли, на корне не встаёт (правка пользователя 2026-10-03).
+        // Прежде поп до корня читался возвратом из карточки, и вместо витрины вставала
+        // выдача. Отметка ухода гаснет **до** попа: возврат её уже не найдёт.
+        // Так же, как при уходе на другой таб (`AppRootView`, onChange таба).
+        // Сброс — мгновенный: карточку стек снимает срезом, и гаснущий 0.3 с поиск
+        // лёг бы поверх контента таба (второе ревью 2026-10-03). Только когда есть что
+        // снимать: на корне тап — уезд к началу экрана, и ему анимация нужна.
+        if tab == navigation.activeTab, navigation.stackDepth > 0 {
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                search.dropSuspension()
+                search.isBrowsing = false
+                search.collapse()
+                navigation.select(tab)
+            }
+            return
+        }
         navigation.select(tab)
     }
 }
@@ -112,7 +148,7 @@ private struct TabBarItem: View {
         VStack(spacing: PlusMetrics.tabIconLabelGap) {
             tile
             Text(tab.title)
-                .plusTabLabel()
+                .plusText(.textXS, .medium)
                 .foregroundStyle(isActive ? Color.fillOne : Color.fillSix)
         }
         .frame(width: PlusMetrics.tabItemWidth, height: PlusMetrics.tabItemHeight)
@@ -168,6 +204,9 @@ private struct TabBarItem: View {
             .frame(width: TabBarGeometry.sparkSize.width, height: TabBarGeometry.sparkSize.height)
             .offset(y: TabBarGeometry.sparkCenterOffset + (isActive ? 0 : TabBarGeometry.sparkRise))
             .opacity(isActive ? 1 : 0)
+            // Своя кривая поверх общей у кнопки: внутренняя анимация перебивает внешнюю
+            // для своего поддерева.
+            .animation(isActive ? TabBarMotion.glowAppear : TabBarMotion.activation, value: isActive)
             .allowsHitTesting(false)
     }
 }

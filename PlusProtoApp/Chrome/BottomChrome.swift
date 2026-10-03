@@ -25,6 +25,13 @@ enum PlusChromeMetrics {
     /// Отступ от клавиатуры до низа action bar при фокусе поиска (`2021:11248`).
     static let focusKeyboardGap: CGFloat = 12
 
+    /// На сколько опускается бар в просмотре выдачи без клавиатуры: таббара там нет,
+    /// и бар встаёт на его место — низом на нижнюю безопасную зону, где стоят низы
+    /// кнопок табов (правка пользователя 2026-10-03).
+    static var browsingDrop: CGFloat {
+        tabsRowHeight + actionBarToTabsGap
+    }
+
     /// Высота слоя блюра — **ниже градиента**: размытие должно начинаться примерно
     /// с середины action bar, иначе лента мылится ещё до того, как заедет под хром.
     /// Считается от физического низа: safe area + ряд табов + зазор + половина бара.
@@ -44,9 +51,10 @@ enum PlusChromeMetrics {
 
     // MARK: - Верхний скрим
 
-    /// Высота верхнего скрима от физического верха экрана — `overlay bg` навбара
-    /// (`2004:10781`, figma-screen1 §4): 72pt, чёрный 50% → прозрачный вниз.
-    static let topScrimHeight: CGFloat = 72
+    /// Затемнения у скрима нет — только блюр. В макете под навбаром витрины градиент
+    /// `overlay bg` (`2004:10781`, figma-screen1 §4: 72pt, чёрный 50 % → прозрачный),
+    /// пользователь сперва ослабил его до 25 %, затем убрал совсем (2026-10-03).
+    ///
     /// Два слоя блюра разной высоты и радиуса — приём `TopNavBarBackground` из MusicPlayer:
     /// слабый и высокий даёт мягкий заход, сильный и низкий — плотность у самого верха.
     /// Выше 72pt не поднимаемся: в MusicPlayer блюр перекрывал градиент, но там под ним
@@ -56,8 +64,37 @@ enum PlusChromeMetrics {
     static let topScrimBlurStrong: (radius: CGFloat, height: CGFloat) = (14, 54)
 }
 
-/// Верхний скрим: лента уезжает под статус-бар, поэтому его надо притенить и размыть.
+/// Мягкий уход клавиатуры, который запускаем мы сами (`KeyboardObserver.dismissSmoothly`).
+///
+/// Система на скролле (`scrollDismissesKeyboard`) и SwiftUI на снятии фокуса убирают
+/// клавиатуру рывком — путь ~0.37s, но перегружен в начало: половина за 66 мс,
+/// 91 % за 166 мс (замер 2026-10-03), — и нотификация о таком уходе приходит с нулевой
+/// длительностью. Снятый внутри `UIView.animate` фокус клавиатура слушается и уезжает
+/// заданной анимацией (проверено покадрово 2026-10-03), а нотификация по-прежнему
+/// рапортует ноль — поэтому бару ту же кривую отдаём сами.
+enum KeyboardDismissMotion {
+    /// Длительность ухода: вдвое дольше системного, но всё ещё в пределах UI-перехода.
+    static let duration: TimeInterval = 0.4
+    /// Кривая бара — `UIView.AnimationOptions.curveEaseInOut` в кубических
+    /// коэффициентах UIKit: бар едет ровно так же, как клавиатура под ним.
+    static let bar: Animation = .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+}
+
+enum BottomChromeMotion {
+    /// Таббар, уходя, ещё и проседает: бар опускается на его место, и встречное
+    /// движение читается как «уступил место», а не как два слоя друг в друге.
+    static let tabBarHideOffset: CGFloat = 16
+}
+
+enum TopScrimMotion {
+    /// Скрим уходит и возвращается вместе с пушем экрана со своим навбаром —
+    /// коротким фейдом под зум-переход, а не щелчком на первом кадре.
+    static let fade: Animation = .easeInOut(duration: 0.25)
+}
+
+/// Верхний скрим: лента уезжает под статус-бар, поэтому его надо размыть.
 /// Отдельный слой поверх контента, вне `NavigationStack` — как и нижний хром.
+/// Виден только на витрине: у экранов со своим навбаром блюр — его подложка.
 struct TopScrim: View {
     var body: some View {
         ZStack(alignment: .top) {
@@ -72,13 +109,6 @@ struct TopScrim: View {
                 direction: .blurredTopClearBottom
             )
             .frame(height: PlusChromeMetrics.topScrimBlurStrong.height)
-
-            LinearGradient(
-                colors: [.black.opacity(0.5), .clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: PlusChromeMetrics.topScrimHeight)
         }
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .top)
@@ -90,17 +120,29 @@ struct TopScrim: View {
 struct BottomChrome: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(SearchState.self) private var search
+    /// Клавиатура уже стояла в этом фокусе. Её уход в фокусе — тот, о котором UIKit
+    /// сообщил раньше, чем SwiftUI снял фокус (`isBrowsingLayout`). Свежий фокус —
+    /// в том числе пока клавиатура ещё уезжает после «Назад», затемнения или ухода
+    /// в карточку — сюда не попадает (второе ревью 2026-10-03).
+    @State private var isFocusKeyboardServed = false
 
     var body: some View {
         VStack(spacing: PlusChromeMetrics.actionBarToTabsGap) {
             // Поднимается только бар. Таббар остаётся на своём месте и уходит
-            // под клавиатуру — гасить его не нужно (решение пользователя 2026-08-23).
+            // под клавиатуру — гасить его не нужно (решение пользователя 2026-08-23);
+            // исключение — выдача поиска, см. `isTabBarHidden`.
             // Подъём уехал ВНУТРЬ бара: он обязан висеть на общем предке обеих зон
             // под той же единственной анимацией, что и ширины зон и уезд плеера.
             ActionBarView(raise: raise)
 
             TabBarView()
-                .allowsHitTesting(!actionBar.isSearchFocused)
+                .opacity(isTabBarHidden ? 0 : 1)
+                .offset(y: isTabBarHidden ? BottomChromeMotion.tabBarHideOffset : 0)
+                // Той же кривой, что едет бар: таббар уходит, пока бар опускается
+                // на его место, и возвращается, пока бар поднимается обратно.
+                .animation(keyboard.motion ?? ActionBarMotion.morph, value: isTabBarHidden)
+                .allowsHitTesting(!actionBar.isSearchFocused && !isTabBarHidden)
         }
         // Системный подъём над клавиатурой выключен: SwiftUI поднял бы весь хром
         // вместе с таббаром, да ещё и сложился бы с нашим сдвигом — бар улетал вдвое выше.
@@ -110,6 +152,41 @@ struct BottomChrome: View {
         // выше экрана и пропал — сдвиг сложился вдвое ровно так, как описано выше.
         // Синхрон с клавиатурой добираем её собственной кривой, см. `KeyboardObserver`.
         .ignoresSafeArea(.keyboard)
+        .onChange(of: keyboard.isUp) { _, isUp in
+            if isUp, actionBar.isSearchFocused { isFocusKeyboardServed = true }
+        }
+        // Выходы («Назад», затемнение, уход в карточку) снимают фокус раньше, чем уходит
+        // клавиатура, — защёлка гаснет до следующего фокуса.
+        .onChange(of: actionBar.isSearchFocused) { _, focused in
+            isFocusKeyboardServed = focused && keyboard.isUp
+        }
+    }
+
+    /// Таббара нет, пока открыт поиск: внизу только бар (правка пользователя
+    /// 2026-10-03). В фокусе он гаснет под клавиатурой — поэтому, когда клавиатуру
+    /// опускают в просмотр, под ней уже пусто и мелькать нечему. С пустым полем — так
+    /// же: на экране «Искали недавно», и его просмотр без клавиатуры — тот же, что
+    /// у выдачи (прежде таббар с пустым запросом стоял под клавиатурой, 2026-08-23).
+    private var isTabBarHidden: Bool {
+        search.isBrowsing || actionBar.isSearchFocused
+    }
+
+    /// Просмотр выдачи — или вот-вот он: клавиатура уже уехала, а фокус ещё не снят.
+    /// UIKit сообщает об уходе клавиатуры раньше, чем SwiftUI снимает фокус, и без
+    /// этого бар на кадр брал раскладку режима с плеером и тут же разворачивался
+    /// обратно. Уход в карточку (отметка) сюда не попадает; выход из поиска — тоже:
+    /// «Назад» и затемнение снимают фокус в `actionBar` раньше, чем уходит клавиатура.
+    ///
+    /// Только пока **уезжает клавиатура этого фокуса** (стояла в нём — `isFocusKeyboardServed`,
+    /// и едет — `motion` есть, а `isUp` уже нет): на подъёме окно то же — фокус есть,
+    /// клавиатуры ещё нет, — и свежий фокус пустого поля сперва опускал бар к месту
+    /// таббара, а потом поднимал над клавиатурой (ревью 2026-10-03). Прежде это окно
+    /// закрывал непустой запрос — с «Искали недавно» его нет. Одного `motion` мало:
+    /// фокус, поставленный, пока клавиатура ещё уезжает после «Назад», ловил то же.
+    private var isBrowsingLayout: Bool {
+        search.isBrowsing
+            || (actionBar.isSearchFocused && !search.isSuspended
+                && isFocusKeyboardServed && keyboard.motion != nil)
     }
 
     /// Единственный источник фокусной геометрии бара: и подъём, и ширины зон, и уезд
@@ -118,8 +195,23 @@ struct BottomChrome: View {
     /// тогда, когда трогается клавиатура, и всё меняется одним апдейтом.
     ///
     /// Подъём: низ бара встаёт на 12pt над клавиатурой (`2021:11248`).
+    /// В просмотре выдачи без клавиатуры раскладка та же, фокусная: поле во всю ширину
+    /// бара, плееров и чипов нет — они возвращаются, только когда из поиска выходят
+    /// (правка пользователя 2026-10-03). Бар при этом не над клавиатурой, а на месте
+    /// таббара — той же её кривой, если она как раз уезжает: одно движение, без
+    /// остановки на обычной высоте. Переход «просмотр ↔ фокус» меняет только высоту.
     private var raise: ActionBarRaise {
-        guard keyboard.isUp else { return .none }
+        guard keyboard.isUp else {
+            // Вне поиска — обычная раскладка, но **кривой клавиатуры**, если она как раз
+            // уходит: на «Назад» она уезжает мягким уходом (0.4s ease-in-out), а морф
+            // режимов с быстрым стартом обгонял её, и бар нырял под клавиатуру
+            // (проверка навигации 2026-10-03). Клавиатура стоит — `motion` пустой, и бар
+            // едет своим морфом, как прежде.
+            guard isBrowsingLayout else {
+                return ActionBarRaise(isRaised: false, lift: 0, motion: keyboard.motion)
+            }
+            return ActionBarRaise(isRaised: true, lift: PlusChromeMetrics.browsingDrop, motion: keyboard.motion)
+        }
         let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
             + PlusChromeMetrics.tabsRowHeight
             + PlusChromeMetrics.actionBarToTabsGap
@@ -185,6 +277,39 @@ final class KeyboardObserver {
     private var observers: [NSObjectProtocol] = []
     /// Снимает `motion` после того, как клавиатура доехала.
     private var settle: Task<Void, Never>?
+    /// Длительность последнего настоящего движения клавиатуры — для уходов, которые
+    /// приходят с нулём (см. `drive`). До первого подъёма — системные 0.25.
+    private var lastDuration: Double = 0.25
+    /// Меньше этого — не длительность, а «без анимации» из нотификации.
+    private static let minReportedDuration: Double = 0.05
+    /// Ближайший уход клавиатуры запустили мы (`dismissSmoothly`) и знаем его кривую.
+    @ObservationIgnored private var isOwnDismissPending = false
+
+    /// Убрать клавиатуру мягко — `KeyboardDismissMotion` вместо резкого системного ухода.
+    /// Фокус снимается через цепочку респондеров, и SwiftUI сбрасывает `FocusState` сам:
+    /// дальше всё как при любом снятом фокусе (просмотр выдачи — в баре).
+    @MainActor
+    func dismissSmoothly() {
+        let resign = {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+        guard isUp else {
+            resign()
+            return
+        }
+        isOwnDismissPending = true
+        UIView.animate(
+            withDuration: KeyboardDismissMotion.duration,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState],
+            animations: { _ = resign() },
+            // Нотификации об уходе приходят синхронно внутри `resign`, так что к концу
+            // анимации отметка своё отработала. Сброс здесь — на случай, когда ухода
+            // не случилось (аппаратная клавиатура, гонка с ещё идущим подъёмом): иначе
+            // залипшая отметка отдала бы нашу кривую следующему, системному уходу.
+            completion: { [weak self] _ in self?.isOwnDismissPending = false }
+        )
+    }
 
     init() {
         let center = NotificationCenter.default
@@ -226,9 +351,23 @@ final class KeyboardObserver {
     @MainActor
     private func drive(overlap next: CGFloat, up: Bool, from note: Notification) {
         let info = note.userInfo
-        let duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        let reported = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        // Уход, снятый программно (фокус снимает SwiftUI), приходит с нулевой
+        // длительностью, хотя клавиатура уезжает обычной анимацией (замер 2026-10-03:
+        // подъём рапортует 0.383, уход — 0). С нулём бар доезжал за минимальные 0.12
+        // и нырял под клавиатуру — тогда берём длительность её последнего движения.
+        if reported >= Self.minReportedDuration { lastDuration = reported }
         let rawCurve = info?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int
-        let curve = Self.animation(curve: rawCurve, duration: duration)
+        // Свой уход (`dismissSmoothly`): кривую знаем сами — нотификация о нём врёт.
+        // Он приходит двумя нотификациями — сменой кадра и уходом; отметка гаснет на второй.
+        let isOwnDismiss = isOwnDismissPending && next == 0
+        if isOwnDismiss, !up { isOwnDismissPending = false }
+        let duration = isOwnDismiss
+            ? KeyboardDismissMotion.duration
+            : (reported >= Self.minReportedDuration ? reported : lastDuration)
+        let curve = isOwnDismiss
+            ? KeyboardDismissMotion.bar
+            : Self.animation(curve: rawCurve, duration: duration, leads: up)
 
         motion = curve
         withAnimation(curve) {
@@ -268,8 +407,14 @@ final class KeyboardObserver {
     /// публичных `UIView.AnimationCurve`. Её общепринятая аппроксимация в кубических
     /// коэффициентах — `(0.38, 0.7, 0.125, 1.0)`: резкий старт и долгое торможение.
     /// Остальные значения — стандартные CSS-эквиваленты ease-in-out / in / out / linear.
-    private static func animation(curve raw: Int?, duration rawDuration: Double) -> Animation {
-        let duration = max(0.12, rawDuration - commitLatency)
+    ///
+    /// Фора (`commitLatency`) — только пока клавиатура на экране и бар обязан от неё
+    /// не отстать (`leads`). На уходе форы нет: бар трогается на кадр позже и едет
+    /// полную длительность — то есть чуть отстаёт и остаётся над клавиатурой. С форой
+    /// он её обгонял и на пару кадров нырял под неё, когда ехал на место таббара
+    /// в просмотр выдачи: ход 314 против её 336 (замер записи 2026-10-03).
+    private static func animation(curve raw: Int?, duration rawDuration: Double, leads: Bool) -> Animation {
+        let duration = max(0.12, rawDuration - (leads ? commitLatency : 0))
         return switch raw {
         case 0: .timingCurve(0.42, 0, 0.58, 1, duration: duration)
         case 1: .timingCurve(0.42, 0, 1, 1, duration: duration)

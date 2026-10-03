@@ -2,11 +2,13 @@ import SwiftUI
 
 /// Кросс-сервисный поиск: один запрос — выдача сразу по музыке, кино и книгам.
 ///
-/// **Три домена идут параллельно и рендерятся по мере готовности.** Ждать самый
-/// медленный нельзя: Deezer отвечает за 150–300мс, Google Books за 200–400,
-/// Кинопоиск за полсекунды — при последовательном заходе выдача появлялась бы
-/// через секунду с лишним. Каждый загрузчик пишет свой домен, `@Observable`
-/// перерисовывает только его секцию.
+/// **Три домена идут параллельно, а показываются разом.** Выдача собирается
+/// целиком: ждём ответа всех трёх API, считаем порядок секций и публикуем всё одним
+/// присваиванием (правка пользователя 2026-10-03). Прежде каждый домен рисовался
+/// по мере готовности, а порядок, пересчитанный после последнего ответа,
+/// переставлял блоки уже с данными. Запросы при этом параллельны: ждём самый
+/// медленный (Deezer 150–300мс, Google Books 200–400 и его обложки, Кинопоиск
+/// полсекунды), а не их сумму.
 ///
 /// **Ввод дебаунсится**, а не шлёт запрос на каждую букву: у Кинопоиска 200 запросов
 /// в сутки на ключ. По той же причине кино сперва ищется в дисковом запасе
@@ -18,21 +20,46 @@ final class SearchState {
     var query: String = "" {
         didSet {
             guard query != oldValue else { return }
+            // Набор уводит из полного списка истории. Пока запрос короче двух символов —
+            // сразу, переходом подэкрана к ленте. С двух (вставка, подсказка клавиатуры)
+            // слой сам сменит нулевое состояние на выдачу, и список снимается уже после
+            // этого (`dismissHistory`): иначе на смене мелькала лента (ревью 2026-10-03).
+            if !normalized.isEmpty, !isActive { isHistoryShown = false }
             scheduleSearch()
         }
     }
 
-    private(set) var music = Domain()
-    private(set) var movies = Domain()
-    private(set) var books = Domain()
+    /// Выдача на экране: все три домена разом и уже в окончательном порядке.
+    /// Меняется только целиком — одним присваиванием, когда новая выдача собрана.
+    /// `nil` — показывать ещё нечего: на первом запросе на её месте скелетон.
+    private var shown: Results?
+    /// Запрос в пути. Прежняя выдача всё это время стоит как есть: сброс в скелетон
+    /// на каждой букве моргал карточками (жалоба пользователя 2026-10-03), а подмена
+    /// по доменам переставляла блоки с данными.
+    private var isLoading = false
 
-    /// Состояние одного домена выдачи.
+    /// Собранная выдача одного запроса.
+    private struct Results {
+        let order: [Section.Kind]
+        let music: [SearchHit]
+        let movies: [SearchHit]
+        let books: [SearchHit]
+
+        func hits(_ kind: Section.Kind) -> [SearchHit] {
+            switch kind {
+            case .music: music
+            case .movies: movies
+            case .books: books
+            }
+        }
+
+        var isEmpty: Bool { music.isEmpty && movies.isEmpty && books.isEmpty }
+    }
+
+    /// Состояние одного домена выдачи — так секцию видит экран.
     struct Domain {
         var isLoading = false
         var hits: [SearchHit] = []
-        /// Домен уже отвечал на текущий запрос — по этому признаку скелетон
-        /// сменяется либо строками, либо ничем.
-        var isAnswered = false
     }
 
     /// Ищем с двух символов: на одной букве выдача — случайный шум, а запросы
@@ -49,10 +76,6 @@ final class SearchState {
     private static let perKind = 8
     /// Ниже этого числа локальных совпадений кино добирается из сети.
     private static let poolEnough = 3
-
-    /// Порядок секций текущего запроса. `nil` — ещё не все домены ответили,
-    /// показываем порядок по умолчанию.
-    private var rankedOrder: [Section.Kind]?
 
     /// Куда пользователь ушёл из выдачи: таб и глубина навигации на момент тапа.
     /// `nil` — из поиска никуда не уходили.
@@ -73,8 +96,68 @@ final class SearchState {
     private(set) var hostDepth: Int = 0
 
     private var searchTask: Task<Void, Never>?
-    /// Разобранные выдачи на процесс: возврат к уже набранному запросу бесплатен.
-    private var cache: [String: (music: [SearchHit], movies: [SearchHit], books: [SearchHit])] = [:]
+    /// Собранные выдачи на процесс: возврат к уже набранному запросу бесплатен.
+    private var cache: [String: Results] = [:]
+
+    // MARK: - Искали недавно
+
+    /// Найденное пользователем — во что он перешёл из выдачи, свежее первым.
+    /// Живёт на диске (`SearchRecents`).
+    private var found: [SearchHit] = SearchRecents.load()
+
+    /// Лента нулевого состояния: найденное, за ним стартовый набор, не больше 12.
+    /// Пустой не бывает — поэтому у поиска всегда есть что показать, и с пустым полем
+    /// он ведёт себя как с выдачей (просмотр без клавиатуры, возврат из карточки).
+    var recents: [SearchHit] { Array(history.prefix(SearchRecents.carouselLimit)) }
+
+    /// Полный список истории — переход по заголовку ленты: всё найденное и стартовый набор.
+    var history: [SearchHit] { SearchRecents.merged(found) }
+
+    /// Полный список истории на экране — подэкран нулевого состояния, как раскрытый
+    /// раздел у выдачи: «Назад» сперва сворачивает его к ленте (`collapse`).
+    private(set) var isHistoryShown = false
+
+    func showHistory() {
+        isHistoryShown = true
+    }
+
+    /// Нулевое состояние ушло с экрана, уступив выдаче: список истории больше не открыт.
+    /// Зовёт слой, когда нулевое состояние уже снято и гаснет замороженным.
+    func dismissHistory() {
+        isHistoryShown = false
+    }
+
+    /// «Удалить историю» (с подтверждением в списке): найденное стирается, и список
+    /// уходит к ленте — в ней остаётся стартовый набор, пустой она не бывает.
+    func clearHistory() {
+        found = []
+        SearchRecents.save(found)
+        isHistoryShown = false
+    }
+
+    /// Пользователь перешёл в айтем из выдачи — айтем встаёт первым в «Искали недавно».
+    /// Из самой карусели не зовётся: она переставлялась бы под зумом открытой карточки.
+    func remember(_ hit: SearchHit) {
+        found.removeAll { $0.id == hit.id }
+        found.insert(hit, at: 0)
+        found = Array(found.prefix(SearchRecents.limit))
+        SearchRecents.save(found)
+        if hit.kind == .book, hit.artworkAspect == nil { measureCover(of: hit) }
+    }
+
+    /// Пропорции обложки книги, пришедшей без них. Их снимает только обзор каруселей,
+    /// а книга из полного списка встала бы в ленту по 2:3 — с обрезанной обложкой
+    /// (ревью 2026-10-03). Картинка к этому времени обычно уже в кэше загрузчика.
+    private func measureCover(of hit: SearchHit) {
+        Task { [weak self] in
+            guard let aspect = await Self.coverAspects(of: [hit])[hit.id],
+                  let self,
+                  let index = self.found.firstIndex(where: { $0.id == hit.id })
+            else { return }
+            self.found[index].artworkAspect = aspect
+            SearchRecents.save(self.found)
+        }
+    }
 
     /// Есть что показывать слоем выдачи.
     var isActive: Bool {
@@ -83,33 +166,44 @@ final class SearchState {
 
     /// Ни один домен ничего не нашёл, и все уже ответили.
     var isEmptyResult: Bool {
-        [music, movies, books].allSatisfy { $0.isAnswered && $0.hits.isEmpty }
+        shown?.isEmpty ?? false
     }
 
     /// Секция выдачи: домен, его заголовок и результаты.
     struct Section: Identifiable {
         let id: Kind
-        let title: String
         let domain: Domain
 
-        enum Kind { case music, movies, books }
+        enum Kind: CaseIterable {
+            case music, movies, books
+
+            var title: String {
+                switch self {
+                case .music: "Музыка"
+                case .movies: "Кино"
+                case .books: "Книги"
+                }
+            }
+        }
+
+        var title: String { id.title }
         /// У музыки карточка квадратная, у кино и книг — постер 2:3.
         var isPoster: Bool { id != .music }
     }
 
-    /// Секции в порядке показа. Пока ответили не все домены — порядок по умолчанию;
-    /// как ответили все, он **один раз** пересчитывается по релевантности запросу
-    /// (решение пользователя 2026-08-25). Считать на каждый ответ нельзя: домены
-    /// отвечают вразнобой (кино из локального запаса приходит мгновенно, книги —
-    /// через полсекунды), и секции прыгали бы под пальцем.
+    /// Секции в порядке показа. Порядок считается по релевантности запросу
+    /// (решение пользователя 2026-08-25) **до** показа: выдача публикуется, когда
+    /// ответили все три домена, и появляется сразу на своих местах — блоки после
+    /// этого не переставляются (правка пользователя 2026-10-03).
+    ///
+    /// Скелетон первого запроса — три секции в порядке по умолчанию: настоящий
+    /// порядок ещё неизвестен. Пустые домены экран не показывает вовсе.
     var sections: [Section] {
-        let all = [
-            Section(id: .music, title: "Музыка", domain: music),
-            Section(id: .movies, title: "Кино", domain: movies),
-            Section(id: .books, title: "Книги", domain: books),
-        ]
-        guard let order = rankedOrder else { return all }
-        return order.compactMap { kind in all.first { $0.id == kind } }
+        guard let shown else {
+            guard isLoading else { return [] }
+            return Section.Kind.allCases.map { Section(id: $0, domain: Domain(isLoading: true)) }
+        }
+        return shown.order.map { Section(id: $0, domain: Domain(hits: shown.hits($0))) }
     }
 
     private var normalized: String {
@@ -125,9 +219,17 @@ final class SearchState {
         hostDepth = depth
     }
 
+    /// Забыть точку ухода в карточку: поиск начали заново (новый фокус), вышли из него
+    /// или ушли на другой таб. Отметка гаснет и сама — на возврате (`consumeResume`).
+    func dropSuspension() {
+        suspended = nil
+    }
+
     /// Запомнить точку, из которой пользователь ушёл в открытую карточку.
     func suspend(tab: AppTab, depth: Int) {
         suspended = (tab, depth)
+        // Под карточкой выдачу держит отметка, а не просмотр.
+        isBrowsing = false
     }
 
     /// Пора ли вернуть поиск: пользователь закрыл всё, что открывал из выдачи,
@@ -135,16 +237,30 @@ final class SearchState {
     /// одноразовое, иначе поиск лез бы обратно на каждый поп в этом табе.
     ///
     /// Таб проверяется вместе с глубиной: уйти можно и переключением таба, и тогда
-    /// возвращать клавиатуру пользователю точно не надо.
+    /// возвращать выдачу пользователю точно не надо.
+    ///
+    /// Возвращается выдача **без клавиатуры** (`isBrowsing`): поле стоит внизу с тем же
+    /// запросом, тап по нему возвращает ввод (правка пользователя 2026-10-03). Отметка
+    /// и просмотр меняются в одном апдейте — слой выдачи не гаснет ни на кадр.
+    ///
+    /// С пустым полем — так же: возвращаться есть куда, в «Искали недавно» (нулевое
+    /// состояние, 2026-10-03). Прежде пустой запрос поиск на возврате закрывал.
     func consumeResume(tab: AppTab, depth: Int) -> Bool {
         guard let suspended, suspended.tab == tab, depth <= suspended.depth else { return false }
         self.suspended = nil
+        isBrowsing = true
         return true
     }
 
+    /// Выдача открыта, но поле без фокуса: клавиатуру опустили (скроллом, свайпом
+    /// по полю, «Найти»), или пользователь вернулся из карточки. С пустым полем —
+    /// то же самое, только на экране «Искали недавно». Таббара в этом состоянии нет, бар стоит
+    /// на его месте (`BottomChrome`). Гаснет, когда поиск закрыли (крест, смена таба,
+    /// круг плеера) или когда поле снова получило клавиатуру — дальше слой держит она.
+    var isBrowsing = false
+
     /// Поиск ушёл в открытую карточку, но не закрылся: слой выдачи остаётся
-    /// на экране **под** карточкой и всё время, пока она открыта, и на возврате —
-    /// пока поднимается клавиатура.
+    /// на экране **под** карточкой всё время, пока она открыта.
     ///
     /// Глубина здесь намеренно не проверяется: слои живут на экране, с которого
     /// поиск открыли (`hostDepth`), и открытая поверх карточка накрывает их сама.
@@ -166,13 +282,15 @@ final class SearchState {
         }
 
         if let cached = cache[text] {
-            apply(cached)
+            isLoading = false
+            shown = cached
+            if let expanded { startFull(expanded, text) }
             return
         }
 
-        music = Domain(isLoading: true)
-        movies = Domain(isLoading: true)
-        books = Domain(isLoading: true)
+        // Скелетон — только когда показывать ещё нечего, то есть на первом запросе;
+        // уточнение запроса держит прежнюю выдачу до готовности новой.
+        isLoading = true
 
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: Self.debounce)
@@ -182,29 +300,248 @@ final class SearchState {
     }
 
     private func run(_ text: String) async {
-        // Три независимые задачи: домен, который ответил первым, тут же и покажется.
-        async let musicDone: Void = loadMusic(text)
-        async let moviesDone: Void = loadMovies(text)
-        async let booksDone: Void = loadBooks(text)
-        _ = await (musicDone, moviesDone, booksDone)
+        // Запросы параллельны, показ — общий: ждём все три ответа и персону.
+        async let music = fetchMusic(text)
+        async let movies = fetchMovies(text)
+        async let books = fetchBooks(text)
+        async let person = WikipediaPeople.shared.person(matching: text)
+        let (musicHits, fetchedMovies, fetchedBooks, found) = await (music, movies, books, person)
 
         guard !Task.isCancelled else { return }
-        rankedOrder = Self.order(for: text, music: music, movies: movies, books: books)
-        cache[text] = (music.hits, movies.hits, books.hits)
+        var movieHits = fetchedMovies
+        var bookHits = fetchedBooks
+        // Персона — первой в карусели своего домена: запрос назвал её саму, а не её
+        // книгу или фильм (правка пользователя 2026-10-03, вид — как у соседей).
+        if let found {
+            let hit = SearchHit(person: found)
+            switch found.role {
+            case .director: movieHits = Array(([hit] + movieHits).prefix(Self.perSection))
+            case .writer: bookHits = Array(([hit] + bookHits).prefix(Self.perSection))
+            }
+        }
+        let results = Results(
+            order: Self.order(for: text, music: musicHits, movies: movieHits, books: bookHits),
+            music: musicHits,
+            movies: movieHits,
+            books: bookHits
+        )
+        cache[text] = results
+        // Одно присваивание — один кадр: все блоки появляются разом и сразу
+        // в окончательном порядке.
+        shown = results
+        isLoading = false
+        // Раскрытый раздел следует за запросом: поле в баре на экране полной выдачи
+        // живое, набранное меняет и её. Персона раздела берётся из только что
+        // собранного обзора, поэтому полная выдача — после него.
+        if let expanded { startFull(expanded, text) }
     }
 
     private func reset() {
-        music = Domain()
-        movies = Domain()
-        books = Domain()
-        rankedOrder = nil
+        shown = nil
+        isLoading = false
+        // Запрос стёрт — раскрытому разделу показывать нечего.
+        expanded = nil
+        fullTask?.cancel()
     }
 
-    private func apply(_ cached: (music: [SearchHit], movies: [SearchHit], books: [SearchHit])) {
-        music = Domain(isLoading: false, hits: cached.music, isAnswered: true)
-        movies = Domain(isLoading: false, hits: cached.movies, isAnswered: true)
-        books = Domain(isLoading: false, hits: cached.books, isAnswered: true)
-        rankedOrder = Self.order(for: normalized, music: music, movies: movies, books: books)
+    // MARK: - Полная выдача раздела
+
+    /// Раздел, раскрытый на весь экран — переход по заголовку его карусели (задача
+    /// пользователя 2026-10-03, макет музыки `2440:27920`). `nil` — обзор каруселями.
+    /// Это подэкран слоя выдачи, а не пуш: «Назад» в баре сперва сворачивает его
+    /// к обзору, а вся навигация вокруг поиска (отметка ухода, просмотр, привязка
+    /// к экрану) остаётся прежней.
+    private(set) var expanded: Section.Kind?
+    /// Полная выдача — последняя собранная; к запросу и разделу её сверяет `full(for:)`.
+    private var full: FullResults?
+    private var fullTask: Task<Void, Never>?
+    private var fullCache: [String: FullResults] = [:]
+
+    /// Полная выдача одного раздела по одному запросу.
+    struct FullResults {
+        let kind: Section.Kind
+        let text: String
+        let hits: [SearchHit]
+        /// Колдунщик — только у музыки.
+        let wizard: MusicWizard?
+    }
+
+    /// Колдунщик музыки — самый подходящий запросу исполнитель (макет `2440:29310`):
+    /// фото, имя, play и карусель его альбомов.
+    struct MusicWizard {
+        let artist: SearchHit
+        let albums: [SearchHit]
+        /// Трек этого исполнителя из выдачи — его включает play. Нет — первый альбом.
+        let topTrack: SearchHit?
+    }
+
+    /// Сколько просим у каждой ручки на полной выдаче — больше, чем у карусели.
+    private enum FullLimits {
+        static let tracks = 20
+        static let albums = 15
+        static let artists = 10
+        static let playlists = 10
+        static let movies = 30
+        static let networkMovies = 20
+        /// Меньше стольких фильмов в запасе — добор из сети (квота Кинопоиска).
+        static let poolEnough = 10
+        static let books = 20
+        static let wizardAlbums = 12
+        static let musicTotal = 50
+    }
+
+    /// Раскрыть раздел. Анимацию перехода ведёт слой выдачи.
+    func expand(_ kind: Section.Kind) {
+        expanded = kind
+        // Обзор этого текста ещё в пути — полную выдачу запустит он сам, когда соберётся:
+        // персона раздела берётся из него, и раньше времени она была бы от прошлого
+        // запроса.
+        if cache[normalized] != nil {
+            startFull(kind, normalized)
+        }
+    }
+
+    /// Свернуть к обзору — «Назад» в баре, новый поиск, смена таба. И полный список
+    /// истории — к ленте «Искали недавно».
+    func collapse() {
+        expanded = nil
+        isHistoryShown = false
+    }
+
+    /// Открыт подэкран слоя: раскрытый раздел выдачи или полный список истории
+    /// (он — только в нулевом состоянии; с выдачей на экране флаг досбрасывается
+    /// апдейтом позже, и «Назад» в этот миг уже выходит из поиска).
+    var isSubscreenShown: Bool { expanded != nil || (isHistoryShown && !isActive) }
+
+    /// Полная выдача раскрытого раздела; `nil` — первая ещё собирается. Уточнение
+    /// запроса держит прежнюю выдачу раздела до готовности новой — как и обзор
+    /// (правка пользователя 2026-10-03): скелетон на каждой букве сбрасывал список
+    /// и фильтр.
+    var fullResults: FullResults? {
+        guard let expanded, let full, full.kind == expanded else { return nil }
+        return full
+    }
+
+    private func startFull(_ kind: Section.Kind, _ text: String) {
+        fullTask?.cancel()
+        let key = "\(kind)|\(text)"
+        if let cached = fullCache[key] {
+            full = cached
+            return
+        }
+        fullTask = Task { [weak self] in
+            guard let self else { return }
+            let result = await self.loadFull(kind, text)
+            guard !Task.isCancelled else { return }
+            // Пустой ответ не кэшируем: за ним бывает сбой сети или 429, и «ничего
+            // не нашлось» залипло бы до перезапуска.
+            if !result.hits.isEmpty { self.fullCache[key] = result }
+            self.full = result
+        }
+    }
+
+    private func loadFull(_ kind: Section.Kind, _ text: String) async -> FullResults {
+        switch kind {
+        case .music:
+            let (hits, wizard) = await fetchFullMusic(text)
+            return FullResults(kind: kind, text: text, hits: hits, wizard: wizard)
+        case .movies:
+            let hits = await fetchFullMovies(text)
+            return FullResults(kind: kind, text: text, hits: personFirst(.director, in: cache[text]?.movies, hits), wizard: nil)
+        case .books:
+            let found = (try? await BooksService.shared.search(text, limit: FullLimits.books)) ?? []
+            let hits = found.map(SearchHit.init(book:))
+            return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: cache[text]?.books, hits), wizard: nil)
+        }
+    }
+
+    /// Персона из обзора — первой и в полной выдаче: запрос назвал её саму.
+    private func personFirst(_ kind: SearchHit.Kind, in overview: [SearchHit]?, _ hits: [SearchHit]) -> [SearchHit] {
+        guard let person = overview?.first(where: { $0.kind == kind }) else { return hits }
+        return [person] + hits
+    }
+
+    private func fetchFullMusic(_ text: String) async -> ([SearchHit], MusicWizard?) {
+        async let tracks = try? DeezerService.shared.searchTracks(query: text, limit: FullLimits.tracks)
+        async let albums = try? DeezerService.shared.searchAlbums(query: text, limit: FullLimits.albums)
+        async let artists = try? DeezerService.shared.searchArtists(query: text, limit: FullLimits.artists)
+        async let playlists = try? DeezerService.shared.searchPlaylists(query: text, limit: FullLimits.playlists)
+        let (foundTracks, foundAlbums, allArtists, foundPlaylists) = await (
+            tracks ?? [], albums ?? [], artists ?? [], playlists ?? []
+        )
+        // Исполнители без фото — вне выдачи (правка пользователя 2026-10-03).
+        let foundArtists = allArtists.filter(\.hasPhoto)
+
+        // Вперемешку по одному от каждого вида — как и в карусели.
+        let byKind = [
+            foundTracks.map(SearchHit.init(track:)),
+            foundAlbums.map(SearchHit.init(album:)),
+            foundArtists.map(SearchHit.init(artist:)),
+            foundPlaylists.map(SearchHit.init(playlist:)),
+        ]
+        var hits: [SearchHit] = []
+        var seen: Set<String> = []
+        for index in 0..<(byKind.map(\.count).max() ?? 0) {
+            for kind in byKind where index < kind.count {
+                let hit = kind[index]
+                guard seen.insert((hit.title + "|" + hit.subtitle).lowercased()).inserted else { continue }
+                hits.append(hit)
+            }
+        }
+        hits = Array(hits.prefix(FullLimits.musicTotal))
+
+        // Колдунщик — исполнитель, чьё имя отвечает запросу; из таких — самый
+        // популярный. Не нашлось — колдунщика нет, а не случайный исполнитель.
+        // И только с альбомами: колдунщик без карусели — пустая плашка (правка
+        // пользователя 2026-10-03).
+        let needle = text.folded
+        guard let best = foundArtists
+            .filter({ Self.nameMatches($0.name.folded, needle) && ($0.nbAlbum ?? 1) > 0 })
+            .max(by: { ($0.nbFan ?? 0) < ($1.nbFan ?? 0) })
+        else { return (hits, nil) }
+        let artistAlbums = (try? await DeezerService.shared.artistAlbums(id: best.id, limit: FullLimits.wizardAlbums)) ?? []
+        var albumTitles: Set<String> = []
+        let wizardAlbums = artistAlbums
+            .filter { albumTitles.insert($0.title.lowercased()).inserted }
+            .map(SearchHit.init(album:))
+        guard !wizardAlbums.isEmpty else { return (hits, nil) }
+        let artistName = best.name.folded
+        let topTrack = hits.first { $0.kind == .track && $0.subtitle.folded == artistName }
+        return (hits, MusicWizard(artist: SearchHit(artist: best), albums: wizardAlbums, topTrack: topTrack))
+    }
+
+    /// Ответы сетевого поиска Кинопоиска на процесс. Обзор и полная выдача раздела
+    /// берут одну выдачу на текст (лимит полной, обзору — начало): иначе раскрытый
+    /// раздел тратил второй запрос из 200 в сутки на тот же текст (проверка 2026-10-03).
+    private var kinopoiskRaw: [String: [KinopoiskMovie]] = [:]
+
+    private func kinopoiskMovies(_ text: String) async -> [KinopoiskMovie] {
+        if let cached = kinopoiskRaw[text] { return cached }
+        let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: FullLimits.networkMovies)) ?? []
+        // Пустой — не кэшируем: за ним бывает сбой.
+        if !found.isEmpty { kinopoiskRaw[text] = found }
+        return found
+    }
+
+    /// Имя отвечает запросу: совпадает, начинается с него или содержит его целым словом.
+    private static func nameMatches(_ name: String, _ needle: String) -> Bool {
+        guard !needle.isEmpty else { return false }
+        return name == needle
+            || name.hasPrefix(needle)
+            || name.split(separator: " ").contains { $0 == needle }
+    }
+
+    private func fetchFullMovies(_ text: String) async -> [SearchHit] {
+        let pooled = await MoviePool.shared.search(text, limit: FullLimits.movies)
+            .filter(Self.isShowableMovie)
+        var hits = pooled.map(SearchHit.init(movie:))
+        guard pooled.count < FullLimits.poolEnough, !Task.isCancelled else { return hits }
+        let found = await kinopoiskMovies(text)
+        let known = Set(pooled.map(\.id))
+        hits += found
+            .filter { !known.contains($0.id) && Self.isShowableMovie($0) }
+            .map(SearchHit.init(movie:))
+        return hits
     }
 
     // MARK: - Ранжирование секций
@@ -224,13 +561,18 @@ final class SearchState {
         static let substring = 25.0
         /// Совпал только подзаголовок — исполнитель, автор, год с жанром
         static let subtitle = 15.0
-        /// Прибавка за вес результата внутри домена (`SearchHit.authority`).
+        /// Доля прибавки за вес результата внутри домена (`SearchHit.authority`):
+        /// совпадение × (1 + доля × вес), то есть не больше +25 % к своей ступени.
         ///
-        /// Ради неё всё и затевалось: на популярный запрос точное совпадение
-        /// названия есть у всех трёх доменов сразу («Интерстеллар» — и фильм,
-        /// и десяток каверов на его саундтрек), и различает их только то,
-        /// насколько результат главный у себя дома.
-        static let authority = 25.0
+        /// Вес нужен там, где точное совпадение названия есть у всех трёх доменов
+        /// сразу («Интерстеллар» — и фильм, и десяток каверов на его саундтрек):
+        /// различает их только то, насколько результат главный у себя дома.
+        /// Но только **внутри** ступени совпадения: прибавка процентом, а не
+        /// слагаемым, и популярность не перетягивает более точное название
+        /// (правка пользователя 2026-10-03: «больший вес — совпадению в названии»).
+        /// Слагаемым +25 подзаголовок популярного исполнителя (15 + 25) обгонял
+        /// вхождение в название (25).
+        static let authorityShare = 0.25
         /// Насколько домен должен обойти соседа, чтобы их поменяли местами.
         /// Без порога секции переставлялись бы от шума в выдаче.
         static let swap = 10.0
@@ -238,9 +580,9 @@ final class SearchState {
 
     private static func order(
         for text: String,
-        music: Domain,
-        movies: Domain,
-        books: Domain
+        music: [SearchHit],
+        movies: [SearchHit],
+        books: [SearchHit]
     ) -> [Section.Kind] {
         let scored: [(Section.Kind, Double)] = [
             (.music, score(text, music)),
@@ -266,29 +608,104 @@ final class SearchState {
     /// а не релевантность. Замер на «интерстеллар» (2026-08-25): с надбавкой
     /// за каждое совпадение музыка набирала 148 против 100 у кино — просто потому,
     /// что у Deezer нашлось четыре трека с этим названием, а фильм такой один.
-    private static func score(_ text: String, _ domain: Domain) -> Double {
+    private static func score(_ text: String, _ hits: [SearchHit]) -> Double {
         let needle = text.folded
         guard !needle.isEmpty else { return 0 }
 
-        return domain.hits.map { hit -> Double in
+        return hits.map { hit -> Double in
             let title = hit.title.folded
             let match: Double
             if title == needle { match = MatchScore.exact }
             else if title.hasPrefix(needle) { match = MatchScore.prefix }
             else if title.split(separator: " ").contains(where: { $0 == needle }) { match = MatchScore.word }
             else if title.contains(needle) { match = MatchScore.substring }
+            else if let fuzzy = fuzzyMatch(title, needle) { match = fuzzy }
             else if hit.subtitle.folded.contains(needle) { match = MatchScore.subtitle }
             else { return 0 }
-            return match + hit.authority * MatchScore.authority
+            return match * (1 + hit.authority * MatchScore.authorityShare)
         }
         .max() ?? 0
     }
 
+    /// Нечёткое совпадение по словам — когда запрос с опечаткой или с другой
+    /// транслитерацией. Поиски API сами прощают опечатки и находят верное название,
+    /// а точное сравнение его не узнавало: на «чункингский» Кинопоиск отдаёт
+    /// «Чунгкингский экспресс», кино получало ноль, и выше вставала музыка, где
+    /// в названиях этого слова нет вовсе (жалоба пользователя 2026-10-03).
+    ///
+    /// Каждое слово запроса должно найти в названии похожее слово; ступень — как
+    /// у точного совпадения (первое слово названия — «начало», иначе «слово»),
+    /// умноженная на похожесть худшего из слов. `nil` — не похоже.
+    private static func fuzzyMatch(_ title: String, _ needle: String) -> Double? {
+        let titleWords = words(title)
+        let queryWords = words(needle)
+        guard let firstTitle = titleWords.first, let firstQuery = queryWords.first else { return nil }
+        var worst = 1.0
+        for query in queryWords {
+            let best = titleWords.map { similarity(query, $0) }.max() ?? 0
+            guard best > 0 else { return nil }
+            worst = min(worst, best)
+        }
+        let tier = similarity(firstQuery, firstTitle) > 0 ? MatchScore.prefix : MatchScore.word
+        return tier * worst
+    }
+
+    private static func words(_ text: String) -> [Substring] {
+        text.split { !$0.isLetter && !$0.isNumber }
+    }
+
+    /// Похожесть слова запроса на слово названия, 0…1; 0 — не похоже.
+    /// Слово названия может быть недопечатано в запросе («экспр» → «экспресс»),
+    /// поэтому запрос сравнивается с началом слова той же длины ±1. Допуск —
+    /// одна правка на короткое слово, две на длинное; слова короче четырёх
+    /// букв — только точно: «кот» и «кит» не одно и то же.
+    private static func similarity(_ query: Substring, _ word: Substring) -> Double {
+        if word.hasPrefix(query) { return 1 }
+        let length = query.count
+        guard length >= FuzzyLimits.minLength else { return 0 }
+        let allowed = length <= FuzzyLimits.shortWord ? 1 : 2
+        let q = Array(query), w = Array(word)
+        let distance = (max(0, length - 1)...(length + 1))
+            .filter { $0 <= w.count && $0 > 0 }
+            .map { editDistance(q, w[..<$0]) }
+            .min() ?? .max
+        guard distance <= allowed else { return 0 }
+        return 1 - Double(distance) / Double(length)
+    }
+
+    private enum FuzzyLimits {
+        /// Короче — только точное совпадение
+        static let minLength = 4
+        /// До этой длины допускается одна правка, длиннее — две
+        static let shortWord = 6
+    }
+
+    /// Расстояние Левенштейна: вставки, удаления, замены по одной букве.
+    private static func editDistance(_ a: [Character], _ b: ArraySlice<Character>) -> Int {
+        let b = Array(b)
+        guard !a.isEmpty else { return b.count }
+        guard !b.isEmpty else { return a.count }
+        var previous = Array(0...b.count)
+        var current = [Int](repeating: 0, count: b.count + 1)
+        for i in 1...a.count {
+            current[0] = i
+            for j in 1...b.count {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+            }
+            swap(&previous, &current)
+        }
+        return previous[b.count]
+    }
+
     // MARK: - Домены
 
+    /// Загрузчики доменов ничего не пишут в состояние — только возвращают
+    /// результаты: показывает их `run`, когда собраны все три.
+    ///
     /// Музыка — три ручки Deezer разом: у него нет объединённого поиска, а треки,
     /// альбомы и исполнителей выдача показывает отдельными строками.
-    private func loadMusic(_ text: String) async {
+    private func fetchMusic(_ text: String) async -> [SearchHit] {
         async let tracks = try? DeezerService.shared.searchTracks(query: text, limit: Self.perKind)
         async let albums = try? DeezerService.shared.searchAlbums(query: text, limit: Self.perKind)
         async let artists = try? DeezerService.shared.searchArtists(query: text, limit: Self.perKind)
@@ -299,7 +716,8 @@ final class SearchState {
         let byKind = await [
             (tracks ?? []).map(SearchHit.init(track:)),
             (albums ?? []).map(SearchHit.init(album:)),
-            (artists ?? []).map(SearchHit.init(artist:)),
+            // Исполнители без фото — вне выдачи (правка пользователя 2026-10-03).
+            (artists ?? []).filter(\.hasPhoto).map(SearchHit.init(artist:)),
         ]
         var hits: [SearchHit] = []
         // Дубли по паре «название + исполнитель»: у саундтреков трек и альбом
@@ -314,32 +732,81 @@ final class SearchState {
             }
         }
 
-        guard !Task.isCancelled else { return }
-        music = Domain(isLoading: false, hits: Array(hits.prefix(Self.perSection)), isAnswered: true)
+        return Array(hits.prefix(Self.perSection))
     }
 
     /// Кино — сперва запас на диске, сеть только в добор. Если в запасе уже есть
     /// сколько нужно, поиск по кино не стоит ни одного запроса из квоты.
-    private func loadMovies(_ text: String) async {
+    private func fetchMovies(_ text: String) async -> [SearchHit] {
         let pooled = await MoviePool.shared.search(text, limit: Self.perKind)
-        if !pooled.isEmpty {
-            guard !Task.isCancelled else { return }
-            movies = Domain(isLoading: pooled.count < Self.poolEnough, hits: Array(pooled.map(SearchHit.init(movie:)).prefix(Self.perSection)), isAnswered: true)
+            .filter(Self.isShowableMovie)
+        let local = pooled.map(SearchHit.init(movie:))
+        guard pooled.count < Self.poolEnough, !Task.isCancelled else {
+            return Array(local.prefix(Self.perSection))
         }
-        guard pooled.count < Self.poolEnough else { return }
 
-        let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: Self.perKind)) ?? []
-        guard !Task.isCancelled else { return }
+        let found = Array(await kinopoiskMovies(text).prefix(Self.perKind))
         // Сетевые дополняют локальные, дубликаты по id отбрасываем.
         let known = Set(pooled.map(\.id))
-        let hits = pooled.map(SearchHit.init(movie:)) + found.filter { !known.contains($0.id) }.map(SearchHit.init(movie:))
-        movies = Domain(isLoading: false, hits: Array(hits.prefix(Self.perSection)), isAnswered: true)
+        let network = found
+            .filter { !known.contains($0.id) && Self.isShowableMovie($0) }
+            .map(SearchHit.init(movie:))
+        return Array((local + network).prefix(Self.perSection))
     }
 
-    private func loadBooks(_ text: String) async {
+    /// Карточка фильма без названия или без постера в карусели — серый пустой
+    /// прямоугольник с одним годом: сетевой поиск Кинопоиска отдаёт и такие записи
+    /// (жалоба пользователя 2026-10-03). Фильтр — и для запаса на диске: дёшево.
+    private static func isShowableMovie(_ movie: KinopoiskMovie) -> Bool {
+        let title = movie.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !title.isEmpty && movie.poster?.url(size: .small) != nil
+    }
+
+    private func fetchBooks(_ text: String) async -> [SearchHit] {
         let found = (try? await BooksService.shared.search(text, limit: Self.perKind)) ?? []
-        guard !Task.isCancelled else { return }
-        books = Domain(isLoading: false, hits: found.prefix(Self.perSection).map(SearchHit.init(book:)), isAnswered: true)
+        guard !Task.isCancelled else { return [] }
+        var hits = found.prefix(Self.perSection).map(SearchHit.init(book:))
+        // Карточка книги — по пропорциям обложки (макет `2311:25096`), поэтому книги
+        // готовы, когда обложки уже приехали: ширины известны, карусель не
+        // перекладывается, а сами обложки встают из кэша без проявления.
+        let aspects = await Self.coverAspects(of: hits)
+        for index in hits.indices {
+            hits[index].artworkAspect = aspects[hits[index].id]
+        }
+        return Array(hits)
+    }
+
+    /// Сколько ждём обложки книг. Не дождались — карточка встаёт на пропорции
+    /// по умолчанию, а обложка проявится, когда приедет.
+    private static let coverWait: Duration = .milliseconds(1500)
+
+    /// Пропорции обложек — с самих картинок: размеров Google Books не отдаёт.
+    private static func coverAspects(of hits: [SearchHit]) async -> [String: CGFloat] {
+        let urls = hits.compactMap { hit in hit.artwork?.remoteURL.map { (hit.id, $0) } }
+        guard !urls.isEmpty else { return [:] }
+        return await withTaskGroup(of: (String, CGFloat?).self) { group in
+            for (id, url) in urls {
+                group.addTask { @MainActor in
+                    let image = await ArtworkLoader.shared.image(for: url)
+                    return (id, image.map { $0.size.width / max($0.size.height, 1) })
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: coverWait)
+                return ("", nil)
+            }
+            var aspects: [String: CGFloat] = [:]
+            var answered = 0
+            for await (id, aspect) in group {
+                // Пустой id — истёк потолок ожидания.
+                guard !id.isEmpty else { break }
+                answered += 1
+                if let aspect { aspects[id] = aspect }
+                if answered == urls.count { break }
+            }
+            group.cancelAll()
+            return aspects
+        }
     }
 }
 
@@ -398,7 +865,9 @@ private extension SearchHit {
             id: "artist-\(artist.id)",
             kind: .artist,
             title: artist.name,
-            subtitle: "Исполнитель",
+            // Подписи нет: круглая карточка и так читается исполнителем (правка
+            // пользователя 2026-10-03, прежде — «Исполнитель»).
+            subtitle: "",
             artwork: (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled.map { .remote($0) },
             // Экрана исполнителя в проекте нет вовсе — строка не нажимается.
             route: nil,
@@ -408,14 +877,18 @@ private extension SearchHit {
     }
 
     init(movie: KinopoiskMovie) {
-        let poster = movie.poster?.url(size: .small)
+        // Часть постеров Кинопоиск отдаёт ссылкой на `image.tmdb.org`, а его у нас режут:
+        // карточка выходила пустой (жалоба пользователя 2026-10-03, «Хичкок: Тень гения»).
+        // Через тот же прокси, что и логотипы тайтлов, — постер на месте.
+        let raw = movie.poster?.url(size: .small)
+        let poster = raw.flatMap { TMDBImageProxy.rewrite($0, width: 300) } ?? raw
         self.init(
             id: "movie-\(movie.id)",
             kind: .movie,
             title: movie.displayTitle,
-            subtitle: [movie.year.map { "\($0)" }, movie.genres?.first?.name]
-                .compactMap { $0 }
-                .joined(separator: " · "),
+            // Только год, как в макете: жанр с разделителем-точкой убран (правка
+            // пользователя 2026-10-03).
+            subtitle: movie.year.map { "\($0)" } ?? "",
             artwork: poster.map { .remote($0) },
             route: .movie(EntityRef(
                 id: "kp-\(movie.id)",
@@ -426,6 +899,33 @@ private extension SearchHit {
             // Топ-250 — сразу максимум; иначе рейтинг Кинопоиска, где 5 — дно шкалы,
             // а 9 — потолок.
             authority: movie.top250 != nil ? 1 : min(1, max(0, ((movie.rating?.kp ?? 0) - 5) / 4))
+        )
+    }
+
+    /// Писатель или режиссёр: одно имя, фото с Википедии. Не нажимается — экрана
+    /// персоны в проекте нет. Вес высокий: совпадение запроса с именем — сильный
+    /// сигнал, что секция про него.
+    /// Плейлист — только в полной выдаче: экрана нет, строка не нажимается.
+    init(playlist: DeezerPlaylistBrief) {
+        self.init(
+            id: "playlist-\(playlist.id)",
+            kind: .playlist,
+            title: playlist.title,
+            subtitle: playlist.user?.name ?? "",
+            artwork: (playlist.pictureXl ?? playlist.pictureBig)?.deezerUpscaled.map { .remote($0) },
+            route: nil
+        )
+    }
+
+    init(person: WikipediaPeople.Person) {
+        self.init(
+            id: "person-\(person.pageID)",
+            kind: person.role == .director ? .director : .writer,
+            title: person.name,
+            subtitle: "",
+            artwork: .remote(person.photo),
+            route: nil,
+            authority: 0.8
         )
     }
 

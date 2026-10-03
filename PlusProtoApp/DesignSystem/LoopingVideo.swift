@@ -66,6 +66,9 @@ enum AmbientAudio {
 /// которого в фоне экрана быть не должно.
 struct LoopingVideoLayer: UIViewRepresentable {
     let player: AVQueuePlayer
+    /// Как кадр ложится в рамку. Фоновым роликам нужен кроп, а киноплеер умеет
+    /// переключаться на «вписать» кнопкой из макета.
+    var videoGravity: AVLayerVideoGravity = .resizeAspectFill
     /// Первый готовый кадр — по нему постер уступает место видео.
     let onReadyForDisplay: () -> Void
 
@@ -73,12 +76,15 @@ struct LoopingVideoLayer: UIViewRepresentable {
         let view = PlayerLayerView()
         view.backgroundColor = .clear
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
+        view.playerLayer.videoGravity = videoGravity
         context.coordinator.observe(view.playerLayer, onReadyForDisplay)
         return view
     }
 
-    func updateUIView(_ uiView: PlayerLayerView, context: Context) {}
+    func updateUIView(_ uiView: PlayerLayerView, context: Context) {
+        guard uiView.playerLayer.videoGravity != videoGravity else { return }
+        uiView.playerLayer.videoGravity = videoGravity
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 

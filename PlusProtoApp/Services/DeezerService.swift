@@ -90,6 +90,18 @@ actor DeezerService {
         return response.data
     }
 
+    /// Плейлисты по запросу — для полной выдачи музыки (фильтр «Плейлисты»).
+    func searchPlaylists(query: String, limit: Int = 10) async throws -> [DeezerPlaylistBrief] {
+        let response: DeezerListResponse<DeezerPlaylistBrief> = try await fetch(
+            path: "/search/playlist",
+            query: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ]
+        )
+        return response.data
+    }
+
     /// Плейлист вместе с треками — из него собирается и «Моя Волна», и запас альбомов.
     func playlist(id: Int) async throws -> DeezerPlaylist {
         try await fetch(path: "/playlist/\(id)")
@@ -100,6 +112,16 @@ actor DeezerService {
     func albumTracks(id: Int, limit: Int = 100) async throws -> [DeezerAlbumTrack] {
         let response: DeezerListResponse<DeezerAlbumTrack> = try await fetch(
             path: "/album/\(id)/tracks",
+            query: [URLQueryItem(name: "limit", value: "\(limit)")]
+        )
+        return response.data
+    }
+
+    /// «Похожие» артисты Deezer — круг выбора альбома для витрины: настроение держит
+    /// сид, разнообразие дают его соседи.
+    func relatedArtists(id: Int, limit: Int = 20) async throws -> [DeezerArtistBrief] {
+        let response: DeezerListResponse<DeezerArtistBrief> = try await fetch(
+            path: "/artist/\(id)/related",
             query: [URLQueryItem(name: "limit", value: "\(limit)")]
         )
         return response.data

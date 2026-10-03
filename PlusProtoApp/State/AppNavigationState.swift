@@ -30,6 +30,11 @@ final class AppNavigationState {
 
     private var paths: [AppTab: NavigationPath] = [:]
 
+    /// Просьбы «к началу экрана» по табам: повторный тап по табу, стек которого уже
+    /// на корне (правка пользователя 2026-10-03). Счётчик, а не флаг: корневой экран
+    /// слушает смену своего значения, и каждый тап — новая просьба.
+    private(set) var scrollToTopRequests: [AppTab: Int] = [:]
+
     /// Насколько глубоко мы сейчас от корня активного таба: пуши стека таба плюс
     /// слой поверх хрома со своей стопкой. По этому числу поиск понимает, что
     /// пользователь вернулся из открытой сущности, и восстанавливает выдачу
@@ -38,7 +43,13 @@ final class AppNavigationState {
     /// Считается внутри класса, потому что снаружи `paths` приватны, а `@Observable`
     /// отслеживает чтение — вью, читающая `depth`, обновится на каждый пуш и поп.
     var depth: Int {
-        (paths[activeTab]?.count ?? 0) + (coveredRoute == nil ? 0 : 1 + coveredPath.count)
+        stackDepth + (coveredRoute == nil ? 0 : 1 + coveredPath.count)
+    }
+
+    /// Пуши в стеке активного таба — без слоя поверх хрома. По нему корень понимает,
+    /// на экране ли витрина или запушенный экран со своим навбаром.
+    var stackDepth: Int {
+        paths[activeTab]?.count ?? 0
     }
 
     init() {
@@ -54,10 +65,15 @@ final class AppNavigationState {
     }
 
     /// Тап по уже активному табу возвращает его стек на корень — привычное поведение
-    /// системных таббаров, заодно единственный выход из пуша без свайпа.
+    /// системных таббаров, заодно единственный выход из пуша без свайпа. Стек уже
+    /// на корне — корневой экран уезжает к началу (`scrollToTopRequests`).
     func select(_ tab: AppTab) {
         guard tab != activeTab else {
-            if !(paths[tab]?.isEmpty ?? true) { paths[tab] = NavigationPath() }
+            if !(paths[tab]?.isEmpty ?? true) {
+                paths[tab] = NavigationPath()
+            } else {
+                scrollToTopRequests[tab, default: 0] += 1
+            }
             return
         }
         activeTab = tab

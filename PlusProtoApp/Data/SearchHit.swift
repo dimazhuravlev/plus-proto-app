@@ -2,14 +2,21 @@ import SwiftUI
 
 /// Строка единой выдачи. Сервисы разные, строка одна: дальше UI не знает, из какого
 /// API приехал результат, и секции отличаются только заголовком и порядком.
-struct SearchHit: Identifiable, Hashable {
+/// `Codable` — ради истории «Искали недавно» (`SearchRecents`), она хранится на диске.
+struct SearchHit: Identifiable, Hashable, Codable {
     /// Что это. Порядок кейсов — порядок строк внутри музыкальной секции.
-    enum Kind: Hashable {
+    enum Kind: Hashable, Codable {
         case track
         case album
         case artist
+        /// Только в полной выдаче музыки: своего экрана нет, строка не нажимается.
+        case playlist
         case movie
         case book
+        /// Персоны — в каруселях своих доменов: режиссёр в кино, писатель в книгах
+        /// (`WikipediaPeople`). Подпись — одно имя, экрана персоны нет.
+        case director
+        case writer
 
         /// Круглая миниатюра только у исполнителя — как у аватара в мини-плеере.
         var isRoundArtwork: Bool { self == .artist }
@@ -20,7 +27,8 @@ struct SearchHit: Identifiable, Hashable {
     let id: String
     let kind: Kind
     let title: String
-    /// Вторая строка: исполнитель у трека и альбома, год и жанр у фильма, автор у книги.
+    /// Вторая строка: исполнитель у трека и альбома, год у фильма, автор у книги;
+    /// у исполнителя и персон её нет.
     let subtitle: String
     let artwork: ArtworkSource?
     /// Куда ведёт тап. `nil` — строка не нажимается: у исполнителя своего экрана
@@ -32,4 +40,22 @@ struct SearchHit: Identifiable, Hashable {
     /// культовый фильм от кавера на его саундтрек с тем же именем.
     /// У альбома и книги сигнала нет — там 0.
     var authority: Double = 0
+    /// Пропорции обложки (ширина к высоте), если известны до показа. У книг снимаются
+    /// с самой обложки, пока секция ещё на скелетоне: карточка книги — по ширине
+    /// обложки, и узнай её поздно — карусель переложилась бы на глазах.
+    var artworkAspect: CGFloat? = nil
+}
+
+extension Array where Element == SearchHit {
+    /// Id карточек, которым быть источником зума: первая на каждый маршрут. Трек ведёт
+    /// на свой альбом, и трек с альбомом в одном списке — два источника с одним id:
+    /// зум выбирал бы из них наугад (ревью 2026-10-03). Остальные с тем же маршрутом
+    /// открываются без источника — из центра экрана.
+    var firstPerRouteIDs: Set<String> {
+        var seen: Set<EntityRoute> = []
+        return Set(filter { hit in
+            guard let route = hit.route else { return false }
+            return seen.insert(route).inserted
+        }.map(\.id))
+    }
 }

@@ -23,6 +23,30 @@ struct DeezerArtistBrief: Decodable, Identifiable {
     /// Число фанатов — приходит только у `/search/artist`. Вес исполнителя
     /// в ранжировании секций поиска.
     let nbFan: Int?
+    /// Число альбомов — тоже из `/search/artist`. Без альбомов исполнитель
+    /// не годится в колдунщик полной выдачи.
+    let nbAlbum: Int?
+
+    /// Есть ли у исполнителя своё фото. Deezer и без фото отдаёт ссылку — на серый
+    /// силуэт, с пустым сегментом вместо хеша: `…/images/artist//1000x1000-….jpg`
+    /// (замер 2026-10-03). Такие исполнители в выдачу не идут (правка пользователя).
+    var hasPhoto: Bool {
+        guard let url = pictureXl ?? pictureBig ?? pictureMedium else { return false }
+        return !url.contains("/artist//")
+    }
+}
+
+/// Плейлист из `/search/playlist` — строка полной выдачи музыки.
+struct DeezerPlaylistBrief: Decodable, Identifiable {
+    let id: Int
+    let title: String
+    let pictureBig: String?
+    let pictureXl: String?
+    let user: Owner?
+
+    struct Owner: Decodable {
+        let name: String?
+    }
 }
 
 // MARK: - Album

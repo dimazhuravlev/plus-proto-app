@@ -32,6 +32,12 @@ enum ShowcaseMotion {
 
 // MARK: - Экран
 
+/// Уезд ленты к началу по повторному тапу таба — движение по экрану: ease-in-out,
+/// длинная лента доезжает за ту же длительность, что и короткая.
+private enum ShowcaseScrollMotion {
+    static let toTop: Animation = .timingCurve(0.65, 0, 0.35, 1, duration: 0.5)
+}
+
 /// Витрина «Плюс» — кросс-сервисная лента (`2004:10701`).
 ///
 /// Раскладка абсолютная, а не стек с отступами: в макете карточки наезжают друг на друга
@@ -68,6 +74,11 @@ struct ShowcaseFeedView: View {
         }
         .scrollIndicators(.hidden)
         .scrollPosition($scrollPosition)
+        // Повторный тап по табу «Плюс» на корне — к началу ленты, как в системных
+        // таббарах (правка пользователя 2026-10-03).
+        .onChange(of: navigation.scrollToTopRequests[.plus]) {
+            withAnimation(ShowcaseScrollMotion.toTop) { scrollPosition.scrollTo(edge: .top) }
+        }
         // Координаты макета отсчитываются от физического верха экрана, а не от safe area:
         // заголовок на 70.79 должен лечь сразу под статус-бар. Иначе лента съезжает вниз
         // на всю высоту выреза.

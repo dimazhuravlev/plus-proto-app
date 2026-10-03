@@ -51,8 +51,10 @@ private enum RateBlockGeometry {
     static let size = CGSize(width: ShowcaseLayout.designWidth, height: 158)
     static let verticalPadding: CGFloat = 8
     static let horizontalPadding: CGFloat = 16
-    static let titleTop: CGFloat = 16
-    static let titleBottom: CGFloat = 12
+    /// Макетные 16 и 12 — плюс по 3: строка заголовка по шкале UI kit (Headline S,
+    /// 20/20) на 6 ниже макетной 26, и без добавки глиф и ряд эмодзи уехали бы вверх.
+    static let titleTop: CGFloat = 16 + 3
+    static let titleBottom: CGFloat = 12 + 3
     /// Колонка: pt8 pb6 px8, зазор 8
     static let columnTop: CGFloat = 8
     static let columnBottom: CGFloat = 6
@@ -122,7 +124,7 @@ struct ContinueWatchingCard: View {
                 .scaledToFit()
         } placeholder: {
             Text(block.title)
-                .plusTitleL()
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(2)
                 .minimumScaleFactor(0.6)
@@ -180,7 +182,7 @@ struct ContinueWatchingCard: View {
     private var frameCaption: some View {
         VStack(alignment: .leading, spacing: WatchingGeometry.contentGap) {
             Text(block.remaining)
-                .plusTextS()
+                .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)
 
             PlusProgressBar(progress: block.progress, width: WatchingGeometry.trackWidth)
@@ -206,33 +208,59 @@ struct ContinueWatchingCard: View {
 // MARK: - Блок оценки
 
 /// «Что думаешь?»: заголовок по центру и четыре равные колонки «эмодзи + подпись».
-/// Только вёрстка и пресс-стейт — оценка ничего не отправляет и карточку не скрывает.
+/// Тап — реакция (`RateReaction`): кнопка встаёт на белый, вверх улетают эмодзи.
+/// Оценка ничего не отправляет и карточку не скрывает.
 private struct RateBlock: View {
     private struct Option: Identifiable {
+        /// Ассет эмодзи. Картинка, а не глиф шрифта: эмодзи-шрифт симулятора iOS 26.3
+        /// рисует вместо них квадраты с «?» (жалоба пользователя 2026-10-03, повторная),
+        /// а демо идёт именно на симуляторе. PNG сняты с Apple Color Emoji macOS —
+        /// на устройстве глиф был бы тот же.
         let emoji: String
         let label: String
+        /// Сколько эмодзи улетает из кнопки — по силе оценки (задача пользователя)
+        let burst: Int
         var id: String { label }
     }
 
     private let options = [
-        Option(emoji: "👎", label: "Нет"),
-        Option(emoji: "😐", label: "Ну такое"),
-        Option(emoji: "👍", label: "Супер"),
-        Option(emoji: "😍", label: "Шедевр"),
+        Option(emoji: "emojiRateDislike", label: "Нет", burst: 1),
+        Option(emoji: "emojiRateMeh", label: "Ну такое", burst: 1),
+        Option(emoji: "emojiRateGood", label: "Супер", burst: 2),
+        Option(emoji: "emojiRateLove", label: "Шедевр", burst: 6),
     ]
+
+    @State private var selected: String?
+    /// Нажатия по кнопкам: каждое — новая стайка эмодзи из этой кнопки
+    @State private var launches: [String: Int] = [:]
+
+    /// Эмодзи — 24, как глиф кегля 24 (Title S макета), которым он был текстом.
+    private static let emojiSize: CGFloat = 24
 
     var body: some View {
         VStack(spacing: 0) {
             Text("Что думаешь?")
-                .plusTitleL()
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
                 .padding(.top, RateBlockGeometry.titleTop)
                 .padding(.bottom, RateBlockGeometry.titleBottom)
 
             HStack(spacing: 0) {
                 ForEach(options) { option in
-                    Button {} label: { column(option) }
+                    Button { react(option) } label: { column(option) }
                         .buttonStyle(PressScaleButtonStyle())
+                        .overlay(alignment: .top) {
+                            RateBalloons(
+                                emoji: option.emoji,
+                                emojiSize: Self.emojiSize,
+                                diameter: RateBlockGeometry.chip,
+                                burst: option.burst,
+                                launches: launches[option.id] ?? 0
+                            )
+                            .padding(.top, RateBlockGeometry.columnTop)
+                        }
+                        .accessibilityLabel(option.label)
+                        .accessibilityAddTraits(selected == option.id ? .isSelected : [])
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -242,15 +270,22 @@ private struct RateBlock: View {
         .frame(width: RateBlockGeometry.size.width, height: RateBlockGeometry.size.height, alignment: .top)
     }
 
+    private func react(_ option: Option) {
+        selected = option.id
+        launches[option.id, default: 0] += 1
+    }
+
     private func column(_ option: Option) -> some View {
         VStack(spacing: RateBlockGeometry.columnGap) {
-            Text(option.emoji)
-                .plusTitleM()
-                .frame(width: RateBlockGeometry.chip, height: RateBlockGeometry.chip)
-                .background(Circle().fill(Color.buttonsSecondary))
+            RateReactionChip(
+                emoji: option.emoji,
+                isSelected: selected == option.id,
+                diameter: RateBlockGeometry.chip,
+                emojiSize: Self.emojiSize
+            )
 
             GradientText(option.label, from: .fillOne, to: .white.opacity(0.7))
-                .plusTextM()
+                .plusText(.textM, .medium)
         }
         .padding(.top, RateBlockGeometry.columnTop)
         .padding(.bottom, RateBlockGeometry.columnBottom)

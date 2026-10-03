@@ -275,7 +275,7 @@ struct AlbumScreen: View {
         VStack(alignment: .leading, spacing: AlbumLayout.titleBlockGap) {
             VStack(alignment: .leading, spacing: AlbumLayout.titleToArtist) {
                 Text(details.title)
-                    .plusAlbumTitle()
+                    .plusHeadline(EntityTitleType.style(for: details.title))
                     .foregroundStyle(Color.fillOne)
 
                 if !details.artist.isEmpty {
@@ -300,13 +300,13 @@ struct AlbumScreen: View {
 
             VStack(alignment: .leading, spacing: AlbumLayout.textStackGap) {
                 Text(details.artist)
-                    .plusMovieText()
+                    .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(1)
 
                 if let year = details.year {
                     Text(year)
-                        .plusMovieText()
+                        .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                 }
             }
@@ -341,7 +341,11 @@ struct AlbumScreen: View {
             id: playerID(track),
             cover: entity.artwork,
             title: track.title,
-            artist: details.artist
+            artist: details.artist,
+            album: details.title,
+            year: details.year,
+            artistPicture: details.artistPicture,
+            isExplicit: track.isExplicit
         )
     }
 
@@ -367,7 +371,7 @@ struct AlbumScreen: View {
                     .foregroundStyle(Color.fillOne)
 
                 Text(isPlayingThisAlbum ? "Пауза" : "Слушать")
-                    .plusMovieTextBold()
+                    .plusText(.textM, .semibold)
                     .foregroundStyle(Color.fillOne)
             }
             .padding(.leading, AlbumLayout.playLeading)
@@ -393,7 +397,9 @@ struct AlbumScreen: View {
             id: entity.id,
             cover: entity.artwork,
             title: details.title,
-            artist: details.artist
+            artist: details.artist,
+            year: details.year,
+            artistPicture: details.artistPicture
         )
     }
 
@@ -429,7 +435,7 @@ struct AlbumScreen: View {
                 .frame(width: AlbumLayout.popularWidth, height: 1)
 
             Text("\(number)")
-                .plusMovieText()
+                .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillSubtitle)
                 // Колонка макетных 16pt держит один знак; двузначный номер не переносим,
                 // а даём выступить из кадра симметрично — выравнивание строк цело.
@@ -439,7 +445,7 @@ struct AlbumScreen: View {
             VStack(alignment: .leading, spacing: AlbumLayout.textStackGap) {
                 HStack(spacing: AlbumLayout.badgeGap) {
                     Text(track.title)
-                        .plusMovieText()
+                        .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillOne)
                         .lineLimit(1)
 
@@ -450,7 +456,7 @@ struct AlbumScreen: View {
 
                 if let subtitle = track.subtitle {
                     Text(subtitle)
-                        .plusMovieText()
+                        .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                         .lineLimit(1)
                 }
@@ -505,7 +511,7 @@ struct AlbumScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: AlbumLayout.sectionTitleGap) {
                 Text("Другие альбомы")
-                    .plusMovieCardText()
+                    .plusHeadline(.m)
                     .foregroundStyle(Color.fillOne)
 
                 // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет,
@@ -516,6 +522,7 @@ struct AlbumScreen: View {
                     .frame(width: AlbumLayout.sectionChevronBox, height: AlbumLayout.sectionChevronBox)
                     .scaleEffect(x: -1)
                     .foregroundStyle(Color.fillSubtitle)
+                    .offset(y: PlusMetrics.headerChevronDrop)
             }
             .padding(.top, AlbumLayout.sectionHeaderTop)
             .padding(.bottom, AlbumLayout.sectionHeaderBottom)
@@ -554,13 +561,13 @@ struct AlbumScreen: View {
                 HStack(alignment: .top, spacing: AlbumLayout.badgeGap) {
                     VStack(alignment: .leading, spacing: AlbumLayout.textStackGap) {
                         Text(album.title)
-                            .plusMovieText()
+                            .plusText(.textM, .medium)
                             .foregroundStyle(Color.fillOne)
                             .lineLimit(1)
 
                         if let year = album.year {
                             Text(year)
-                                .plusMovieText()
+                                .plusText(.textM, .medium)
                                 .foregroundStyle(Color.fillSubtitle)
                         }
                     }

@@ -57,7 +57,11 @@ enum MovieLayout {
     static let infoOverlap: CGFloat = 80
     static let infoLeading: CGFloat = 48
     static let infoTrailing: CGFloat = 16
-    static let infoSpacing: CGFloat = 16
+    /// Лид ↔ мета — макет `2128:13022`: 12 от низа лида до первой строки меты.
+    static let leadToMeta: CGFloat = 12
+    /// Фиолетовый лейбл ↔ строка меты под ним. Лейбл — первая строка меты,
+    /// а не подпись над лидом (правка пользователя 2026-10-03, тот же макет).
+    static let accentToMeta: CGFloat = 4
     static let infoBottom: CGFloat = 24
     // Прежний `leadInset = 32` («лид уже своего контейнера» из макета) снят —
     // правка пользователя 2026-08-25: правое поле всех текстов аргумента и описания
@@ -191,23 +195,30 @@ struct MovieScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(ActionBarState.self) private var actionBar
+    #if DEBUG
+    /// `-debugTapPlay` уже нажал «Смотреть» на этом экране — см. задачу в `body`.
+    @State private var didDebugTapPlay = false
+    #endif
 
     /// Что показывать прямо сейчас: живые детали, иначе заглушка по названию.
     private var details: MovieDetails {
         store.details ?? .placeholder(title: entity.title, mock: entity.kinopoiskID == nil)
     }
 
-    /// «Смотреть» — единственный вход в киноплеер: переход на карточку его больше
-    /// не запускает (правка пользователя 2026-08-28). Чипу нужен **горизонтальный**
-    /// кадр, а не постер: берём тот же, что стоит в кавере, и только если кадра нет —
-    /// обложку, с которой сюда пришли.
+    /// «Смотреть» открывает киноплеер поверх карточки и кладёт фильм в чип бара:
+    /// переход на карточку плеер больше не запускает (правка пользователя 2026-08-28).
+    /// Чипу нужен **горизонтальный** кадр, а не постер: берём тот же, что стоит
+    /// в кавере, и только если кадра нет — обложку, с которой сюда пришли. Шапке
+    /// и таймлайну плеера — год с жанром и хронометраж, пока детали знает экран.
     private func startWatching() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
         actionBar.open(.movie(MovieInProgress(
             id: entity.id,
             still: details.backdrop.map { ArtworkSource.remote($0) } ?? entity.artwork,
-            title: details.title
+            title: details.title,
+            subtitle: details.playerSubtitle,
+            runtime: details.runtime
         )))
     }
 
@@ -320,10 +331,15 @@ struct MovieScreen: View {
         // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
         // а запуск плеера теперь живёт только на этой кнопке. Раньше секунды —
         // чтобы успеть до `-debugCloseEntity`, если прогон закрывает экран следом.
+        //
+        // Один раз на экран: плеер открывается поверх карточки, и на его закрытии
+        // карточка возвращается в окно — `.task` стартует заново и нажал бы снова,
+        // а с `-debugCloseContent` прогон крутился бы по кругу.
         .task {
-            guard UserDefaults.standard.bool(forKey: "debugTapPlay") else { return }
+            guard UserDefaults.standard.bool(forKey: "debugTapPlay"), !didDebugTapPlay else { return }
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
+            didDebugTapPlay = true
             startWatching()
         }
         #endif
@@ -529,16 +545,7 @@ struct MovieScreen: View {
     }
 
     private var infoContent: some View {
-        VStack(alignment: .leading, spacing: MovieLayout.infoSpacing) {
-            // В макете здесь «Editor's choice». Редакционных подборок API не отдаёт,
-            // поэтому на этом месте самый сильный реальный факт о тайтле — позиция
-            // в топ-250 или оценка Кинопоиска. Нет и его — строки просто нет.
-            if let accent = details.accent {
-                Text(accent)
-                    .plusMovieText()
-                    .foregroundStyle(Color.plusAccent)
-            }
-
+        VStack(alignment: .leading, spacing: MovieLayout.leadToMeta) {
             // В макете лид — это описание, а название несёт логотип тайтла. Если логотипа
             // у тайтла нет, правило макета отдаёт название текстом: у нас оно занимает
             // именно этот слот, а описание целиком остаётся в секции ниже.
@@ -546,14 +553,28 @@ struct MovieScreen: View {
             // («что происходит» + редакционный вердикт), и обрыв убивает вторую.
             // Под его настоящую длину подобран кегль — см. `MovieLeadType`.
             Text(leadText)
-                .plusMovieLead()
+                .plusHeadline(MovieLeadType.style)
                 .foregroundStyle(Color.fillOne)
                 // Контейнер лида — вся колонка инфо-блока, до общего правого поля 16.
                 // Без растяжки блок кончался бы там, где кончилась самая длинная
                 // строка, и его правый край гулял бы от тайтла к тайтлу.
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if !details.meta.isEmpty { meta }
+            if details.accent != nil || !details.meta.isEmpty {
+                VStack(alignment: .leading, spacing: MovieLayout.accentToMeta) {
+                    // Лейбл — над метой, под лидом (макет `2128:13022`, правка пользователя
+                    // 2026-10-03; прежде стоял над лидом). В макете здесь «Best drame
+                    // in the world». Редакционных подборок API не отдаёт, поэтому на этом
+                    // месте самый сильный реальный факт о тайтле — позиция в топ-250 или
+                    // оценка Кинопоиска. Нет и его — строки просто нет.
+                    if let accent = details.accent {
+                        Text(accent)
+                            .plusText(.textM, .medium)
+                            .foregroundStyle(Color.moviesAccent)
+                    }
+                    if !details.meta.isEmpty { meta }
+                }
+            }
         }
     }
 
@@ -567,7 +588,7 @@ struct MovieScreen: View {
             .reduce(Text(details.meta.first ?? "")) { result, item in
                 result + Text(" • ").foregroundColor(.white.opacity(0.3)) + Text(item)
             }
-            .plusMovieText()
+            .plusText(.textM, .medium)
             .foregroundStyle(Color.fillSubtitle)
     }
 
@@ -601,7 +622,7 @@ private struct MovieInfoSkeleton: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MovieLayout.infoSpacing) {
+        VStack(alignment: .leading, spacing: MovieLayout.leadToMeta) {
             VStack(alignment: .leading, spacing: Layout.leadGap) {
                 ForEach(Layout.leadWidths.indices, id: \.self) { index in
                     bar(width: Layout.leadWidths[index], height: Layout.leadBarHeight)
@@ -717,7 +738,7 @@ private struct MovieMainButtons: View {
         HStack(spacing: MovieLayout.buttonGap) {
             MovieIcon(name: icon, box: MovieLayout.buttonIconBox)
             Text(title)
-                .plusMovieTextBold()
+                .plusText(.textM, .semibold)
                 .foregroundStyle(Color.fillOne)
                 .fixedSize()
         }
