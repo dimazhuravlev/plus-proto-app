@@ -8,8 +8,9 @@ import UIKit
 /// 874×402: вёрстка отмеряется от кромок, середина просто становится шире.
 private enum MoviePlayerLayout {
     /// Поле слева шире правого (правка макета 2026-10-03): приложение заперто в портрете,
-    /// и статус-бар не поворачивается вместе с кадром — в альбомной ориентации он стоит
-    /// вдоль левой кромки. 54 — его высота в макете, плюс обычные 24.
+    /// и статус-бар не поворачивается вместе с кадром — в альбомной ориентации его место
+    /// вдоль левой кромки. 54 — его высота в макете, плюс обычные 24. Сам статус-бар
+    /// в плеере скрыт (просьба пользователя тем же днём), поле осталось по макету.
     static let leadingInset: CGFloat = 78
     /// Справа — скругление экрана и полоска home indicator.
     static let trailingInset: CGFloat = 48
@@ -33,6 +34,10 @@ private enum MoviePlayerLayout {
     /// На сколько хит-зона дорожки выходит за её 16pt сверху и снизу: по полосе
     /// в 16pt пальцем не попасть, а растягивать ради этого раскладку нельзя.
     static let trackHitOutset: CGFloat = 14
+    /// Насколько дорожка растёт под пальцем: +8 к высоте и к ширине, поровну во все
+    /// стороны (просьба пользователя 2026-10-03). Растёт поверх зазоров — слот
+    /// раскладки остаётся 16pt, и подписи времени над ней не сдвигаются.
+    static let trackGrow: CGFloat = 8
     /// Кнопки с подписью — компонент `11:9094` (Size=md 40px, Icon=leading).
     static let pillHeight: CGFloat = 40
     static let pillLeading: CGFloat = 16
@@ -60,6 +65,19 @@ enum MoviePlayerMotion {
     /// Уход по таймеру — без спешки: он ничего не сообщает, а резкое исчезновение
     /// посреди кадра дёргает глаз.
     static let controlsIdleHide: Animation = .easeInOut(duration: 0.3)
+    /// Сдвиг полос вместе с прозрачностью (просьба пользователя 2026-10-03): верхняя
+    /// приходит сверху вниз, нижняя с таймлайном — снизу вверх, обе от своей кромки.
+    /// Транспорт по центру только проявляется: сдвиг посреди кадра читался бы прыжком.
+    static let chromeShift: CGFloat = 12
+    /// Дорожка под пальцем растёт и возвращается пружиной без отскока: палец могут
+    /// отпустить посреди роста, и пружина развернётся с текущей скорости.
+    static let trackGrab: Animation = .smooth(duration: 0.25)
+    /// Трещотка перемотки: тик на каждые 6pt хода головки, но не чаще 30 раз в секунду —
+    /// на быстрой протяжке выходит очередь, на медленной отдельные щелчки.
+    static let scrubTickStep: CGFloat = 6
+    static let scrubTickInterval: TimeInterval = 1.0 / 30
+    /// Лёгкая (просьба пользователя): очередь сопровождает палец, а не трясёт телефон.
+    static let scrubTickIntensity: CGFloat = 0.5
     /// Шаг кнопок перемотки.
     static let skipStep: TimeInterval = 10
     /// Длительность фильма, когда хронометража нет, — число макета (1:37:46).
@@ -270,12 +288,14 @@ final class MovieClock {
 /// а альбомный холст рисуется повёрнутым на 90°: телефон поворачивают, когда плеер
 /// уже открыт. Поворот по часовой — кадр стоит прямо, когда телефон повёрнут против
 /// часовой, вырезом влево: это `landscapeRight`, куда уходят и системные видеоплееры.
-/// Статус-бар при этом остаётся портретным и встаёт вдоль левой кромки кадра —
-/// макет его учитывает и держит под него широкое левое поле.
+/// Портретный статус-бар встал бы вдоль левой кромки кадра — макет держит под него
+/// широкое левое поле, а сам он в плеере скрыт.
 struct MoviePlayerView: View {
     let movie: MovieInProgress
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var clock: MovieClock
+    @State private var ratchet = ScrubRatchet()
     @State private var controlsVisible = true
     /// Счётчик касаний: каждое перезапускает отсчёт до скрытия контролов.
     @State private var touches = 0
@@ -328,20 +348,28 @@ struct MoviePlayerView: View {
                 .contentShape(.rect)
                 .onTapGesture(perform: toggleControls)
             controls(canvas)
-                .opacity(controlsVisible ? 1 : 0)
                 // Погасшие кнопки тапов не ловят: первый тап по экрану возвращает
                 // контролы, а не жмёт невидимую кнопку под пальцем.
                 .allowsHitTesting(controlsVisible)
         }
     }
 
+    /// Показ и уход полос — одной транзакцией (`withAnimation` у того, кто меняет
+    /// `controlsVisible`): сдвиг и прозрачность едут одной кривой с одной точки старта.
     private func controls(_ canvas: CGSize) -> some View {
         let trackWidth = canvas.width - MoviePlayerLayout.leadingInset - MoviePlayerLayout.trailingInset
+        // С «уменьшением движения» полосы только проявляются, без сдвига.
+        let shift = controlsVisible || reduceMotion ? 0 : MoviePlayerMotion.chromeShift
+        let opacity: Double = controlsVisible ? 1 : 0
         return ZStack {
             VStack(spacing: 0) {
                 topBar
+                    .offset(y: -shift)
+                    .opacity(opacity)
                 Spacer(minLength: 0)
                 bottomBlock(trackWidth: trackWidth)
+                    .offset(y: shift)
+                    .opacity(opacity)
             }
             .padding(.leading, MoviePlayerLayout.leadingInset)
             .padding(.trailing, MoviePlayerLayout.trailingInset)
@@ -350,6 +378,7 @@ struct MoviePlayerView: View {
             // Транспорт — по центру всего кадра, а не колонки между полями: так в макете,
             // и кнопки остаются на середине экрана, хотя левое поле шире правого.
             transport
+                .opacity(opacity)
         }
     }
 
@@ -357,12 +386,15 @@ struct MoviePlayerView: View {
 
     private var topBar: some View {
         HStack(alignment: .top, spacing: 0) {
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть", action: close)
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть") {
+                PlayerHaptics.tap()
+                close()
+            }
             Spacer(minLength: 0)
             HStack(spacing: MoviePlayerLayout.buttonGap) {
-                GlassIconButton(icon: "iconPip", accessibilityTitle: "Картинка в картинке", action: registerTouch)
-                GlassIconButton(icon: "iconCast", accessibilityTitle: "Транслировать на экран", action: registerTouch)
-                GlassIconButton(icon: "iconMore", accessibilityTitle: "Ещё", action: registerTouch)
+                GlassIconButton(icon: "iconPip", accessibilityTitle: "Картинка в картинке", action: press)
+                GlassIconButton(icon: "iconCast", accessibilityTitle: "Транслировать на экран", action: press)
+                GlassIconButton(icon: "iconMore", accessibilityTitle: "Ещё", action: press)
             }
         }
         // Название — по центру полосы, а не между группами кнопок: группы разной
@@ -435,8 +467,8 @@ struct MoviePlayerView: View {
                         accessibilityTitle: fillsFrame ? "Вписать кадр" : "Заполнить экран",
                         action: toggleFill
                     )
-                    GlassIconButton(icon: "iconRotate", accessibilityTitle: "Повернуть экран", action: registerTouch)
-                    GlassIconButton(icon: "iconNext", accessibilityTitle: "Дальше", action: registerTouch)
+                    GlassIconButton(icon: "iconRotate", accessibilityTitle: "Повернуть экран", action: press)
+                    GlassIconButton(icon: "iconNext", accessibilityTitle: "Дальше", action: press)
                 }
             }
             .padding(.top, MoviePlayerLayout.trackToButtons)
@@ -453,31 +485,45 @@ struct MoviePlayerView: View {
     }
 
     private func timeline(width: CGFloat) -> some View {
-        let height = MoviePlayerLayout.trackHeight
-        let track = Capsule(style: .continuous)
+        let grow = clock.isScrubbing ? MoviePlayerLayout.trackGrow : 0
+        // Слот раскладки — исходные 16pt во всю колонку. Дорожка лежит поверх него
+        // и под пальцем растёт во все стороны в зазоры — подписи времени над ней
+        // и кнопки под ней не двигаются.
+        return Color.clear
+            .frame(width: width, height: MoviePlayerLayout.trackHeight)
+            .overlay {
+                track(width: width + grow, height: MoviePlayerLayout.trackHeight + grow)
+                    // Ключ — сам хват: в той же транзакции заливка доезжает до точки
+                    // касания, а дальше идёт за пальцем без анимации.
+                    .animation(MoviePlayerMotion.trackGrab, value: clock.isScrubbing)
+            }
+            // Хит-зона выше дорожки, раскладка — нет: отрицательный отступ возвращает
+            // кадру исходные 16pt, увеличенной остаётся только форма касания.
+            .padding(.vertical, MoviePlayerLayout.trackHitOutset)
+            .contentShape(.rect)
+            .gesture(scrubGesture(width: width))
+            .padding(.vertical, -MoviePlayerLayout.trackHitOutset)
+            .accessibilityElement()
+            .accessibilityLabel("Перемотка")
+            .accessibilityValue(MovieTimecode.text(clock.position))
+    }
+
+    private func track(width: CGFloat, height: CGFloat) -> some View {
+        let shape = Capsule(style: .continuous)
         return ZStack(alignment: .leading) {
             Color.clear
-                .glassSurface(track, blur: MoviePlayerLayout.trackBlur)
+                .glassSurface(shape, blur: MoviePlayerLayout.trackBlur)
             // Заливка длиннее пройденного на высоту дорожки и сдвинута влево на столько
             // же: левый торец уходит за кромку и срезается клипом дорожки, а правый
             // остаётся скруглённым, как в макете. На нуле заливки не видно вовсе —
             // а укороченная капсула у самого старта стала бы кружком.
-            track
+            shape
                 .fill(Color.fillOne)
                 .frame(width: width * clock.progress + height)
                 .offset(x: -height)
         }
         .frame(width: width, height: height)
-        .clipShape(track)
-        // Хит-зона выше дорожки, раскладка — нет: отрицательный отступ возвращает
-        // кадру исходные 16pt, увеличенной остаётся только форма касания.
-        .padding(.vertical, MoviePlayerLayout.trackHitOutset)
-        .contentShape(.rect)
-        .gesture(scrubGesture(width: width))
-        .padding(.vertical, -MoviePlayerLayout.trackHitOutset)
-        .accessibilityElement()
-        .accessibilityLabel("Перемотка")
-        .accessibilityValue(MovieTimecode.text(clock.position))
+        .clipShape(shape)
     }
 
     /// Касание дорожки сразу ставит кадр под палец (`minimumDistance: 0`): тап —
@@ -485,17 +531,23 @@ struct MoviePlayerView: View {
     private func scrubGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                clock.scrub(to: value.location.x / width)
+                // Под пальцем дорожка шире на `trackGrow` — по половине с каждой стороны,
+                // и позиция считается по растянутой: кромка заливки стоит ровно под пальцем.
+                let grown = width + MoviePlayerLayout.trackGrow
+                let fraction = min(max(0, (value.location.x + MoviePlayerLayout.trackGrow / 2) / grown), 1)
+                clock.scrub(to: fraction)
+                ratchet.move(to: fraction * grown)
                 registerTouch()
             }
             .onEnded { _ in
                 clock.endScrub()
+                ratchet.end()
                 registerTouch()
             }
     }
 
     private func pill(icon: String, title: String) -> some View {
-        Button(action: registerTouch) {
+        Button(action: press) {
             HStack(spacing: MoviePlayerLayout.pillIconGap) {
                 MovieIcon(name: icon, box: MoviePlayerLayout.pillIcon)
                 Text(title)
@@ -523,11 +575,18 @@ struct MoviePlayerView: View {
 
     private func toggleFill() {
         fillsFrame.toggle()
-        registerTouch()
+        press()
     }
 
     private func toggleControls() {
         withAnimation(MoviePlayerMotion.controlsToggle) { controlsVisible.toggle() }
+        registerTouch()
+    }
+
+    /// Нажатие кнопки без своей логики: отклик пальцу и перезапуск отсчёта
+    /// до скрытия контролов. Хаптика — на всех кнопках плеера (просьба пользователя).
+    private func press() {
+        PlayerHaptics.tap()
         registerTouch()
     }
 
@@ -563,6 +622,58 @@ struct MoviePlayerView: View {
     }
 }
 
+// MARK: - Хаптика
+
+private enum PlayerHaptics {
+    /// Нажатие любой кнопки плеера — impact light, как у play/pause мини-плеера.
+    static func tap() {
+        UIImpactFeedbackGenerator(style: .light)
+            .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
+    }
+}
+
+/// Трещотка перемотки — серия лёгких тиков, пока головка едет под пальцем («как
+/// пулемётная очередь», просьба пользователя 2026-10-03). Тик привязан к ходу
+/// **головки**, а не пальца: у краёв дорожки головка упирается, и очередь стихает
+/// вместе с ней. Частота ограничена сверху — быстрая протяжка даёт ровную очередь,
+/// а не гул, который Taptic Engine всё равно не отыграл бы.
+@MainActor
+private final class ScrubRatchet {
+    private let generator = UIImpactFeedbackGenerator(style: .light)
+    private var lastX: CGFloat?
+    private var travel: CGFloat = 0
+    private var lastTick = Date.distantPast
+
+    /// Положение головки на дорожке, pt. Первый вызов за жест — хват: тик сразу,
+    /// чтобы касание отозвалось ещё до того, как палец сдвинулся.
+    func move(to x: CGFloat) {
+        guard let lastX else {
+            self.lastX = x
+            tick()
+            return
+        }
+        travel += abs(x - lastX)
+        self.lastX = x
+        guard travel >= MoviePlayerMotion.scrubTickStep,
+              Date.now.timeIntervalSince(lastTick) >= MoviePlayerMotion.scrubTickInterval
+        else { return }
+        travel = 0
+        tick()
+    }
+
+    func end() {
+        lastX = nil
+        travel = 0
+    }
+
+    private func tick() {
+        generator.impactOccurred(intensity: MoviePlayerMotion.scrubTickIntensity)
+        lastTick = .now
+        // Следующий тик может прийти через 33мс — движок держим разогретым.
+        generator.prepare()
+    }
+}
+
 // MARK: - Кнопки транспорта
 
 /// Круглая стеклянная кнопка 52 с глифом 24 — компонент `11:9197`. Рецепт стекла
@@ -574,8 +685,7 @@ private struct TransportButton: View {
 
     var body: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light)
-                .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
+            PlayerHaptics.tap()
             action()
         } label: {
             MovieIcon(name: icon, box: MoviePlayerLayout.transportIcon)
@@ -593,8 +703,7 @@ private struct PlayPauseButton: View {
 
     var body: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light)
-                .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
+            PlayerHaptics.tap()
             action()
         } label: {
             // Кросс-поп глифов — тот же, что у play/pause мини-плеера: обе иконки

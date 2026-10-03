@@ -76,7 +76,7 @@ final class ContentPlayerPresenter {
             .environment(navigation)
             .preferredColorScheme(.dark)
         let controller = ContentPlayerHostingController(rootView: root)
-        controller.autoHidesHomeIndicator = player.isMovie
+        controller.isImmersive = player.isMovie
         controller.modalPresentationStyle = .fullScreen
         // С «уменьшением движения» экран не едет через весь дисплей, а проявляется:
         // системная настройка важнее требования к переходу — оно про обычный режим.
@@ -113,19 +113,19 @@ final class ContentPlayerPresenter {
 }
 
 /// Хостинг, который сам отвечает за статус-бар и home indicator. Не через SwiftUI
-/// (`persistentSystemOverlays`): у презентованного контроллера это настройки самого
-/// контроллера, и модификатор внутри него — лишнее звено, на котором можно потерять
-/// предпочтение.
-///
-/// Статус-бар виден и в читалке, и в плеере — оба макета его рисуют (у плеера —
-/// вдоль левой кромки, правка 2026-10-03), светлым по тёмному.
+/// (`statusBarHidden`, `persistentSystemOverlays`): у презентованного контроллера
+/// это настройки самого контроллера, и модификатор внутри него — лишнее звено,
+/// на котором можно потерять предпочтение.
 private final class ContentPlayerHostingController<Content: View>: UIHostingController<Content> {
-    /// Полоска home indicator в плеере ложится поверх кадра у правой кромки —
-    /// пусть гаснет, пока экран не трогают, как в системных видеоплеерах.
-    var autoHidesHomeIndicator = false
+    /// Киноплеер — весь экран под кадр: статус-бар скрыт (просьба пользователя
+    /// 2026-10-03; повёрнутый, он стоял бы боком вдоль левой кромки), полоска
+    /// home indicator гаснет без касаний, как в системных видеоплеерах. Читалке
+    /// статус-бар нужен — он есть в её макете, светлым по чёрному.
+    var isImmersive = false
 
+    override var prefersStatusBarHidden: Bool { isImmersive }
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
-    override var prefersHomeIndicatorAutoHidden: Bool { autoHidesHomeIndicator }
+    override var prefersHomeIndicatorAutoHidden: Bool { isImmersive }
     /// Альбомный кадр плеера рисуется повёрнутым внутри портрета (см. `MoviePlayerView`):
     /// поверни интерфейс система — повёрнутый холст лёг бы боком.
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
