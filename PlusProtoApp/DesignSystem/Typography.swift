@@ -173,36 +173,57 @@ enum PlusHeadline: CaseIterable {
     /// (`HeadlineInkRenderer`). Нужен и тем, кто сам маскирует или клипует заголовок:
     /// маска по рамке срежет хвосты так же, как срезал их рендер iOS.
     var inkOutset: CGFloat { size * HeadlineInk.vertical }
+
+    /// Где базовая линия от верха строки — как в Фигме.
+    ///
+    /// Строка 100 % ниже натуральной (у YS — 1.172 кегля). Фигма делит нехватку поровну
+    /// между верхом и низом строки: базовая линия в 0.842 кегля от верха. iOS при точной
+    /// высоте строки ставит её на самый низ строки — прописные сидели на 0.158 кегля ниже
+    /// макета, хвосты целиком уходили под рамку. Отсюда шеврон выше центра заголовка рядом
+    /// с ним, тесный зазор под заголовком и срезанные хвосты (жалобы пользователя 2026-10-03).
+    var figmaBaseline: CGFloat {
+        let font = UIFont(name: PlusFont.displaySemibold, size: size)
+            ?? .systemFont(ofSize: size, weight: .bold)
+        return (lineHeight - font.lineHeight) / 2 + font.ascender
+    }
 }
 
 /// Запас под «чернила» YS Display Bold за рамкой строк, в долях кегля. Замер по
-/// метрикам шрифта: базовая линия встаёт на подъём (0.928 кегля от верха строки),
-/// хвосты «р», «у», «Д» уходят на 0.202 вниз — у последней строки это 0.13 кегля
-/// за нижней кромкой; диакритика «Й», «Ё» — до 0.935, почти вровень с верхней.
-/// По горизонтали дальше всех вылезает «j» — 0.08. Запас взят с полуторным избытком.
+/// метрикам шрифта при глифах на месте Фигмы (`figmaBaseline`): хвосты «р», «у», «Д»
+/// уходят на 0.202 под базовую линию — у последней строки это 0.044 кегля за нижней
+/// кромкой; диакритика «Й», «Ё», «Ö» — до 0.935 над ней, у первой строки это 0.093
+/// кегля над верхней. По горизонтали дальше всех вылезает «j» — 0.08. Запас с избытком.
 private enum HeadlineInk {
     static let vertical: CGFloat = 0.25
     static let horizontal: CGFloat = 0.1
 }
 
-/// Рендер заголовков: рисует строки как есть, но разрешает глифам выходить за рамку.
+/// Рендер заголовков: ставит каждую строку на базовую линию Фигмы и разрешает глифам
+/// выходить за рамку.
 ///
-/// iOS режет отрисовку `Text` по его рамке, а при интерлиньяже 100 % рамка строк ниже
-/// глифов: хвосты последней строки срезались нижней кромкой контейнера (жалоба
-/// пользователя 2026-10-03). `displayPadding` расширяет только область отрисовки —
-/// раскладка прежняя, блок по-прежнему высотой ровно в N кеглей.
+/// iOS режет отрисовку `Text` по его рамке, а при интерлиньяже 100 % глифы выше строки:
+/// хвосты последней строки срезались нижней кромкой контейнера (жалоба пользователя
+/// 2026-10-03). `displayPadding` расширяет только область отрисовки, сдвиг строки —
+/// только рисунок: раскладка прежняя, блок по-прежнему высотой ровно в N кеглей.
 private struct HeadlineInkRenderer: TextRenderer {
-    let size: CGFloat
+    let style: PlusHeadline
 
     var displayPadding: EdgeInsets {
-        let vertical = size * HeadlineInk.vertical
-        let horizontal = size * HeadlineInk.horizontal
+        let vertical = style.inkOutset
+        let horizontal = style.size * HeadlineInk.horizontal
         return EdgeInsets(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
     }
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        let target = style.figmaBaseline
         for line in layout {
-            context.draw(line)
+            // Строка точной высоты отдаёт подъём, равный высоте строки: её базовая линия
+            // лежит на низу строки. Сдвигаем на место Фигмы от верха этой же строки.
+            let bounds = line.typographicBounds
+            let baseline = bounds.origin.y - bounds.rect.minY
+            var lineContext = context
+            lineContext.translateBy(x: 0, y: target - baseline)
+            lineContext.draw(line)
         }
     }
 }
@@ -213,12 +234,12 @@ extension View {
     /// Высота строки точная (`lineHeight(.exact)`, iOS 26): 100 % меньше натурального
     /// интерлиньяжа YS (1.172 кегля), а `lineSpacing` умеет только прибавлять —
     /// многострочный заголовок шёл бы рыхло. Глифы при этом выше строки, и рисует их
-    /// `HeadlineInkRenderer` — с запасом за рамкой, иначе хвосты последней строки
-    /// срезаны.
+    /// `HeadlineInkRenderer` — на месте Фигмы и с запасом за рамкой, иначе хвосты
+    /// последней строки срезаны.
     func plusHeadline(_ style: PlusHeadline) -> some View {
         font(.custom(PlusFont.displaySemibold, size: style.size))
             .lineHeight(.exact(points: style.lineHeight))
-            .textRenderer(HeadlineInkRenderer(size: style.size))
+            .textRenderer(HeadlineInkRenderer(style: style))
     }
 }
 
