@@ -34,18 +34,7 @@ struct GlassIconButton: View {
     }
 }
 
-/// Пара ♥/✕ под карточкой — figma-screen1 §2: HStack с зазором 6, лайк слева.
-struct LikeDismissPair: View {
-    var onLike: () -> Void = {}
-    var onDismiss: () -> Void = {}
-
-    var body: some View {
-        HStack(spacing: PlusMetrics.circleButtonGap) {
-            GlassIconButton(icon: "iconLove", accessibilityTitle: "Нравится", action: onLike)
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть", action: onDismiss)
-        }
-    }
-}
+// Пара под карточками витрины — `ShowcaseFeedbackPair` (✕/✓, с логикой).
 
 /// Общий пресс-стейт для стеклянных кнопок: `ButtonStyle` сам снимает нажатие при скролле,
 /// в отличие от `DragGesture(minimumDistance: 0)`.

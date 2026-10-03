@@ -24,11 +24,11 @@ private enum MovieCardLayout {
     static let captionOrigin = CGPoint(x: 190.66, y: 391.65 - slot.top)
     static let captionWidth: CGFloat = 182.68
 
-    /// Пара ♥/✕ `2004:10770` — под левым нижним углом постера, слегка на него заходит
+    /// Пара ✕/✓ `2004:10770` — под левым нижним углом постера, слегка на него заходит
     static let buttonsOrigin = CGPoint(x: 50, y: 478.99 - slot.top)
 }
 
-/// Карточка кино в витрине: постер с ореолом, подпись справа и пара ♥/✕.
+/// Карточка кино в витрине: постер с ореолом, подпись справа и пара ✕/✓.
 /// Кадр — слот `.movie`, внутри всё расставлено абсолютно, как в макете.
 /// Ореол выходит за кадр карточки — клипать её нельзя.
 struct MovieCard: View {
@@ -61,6 +61,7 @@ struct MovieCard: View {
             rotation: MovieCardLayout.posterRotation,
             glowOpacity: MovieCardLayout.glowOpacity
         )
+        .showcaseSwappable()
         .showcasePlaced(at: MovieCardLayout.posterOrigin)
     }
 
@@ -69,11 +70,12 @@ struct MovieCard: View {
         GradientText(block.caption, from: block.captionTint, to: .fillOne)
             .plusText(.textM, .medium)
             .frame(width: MovieCardLayout.captionWidth, alignment: .leading)
+            .showcaseSwappable()
             .offset(x: MovieCardLayout.captionOrigin.x, y: MovieCardLayout.captionOrigin.y)
     }
 
     private var buttons: some View {
-        LikeDismissPair()
+        ShowcaseFeedbackPair()
             .offset(x: MovieCardLayout.buttonsOrigin.x, y: MovieCardLayout.buttonsOrigin.y)
     }
 }

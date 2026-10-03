@@ -47,6 +47,8 @@ struct ShowcaseFeedView: View {
     let feed: ShowcaseFeed
     /// Namespace зум-перехода — объявлен в `ShowcaseScreen`, см. комментарий там.
     let zoom: Namespace.ID
+    /// Новый контент для блока по ✕ (`ShowcaseCatalog.prepareReplacement`).
+    var prepareReplacement: @MainActor (ShowcaseBlock) async -> (@MainActor () -> Void)? = { _ in nil }
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
     @State private var scrollPosition = ScrollPosition()
@@ -59,8 +61,11 @@ struct ShowcaseFeedView: View {
                     .padding(.top, ShowcaseLayout.Slot.header.top)
                     .showcaseAppear()
 
-                ForEach(Array(feed.blocks.enumerated()), id: \.element.id) { index, block in
-                    card(block)
+                // Карточка — на слот, а не на контент: ✕ меняет блок в слоте, и карточка
+                // обязана пережить смену — с ней живёт пара ✕/✓, которая стоит на месте
+                // (`ShowcaseFeedbackHost`). Слоты фиксированы макетом и не повторяются.
+                ForEach(Array(feed.blocks.enumerated()), id: \.element.slot.top) { index, block in
+                    card(block, index: index)
                         .padding(.top, gap(before: index))
                         // Наезжающая карточка должна лечь поверх предыдущей, как в макете.
                         .zIndex(Double(index))
@@ -133,8 +138,9 @@ struct ShowcaseFeedView: View {
     /// миниатюра — обложка, кадр, стеклянный блок (см. `showcaseThumbnail()`). Куда вести
     /// и в каком namespace зумить, карточка узнаёт из контекста: маршрут известен здесь,
     /// а миниатюра лежит на несколько слоёв глубже.
-    private func card(_ block: ShowcaseBlock) -> some View {
-        blockView(block)
+    private func card(_ block: ShowcaseBlock, index: Int) -> some View {
+        ShowcaseFeedbackHost(debugIndex: index + 1) { blockView(block) }
+            .environment(\.showcaseRefresh, ShowcaseRefresh { await prepareReplacement(block) })
             .frame(
                 width: ShowcaseLayout.designWidth,
                 height: block.slot.height,
