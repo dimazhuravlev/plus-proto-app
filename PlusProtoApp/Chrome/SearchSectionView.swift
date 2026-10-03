@@ -49,12 +49,13 @@ struct SearchSectionView: View {
     }
 
     /// Переключение фильтров (правки пользователя 2026-10-03): списки сменяются
-    /// **последовательно** — старый гаснет, затем новый проявляется, всего 300 мс
+    /// **последовательно** — старый гаснет за 300 мс, затем новый проявляется за 300 мс
+    /// (по 150 было слишком резко — правка пользователя 2026-10-03)
     /// (кроссфейд пробовали — не понравился); лента чипсов доезжает до активного.
     private enum FilterMotion {
-        static let fadeOutDuration: Duration = .milliseconds(150)
-        static let fadeOut: Animation = .easeIn(duration: 0.15)
-        static let fadeIn: Animation = .easeOut(duration: 0.15)
+        static let fadeOutDuration: Duration = .milliseconds(300)
+        static let fadeOut: Animation = .easeInOut(duration: 0.3)
+        static let fadeIn: Animation = .easeInOut(duration: 0.3)
         /// Подкрутка ленты к активному чипсу — та же длительность, сильный ease-out:
         /// лента отвечает сразу и мягко встаёт.
         static let centerChip: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
