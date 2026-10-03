@@ -488,13 +488,18 @@ final class SearchState {
         static let substring = 25.0
         /// Совпал только подзаголовок — исполнитель, автор, год с жанром
         static let subtitle = 15.0
-        /// Прибавка за вес результата внутри домена (`SearchHit.authority`).
+        /// Доля прибавки за вес результата внутри домена (`SearchHit.authority`):
+        /// совпадение × (1 + доля × вес), то есть не больше +25 % к своей ступени.
         ///
-        /// Ради неё всё и затевалось: на популярный запрос точное совпадение
-        /// названия есть у всех трёх доменов сразу («Интерстеллар» — и фильм,
-        /// и десяток каверов на его саундтрек), и различает их только то,
-        /// насколько результат главный у себя дома.
-        static let authority = 25.0
+        /// Вес нужен там, где точное совпадение названия есть у всех трёх доменов
+        /// сразу («Интерстеллар» — и фильм, и десяток каверов на его саундтрек):
+        /// различает их только то, насколько результат главный у себя дома.
+        /// Но только **внутри** ступени совпадения: прибавка процентом, а не
+        /// слагаемым, и популярность не перетягивает более точное название
+        /// (правка пользователя 2026-10-03: «больший вес — совпадению в названии»).
+        /// Слагаемым +25 подзаголовок популярного исполнителя (15 + 25) обгонял
+        /// вхождение в название (25).
+        static let authorityShare = 0.25
         /// Насколько домен должен обойти соседа, чтобы их поменяли местами.
         /// Без порога секции переставлялись бы от шума в выдаче.
         static let swap = 10.0
@@ -541,11 +546,83 @@ final class SearchState {
             else if title.hasPrefix(needle) { match = MatchScore.prefix }
             else if title.split(separator: " ").contains(where: { $0 == needle }) { match = MatchScore.word }
             else if title.contains(needle) { match = MatchScore.substring }
+            else if let fuzzy = fuzzyMatch(title, needle) { match = fuzzy }
             else if hit.subtitle.folded.contains(needle) { match = MatchScore.subtitle }
             else { return 0 }
-            return match + hit.authority * MatchScore.authority
+            return match * (1 + hit.authority * MatchScore.authorityShare)
         }
         .max() ?? 0
+    }
+
+    /// Нечёткое совпадение по словам — когда запрос с опечаткой или с другой
+    /// транслитерацией. Поиски API сами прощают опечатки и находят верное название,
+    /// а точное сравнение его не узнавало: на «чункингский» Кинопоиск отдаёт
+    /// «Чунгкингский экспресс», кино получало ноль, и выше вставала музыка, где
+    /// в названиях этого слова нет вовсе (жалоба пользователя 2026-10-03).
+    ///
+    /// Каждое слово запроса должно найти в названии похожее слово; ступень — как
+    /// у точного совпадения (первое слово названия — «начало», иначе «слово»),
+    /// умноженная на похожесть худшего из слов. `nil` — не похоже.
+    private static func fuzzyMatch(_ title: String, _ needle: String) -> Double? {
+        let titleWords = words(title)
+        let queryWords = words(needle)
+        guard let firstTitle = titleWords.first, let firstQuery = queryWords.first else { return nil }
+        var worst = 1.0
+        for query in queryWords {
+            let best = titleWords.map { similarity(query, $0) }.max() ?? 0
+            guard best > 0 else { return nil }
+            worst = min(worst, best)
+        }
+        let tier = similarity(firstQuery, firstTitle) > 0 ? MatchScore.prefix : MatchScore.word
+        return tier * worst
+    }
+
+    private static func words(_ text: String) -> [Substring] {
+        text.split { !$0.isLetter && !$0.isNumber }
+    }
+
+    /// Похожесть слова запроса на слово названия, 0…1; 0 — не похоже.
+    /// Слово названия может быть недопечатано в запросе («экспр» → «экспресс»),
+    /// поэтому запрос сравнивается с началом слова той же длины ±1. Допуск —
+    /// одна правка на короткое слово, две на длинное; слова короче четырёх
+    /// букв — только точно: «кот» и «кит» не одно и то же.
+    private static func similarity(_ query: Substring, _ word: Substring) -> Double {
+        if word.hasPrefix(query) { return 1 }
+        let length = query.count
+        guard length >= FuzzyLimits.minLength else { return 0 }
+        let allowed = length <= FuzzyLimits.shortWord ? 1 : 2
+        let q = Array(query), w = Array(word)
+        let distance = (max(0, length - 1)...(length + 1))
+            .filter { $0 <= w.count && $0 > 0 }
+            .map { editDistance(q, w[..<$0]) }
+            .min() ?? .max
+        guard distance <= allowed else { return 0 }
+        return 1 - Double(distance) / Double(length)
+    }
+
+    private enum FuzzyLimits {
+        /// Короче — только точное совпадение
+        static let minLength = 4
+        /// До этой длины допускается одна правка, длиннее — две
+        static let shortWord = 6
+    }
+
+    /// Расстояние Левенштейна: вставки, удаления, замены по одной букве.
+    private static func editDistance(_ a: [Character], _ b: ArraySlice<Character>) -> Int {
+        let b = Array(b)
+        guard !a.isEmpty else { return b.count }
+        guard !b.isEmpty else { return a.count }
+        var previous = Array(0...b.count)
+        var current = [Int](repeating: 0, count: b.count + 1)
+        for i in 1...a.count {
+            current[0] = i
+            for j in 1...b.count {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+            }
+            swap(&previous, &current)
+        }
+        return previous[b.count]
     }
 
     // MARK: - Домены
