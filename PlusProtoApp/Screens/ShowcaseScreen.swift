@@ -17,7 +17,7 @@ struct ShowcaseScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            ShowcaseFeedView(feed: catalog.feed, zoom: zoom)
+            ShowcaseFeedView(feed: catalog.feed, zoom: zoom, prepareReplacement: catalog.prepareReplacement)
         }
         // Куда ведут карточки — экраны сущностей и слой фильма — объявлено на корне
         // стека каждого таба (`EntityDestinations`), а не здесь: поиск открывается

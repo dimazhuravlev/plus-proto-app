@@ -27,12 +27,12 @@ private enum AlbumCardLayout {
     /// посередине. Подписи и так наезжают на угол обложки, лишние 5pt им не мешают.
     static let titlesWidth: CGFloat = 112
 
-    /// Пара ♥/✕ `2004:10760` — ниже обложки, по её левой трети
+    /// Пара ✕/✓ `2004:10760` — ниже обложки, по её левой трети
     static let buttonsOrigin = CGPoint(x: 122.68, y: 728 - slot.top)
 }
 
 /// Карточка альбома в витрине: обложка с ореолом справа, название с исполнителем слева
-/// и пара ♥/✕ под ними. Кадр — слот `.album`, внутри всё расставлено абсолютно.
+/// и пара ✕/✓ под ними. Кадр — слот `.album`, внутри всё расставлено абсолютно.
 /// Ореол выходит за кадр карточки — клипать её нельзя.
 struct AlbumCard: View {
     let block: AlbumBlock
@@ -63,6 +63,7 @@ struct AlbumCard: View {
             rotation: AlbumCardLayout.coverRotation,
             glowOpacity: AlbumCardLayout.glowOpacity
         )
+        .showcaseSwappable()
         .showcasePlaced(at: AlbumCardLayout.coverOrigin)
     }
 
@@ -83,11 +84,12 @@ struct AlbumCard: View {
         }
         .lineLimit(2)
         .frame(width: AlbumCardLayout.titlesWidth, alignment: .leading)
+        .showcaseSwappable()
         .offset(x: AlbumCardLayout.titlesOrigin.x, y: AlbumCardLayout.titlesOrigin.y)
     }
 
     private var buttons: some View {
-        LikeDismissPair()
+        ShowcaseFeedbackPair()
             .offset(x: AlbumCardLayout.buttonsOrigin.x, y: AlbumCardLayout.buttonsOrigin.y)
     }
 }

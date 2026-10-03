@@ -86,8 +86,8 @@ private func wave(
 
 // MARK: - Карточка
 
-/// «Моя Волна»: неоновый орб слева, заголовок с подзаголовком и пара ♥/✕ справа.
-/// Кнопки без логики — по решению из DECISIONS витрина пока только вёрстка.
+/// «Моя Волна»: неоновый орб слева, заголовок с подзаголовком и пара ✕/✓ справа
+/// (`ShowcaseFeedbackPair`: ✕ — другая «Волна», ✓ — то, что надо).
 struct MyVibeCard: View {
     let block: VibeBlock
 
@@ -101,6 +101,7 @@ struct MyVibeCard: View {
             // включает плеер — разворачиваться некуда.
             orb
                 .showcaseThumbnail()
+                .showcaseSwappable()
                 .showcasePlaced(at: VibeGeometry.haloOrigin)
 
             textColumn
@@ -182,13 +183,15 @@ struct MyVibeCard: View {
             GradientText(block.title, from: .fillOne, to: .white.opacity(0.7))
                 .plusText(.textM, .medium)
                 .frame(width: VibeGeometry.titleWidth, alignment: .leading)
+                .showcaseSwappable()
 
             GradientText(block.subtitle, from: .fillOne, to: .white.opacity(0.6))
                 .plusText(.textM, .medium)
                 .frame(width: VibeGeometry.subtitleWidth, alignment: .leading)
                 .opacity(VibeGeometry.subtitleOpacity)
+                .showcaseSwappable()
 
-            LikeDismissPair()
+            ShowcaseFeedbackPair()
         }
         .offset(x: VibeGeometry.textOrigin.x, y: VibeGeometry.textOrigin.y)
     }

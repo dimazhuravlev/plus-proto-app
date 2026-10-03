@@ -30,6 +30,11 @@ final class ShowcaseCatalog {
     /// Кадр сцены показанного фильма — для чипа киноплеера в action bar.
     private var featuredStill: KinopoiskStill?
 
+    /// Заготовленные замены блоков по ✕ — по верху слота: следующий айтем каждой
+    /// карточки готовится заранее, вместе с картинками, и смена укладывается в 400 мс
+    /// ухода старого (`ShowcaseFeedbackPair`).
+    private var upcoming: [CGFloat: Task<Replacement?, Never>] = [:]
+
     /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
     /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после
     /// установки, когда запас ещё пуст, — и тут же сменяется живыми данными.
@@ -89,6 +94,7 @@ final class ShowcaseCatalog {
         _ = await (movies, music, books)
 
         isLoading = false
+        prefetchReplacements()
     }
 
     // MARK: - Кино
@@ -432,6 +438,173 @@ final class ShowcaseCatalog {
     /// Описание короче — подпись карточки книги вышла бы в одну строку.
     private static let bookDescriptionMinimum = 100
 
+    // MARK: - Замена блока по ✕
+
+    /// Замена блока: новый блок и что сделать, когда он встал (у кино — отметить
+    /// фильм показанным и сделать его текущим для чипа плеера).
+    private struct Replacement {
+        let block: ShowcaseBlock
+        var commit: @MainActor () -> Void = {}
+    }
+
+    /// Сколько карточка ждёт замену сверх 400 мс ухода. Не дождалась — айтем
+    /// проявляется прежним: пустой слот хуже, чем тот же контент.
+    private static let replacementTimeout: Duration = .seconds(4)
+
+    /// Новый айтем того же слота для ✕ на карточке (задача пользователя 2026-10-03):
+    /// заготовленный заранее или собранный сейчас, с картинками в кэше. Возвращает,
+    /// чем его поставить, — карточка ставит, когда старый контент уже погас. `nil` —
+    /// замены нет: моковая лента без сети или сеть не ответила вовремя.
+    func prepareReplacement(for block: ShowcaseBlock) async -> (@MainActor () -> Void)? {
+        // Живых данных не собирали (`-debugMockFeed`, пустые ключи) — сеть не трогаем.
+        guard hasLoaded, block.isReplaceable else { return nil }
+        let key = block.slot.top
+        let task = upcoming.removeValue(forKey: key) ?? Task { await self.makeReplacement(for: block) }
+        guard let replacement = await Self.value(of: task, within: Self.replacementTimeout),
+              replacement.block.id != block.id
+        else { return nil }
+        return { [weak self] in
+            guard let self else { return }
+            // Фон витрины и врезки заголовка не трогаем: ✕ обновляет ровно блок,
+            // а смена фона под всей лентой читалась бы обновлением экрана.
+            self.apply(replacement.block, refreshesFeedArt: false)
+            replacement.commit()
+            // Следующая замена — заранее, от нового айтема.
+            self.upcoming[key] = Task { await self.makeReplacement(for: replacement.block) }
+        }
+    }
+
+    /// Заготовить замены всем карточкам с парой ✕/✓ — после сборки живой ленты.
+    private func prefetchReplacements() {
+        for block in feed.blocks where block.isReplaceable && upcoming[block.slot.top] == nil {
+            upcoming[block.slot.top] = Task { await self.makeReplacement(for: block) }
+        }
+    }
+
+    private func makeReplacement(for block: ShowcaseBlock) async -> Replacement? {
+        let replacement: Replacement? = switch block {
+        case .movie(let current): await nextMovie(after: current)
+        case .album(let current): await nextAlbum(after: current)
+        case .book(let current): await nextBook(after: current)
+        case .vibe(let current): await nextVibe(after: current)
+        case .reading, .watching: nil
+        }
+        // Картинки — в кэш до смены: новый айтем проявляется уже с обложкой.
+        if let replacement { await ArtworkLoader.shared.prewarm(replacement.block.artworks) }
+        return replacement
+    }
+
+    /// Фильм — из запаса на диске, как и при сборке: непоказанный, с постером
+    /// и описанием, не тот, что в соседнем блоке «продолжить смотреть».
+    private func nextMovie(after current: MovieBlock) async -> Replacement? {
+        var rng = SystemRandomNumberGenerator()
+        let excluded = Set([Int(current.id.dropFirst("kp-".count)), pickedWatching?.id].compactMap { $0 })
+        let withStill = await MoviePool.shared.unseenWithStill(where: Self.isFeaturable)
+            .filter { !excluded.contains($0.id) }
+        let any = await MoviePool.shared.unseen(where: Self.isFeaturable)
+            .filter { !excluded.contains($0.id) }
+        guard let movie = withStill.randomElement(using: &rng) ?? any.randomElement(using: &rng),
+              let poster = movie.poster?.url(size: .medium)
+        else { return nil }
+        let still = await MoviePool.shared.stills(for: movie.id).first
+        let tint = await ArtworkLoader.shared.accent(for: poster)
+        let block = MovieBlock(
+            id: "kp-\(movie.id)",
+            title: movie.displayTitle,
+            poster: .remote(poster),
+            still: .remote(still?.url(size: .wide) ?? movie.backdrop?.url(size: .frame) ?? poster),
+            caption: (movie.shortDescription ?? "").showcaseCaption(maxCharacters: 88),
+            captionTint: tint ?? Self.mockMovieTint
+        )
+        return Replacement(block: .movie(block)) { [weak self] in
+            self?.pickedFeatured = movie
+            self?.featuredStill = still
+            Task { await MoviePool.shared.markShown([movie.id]) }
+        }
+    }
+
+    /// Альбом — студийный, с обложкой, из дискографии случайного сида; не тот же.
+    private func nextAlbum(after current: AlbumBlock) async -> Replacement? {
+        var rng = SystemRandomNumberGenerator()
+        for seed in ShowcaseSeeds.musicArtists.shuffled(using: &rng).prefix(ShowcaseSeeds.artistAttempts) {
+            guard let albums = try? await DeezerService.shared.artistAlbums(id: seed.id) else { continue }
+            let fitting = albums.filter { Self.isShowcaseAlbum($0) && "dz-\($0.id)" != current.id }
+            if let album = fitting.randomElement(using: &rng),
+               let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
+                return Replacement(block: .album(AlbumBlock(
+                    id: "dz-\(album.id)",
+                    cover: .remote(cover, fallback: "mockAlbumCover"),
+                    title: seed.name,
+                    subtitle: album.title
+                )))
+            }
+        }
+        return nil
+    }
+
+    /// Книга — тем же отбором, что при сборке; не та же и не та, что в «продолжить читать».
+    private func nextBook(after current: BookBlock) async -> Replacement? {
+        var rng = SystemRandomNumberGenerator()
+        var excluded: Set<String> = [String(current.id.dropFirst("gb-".count))]
+        for case .reading(let reading) in feed.blocks {
+            excluded.insert(String(reading.id.dropFirst("gb-r-".count)))
+        }
+        for seed in ShowcaseSeeds.bookSeeds.shuffled(using: &rng).prefix(ShowcaseSeeds.bookAttempts) {
+            guard let volumes = try? await BooksService.shared.search(seed.query, limit: 20) else { continue }
+            let fitting = volumes.filter { Self.isShowcaseBook($0, by: seed.author) && !excluded.contains($0.id) }
+            guard let book = fitting.randomElement(using: &rng), let cover = book.coverURL else { continue }
+            let tint = await ArtworkLoader.shared.accent(for: cover)
+            return Replacement(block: .book(BookBlock(
+                id: "gb-\(book.id)",
+                title: book.title,
+                render: .remote(cover, fallback: "mockBookTechno"),
+                cover: .remote(cover, fallback: "mockBookTechno"),
+                caption: (book.volumeInfo.description ?? book.volumeInfo.subtitle ?? "")
+                    .showcaseCaption(maxCharacters: 92),
+                captionTint: tint ?? Self.mockBookTint
+            )))
+        }
+        return nil
+    }
+
+    /// «Моя Волна» — другой подзаголовок и обложка для плеера от другого исполнителя.
+    /// Сеть не ответила — хватает и нового подзаголовка: «Волна» всё равно другая.
+    private func nextVibe(after current: VibeBlock) async -> Replacement? {
+        var rng = SystemRandomNumberGenerator()
+        let subtitle = ShowcaseSeeds.vibeSubtitles.filter { $0 != current.subtitle }.randomElement(using: &rng)
+            ?? current.subtitle
+        var cover: (album: Int, url: URL)?
+        for seed in ShowcaseSeeds.musicArtists.shuffled(using: &rng).prefix(ShowcaseSeeds.artistAttempts) {
+            guard let albums = try? await DeezerService.shared.artistAlbums(id: seed.id) else { continue }
+            if let album = albums.filter({ "vibe-\($0.id)" != current.id }).randomElement(using: &rng),
+               let url = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
+                cover = (album.id, url)
+                break
+            }
+        }
+        return Replacement(block: .vibe(VibeBlock(
+            id: cover.map { "vibe-\($0.album)" } ?? "vibe-\(UUID().uuidString)",
+            title: current.title,
+            subtitle: subtitle,
+            cover: cover.map { .remote($0.url, fallback: "mockPlayerCover") } ?? current.cover
+        )))
+    }
+
+    /// Значение задачи — или `nil`, если не дождались. Саму задачу не отменяем:
+    /// она уже вынута из заготовок, просто доживает и пропадает.
+    private static func value(of task: Task<Replacement?, Never>, within limit: Duration) async -> Replacement? {
+        await withTaskGroup(of: Replacement?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
     // MARK: - Сборка ленты
 
     private var currentMovieId: String? {
@@ -441,10 +614,16 @@ final class ShowcaseCatalog {
 
     /// Подменяет блок того же типа на месте. Порядок слотов зафиксирован макетом,
     /// поэтому лента не пересобирается — меняется ровно один элемент.
-    private func apply(_ block: ShowcaseBlock, preload: Bool = true) {
+    /// `refreshesFeedArt: false` — фон и врезки заголовка остаются прежними (замена по ✕).
+    private func apply(_ block: ShowcaseBlock, preload: Bool = true, refreshesFeedArt: Bool = true) {
         var blocks = feed.blocks
         guard let index = blocks.firstIndex(where: { $0.slot.top == block.slot.top }) else { return }
         blocks[index] = block
+
+        guard refreshesFeedArt else {
+            feed = ShowcaseFeed(headline: feed.headline, blocks: blocks, backdrop: feed.backdrop)
+            return
+        }
 
         // Фон витрины — обложка первого блока (figma-screen1 §0), поэтому он едет
         // вместе с ним. Врезки заголовка тоже: текст пока моковый, но картинки в нём
@@ -464,6 +643,11 @@ final class ShowcaseCatalog {
         }
 
         feed = ShowcaseFeed(headline: headline, blocks: blocks, backdrop: backdrop)
+        // Замена по ✕ — сразу от живого блока, а не после всей ленты: книги приходят
+        // последними, и ✕ у кино или альбома, нажатый до них, ждал бы пустым слотом.
+        if hasLoaded, block.isReplaceable {
+            upcoming[block.slot.top] = Task { await self.makeReplacement(for: block) }
+        }
         // Прогрев — общий эффект, и из `init` его звать нельзя: см. комментарий там.
         guard preload else { return }
         ArtworkLoader.shared.preload(blocks.flatMap(\.artworks))

@@ -25,14 +25,14 @@ private enum BookCardLayout {
     static let captionOrigin = CGPoint(x: 15, y: 886 - slot.top)
     static let captionWidth: CGFloat = 192
 
-    /// Зазор до пары ♥/✕ `2004:10752/10754`. Подпись — ровно 4 строки по 18 (72),
-    /// поэтому пара садится на абсолютные (121, 966) макета, а её правый край сходится
-    /// с краем подписи: 15 + 192 = 121 + (40 + 6 + 40).
+    /// Зазор до пары ✕/✓ `2004:10752/10754`; её правый край сходится с краем подписи:
+    /// 15 + 192 = 121 + (40 + 6 + 40). Пара — под подписью своей высоты: новая книга
+    /// по ✕ встаёт вместе со своей парой (`ShowcaseFeedbackPair`).
     static let captionToButtons: CGFloat = 8
 }
 
 /// Карточка книги: изометрический рендер прижат к правому краю экрана, слева от него —
-/// подпись с выключкой вправо и пара ♥/✕ под ней. Интерактивен только рендер.
+/// подпись с выключкой вправо и пара ✕/✓ под ней. Интерактивен только рендер.
 struct BookCard: View {
     let block: BookBlock
 
@@ -41,6 +41,7 @@ struct BookCard: View {
             // Рендер — интерактивная миниатюра карточки. Миниатюрой себя помечает
             // сам `BookRender`: ореол обязан остаться снаружи источника зума.
             BookRender(cover: block.render, glowOpacity: BookCardLayout.glowOpacity)
+                .showcaseSwappable()
                 .showcasePlaced(at: BookCardLayout.renderOrigin)
 
             VStack(alignment: .trailing, spacing: BookCardLayout.captionToButtons) {
@@ -48,8 +49,9 @@ struct BookCard: View {
                     .plusText(.textM, .medium)
                     .multilineTextAlignment(.trailing)
                     .frame(width: BookCardLayout.captionWidth, alignment: .trailing)
+                    .showcaseSwappable()
 
-                LikeDismissPair()
+                ShowcaseFeedbackPair()
             }
             .offset(x: BookCardLayout.captionOrigin.x, y: BookCardLayout.captionOrigin.y)
         }

@@ -337,6 +337,18 @@ extension ShowcaseFeed {
     )
 }
 
+// MARK: - Пара ✕/✓
+
+extension ShowcaseBlock {
+    /// У карточки есть пара ✕/✓, и ✕ меняет её контент (`ShowcaseCatalog.prepareReplacement`).
+    var isReplaceable: Bool {
+        switch self {
+        case .movie, .album, .book, .vibe: true
+        case .reading, .watching: false
+        }
+    }
+}
+
 // MARK: - Картинки ленты
 
 extension ShowcaseBlock {
