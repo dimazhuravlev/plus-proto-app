@@ -59,7 +59,7 @@ enum BookScreenMotion {
 // MARK: - Экран
 
 /// Экран книги — макет `2427:26464`: обложка со свечением её цвета, название
-/// и автор, акцентная «Читать», описание. Сверху — компактный навбар с «назад»
+/// и автор, акцентная «Читать», описание. Сверху — общий навбар с «назад»
 /// и «поделиться»; обложка с названием приезжают в него по скроллу, как на альбоме.
 struct BookScreen: View {
     let entity: EntityRef
@@ -87,17 +87,18 @@ struct BookScreen: View {
         .trackNavBarScroll(into: $scrollOffset)
         .background(Color.black.ignoresSafeArea())
         // Верх освобождён под навбар: он висит оверлеем и контент не поджимает.
-        .safeAreaPadding(.top, EntityNavBarControls.compact.barHeight)
+        .safeAreaPadding(.top, EntityNavBarGeometry.barHeight)
         .overlay(alignment: .top) {
+            // Общий навбар как есть: кнопки 40, поля 16 с обеих сторон — правка
+            // пользователя 2026-10-03 поверх макета, где кнопки 32 (`Size=sm`).
             EntityNavBar(
                 title: entity.title,
                 artwork: entity.artwork,
                 scrollOffset: scrollOffset,
-                thresholds: BookScreenLayout.navBarThresholds,
-                controls: .compact
+                thresholds: BookScreenLayout.navBarThresholds
             ) {
                 // Поделиться пока нечем — кнопка из макета, с пресс-стейтом.
-                GlassIconButton(icon: "iconShare16", size: .sm, accessibilityTitle: "Поделиться")
+                GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться")
             }
         }
         // Системный бар выключен: на пуше он рисовал бы свой back поверх нашего.
