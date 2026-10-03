@@ -31,6 +31,7 @@ struct SearchResultsView: View {
     #if DEBUG
     @MainActor private static var didDebugTapHit = false
     @MainActor private static var didDebugExpand = false
+    @MainActor private static var didDebugHistory = false
     #endif
 
     /// Переход в полную выдачу раздела и обратно — как пуш: раздел въезжает справа,
@@ -222,7 +223,7 @@ struct SearchResultsView: View {
                 results
                     .transition(RecentsMotion.swap)
             } else {
-                recentsSection
+                zeroState
                     .transition(RecentsMotion.swap)
             }
         }
@@ -300,18 +301,48 @@ struct SearchResultsView: View {
 
     // MARK: Искали недавно
 
+    /// Нулевое состояние: лента «Искали недавно» и полный список истории над ней —
+    /// тем же переходом, что раскрытый раздел у выдачи: список въезжает справа,
+    /// лента отъезжает влево и гаснет, оставаясь в дереве.
+    private var zeroState: some View {
+        ZStack {
+            recentsSection
+                .opacity(search.isHistoryShown ? 0 : 1)
+                .animation(SectionMotion.overviewFade, value: search.isHistoryShown)
+                .offset(x: search.isHistoryShown ? -SectionMotion.overviewShift : 0)
+                .allowsHitTesting(!search.isHistoryShown)
+                .accessibilityHidden(search.isHistoryShown)
+
+            if search.isHistoryShown {
+                SearchHistoryView(open: open, zoom: zoom)
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(SectionMotion.push, value: search.isHistoryShown)
+    }
+
     /// Нулевое состояние поиска — одна карусель вперемешку, сразу под статус-баром,
     /// как первая секция выдачи. Видна всегда: за найденным стоит стартовый набор.
-    ///
-    /// Шеврон в заголовке — по макету (`header / static`); полного списка истории
-    /// пока нет, заголовок не нажимается.
+    /// Заголовок с шевроном — переход в полный список истории (правка пользователя
+    /// 2026-10-03), лента — не больше 12 карточек.
     private var recentsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header(Self.recentsTitle)
-                .accessibilityAddTraits(.isHeader)
+            Button {
+                search.showHistory()
+                // В полный список — без клавиатуры, как в полные списки выдачи.
+                if actionBar.isSearchFocused { keyboard.dismissSmoothly() }
+            } label: {
+                header(Self.recentsTitle)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Self.recentsTitle)
+            .accessibilityHint("Вся история")
 
             let recents = search.recents
-            let zoomSources = Self.firstPerRoute(recents)
+            // Под полным списком лента остаётся в дереве — источники зума у неё
+            // гасим, иначе они спорили бы со строками списка за тот же id.
+            let zoomSources = search.isHistoryShown ? [] : recents.firstPerRouteIDs
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: Layout.cardGap) {
                     ForEach(recents) { hit in
@@ -337,18 +368,17 @@ struct SearchResultsView: View {
         // Пустое место вокруг ленты не ловит касаний: тап мимо неё — по затемнению,
         // он закрывает поиск.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    /// Карточки, которым быть источником зума: первая на каждый маршрут. Трек ведёт
-    /// на свой альбом, и трек с альбомом в истории — два источника с одним id:
-    /// зум выбирал бы из них наугад (ревью 2026-10-03). Остальные с тем же маршрутом
-    /// открываются без источника — из центра экрана.
-    private static func firstPerRoute(_ hits: [SearchHit]) -> Set<String> {
-        var seen: Set<EntityRoute> = []
-        return Set(hits.filter { hit in
-            guard let route = hit.route else { return false }
-            return seen.insert(route).inserted
-        }.map(\.id))
+        #if DEBUG
+        // `-debugOpenHistory 1` — открыть полный список истории: тапнуть по заголовку
+        // из шелла нечем. Один раз за запуск.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugOpenHistory"), !Self.didDebugHistory else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, !Self.didDebugHistory else { return }
+            Self.didDebugHistory = true
+            search.showHistory()
+        }
+        #endif
     }
 
     private var overviewList: some View {
@@ -481,7 +511,7 @@ struct SearchResultsView: View {
     /// Карточка карусели. `coverBox` — общая высота места под обложку (лента
     /// вперемешку, «Искали недавно»): обложка стоит на его низу. `remembers` —
     /// переход кладёт айтем в «Искали недавно» (из выдачи — да, из самой ленты — нет).
-    /// `zooms` — карточка источник зума своего экрана (см. `firstPerRoute`).
+    /// `zooms` — карточка источник зума своего экрана (см. `firstPerRouteIDs`).
     @ViewBuilder
     private func card(
         _ hit: SearchHit,

@@ -176,7 +176,7 @@ struct ActionBarView: View {
     private func exitSearch() {
         // Из полной выдачи раздела «Назад» сперва возвращает к обзору каруселями —
         // как назад по стеку; из поиска выходит уже следующее нажатие.
-        if search.expanded != nil {
+        if search.isSubscreenShown {
             search.collapse()
             return
         }

@@ -12,8 +12,11 @@ import Foundation
 /// айтемов, и пустой истории не бывает. Найденное хранится локально (`UserDefaults`),
 /// стартовый набор — в коде: поменяется набор — у пользователя поменяется и хвост.
 enum SearchRecents {
-    /// Сколько карточек в карусели — и сколько найденного храним.
+    /// Сколько найденного храним — весь полный список истории.
     static let limit = 20
+    /// Сколько карточек в ленте нулевого состояния; остальное — в полном списке
+    /// (правка пользователя 2026-10-03).
+    static let carouselLimit = 12
 
     private static let storageKey = "searchRecents.v1"
 
@@ -35,10 +38,10 @@ enum SearchRecents {
         UserDefaults.standard.set(data, forKey: storageKey)
     }
 
-    /// Карусель целиком: найденное, за ним стартовый набор без повторов.
+    /// История целиком: найденное, за ним стартовый набор без повторов.
     static func merged(_ found: [SearchHit]) -> [SearchHit] {
         let foundIDs = Set(found.map(\.id))
-        return Array((found + starter.filter { !foundIDs.contains($0.id) }).prefix(limit))
+        return found + starter.filter { !foundIDs.contains($0.id) }
     }
 
     /// Стартовый набор — вперемешку, как в макете: альбом, фильмы, исполнитель,

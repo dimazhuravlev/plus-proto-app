@@ -254,19 +254,125 @@ struct SearchSectionView: View {
         }
     }
 
-    /// Включить трек в плеере бара: обложка, название, исполнитель и альбом — из строки.
-    /// Трек — в «Искали недавно»: перехода нет, но выбор из выдачи тот же.
+    /// Включить трек в плеере бара. Трек — в «Искали недавно»: перехода нет,
+    /// но выбор из выдачи тот же.
     private func play(_ track: SearchHit) {
-        PlayerHaptics.tap()
         search.remember(track)
-        let album: String? = if case .album(let ref) = track.route { ref.title } else { nil }
-        actionBar.startMusic(MusicNowPlaying(
-            id: track.id,
-            cover: track.artwork ?? .asset("mockAlbumCover"),
-            title: track.title,
-            artist: track.subtitle,
-            album: album
-        ))
+        startTrack(track, in: actionBar)
+    }
+
+    private func toggleLike(_ id: String) {
+        if liked.contains(id) { liked.remove(id) } else { liked.insert(id) }
+    }
+}
+
+/// Включить трек строки в плеере бара: обложка, название, исполнитель и альбом —
+/// из строки. Мини-плеер в поиске не виден — он встанет в бар на выходе.
+@MainActor
+private func startTrack(_ track: SearchHit, in actionBar: ActionBarState) {
+    PlayerHaptics.tap()
+    let album: String? = if case .album(let ref) = track.route { ref.title } else { nil }
+    actionBar.startMusic(MusicNowPlaying(
+        id: track.id,
+        cover: track.artwork ?? .asset("mockAlbumCover"),
+        title: track.title,
+        artist: track.subtitle,
+        album: album
+    ))
+}
+
+// MARK: - Полный список истории
+
+/// Полный список «Искали недавно» — переход по заголовку ленты нулевого состояния
+/// (задача пользователя 2026-10-03). Строки — те же, что в полных списках выдачи,
+/// только вперемешку: трек, альбом, исполнитель, фильм, книга, персона. Внизу —
+/// «Удалить историю» с системным подтверждением.
+///
+/// Тапы отсюда историю не переставляют, как и из ленты: список сдвинулся бы под
+/// зумом открытой карточки. Трек играет сразу — как в полном списке музыки.
+struct SearchHistoryView: View {
+    let open: (EntityRoute) -> Void
+    let zoom: Namespace.ID?
+
+    @Environment(SearchState.self) private var search
+    @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(ActionBarState.self) private var actionBar
+    /// Сердца — визуальные, на время экрана, как в полных списках выдачи.
+    @State private var liked: Set<String> = []
+    @State private var isConfirmingClear = false
+
+    private enum Layout {
+        /// Как у полных списков кино и книг — на 8 ниже безопасной зоны.
+        static let listTop: CGFloat = 8
+        static let barGap: CGFloat = 12
+        static let side: CGFloat = 16
+        /// Кнопка — на 24 ниже последней строки, во всю ширину между полями.
+        static let buttonTop: CGFloat = 24
+        static let buttonHeight: CGFloat = 48
+        static let buttonPressedScale: CGFloat = 0.97
+    }
+
+    var body: some View {
+        let rows = search.history
+        let zoomSources = rows.firstPerRouteIDs
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(rows) { hit in
+                    row(hit, isFirst: hit.id == rows.first?.id, zooms: zoomSources.contains(hit.id))
+                }
+                clearButton
+                    .padding(.top, Layout.buttonTop)
+                    .padding(.horizontal, Layout.side)
+            }
+            .padding(.top, Layout.listTop)
+            // Как у полных списков: список уходит под поле и клавиатуру, низ
+            // выкручивается из-под них.
+            .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)
+        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.never)
+        .modifier(DismissKeyboardOnScroll())
+        .alert("Точно удалить историю?", isPresented: $isConfirmingClear) {
+            Button("Да, удалить", role: .destructive) { search.clearHistory() }
+            Button("Назад", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ hit: SearchHit, isFirst: Bool, zooms: Bool) -> some View {
+        let content = SearchListRow(
+            hit: hit,
+            isFirst: isFirst,
+            isLiked: liked.contains(hit.id),
+            onLike: { toggleLike(hit.id) }
+        )
+        if hit.kind == .track {
+            Button { startTrack(hit, in: actionBar) } label: { content }
+                .buttonStyle(.plain)
+                .accessibilityHint("Включить трек")
+        } else if let route = hit.route {
+            Button { open(route) } label: { content }
+                .buttonStyle(.plain)
+                .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zooms ? zoom : nil))
+        } else {
+            content
+        }
+    }
+
+    /// Вторичная кнопка — стеклянная капсула, как «Позже» на экране фильма: акцентная
+    /// (градиент) в проекте одна на экран и за главное действие, а удаление истории —
+    /// побочное.
+    private var clearButton: some View {
+        Button { isConfirmingClear = true } label: {
+            Text("Удалить историю")
+                .plusText(.textM, .semibold)
+                .foregroundStyle(Color.fillOne)
+                .frame(maxWidth: .infinity)
+                .frame(height: Layout.buttonHeight)
+                .glassSurface(Capsule(style: .continuous), blur: PlusMetrics.buttonBlur)
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(PressScaleButtonStyle(pressedScale: Layout.buttonPressedScale))
     }
 
     private func toggleLike(_ id: String) {

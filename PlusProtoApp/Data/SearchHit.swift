@@ -45,3 +45,17 @@ struct SearchHit: Identifiable, Hashable, Codable {
     /// обложки, и узнай её поздно — карусель переложилась бы на глазах.
     var artworkAspect: CGFloat? = nil
 }
+
+extension Array where Element == SearchHit {
+    /// Id карточек, которым быть источником зума: первая на каждый маршрут. Трек ведёт
+    /// на свой альбом, и трек с альбомом в одном списке — два источника с одним id:
+    /// зум выбирал бы из них наугад (ревью 2026-10-03). Остальные с тем же маршрутом
+    /// открываются без источника — из центра экрана.
+    var firstPerRouteIDs: Set<String> {
+        var seen: Set<EntityRoute> = []
+        return Set(filter { hit in
+            guard let route = hit.route else { return false }
+            return seen.insert(route).inserted
+        }.map(\.id))
+    }
+}
