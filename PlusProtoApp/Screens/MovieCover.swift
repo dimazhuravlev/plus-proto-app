@@ -9,11 +9,13 @@ enum MovieLogoLayout {
     /// кнопок шапки и общим полем экрана.
     static let leading: CGFloat = 16
     static let top: CGFloat = 63
-    /// Квадратным лого считается при пропорции меньше 1.2 — тогда бокс 88×88
+    /// Квадратным лого считается при пропорции меньше 1.2 — тогда бокс 100×100.
+    /// Оба бокса на 15 % крупнее макетных 88×88 и 188×64 (правка пользователя
+    /// 2026-10-03, «немного увеличь логотип»).
     static let squareRatio: CGFloat = 1.2
-    static let squareBox = CGSize(width: 88, height: 88)
-    /// Длинное лого — 188×64
-    static let longBox = CGSize(width: 188, height: 64)
+    static let squareBox = CGSize(width: 100, height: 100)
+    /// Длинное лого — 216×74
+    static let longBox = CGSize(width: 216, height: 74)
 }
 
 /// Логотип тайтла в шапке карточки — PNG с альфой из Кинопоиска (`logo.url`).
