@@ -314,7 +314,9 @@ struct SearchHistoryView: View {
 
     var body: some View {
         let rows = search.history
-        let zoomSources = rows.firstPerRouteIDs
+        // Трек здесь — кнопка play без источника зума: в дележе маршрута он не
+        // участвует, иначе альбом под ним открывался бы из центра (ревью 2026-10-03).
+        let zoomSources = rows.filter { $0.kind != .track }.firstPerRouteIDs
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(rows) { hit in

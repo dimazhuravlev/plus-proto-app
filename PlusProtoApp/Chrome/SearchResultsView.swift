@@ -202,6 +202,14 @@ struct SearchResultsView: View {
                     // Погасший слой встретит следующее открытие уже нужной лентой.
                     if !shown { showsResults = search.isActive }
                 }
+                .onChange(of: showsResults) { _, results in
+                    // Нулевое состояние уже снято и гаснет замороженным, со списком
+                    // истории на месте, — флаг списка снимаем без анимации.
+                    guard results, search.isHistoryShown else { return }
+                    var instant = Transaction()
+                    instant.disablesAnimations = true
+                    withTransaction(instant) { search.dismissHistory() }
+                }
 
             if isShown { layer }
         }
@@ -331,11 +339,7 @@ struct SearchResultsView: View {
     /// 2026-10-03), лента — не больше 12 карточек.
     private var recentsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                search.showHistory()
-                // В полный список — без клавиатуры, как в полные списки выдачи.
-                if actionBar.isSearchFocused { keyboard.dismissSmoothly() }
-            } label: {
+            Button(action: openHistory) {
                 header(Self.recentsTitle)
                     .contentShape(.rect)
             }
@@ -380,9 +384,17 @@ struct SearchResultsView: View {
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled, !Self.didDebugHistory else { return }
             Self.didDebugHistory = true
-            search.showHistory()
+            openHistory()
         }
         #endif
+    }
+
+    /// В полный список истории — без клавиатуры, как в полные списки выдачи. Общий
+    /// путь у заголовка и у `-debugOpenHistory`: флаг обязан воспроизводить то же
+    /// состояние, что тап (ревью 2026-10-03).
+    private func openHistory() {
+        search.showHistory()
+        if actionBar.isSearchFocused { keyboard.dismissSmoothly() }
     }
 
     private var overviewList: some View {
