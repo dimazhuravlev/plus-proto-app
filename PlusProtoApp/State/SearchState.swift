@@ -227,13 +227,25 @@ final class SearchState {
     }
 
     private func run(_ text: String) async {
-        // Запросы параллельны, показ — общий: ждём все три ответа.
+        // Запросы параллельны, показ — общий: ждём все три ответа и персону.
         async let music = fetchMusic(text)
         async let movies = fetchMovies(text)
         async let books = fetchBooks(text)
-        let (musicHits, movieHits, bookHits) = await (music, movies, books)
+        async let person = WikipediaPeople.shared.person(matching: text)
+        let (musicHits, fetchedMovies, fetchedBooks, found) = await (music, movies, books, person)
 
         guard !Task.isCancelled else { return }
+        var movieHits = fetchedMovies
+        var bookHits = fetchedBooks
+        // Персона — первой в карусели своего домена: запрос назвал её саму, а не её
+        // книгу или фильм (правка пользователя 2026-10-03, вид — как у соседей).
+        if let found {
+            let hit = SearchHit(person: found)
+            switch found.role {
+            case .director: movieHits = Array(([hit] + movieHits).prefix(Self.perSection))
+            case .writer: bookHits = Array(([hit] + bookHits).prefix(Self.perSection))
+            }
+        }
         let results = Results(
             order: Self.order(for: text, music: musicHits, movies: movieHits, books: bookHits),
             music: musicHits,
@@ -484,7 +496,9 @@ private extension SearchHit {
             id: "artist-\(artist.id)",
             kind: .artist,
             title: artist.name,
-            subtitle: "Исполнитель",
+            // Подписи нет: круглая карточка и так читается исполнителем (правка
+            // пользователя 2026-10-03, прежде — «Исполнитель»).
+            subtitle: "",
             artwork: (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled.map { .remote($0) },
             // Экрана исполнителя в проекте нет вовсе — строка не нажимается.
             route: nil,
@@ -499,9 +513,9 @@ private extension SearchHit {
             id: "movie-\(movie.id)",
             kind: .movie,
             title: movie.displayTitle,
-            subtitle: [movie.year.map { "\($0)" }, movie.genres?.first?.name]
-                .compactMap { $0 }
-                .joined(separator: " · "),
+            // Только год, как в макете: жанр с разделителем-точкой убран (правка
+            // пользователя 2026-10-03).
+            subtitle: movie.year.map { "\($0)" } ?? "",
             artwork: poster.map { .remote($0) },
             route: .movie(EntityRef(
                 id: "kp-\(movie.id)",
@@ -512,6 +526,21 @@ private extension SearchHit {
             // Топ-250 — сразу максимум; иначе рейтинг Кинопоиска, где 5 — дно шкалы,
             // а 9 — потолок.
             authority: movie.top250 != nil ? 1 : min(1, max(0, ((movie.rating?.kp ?? 0) - 5) / 4))
+        )
+    }
+
+    /// Писатель или режиссёр: одно имя, фото с Википедии. Не нажимается — экрана
+    /// персоны в проекте нет. Вес высокий: совпадение запроса с именем — сильный
+    /// сигнал, что секция про него.
+    init(person: WikipediaPeople.Person) {
+        self.init(
+            id: "person-\(person.pageID)",
+            kind: person.role == .director ? .director : .writer,
+            title: person.name,
+            subtitle: "",
+            artwork: .remote(person.photo),
+            route: nil,
+            authority: 0.8
         )
     }
 

@@ -10,6 +10,10 @@ struct SearchHit: Identifiable, Hashable {
         case artist
         case movie
         case book
+        /// Персоны — в каруселях своих доменов: режиссёр в кино, писатель в книгах
+        /// (`WikipediaPeople`). Подпись — одно имя, экрана персоны нет.
+        case director
+        case writer
 
         /// Круглая миниатюра только у исполнителя — как у аватара в мини-плеере.
         var isRoundArtwork: Bool { self == .artist }
@@ -20,7 +24,8 @@ struct SearchHit: Identifiable, Hashable {
     let id: String
     let kind: Kind
     let title: String
-    /// Вторая строка: исполнитель у трека и альбома, год и жанр у фильма, автор у книги.
+    /// Вторая строка: исполнитель у трека и альбома, год у фильма, автор у книги;
+    /// у исполнителя и персон её нет.
     let subtitle: String
     let artwork: ArtworkSource?
     /// Куда ведёт тап. `nil` — строка не нажимается: у исполнителя своего экрана

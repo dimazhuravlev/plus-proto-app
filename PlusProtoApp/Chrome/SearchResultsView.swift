@@ -153,8 +153,9 @@ struct SearchResultsView: View {
                     try? await Task.sleep(for: .seconds(2))
                     guard !Task.isCancelled, !Self.didDebugTapHit else { return }
                     let filled = search.sections.filter { !$0.domain.hits.isEmpty }
+                    // Первая нажимаемая: персона (первой в карусели) экрана не имеет.
                     guard filled.indices.contains(section - 1),
-                          let route = filled[section - 1].domain.hits.first?.route
+                          let route = filled[section - 1].domain.hits.first(where: { $0.route != nil })?.route
                     else { return }
                     Self.didDebugTapHit = true
                     open(route)
@@ -482,15 +483,18 @@ struct SearchResultsView: View {
         switch kind {
         case .artist: 0
         case .track, .album: Layout.labelTrailing
-        case .movie, .book: Layout.size.posterLabelTrailing
+        case .movie, .book, .director, .writer: Layout.size.posterLabelTrailing
         }
     }
 
-    /// Квадрат у музыки, постер 2:3 у кино и книг.
+    /// Квадрат у музыки, постер 2:3 у кино и книг. Режиссёр — постером, как соседи
+    /// по карусели; писатель — во всю высоту книги с блоком страниц, чтобы верх и низ
+    /// фото стояли вровень с книгами (макет пользователя 2026-10-03).
     private func coverHeight(_ kind: SearchHit.Kind) -> CGFloat {
         switch kind {
         case .track, .album, .artist: Layout.card
-        case .movie, .book: Layout.card / Layout.posterAspect
+        case .movie, .book, .director: Layout.card / Layout.posterAspect
+        case .writer: Layout.bookCoverHeight + Layout.bookPagesTop
         }
     }
 
