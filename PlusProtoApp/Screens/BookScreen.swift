@@ -165,7 +165,7 @@ struct BookScreen: View {
     private var titles: some View {
         VStack(spacing: BookScreenLayout.titleToAuthor) {
             Text(entity.title)
-                .plusBookTitle()
+                .plusEntityTitle(entity.title)
                 .foregroundStyle(Color.fillOne)
             // Строка автора держит место и до ответа API: иначе кнопка и описание
             // съехали бы вниз на её высоту прямо на глазах.

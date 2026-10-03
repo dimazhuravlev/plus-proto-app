@@ -275,7 +275,7 @@ struct AlbumScreen: View {
         VStack(alignment: .leading, spacing: AlbumLayout.titleBlockGap) {
             VStack(alignment: .leading, spacing: AlbumLayout.titleToArtist) {
                 Text(details.title)
-                    .plusAlbumTitle()
+                    .plusEntityTitle(details.title)
                     .foregroundStyle(Color.fillOne)
 
                 if !details.artist.isEmpty {

@@ -190,17 +190,53 @@ extension View {
         ))
     }
 
-    /// Название альбома в шапке его экрана — YS Display Bold 40 / lh 44 (макет `2079:11226`).
-    /// Живёт в линейке карточки тайтла: экран альбома набран теми же Yango-метриками
-    /// (тексты 15 / lh 20 с нулевым трекингом), что и карточка фильма.
+}
+
+// MARK: - Название сущности
+
+/// Кегль названия на экранах книги и альбома — ступенью от длины названия, одной
+/// лестницей на оба экрана (задача пользователя 2026-10-03): короткое набирается
+/// крупно, длинное становится меньше, чтобы шапка не разрасталась на пол-экрана.
+///
+/// Концы лестницы — макеты: «Snow Day» (8 знаков) на альбоме `2079:11226` — 40/44,
+/// «Atomic Heart. Предыстория «Предприятия 3826»» (44 знака) на книге `2427:26464` — 24.
+/// Границы подобраны по колонке 370pt: на своей ступени название укладывается в строку
+/// (до 14 знаков), в две (до 36) или в две-три (длиннее). Тот же приём, что у текстового
+/// логотипа тайтла (`MovieHeaderLayout.titleSteps`), только колонка там уже.
+enum EntityTitleType {
+    static let steps: [(maxLength: Int, size: CGFloat)] = [
+        (14, 40),
+        (24, 32),
+        (36, 28),
+        (Int.max, 24),
+    ]
+
+    /// Интерлиньяж — 100 % кегля на любой ступени (правило пользователя 2026-10-03;
+    /// макет альбома давал 40/44, книги — 24/24). Округляется до пункта, чтобы
+    /// базовые линии не вставали между пикселями.
+    static let lineHeightRatio: CGFloat = 1.0
+
+    static func size(for title: String) -> CGFloat {
+        steps.first { title.count <= $0.maxLength }!.size
+    }
+
+    static func lineHeight(for size: CGFloat) -> CGFloat {
+        (size * lineHeightRatio).rounded()
+    }
+}
+
+extension View {
+    /// Название книги или альбома на их экранах — YS Display Bold, кегль ступенью
+    /// от длины названия (`EntityTitleType`), интерлиньяж 100 %, трекинг 0.
     ///
-    /// Интерлиньяж меньше натурального (у YS на этом кегле ~47), а `lineSpacing`
-    /// в `FigmaTextStyle` умеет только прибавлять — строки шли с шагом 47 вместо 44,
-    /// и двухстрочное название читалось рыхлым (жалоба пользователя 2026-10-03).
-    /// Точную высоту строки задаёт `lineHeight(.exact)` из iOS 26, как у названия книги.
-    func plusAlbumTitle() -> some View {
-        font(.custom(PlusFont.displaySemibold, size: 40))
-            .lineHeight(.exact(points: 44))
+    /// Интерлиньяж меньше натурального (у YS он 1.172 кегля: на 40 это ~47 против 40),
+    /// а `lineSpacing` в `FigmaTextStyle` умеет только прибавлять — строки шли рыхло
+    /// (жалоба пользователя 2026-10-03). Точную высоту строки, в том числе меньше
+    /// натуральной, задаёт `lineHeight(.exact)` из iOS 26.
+    func plusEntityTitle(_ title: String) -> some View {
+        let size = EntityTitleType.size(for: title)
+        return font(.custom(PlusFont.displaySemibold, size: size))
+            .lineHeight(.exact(points: EntityTitleType.lineHeight(for: size)))
     }
 }
 
@@ -224,20 +260,9 @@ extension View {
 // MARK: - Экран книги
 
 /// Макет `2427:26464` набран линейкой Букмейта: трекинг в процентах кегля
-/// (Headline S — 1.5 %, автор — 2 %, описание — 1 %) и интерлиньяж процентами.
+/// (автор — 2 %, описание — 1 %) и интерлиньяж процентами. Название книги —
+/// общим стилем с альбомом, `plusEntityTitle`.
 extension View {
-    /// Название книги — Headline S: YS Display Bold 24 / lh 100 % / трекинг 0.36.
-    ///
-    /// Интерлиньяж меньше натурального (у YS он 1.172 кегля, 28pt против 24), а
-    /// `lineSpacing` умеет только прибавлять — двухстрочное название выходило бы
-    /// на 4pt выше макета. Точную высоту строки, в том числе меньше натуральной,
-    /// задаёт `lineHeight(.exact)` из iOS 26.
-    func plusBookTitle() -> some View {
-        font(.custom(PlusFont.displaySemibold, size: 24))
-            .tracking(0.36)
-            .lineHeight(.exact(points: 24))
-    }
-
     /// Автор под названием — YS Text Medium 16 / lh normal (19 в макете) / трекинг 0.32
     func plusBookAuthor() -> some View {
         modifier(FigmaTextStyle(family: PlusFont.textMedium, size: 16, lineHeight: 19, tracking: 0.32))
