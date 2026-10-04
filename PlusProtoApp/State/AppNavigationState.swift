@@ -5,7 +5,7 @@ import SwiftUI
 /// Пути живут здесь, а не в `@State` контейнера контента: при переключении таба его
 /// `NavigationStack` размонтируется, и путь должен переживать это снаружи. Таб держим
 /// тут же, чтобы переключать его мог не только таббар (тап по чипу action bar,
-/// кросс-сервисные переходы из Алисы) — в MusicPlayer это было заперто в `@State`
+/// кросс-сервисные переходы) — в MusicPlayer это было заперто в `@State`
 /// семисотстрочного вью и оттуда недостижимо.
 @Observable
 final class AppNavigationState {
@@ -122,7 +122,7 @@ final class AppNavigationState {
     }
 
     /// Программный пуш. Нужен и отладке (тапнуть по симулятору из шелла нечем),
-    /// и будущим кросс-сервисным переходам из Алисы.
+    /// и переходам, у которых нет `NavigationLink`: полные списки коллекции «Моё».
     func push(_ value: some Hashable, in tab: AppTab? = nil) {
         let tab = tab ?? activeTab
         var path = paths[tab] ?? NavigationPath()

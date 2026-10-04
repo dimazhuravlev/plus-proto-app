@@ -46,12 +46,17 @@ extension KinopoiskImage {
     /// поэтому подменяем его регуляркой. Если хвост на размер не похож — отдаём URL как есть.
     func url(size: KinopoiskPosterSize) -> URL? {
         guard let raw = url ?? previewUrl, !raw.isEmpty else { return nil }
-        let resized = raw.replacingOccurrences(
-            of: #"/(?:orig|\d*x\d*)$"#,
+        return URL(string: Self.resized(raw, to: size))
+    }
+
+    /// Подмена размера в ссылке Яндекс-CDN. Хвост бывает и голым числом — `…/600`:
+    /// такой CDN отдаёт 404 (замер 2026-10-04), поэтому он тоже размер и подменяется.
+    static func resized(_ raw: String, to size: KinopoiskPosterSize) -> String {
+        raw.replacingOccurrences(
+            of: #"/(?:orig|\d*x\d*|\d+)$"#,
             with: "/" + size.rawValue,
             options: .regularExpression
         )
-        return URL(string: resized)
     }
 
     /// Ссылка на PNG-логотип тайтла шириной `width` пикселей.

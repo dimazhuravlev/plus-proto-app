@@ -11,13 +11,16 @@ enum CinemaPromoLayout {
     /// кадра, мета опущена на те же 16 — кнопки на месте, следующая секция ближе
     static let bottomTrim: CGFloat = 16
     static let height: CGFloat = frameHeight - bottomTrim
-    /// Лента: поле слева 8, зазор между карточками 8, от следующей видно 18
-    /// (341 + 8 + 8 + 18 = 375 в макете)
-    static let leading: CGFloat = 8
+    /// Карточка — габаритов макета: экран без 34 (341 из 375 — поле 8, зазор 8
+    /// и край следующей 18). Лента ставит её по центру экрана, и соседи выглядывают
+    /// поровну с обеих сторон — по 9 за зазором 8 (правка пользователя 2026-10-04:
+    /// габариты карточек те же, их только сдвинули; прежде карточка стояла у поля
+    /// слева, а выглядывала только следующая)
     static let cardGap: CGFloat = 8
-    static let peek: CGFloat = 18
     /// Сколько ширины экрана не достаётся карточке
-    static let cardReserve: CGFloat = leading + cardGap + peek
+    static let cardReserve: CGFloat = 8 + 8 + 18
+    /// Поле ленты с каждой стороны — половина недоставшегося: зазор и край соседа
+    static let sideInset: CGFloat = cardReserve / 2
     /// Обложка занимает верхние 83.2 % блока (416 из 500)
     static let coverHeight: CGFloat = frameHeight * 416 / 500
     static let coverRadius: CGFloat = 24
@@ -64,7 +67,8 @@ enum CinemaPromoLayout {
 /// раньше, чем лента знала ширину карточек, и смещение к шестисотому слайду упиралось
 /// в край. Текущий слайд живёт в каталоге — позиция сохраняется на всю сессию.
 ///
-/// Справа из-под края выглядывает следующая карточка (обновлённый макет); мета —
+/// Текущая карточка — по центру, соседи выглядывают из-под краёв поровну: круг видно
+/// с обеих сторон (правка пользователя 2026-10-04; прежде — только следующая справа); мета —
 /// логотип, описание, кнопки — проявляется прозрачностью **вслед за сдвигом**
 /// карточек, а не по таймеру: у уезжающей гаснет, у приезжающей проступает
 /// (правка пользователя тем же днём).
@@ -102,10 +106,10 @@ struct CinemaPromoCarousel: View {
         }
         // По одной карточке за свайп, как бы ни бросили, — «послайдово».
         .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
-        .contentMargins(.leading, CinemaPromoLayout.leading, for: .scrollContent)
-        // Якорь — левый край: без него перескок на среднюю копию прокручивал минимально,
-        // «лишь бы была видна», и карточка вставала у правого края (кадр 2026-10-04).
-        .scrollPosition(id: $page, anchor: .leading)
+        .contentMargins(.horizontal, CinemaPromoLayout.sideInset, for: .scrollContent)
+        // Якорь — центр: без якоря перескок на среднюю копию прокручивал минимально,
+        // «лишь бы была видна», и карточка вставала у края (кадр 2026-10-04).
+        .scrollPosition(id: $page, anchor: .center)
         .scrollIndicators(.hidden)
         // Один слайд — листать некуда.
         .scrollDisabled(count < 2)
@@ -163,7 +167,19 @@ private struct CinemaPromoSlide: View {
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(CollectionStore.self) private var collection
     @Environment(\.stackZoomNamespace) private var zoom
+
+    /// Тайтл в коллекции «Моё» — «Позже» кладёт его в «Любимое». Моковый слайд
+    /// (лента без сети) — без записи: id Кинопоиска у него нет.
+    private var collectionItem: CollectionItem? {
+        guard promo.id.hasPrefix("kp-") else { return nil }
+        return .movie(
+            EntityRef(id: promo.id, title: promo.title, subtitle: "", artwork: promo.cover),
+            poster: promo.poster,
+            year: promo.year
+        )
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -265,15 +281,19 @@ private struct CinemaPromoSlide: View {
             }
             .buttonStyle(PressScaleButtonStyle())
 
-            // «Позже» — как на карточке тайтла: списка «Буду смотреть» в прототипе нет,
-            // кнопка только откликается.
-            Button {} label: {
-                MovieIcon(name: "iconBookmark", box: CinemaPromoLayout.buttonIcon)
+            // «Позже» — как на карточке тайтла: закладка в «Любимом» коллекции «Моё».
+            let isSaved = collectionItem.map { collection.isFavorite($0.id) } ?? false
+            Button {
+                guard let collectionItem else { return }
+                PlayerHaptics.tap()
+                collection.toggleFavorite(collectionItem)
+            } label: {
+                BookmarkGlyph(isSaved: isSaved, box: CinemaPromoLayout.buttonIcon)
                     .frame(width: CinemaPromoLayout.buttonHeight, height: CinemaPromoLayout.buttonHeight)
                     .glassSurface(Circle(), blur: PlusMetrics.buttonBlur)
             }
             .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel("Буду смотреть")
+            .accessibilityLabel(isSaved ? "Убрать из «Позже»" : "Буду смотреть")
         }
     }
 
@@ -377,15 +397,17 @@ struct CinemaPromoSkeleton: View {
     private static var cardWidth: CGFloat { PlusMetrics.designWidth - CinemaPromoLayout.cardReserve }
 
     var body: some View {
+        // Три карточки по центру — края соседей выглядывают поровну, как у ленты.
         Color.clear
             .frame(height: CinemaPromoLayout.height)
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: .top) {
                 HStack(alignment: .top, spacing: CinemaPromoLayout.cardGap) {
+                    cover
+                        .frame(width: Self.cardWidth)
                     card
                     cover
                         .frame(width: Self.cardWidth)
                 }
-                .padding(.leading, CinemaPromoLayout.leading)
             }
             .clipped()
             .accessibilityHidden(true)

@@ -27,6 +27,9 @@ final class CinemaCatalog {
         let route: EntityRoute
         /// Что запускает «Смотреть».
         let movie: MovieInProgress
+        /// Постер и год — для закладки «Позже»: в коллекции «Моё» тайтл стоит постером.
+        var poster: ArtworkSource? = nil
+        var year: String? = nil
     }
 
     /// Карточка подборки — постер и название.
@@ -215,7 +218,9 @@ final class CinemaCatalog {
                 title: details.title,
                 subtitle: details.playerSubtitle,
                 runtime: details.runtime
-            )
+            ),
+            poster: details.poster.map { ArtworkSource.remote($0) },
+            year: details.year
         )
     }
 

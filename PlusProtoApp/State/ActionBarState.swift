@@ -143,7 +143,13 @@ final class ActionBarState {
     /// событием — паузой, сменой трека, запуском другого контента.
     var musicProgress: Double = 0
     var isMusicPlaying: Bool = false { didSet { persist() } }
-    var isMusicLiked: Bool = false { didSet { persist() } }
+
+    /// Сердце мини-плеера и плеера музыки — играющий трек в «Любимом» коллекции «Моё»
+    /// (2026-10-04). Прежде это был флаг бара, забывавший отметку на смене трека.
+    @MainActor var isMusicLiked: Bool {
+        guard let music else { return false }
+        return CollectionStore.shared.isFavorite(CollectionItem.track(music).id)
+    }
 
     /// Открытый плеер музыки, киноплеер или читалка. На диск не пишется: после
     /// перезапуска приложение поднимается на экране, а не посреди фильма.
@@ -197,7 +203,6 @@ final class ActionBarState {
         music = item
         musicProgress = 0
         isMusicPlaying = true
-        isMusicLiked = false
         mode = .music
         startProgressTicking()
     }
@@ -256,7 +261,6 @@ final class ActionBarState {
         var book: BookInProgress?
         var musicProgress: Double
         var isMusicPlaying: Bool
-        var isMusicLiked: Bool
     }
 
     private static let storageKey = "actionBarState"
@@ -273,8 +277,7 @@ final class ActionBarState {
             movie: movie,
             book: book,
             musicProgress: musicProgress,
-            isMusicPlaying: isMusicPlaying,
-            isMusicLiked: isMusicLiked
+            isMusicPlaying: isMusicPlaying
         )
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -293,7 +296,6 @@ final class ActionBarState {
         movie = snapshot.movie
         book = snapshot.book
         musicProgress = snapshot.musicProgress
-        isMusicLiked = snapshot.isMusicLiked
         isMusicPlaying = snapshot.isMusicPlaying
         // Играющий трек обязан и тикать: иначе плеер вернулся бы с крутящимся диском
         // и стоящим прогрессом.
@@ -372,8 +374,10 @@ final class ActionBarState {
         startMusic(next.nowPlaying)
     }
 
-    func toggleMusicLike() {
-        isMusicLiked.toggle()
+    /// Отметить играющий трек в «Любимом» коллекции или снять отметку.
+    @MainActor func toggleMusicLike() {
+        guard let music else { return }
+        CollectionStore.shared.toggleFavorite(.track(music))
     }
 
     // MARK: - Киноплеер и читалка

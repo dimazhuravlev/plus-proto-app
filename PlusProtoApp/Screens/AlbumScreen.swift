@@ -150,7 +150,8 @@ struct AlbumScreen: View {
             artwork: entity.artwork,
             coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
             scrollOffset: scrollOffset,
-            title: details.title
+            title: details.title,
+            collectionItem: collectionItem
         ) {
             cover
         } person: {
@@ -180,6 +181,16 @@ struct AlbumScreen: View {
                 .fill(Color.fillNine)
                 .frame(height: PlusMetrics.hairline)
         }
+    }
+
+    /// Альбом в коллекции «Моё» — его отмечают «нравится» и «скачать» шапки.
+    private var collectionItem: CollectionItem {
+        .album(EntityRef(
+            id: entity.id,
+            title: details.title,
+            subtitle: details.artist.isEmpty ? entity.subtitle : details.artist,
+            artwork: entity.artwork
+        ))
     }
 
     private var cover: some View {

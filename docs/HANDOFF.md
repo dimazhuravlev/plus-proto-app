@@ -1,7 +1,7 @@
 # Передача работы: прототип «Яндекс Плюс»
 
 Документ самодостаточный — рассчитан на агента без контекста предыдущей сессии.
-Обновлён: 2026-10-03. Если расходится с кодом — верь коду и обнови этот файл:
+Обновлён: 2026-10-04. Если расходится с кодом — верь коду и обнови этот файл:
 запись, разошедшаяся с кодом, считается дефектом (CONTRIBUTING.md).
 
 Состояние проекта — §5, что открыто — §6. Почему что-либо сделано именно так —
@@ -16,7 +16,7 @@ iOS/SwiftUI **дизайн-прототип супераппа «Яндекс П
 **Репозиторий**: `/Users/dimazhuravlev/Repos/plus-proto-app`
 **Xcode-таргет/схема**: `PlusProtoApp`, bundle `com.dima.PlusProtoApp`, iOS 26.0, Swift 5.
 
-**Концепция**: суперапп объединяет Яндекс Музыку, Кинопоиск, Книги и Алису. У каждого свой таб, но **внутренние разделы сервисов не проектируем** — переход по табу ведёт на заглушку. Фокус — на архитектуре, навигации и главном экране «Плюс»: кросс-сервисной витрине.
+**Концепция**: суперапп объединяет Яндекс Музыку, Кинопоиск и Книги. У каждого свой таб с главной витриной сервиса, пятый таб — общая коллекция «Моё» (Алисы больше нет, решение пользователя 2026-10-04). **Внутренние разделы сервисов глубже главных не проектируем.** Фокус — на архитектуре, навигации и главном экране «Плюс»: кросс-сервисной витрине.
 
 **Сиблинг `/Users/dimazhuravlev/Repos/MusicPlayer`** — предыдущий прототип того же пользователя, источник архитектуры и компонентов.
 
@@ -88,10 +88,11 @@ iOS/SwiftUI **дизайн-прототип супераппа «Яндекс П
 повёрнутым), верхний навбар внутренних
 экранов, состояние action bar переживает перезапуск, заставка на время сборки витрины,
 иконка приложения, резиновый свайп по полю поиска, кроссфейд при смене типа плеера,
-play/pause с живым прогрессом. Внутренние разделы сервисных табов не проектируем —
-там `ServiceStubScreen`.
+play/pause с живым прогрессом, коллекция «Моё» (полки «Любимое» и «Скачанное», секции
+по видам, полные списки с чипсами, отметки со всего приложения, на диске, стартовый набор).
+Не спроектированные фильтры витрин («Спорт», «Аудиокниги»…) — название раздела (`ServiceFilterStub`).
 
-**Структура кода** (`PlusProtoApp/`): `App/` (точка входа, AppTab, AppRootView) · `Chrome/` (BottomChrome, TabBarView, ActionBarView, SearchOverlay, EntityNavBar, MoviePlayer, MusicPlayer, BookReader, ContentPlayerPresenter) · `Showcase/` (лента, 6 карточек, `BookRender`) · `Screens/` (витрина, заглушки сервисов, экраны фильма, альбома и книги) · `DesignSystem/` (токены, типографика, стекло, кнопки, ambilight, `ArtworkImage`/`ResolvedArtwork`, хаптика плееров) · `State/` · `Data/` (модели витрины, DTO трёх API, `ShowcaseSeeds`, `ShowcaseRotation`, моковая очередь `MusicQueue`) · `Services/` (`KinopoiskService`, `DeezerService`, `BooksService`, `BookTextStore`, `ArtworkLoader`, `ShowcaseCatalog`) · `Fonts/`, `Videos/`, `Assets.xcassets/`.
+**Структура кода** (`PlusProtoApp/`): `App/` (точка входа, AppTab, AppRootView) · `Chrome/` (BottomChrome, TabBarView, ActionBarView, SearchOverlay, EntityNavBar, MoviePlayer, MusicPlayer, BookReader, ContentPlayerPresenter) · `Showcase/` (лента, 6 карточек, `BookRender`) · `Screens/` (витрина, главные сервисов, коллекция «Моё» и её полные списки, экраны фильма, альбома, книги и персоны) · `DesignSystem/` (токены, типографика, стекло, кнопки, ambilight, `ArtworkImage`/`ResolvedArtwork`, хаптика плееров) · `State/` · `Data/` (модели витрины, DTO трёх API, `ShowcaseSeeds`, `ShowcaseRotation`, моковая очередь `MusicQueue`) · `Services/` (`KinopoiskService`, `DeezerService`, `BooksService`, `BookTextStore`, `ArtworkLoader`, `ShowcaseCatalog`) · `Fonts/`, `Videos/`, `Assets.xcassets/`.
 
 ---
 
@@ -166,7 +167,7 @@ sleep 3 && xcrun simctl io booted screenshot /tmp/plus.png
 
 | Флаг | Что делает |
 |---|---|
-| `-debugTab <plus\|music\|kinopoisk\|books\|alisa>` | стартовый таб |
+| `-debugTab <plus\|music\|kinopoisk\|books\|collection>` | стартовый таб |
 | `-debugActionBar <search\|music\|movie\|book>` | режим бара |
 | `-debugSearchFocus` | фокус в поиске через 0.8с (поднимает клавиатуру) |
 | `-debugMorphCycle` | прогон четырёх режимов по кругу каждые 1.6с — для записи морфа |
@@ -178,6 +179,8 @@ sleep 3 && xcrun simctl io booted screenshot /tmp/plus.png
 | `-debugSearchCycle` | фокус и выход из поиска по кругу каждые 3с — снять на видео **уход** затемнения. Выход — как у «Назад» (`exitSearch`), тем же мягким уходом клавиатуры, что скролл выдачи (`KeyboardObserver.dismissSmoothly`): голый расфокус теперь переводит в просмотр без клавиатуры и с пустым полем («Искали недавно») |
 | `-debugCinemaScroll <pt>` | стартовая прокрутка главной Кинопоиска, когда лента собралась (через 1.5 с) — нижние карусели скриншотом. Пара к `-debugTab kinopoisk` |
 | `-debugResetWatchHistory 1` | начать с пустой «Смотреть дальше» на главной Кинопоиска (история просмотра на диске стирается) |
+| `-debugResetCollection 1` | начать коллекцию «Моё» со стартового набора (сохранённая на диске стирается) |
+| `-debugCollectionList <movie\|book\|track\|artist\|album\|playlist>` | через 1.5 с открыть полный список коллекции на этом фильтре (полка «Любимое»). Пара к `-debugTab collection` |
 | `-debugPromoStep <back\|next\|n>` | через 3с пролистать промоблок главной Кинопоиска: `back` с первого слайда — последний набора (проверка круга). Пара к `-debugTab kinopoisk` |
 | `-debugResetSearchRecents 1` | начать с пустой истории «Искали недавно» — в карусели один стартовый набор (история на диске стирается) |
 | `-debugShowcaseDismiss <n>` | ✕ у n-го блока витрины (1 — кино, 2 — альбом, 3 — книга, 4 — «Моя Волна») через 6 с и ещё раз через 3 с: смена айтема на новый — первая из заготовки, вторая тоже |

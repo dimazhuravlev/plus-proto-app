@@ -177,7 +177,8 @@ struct BookScreen: View {
             ),
             scrollOffset: scrollOffset,
             backdropOpacity: coverAspect == nil ? 0 : 1,
-            title: entity.title
+            title: entity.title,
+            collectionItem: collectionItem
         ) {
             bookCover
         } person: {
@@ -199,6 +200,15 @@ struct BookScreen: View {
         } primary: {
             EntityPrimaryButton(icon: "iconRead", title: "Читать", action: startReading)
         }
+    }
+
+    /// Книга в коллекции «Моё» — её отмечают «нравится» и «скачать» шапки. Пропорции
+    /// обложки — с собой: книга в карусели коллекции встаёт сразу своей ширины.
+    private var collectionItem: CollectionItem {
+        .book(
+            EntityRef(id: entity.id, title: entity.title, subtitle: author ?? entity.subtitle, artwork: entity.artwork),
+            aspect: coverAspect ?? nil
+        )
     }
 
     /// Книга — тот же рисунок, что карточка выдачи поиска, только крупно. Пока

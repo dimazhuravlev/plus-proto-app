@@ -58,6 +58,7 @@ struct PersonScreen: View {
 
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(CollectionStore.self) private var collection
     @State private var store = PersonStore()
     @State private var scrollOffset: CGFloat = 0
     /// Сердца строк — визуальные, на время экрана, как в полной выдаче.
@@ -126,7 +127,9 @@ struct PersonScreen: View {
             EntityTitleBlock(
                 title: entity.title,
                 actions: [.like, .share],
-                showsControls: role == .artist
+                showsControls: role == .artist,
+                // Исполнитель — в коллекции «Моё»: «нравится» кладёт его в «Любимое».
+                collectionItem: role == .artist ? .artist(entity) : nil
             ) {
                 EmptyView()
             } primary: {
@@ -376,8 +379,8 @@ struct PersonScreen: View {
                             SearchListRow(
                                 hit: hit,
                                 isFirst: hit.id == store.works.first?.id,
-                                isLiked: liked.contains(hit.id),
-                                onLike: { toggleLike(hit.id) }
+                                isLiked: isLiked(hit),
+                                onLike: { toggleLike(hit) }
                             )
                         }
                         .buttonStyle(.plain)
@@ -398,8 +401,15 @@ struct PersonScreen: View {
         navigation.open(route)
     }
 
-    private func toggleLike(_ id: String) {
-        if liked.contains(id) { liked.remove(id) } else { liked.insert(id) }
+    /// Сердце строки — отметка коллекции «Моё» (2026-10-04); персоны, которых коллекция
+    /// не хранит, — на время экрана, как было.
+    private func isLiked(_ hit: SearchHit) -> Bool {
+        collection.isFavorite(hit: hit) ?? liked.contains(hit.id)
+    }
+
+    private func toggleLike(_ hit: SearchHit) {
+        if collection.toggleFavorite(hit: hit) { return }
+        if liked.contains(hit.id) { liked.remove(hit.id) } else { liked.insert(hit.id) }
     }
 
     private func playerID(_ track: PersonStore.Track) -> String {

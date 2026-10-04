@@ -85,6 +85,9 @@ struct BooksHomeScreen: View {
                 scrollOffset: filter == 0 ? scrollOffset : 0
             )
         }
+        // Лента таба, вернувшаяся после другого фильтра, доложит свой сдвиг сама —
+        // прежний, оставшийся от неё, на миг проявил бы подложку навигации.
+        .onChange(of: filter) { scrollOffset = 0 }
         .toolbar(.hidden, for: .navigationBar)
         .task { await catalog.loadIfNeeded() }
     }

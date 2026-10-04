@@ -121,6 +121,11 @@ struct ServiceTopNav: View {
             .frame(height: EntityNavBarGeometry.backdropHeight)
             .allowsHitTesting(false)
             .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp))
+            // Подложка — чистая функция скролла: анимация выбора таба её не касается.
+            // Иначе смена таба уносила её прозрачность в пружину 0.3 с — фон проявлялся
+            // и гас на глазах, пока лента нового таба докладывала свой сдвиг (жалоба
+            // пользователя 2026-10-04: «моргает при переключении Любимое — Скачанное»).
+            .transaction { $0.animation = nil }
             .ignoresSafeArea(edges: .top)
         }
     }

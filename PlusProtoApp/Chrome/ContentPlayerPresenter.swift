@@ -78,6 +78,7 @@ final class ContentPlayerPresenter {
         let root = ContentPlayerRoot(player: player)
             .environment(actionBar)
             .environment(navigation)
+            .environment(CollectionStore.shared)
             .preferredColorScheme(.dark)
         let controller = ContentPlayerHostingController(rootView: root)
         controller.isImmersive = player.isMovie

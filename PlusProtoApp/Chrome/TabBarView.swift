@@ -181,21 +181,29 @@ private struct TabBarItem: View {
         // Позиция абсолютная — глифы в макете не центрированы и подрезаются краем тайла.
         return ZStack(alignment: .topLeading) {
             Color.clear
-            Image(tab.glyphAsset)
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: glyph.size.width, height: glyph.size.height)
-                .foregroundStyle(PlusGradient.inactiveTabGlyph)
-                .opacity(isActive ? 0 : TabBarGeometry.inactiveGlyphOpacity)
-                .overlay {
-                    Image(tab.glyphAsset)
-                        .renderingMode(.template)
-                        .resizable()
-                        .frame(width: glyph.size.width, height: glyph.size.height)
-                        .foregroundStyle(PlusGradient.activeTabGlyph)
-                        .opacity(isActive ? 1 : 0)
-                }
-                .offset(x: glyph.origin.x, y: glyph.origin.y)
+            if let asset = tab.glyphAsset {
+                Image(asset)
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: glyph.size.width, height: glyph.size.height)
+                    .foregroundStyle(PlusGradient.inactiveTabGlyph)
+                    .opacity(isActive ? 0 : TabBarGeometry.inactiveGlyphOpacity)
+                    .overlay {
+                        Image(asset)
+                            .renderingMode(.template)
+                            .resizable()
+                            .frame(width: glyph.size.width, height: glyph.size.height)
+                            .foregroundStyle(PlusGradient.activeTabGlyph)
+                            .opacity(isActive ? 1 : 0)
+                    }
+                    .offset(x: glyph.origin.x, y: glyph.origin.y)
+            } else {
+                // «Моё» — две обложки коллекции вместо глифа. Неактивный таб приглушён
+                // той же долей, что неактивные глифы, — фото не перетягивает внимание
+                // с активного таба.
+                CollectionTabGlyph()
+                    .opacity(isActive ? 1 : TabBarGeometry.inactiveGlyphOpacity)
+            }
         }
         .frame(width: PlusMetrics.tabIconTile, height: PlusMetrics.tabIconTile)
         .clipShape(shape)
@@ -221,5 +229,44 @@ private struct TabBarItem: View {
             // для своего поддерева.
             .animation(isActive ? TabBarMotion.glowAppear : TabBarMotion.activation, value: isActive)
             .allowsHitTesting(false)
+    }
+}
+
+/// Тайл «Моего» — две обложки коллекции, наклонённые навстречу друг другу и подрезанные
+/// краем тайла (макет `I2351:17540;2004:9427;2004:9388`): квадрат альбома r3 повёрнут
+/// на 12.92°, круг исполнителя — на −11.29°, обе 24pt с хайрлайном. Позиции — центры
+/// их повёрнутых рамок в тайле 40×40.
+private struct CollectionTabGlyph: View {
+    private enum Geometry {
+        static let side: CGFloat = 24
+        static let squareRadius: CGFloat = 3
+        static let squareTilt: Double = 12.92
+        static let circleTilt: Double = -11.29
+        /// Центр рамки квадрата: левый верх (−7.3, 7.7) + половина рамки 28.759
+        static let squareCenter = CGPoint(x: -7.3 + 28.759 / 2, y: 7.7 + 28.759 / 2)
+        /// Центр рамки круга: левый верх (11, 8) + половина рамки 28.236
+        static let circleCenter = CGPoint(x: 11 + 28.236 / 2, y: 8 + 28.236 / 2)
+    }
+
+    var body: some View {
+        ZStack {
+            cover("tabMyCoverSquare", shape: RoundedRectangle(cornerRadius: Geometry.squareRadius, style: .continuous))
+                .rotationEffect(.degrees(Geometry.squareTilt))
+                .position(Geometry.squareCenter)
+            cover("tabMyCoverCircle", shape: Circle())
+                .rotationEffect(.degrees(Geometry.circleTilt))
+                .position(Geometry.circleCenter)
+        }
+        .frame(width: PlusMetrics.tabIconTile, height: PlusMetrics.tabIconTile)
+        .allowsHitTesting(false)
+    }
+
+    private func cover<S: InsettableShape>(_ asset: String, shape: S) -> some View {
+        Image(asset)
+            .resizable()
+            .scaledToFill()
+            .frame(width: Geometry.side, height: Geometry.side)
+            .clipShape(shape)
+            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
     }
 }

@@ -1,0 +1,311 @@
+import SwiftUI
+import VariableBlur
+
+/// Полный список коллекции — переход из заголовка любой её карусели.
+struct CollectionListRoute: Hashable {
+    /// Фильтр, с которым экран открывается, — вид карусели, из которой пришли
+    let kind: CollectionItem.Kind
+    let shelf: CollectionStore.Shelf
+}
+
+/// Числа полных списков — `list-item / music` макета Музыки (`2128:94020`).
+enum CollectionListLayout {
+    /// Строка 96: обложка 80 и поля 8, между обложкой и текстом 12
+    static let cover: CGFloat = 80
+    static let coverRadius: CGFloat = 12
+    /// Постер фильма — 2:3 той же высоты; скругление — как у постеров коллекции
+    static let posterWidth: CGFloat = cover * 2 / 3
+    static let posterRadius: CGFloat = CollectionLayout.cardRadius
+    /// Книга — наша проекция, вписанная в высоту обложки вместе с блоком страниц
+    static let book = BookFigureGeometry(coverHeight: 78)
+    static let side: CGFloat = 16
+    static let rowPadding: CGFloat = 8
+    static let textGap: CGFloat = 12
+    static let controlsGap: CGFloat = 8
+    static let titleLines = 2
+    /// Список — на 8 ниже ряда чипсов (`stack` макета)
+    static let listTop: CGFloat = 8
+    /// Подложка шапки сходит на нет на 24 ниже чипсов
+    static let backdropTail: CGFloat = 24
+    static let backdropRamp: CGFloat = 24
+}
+
+/// Полные списки коллекции «Моё» — по макету полных списков Музыки (`2128:94020`,
+/// задача пользователя 2026-10-04), с нашим навбаром: «назад» и название полки. Под ним —
+/// ряд чипсов, как у полной выдачи музыки в поиске: все виды полки по порядку каруселей
+/// коллекции. Открывается из заголовка любой карусели сразу на её виде. В «Скачанном»
+/// исполнителей нет — у них нечего скачивать.
+///
+/// Строки — `list-item / music`: обложка 80, название в две строки и деталь, справа
+/// отметка «скачано» и «ещё» с действиями записи; тап открывает сущность, трек
+/// и плейлист — играют. Смена фильтра — как в выдаче: старый список гаснет, новый
+/// проявляется.
+struct CollectionListScreen: View {
+    let route: CollectionListRoute
+
+    @Environment(CollectionStore.self) private var collection
+
+    /// Выбранный фильтр — им подсвечен чипс, сразу по нажатию.
+    @State private var kind: CollectionItem.Kind
+    /// Фильтр показанного списка — догоняет выбранный, когда старый список погас.
+    @State private var shownKind: CollectionItem.Kind
+    @State private var listOpacity: Double = 1
+    @State private var swap: Task<Void, Never>?
+    @State private var scrollOffset: CGFloat = 0
+    @State private var scrollPosition = ScrollPosition(edge: .top)
+    /// Чипсы — на время экрана: виды, в которых что-то было при входе. Снятая отметка
+    /// не выдёргивает чипс из-под пальца — список просто пустеет.
+    private let options: [CollectionItem.Kind]
+
+    init(route: CollectionListRoute) {
+        self.route = route
+        _kind = State(initialValue: route.kind)
+        _shownKind = State(initialValue: route.kind)
+        let store = CollectionStore.shared
+        options = Self.kinds(on: route.shelf).filter { kind in
+            kind == route.kind || !store.items(kind, on: route.shelf).isEmpty
+        }
+    }
+
+    /// Виды полки — порядок каруселей коллекции; исполнителей в «Скачанном» нет.
+    static func kinds(on shelf: CollectionStore.Shelf) -> [CollectionItem.Kind] {
+        CollectionItem.Kind.allCases.filter { shelf == .favorites || $0 != .artist }
+    }
+
+    private var items: [CollectionItem] {
+        collection.items(shownKind, on: route.shelf)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(items) { item in
+                        CollectionListRow(item: item, isFirst: item.id == items.first?.id)
+                    }
+                }
+                .padding(.top, CollectionListLayout.listTop)
+                .animation(CollectionMotion.itemsChange, value: items.map(\.id))
+                .opacity(listOpacity)
+            }
+            .scrollIndicators(.hidden)
+            .contentMargins(
+                .top,
+                EntityNavBarGeometry.barHeight + FilterChipsLayout.rowHeight,
+                for: .scrollContent
+            )
+            .scrollPosition($scrollPosition)
+            .trackNavBarScroll(into: $scrollOffset)
+
+            if items.isEmpty {
+                Text("Здесь пока ничего нет")
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillSubtitle)
+                    .opacity(listOpacity)
+                    .transition(.opacity)
+            }
+        }
+        .animation(CollectionMotion.itemsChange, value: items.isEmpty)
+        .overlay(alignment: .top) { header }
+        .toolbar(.hidden, for: .navigationBar)
+        .onChange(of: kind) { _, selected in swapList(to: selected) }
+    }
+
+    /// Шапка — наш навбар и чипсы под ним. Подложка одна на обоих: прогрессивный блюр
+    /// без затемнения от верха экрана до чуть ниже чипсов, проявляется по скроллу.
+    /// Чипсы при оттяге едут за лентой вчетверо медленнее — как навигация витрин.
+    private var header: some View {
+        VStack(spacing: 0) {
+            EntityNavBar(title: route.shelf.title, scrollOffset: scrollOffset, thresholds: Self.navThresholds)
+            FilterChipsRow(options: options, selection: $kind, title: \.title)
+                .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
+        }
+        .background(alignment: .top) {
+            VariableBlurView(
+                maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
+                direction: .blurredTopClearBottom
+            )
+            .frame(
+                height: ServiceTopNavLayout.topSafeArea + EntityNavBarGeometry.barHeight
+                    + FilterChipsLayout.rowHeight + CollectionListLayout.backdropTail
+            )
+            .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: CollectionListLayout.backdropRamp))
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
+    }
+
+    /// Название полки в баре — всегда, и при оттяге тоже: это свой тип навбара, а не
+    /// название сущности, проявляющееся по скроллу (правка пользователя 2026-10-04).
+    /// Нулевая рампа от нуля гасила его на отрицательном сдвиге — старт на минус
+    /// бесконечности держит его всегда. Своей подложки у бара нет — она общая с чипсами.
+    private static let navThresholds = EntityNavBarThresholds(
+        backgroundStart: .greatestFiniteMagnitude,
+        backgroundRamp: 1,
+        titleStart: -.greatestFiniteMagnitude,
+        titleRamp: 0
+    )
+
+    /// Старый список гаснет, в паузе подменяется и уезжает к началу, новый проявляется —
+    /// как смена фильтров полной выдачи. Быстрые нажатия подряд прерывают незаконченную
+    /// смену: показан всегда последний выбранный.
+    private func swapList(to selected: CollectionItem.Kind) {
+        swap?.cancel()
+        guard selected != shownKind else {
+            withAnimation(CollectionListMotion.fadeIn) { listOpacity = 1 }
+            return
+        }
+        swap = Task { @MainActor in
+            withAnimation(CollectionListMotion.fadeOut) { listOpacity = 0 }
+            try? await Task.sleep(for: CollectionListMotion.fadeOutDuration)
+            guard !Task.isCancelled else { return }
+            shownKind = selected
+            scrollPosition.scrollTo(edge: .top)
+            withAnimation(CollectionListMotion.fadeIn) { listOpacity = 1 }
+        }
+    }
+}
+
+/// Смена списков по фильтру — те же 300 + 300 мс, что у полной выдачи поиска.
+enum CollectionListMotion {
+    static let fadeOutDuration: Duration = .milliseconds(300)
+    static let fadeOut: Animation = .easeInOut(duration: 0.3)
+    static let fadeIn: Animation = .easeInOut(duration: 0.3)
+}
+
+// MARK: - Строка
+
+/// Строка полного списка — `list-item / music`: обложка 80 (квадрат r12, у исполнителя
+/// круг, у фильма постер 2:3, у книги наша проекция), название Text M в две строки
+/// с бейджем 18+, деталь серым; справа отметка «скачано» и «ещё». Разделители 0.5.
+private struct CollectionListRow: View {
+    let item: CollectionItem
+    let isFirst: Bool
+
+    @Environment(CollectionStore.self) private var collection
+    @Environment(AppNavigationState.self) private var navigation
+    @Environment(ActionBarState.self) private var actionBar
+    @Environment(\.stackZoomNamespace) private var zoom
+
+    var body: some View {
+        HStack(spacing: CollectionListLayout.textGap) {
+            thumbnail
+
+            VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .plusText(.textM, .medium)
+                        .foregroundStyle(Color.fillOne)
+                        .lineLimit(CollectionListLayout.titleLines)
+                    if item.isExplicit == true {
+                        EntityExplicitBadge()
+                    }
+                }
+                if !item.subtitle.isEmpty {
+                    Text(item.subtitle)
+                        .plusText(.textM, .medium)
+                        .foregroundStyle(Color.fillSubtitle)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: CollectionListLayout.controlsGap) {
+                if collection.isDownloaded(item.id) {
+                    Image("iconDownload")
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: CollectionLayout.downloadIcon, height: CollectionLayout.downloadIcon)
+                        .foregroundStyle(Color.moviesAccent)
+                        .accessibilityLabel("Скачано")
+                }
+                Menu {
+                    CollectionItemMenu(item: item)
+                } label: {
+                    Image("iconMore")
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: CollectionLayout.moreIcon, height: CollectionLayout.moreIcon)
+                        .foregroundStyle(CollectionLayout.more)
+                        .padding(10)
+                        .contentShape(.rect)
+                }
+                .padding(-10)
+                .accessibilityLabel("Ещё")
+            }
+        }
+        .padding(.horizontal, CollectionListLayout.side)
+        .padding(.vertical, CollectionListLayout.rowPadding)
+        .frame(minHeight: CollectionListLayout.cover + 2 * CollectionListLayout.rowPadding)
+        .overlay(alignment: .bottom) { divider }
+        .overlay(alignment: .top) { if isFirst { divider } }
+        .contentShape(.rect)
+        .onTapGesture(perform: open)
+        .contextMenu { CollectionItemMenu(item: item) }
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        switch item.kind {
+        case .movie:
+            source(CollectionArtwork(
+                source: item.artwork,
+                width: CollectionListLayout.posterWidth,
+                height: CollectionListLayout.cover,
+                shape: RoundedRectangle(cornerRadius: CollectionListLayout.posterRadius, style: .continuous)
+            ))
+        case .book:
+            source(BookFigure(
+                geometry: CollectionListLayout.book,
+                coverWidth: CollectionListLayout.book.coverWidth(aspect: item.aspect)
+            ) {
+                if let artwork = item.artwork {
+                    SkeletonArtwork(source: artwork)
+                }
+            })
+        case .artist:
+            source(CollectionArtwork(
+                source: item.artwork,
+                width: CollectionListLayout.cover,
+                height: CollectionListLayout.cover,
+                shape: Circle()
+            ))
+        case .track, .album, .playlist:
+            source(CollectionArtwork(
+                source: item.artwork,
+                width: CollectionListLayout.cover,
+                height: CollectionListLayout.cover,
+                shape: RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
+            ))
+        }
+    }
+
+    /// Обложка — источник зума в экран сущности, как карточки коллекции.
+    @ViewBuilder
+    private func source(_ view: some View) -> some View {
+        if let route = item.route, item.kind != .track, let zoom {
+            view.matchedTransitionSource(id: route, in: zoom)
+        } else {
+            view
+        }
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(CollectionLayout.divider)
+            .frame(height: 0.5)
+            .padding(.horizontal, CollectionListLayout.side)
+    }
+
+    /// Трек и плейлист играют сразу, остальные открывают свой экран.
+    private func open() {
+        if item.kind != .track, let route = item.route {
+            navigation.open(route)
+        } else if let playable = item.playable {
+            PlayerHaptics.tap()
+            actionBar.open(.music(playable))
+        }
+    }
+}

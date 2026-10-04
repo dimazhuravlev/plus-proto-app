@@ -146,6 +146,8 @@ struct EntityHeader<Cover: View, Person: View, Primary: View>: View {
     let scrollOffset: CGFloat
     var backdropOpacity: Double = 1
     let title: String
+    /// Запись коллекции «Моё» — её отмечают «нравится» и «скачать» ряда действий.
+    var collectionItem: CollectionItem? = nil
     @ViewBuilder var cover: Cover
     @ViewBuilder var person: Person
     @ViewBuilder var primary: Primary
@@ -165,7 +167,7 @@ struct EntityHeader<Cover: View, Person: View, Primary: View>: View {
                 cover
             }
 
-            EntityTitleBlock(title: title) {
+            EntityTitleBlock(title: title, collectionItem: collectionItem) {
                 person
             } primary: {
                 primary
@@ -237,6 +239,9 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
     /// Ряд действий есть: у писателя и режиссёра его нет — под именем сразу список
     /// (правка пользователя 2026-10-04).
     var showsControls = true
+    /// Запись коллекции «Моё»: «нравится» отмечает её в «Любимом», «скачать» —
+    /// в «Скачанном» (2026-10-04). Нет записи — кнопки откликаются, как прежде.
+    var collectionItem: CollectionItem? = nil
     @ViewBuilder var person: Person
     @ViewBuilder var primary: Primary
 
@@ -253,12 +258,14 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
                 HStack(spacing: 0) {
                     primary
                     Spacer(minLength: 8)
-                    // «Нравится» переключается, как лайк мини-плеера (2026-10-04);
-                    // скачать и поделиться в прототипе не спроектированы — откликаются.
+                    // «Нравится» и «скачать» — отметки коллекции «Моё» (2026-10-04);
+                    // «поделиться» в прототипе не спроектировано — откликается.
                     HStack(spacing: PlusMetrics.circleButtonGap) {
                         ForEach(actions, id: \.self) { action in
                             if action == .like {
-                                LikeGlassButton()
+                                LikeGlassButton(item: collectionItem)
+                            } else if action == .download, let collectionItem {
+                                DownloadGlassButton(item: collectionItem)
                             } else {
                                 GlassIconButton(icon: action.icon, accessibilityTitle: action.title)
                             }

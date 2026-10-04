@@ -54,6 +54,11 @@ struct AppRootView: View {
         .overlay(alignment: .top) {
             TopScrim()
                 .opacity(showsTopScrim ? 1 : 0)
+                // Смена таба — щелчком, как и сам контент таба: фейд скрима «Плюса»
+                // проходил блюром по навигации другой витрины, и её фон моргал (жалоба
+                // пользователя 2026-10-04). Фейдом — только пуш и поп внутри «Плюса».
+                // Внутренняя анимация перебивает внешнюю, поэтому `nil` для таба — ближе.
+                .animation(nil, value: navigation.activeTab)
                 .animation(TopScrimMotion.fade, value: showsTopScrim)
         }
         // Между контентом и хромом: расфокусить надо экран, но не бар с клавиатурой.
@@ -125,6 +130,9 @@ struct AppRootView: View {
         .environment(catalog)
         .environment(cinema)
         .environment(books)
+        // Коллекция «Моё» — одна на приложение (`CollectionStore.shared`): сердце
+        // мини-плеера отмечает трек из `ActionBarState`, у которого окружения нет.
+        .environment(CollectionStore.shared)
         .environment(\.stackZoomNamespace, stackZoom)
     }
 
@@ -186,8 +194,8 @@ struct AppRootView: View {
             tabStack(.kinopoisk) { CinemaHomeScreen() }
         case .books:
             tabStack(.books) { BooksHomeScreen() }
-        case .alisa:
-            tabStack(.alisa) { ServiceStubScreen(tab: .alisa) }
+        case .collection:
+            tabStack(.collection) { CollectionScreen() }
         }
     }
 

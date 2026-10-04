@@ -222,6 +222,18 @@ struct MovieScreen: View {
         )))
     }
 
+    /// Тайтл в коллекции «Моё»: «Позже» кладёт его в «Любимое», «Скачать» — в «Скачанное»
+    /// (2026-10-04). Постером — карусель коллекции стоит на 2:3. Моковый тайтл
+    /// витрины без сети в коллекцию не ложится: id Кинопоиска у него нет.
+    private var collectionItem: CollectionItem? {
+        guard entity.kinopoiskID != nil else { return nil }
+        return .movie(
+            EntityRef(id: entity.id, title: details.title, subtitle: "", artwork: entity.artwork),
+            poster: details.poster.map { ArtworkSource.remote($0) },
+            year: details.year
+        )
+    }
+
     /// Текст лида — всегда сам аргумент, короткое редакционное описание.
     ///
     /// Раньше при отсутствии логотипа сюда подставлялось название тайтла. Теперь
@@ -326,7 +338,7 @@ struct MovieScreen: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .overlay(alignment: .bottom) { MovieMainButtons(onPlay: startWatching) }
+        .overlay(alignment: .bottom) { MovieMainButtons(onPlay: startWatching, collectionItem: collectionItem) }
         #if DEBUG
         // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
         // а запуск плеера теперь живёт только на этой кнопке. Раньше секунды —
@@ -668,6 +680,19 @@ private struct MovieMainButtons: View {
     /// Запуск киноплеера. Приходит с экрана: кадр и название знает он, панель —
     /// только вёрстка.
     let onPlay: () -> Void
+    /// Запись коллекции «Моё» — её отмечают «Позже» и «Скачать». Нет — кнопки
+    /// только откликаются.
+    let collectionItem: CollectionItem?
+
+    @Environment(CollectionStore.self) private var collection
+
+    private var isSaved: Bool {
+        collectionItem.map { collection.isFavorite($0.id) } ?? false
+    }
+
+    private var isDownloaded: Bool {
+        collectionItem.map { collection.isDownloaded($0.id) } ?? false
+    }
 
     var body: some View {
         HStack(spacing: MovieLayout.panelGap) {
@@ -712,30 +737,47 @@ private struct MovieMainButtons: View {
         .buttonStyle(PressScaleButtonStyle())
     }
 
+    /// «Позже» — закладка в «Любимом» коллекции: в коллекции — залитая.
     private var watchLaterButton: some View {
-        Button {} label: {
-            label(icon: "iconBookmark", title: "Позже")
+        Button {
+            guard let collectionItem else { return }
+            PlayerHaptics.tap()
+            collection.toggleFavorite(collectionItem)
+        } label: {
+            label(title: "Позже") {
+                BookmarkGlyph(isSaved: isSaved, box: MovieLayout.buttonIconBox)
+            }
             .frame(height: MovieLayout.buttonHeight)
             // Дефолтный бордер стекла (white 8% × 0.66) вернулся по макету
             // `2103:15123` — раньше выключался явно (правка 2026-08-25)
             .glassSurface(Capsule(style: .continuous), blur: PlusMetrics.buttonBlur)
         }
         .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel(isSaved ? "Убрать из «Позже»" : "Позже")
     }
 
+    /// «Скачать» — «Скачанное» коллекции: скачанное — фиолетовым.
     private var downloadButton: some View {
-        Button {} label: {
-            MovieIcon(name: "iconDownload", box: MovieLayout.buttonIconBox)
+        Button {
+            guard let collectionItem else { return }
+            PlayerHaptics.tap()
+            collection.toggleDownload(collectionItem)
+        } label: {
+            DownloadGlyph(isDownloaded: isDownloaded, box: MovieLayout.buttonIconBox)
             .frame(width: MovieLayout.buttonHeight, height: MovieLayout.buttonHeight)
             .glassSurface(Circle(), blur: PlusMetrics.buttonBlur)
         }
         .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Скачать")
+        .accessibilityLabel(isDownloaded ? "Удалить из скачанного" : "Скачать")
     }
 
     private func label(icon: String, title: String) -> some View {
+        label(title: title) { MovieIcon(name: icon, box: MovieLayout.buttonIconBox) }
+    }
+
+    private func label(title: String, @ViewBuilder icon: () -> some View) -> some View {
         HStack(spacing: MovieLayout.buttonGap) {
-            MovieIcon(name: icon, box: MovieLayout.buttonIconBox)
+            icon()
             Text(title)
                 .plusText(.textM, .semibold)
                 .foregroundStyle(Color.fillOne)

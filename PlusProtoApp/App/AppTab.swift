@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Пять сервисов супераппа. Порядок — как в макете (слева направо).
+/// Пять табов супераппа. Порядок — как в макете (слева направо). Пятый — общая
+/// коллекция «Моё» (макет `2351:17327`): она встала на место таба Алисы, которого
+/// больше нет (решение пользователя 2026-10-04).
 enum AppTab: Int, CaseIterable, Identifiable {
-    case plus, music, kinopoisk, books, alisa
+    case plus, music, kinopoisk, books, collection
 
     var id: Int { rawValue }
 
@@ -12,19 +14,20 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .music: "Музыка"
         case .kinopoisk: "Кинопоиск"
         case .books: "Книги"
-        case .alisa: "Алиса"
+        case .collection: "Моё"
         }
     }
 
     /// Вектор глифа, template — форма у активного и неактивного состояния одна,
-    /// различается только заливка (её даёт `TabBarItem`).
-    var glyphAsset: String {
+    /// различается только заливка (её даёт `TabBarItem`). У «Моего» глифа нет —
+    /// в тайле две обложки коллекции (`CollectionTabGlyph`).
+    var glyphAsset: String? {
         switch self {
         case .plus: "tabGlyphPlus"
         case .music: "tabGlyphMusic"
         case .kinopoisk: "tabGlyphKinopoisk"
         case .books: "tabGlyphBooks"
-        case .alisa: "tabGlyphAlisa"
+        case .collection: nil
         }
     }
 
@@ -44,8 +47,8 @@ enum AppTab: Int, CaseIterable, Identifiable {
             (CGSize(width: 28.75, height: 28.75), CGPoint(x: 11.25, y: 5.625))
         case .books:
             (CGSize(width: 28.75, height: 32.5), CGPoint(x: 0, y: 7.5))
-        case .alisa:
-            (CGSize(width: 26.25, height: 25.299), CGPoint(x: 6.875, y: 6.852))
+        case .collection:
+            (.zero, .zero)
         }
     }
 }
@@ -59,7 +62,7 @@ extension AppTab {
         case "music": self = .music
         case "kinopoisk": self = .kinopoisk
         case "books": self = .books
-        case "alisa": self = .alisa
+        case "collection": self = .collection
         default: return nil
         }
     }
