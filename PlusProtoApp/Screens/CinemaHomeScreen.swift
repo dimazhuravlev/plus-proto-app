@@ -117,7 +117,8 @@ struct CinemaHomeScreen: View {
     @ViewBuilder
     private var content: some View {
         if !catalog.promos.isEmpty {
-            CinemaPromoCarousel(promos: catalog.promos)
+            @Bindable var catalog = catalog
+            CinemaPromoCarousel(promos: catalog.promos, savedIndex: $catalog.promoIndex)
         }
         history
         ForEach(catalog.rows) { row in

@@ -43,6 +43,9 @@ final class BooksHomeCatalog {
 
     private(set) var promos: [Book] = []
     private(set) var rows: [Row] = []
+    /// Книга промо, на которой остановились, — на всю сессию (экран таба
+    /// пересоздаётся на каждом переключении).
+    var promoIndex = 0
     private(set) var isLoaded = false
     private var didStart = false
 

@@ -16,6 +16,8 @@ enum BooksPromoLayout {
     /// музыки (`MusicPlayerLayout.neighborTilt`), угол — от расстояния до центра
     static let sideTilt: Double = 3
     static let sideShrink: CGFloat = 0.14
+    /// …и ниже центральной на 16 (правка пользователя 2026-10-04) — тоже за сдвигом
+    static let sideDrop: CGFloat = 16
     /// Поля над и под книгой — под наклон и тень
     static let carouselTop: CGFloat = 20
     static let carouselBottom: CGFloat = 24
@@ -32,8 +34,9 @@ enum BooksPromoLayout {
     static let buttonHeight: CGFloat = 48
     static let buttonPadding: CGFloat = 32
     static let buttonBottom: CGFloat = 24
-    /// Фон — размытая копия обложки текущей книги, затемнённая и уходящая в чёрный
-    static let backdropBlur: CGFloat = 40
+    /// Фон — размытая копия обложки текущей книги, затемнённая и уходящая в чёрный.
+    /// Размытие 60 (было 40 — «размыть сильнее», правка пользователя 2026-10-04)
+    static let backdropBlur: CGFloat = 60
     static let backdropDim: Double = 0.35
     static let backdropFade: Animation = .easeInOut(duration: 0.4)
 }
@@ -93,7 +96,12 @@ struct BooksHomeScreen: View {
                 if catalog.isLoaded {
                     VStack(spacing: 0) {
                         if !catalog.promos.isEmpty {
-                            BooksPromoCarousel(books: catalog.promos, pull: max(0, -scrollOffset))
+                            @Bindable var catalog = catalog
+                            BooksPromoCarousel(
+                                books: catalog.promos,
+                                pull: max(0, -scrollOffset),
+                                savedIndex: $catalog.promoIndex
+                            )
                         }
                         ForEach(catalog.rows) { row in
                             BooksRow(row: row)
@@ -131,26 +139,44 @@ private struct BooksPromoCarousel: View {
     /// Оттяг ленты вниз — фон тянется за ним вверх, без чёрной полосы (резина, как
     /// у фона альбома и книги — `EntityCoverHeader`)
     let pull: CGFloat
+    /// Книга набора, на которой остановились, — в каталоге, на всю сессию.
+    @Binding var savedIndex: Int
 
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
 
-    /// Повторов набора — тот же круг, что у промо Кинопоиска.
-    private static let laps = 200
+    /// Тот же круг, что у промо Кинопоиска: три копии, работает средняя.
+    private static let copies = 3
 
     @State private var page: Int?
 
-    init(books: [BooksHomeCatalog.Book], pull: CGFloat) {
+    init(books: [BooksHomeCatalog.Book], pull: CGFloat, savedIndex: Binding<Int>) {
         self.books = books
         self.pull = pull
-        _page = State(initialValue: books.count * (Self.laps / 2))
+        _savedIndex = savedIndex
+        let count = max(books.count, 1)
+        _page = State(initialValue: count + savedIndex.wrappedValue % count)
     }
 
     private var current: BooksHomeCatalog.Book? {
         guard !books.isEmpty else { return nil }
-        let index = page ?? books.count * (Self.laps / 2)
+        let index = page ?? books.count + savedIndex
         return books[((index % books.count) + books.count) % books.count]
+    }
+
+    /// Свайп остановился: запомнить книгу и, если это крайняя копия, перескочить
+    /// на ту же книгу средней — без анимации, картинка та же.
+    private func settle() {
+        let count = books.count
+        guard count > 0, let current = page else { return }
+        let index = ((current % count) + count) % count
+        savedIndex = index
+        let middle = count + index
+        guard current != middle else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { page = middle }
     }
 
     var body: some View {
@@ -187,7 +213,7 @@ private struct BooksPromoCarousel: View {
         let count = books.count
         return ScrollView(.horizontal) {
             LazyHStack(spacing: BooksPromoLayout.gap) {
-                ForEach(0..<(count * Self.laps), id: \.self) { index in
+                ForEach(0..<(count * Self.copies), id: \.self) { index in
                     let book = books[index % count]
                     bookView(book, isCurrent: index == page)
                         .frame(width: BooksPromoLayout.slot)
@@ -201,6 +227,7 @@ private struct BooksPromoCarousel: View {
                             return content
                                 .scaleEffect(1 - BooksPromoLayout.sideShrink * abs(t))
                                 .rotationEffect(.degrees(BooksPromoLayout.sideTilt * Double(t)))
+                                .offset(y: BooksPromoLayout.sideDrop * abs(t))
                         }
                 }
             }
@@ -209,6 +236,9 @@ private struct BooksPromoCarousel: View {
         .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
         .contentMargins(.horizontal, (PlusMetrics.designWidth - BooksPromoLayout.slot) / 2, for: .scrollContent)
         .scrollPosition(id: $page, anchor: .center)
+        .onScrollPhaseChange { _, phase in
+            if phase == .idle { settle() }
+        }
         .scrollIndicators(.hidden)
         .scrollDisabled(count < 2)
         .scrollClipDisabled()
@@ -304,6 +334,7 @@ private struct BooksPromoSkeleton: View {
                                 .frame(width: BooksPromoLayout.slot)
                                 .scaleEffect(index == 1 ? 1 : 1 - BooksPromoLayout.sideShrink)
                                 .rotationEffect(.degrees(index == 1 ? 0 : (index == 0 ? -1 : 1) * BooksPromoLayout.sideTilt))
+                                .offset(y: index == 1 ? 0 : BooksPromoLayout.sideDrop)
                         }
                     }
                 }

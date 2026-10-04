@@ -16,7 +16,9 @@ enum EntityCoverLayout {
     /// не замерен (первый кадр): название в две строки, персона, ряд.
     static let typicalActionsBottom: CGFloat = 160
     /// Фон — сама обложка: blur 30 + чёрный 30 % + градиент к чёрному снизу.
-    static let backdropBlur: CGFloat = 30
+    /// Размытие фоновой копии обложки — 50 (было 30, «размыть сильнее», правка
+    /// пользователя 2026-10-04)
+    static let backdropBlur: CGFloat = 50
     static let backdropDim: Double = 0.3
     /// Поля контента — 16, как у всего контента экранов сущностей.
     static let side: CGFloat = 16

@@ -45,6 +45,9 @@ final class CinemaCatalog {
 
     private(set) var promos: [Promo] = []
     private(set) var rows: [Row] = []
+    /// Слайд промо, на котором остановились, — на всю сессию: экран таба
+    /// пересоздаётся на каждом переключении, а позиция должна пережить возврат.
+    var promoIndex = 0
     /// Данные собраны — скелетоны сменяются лентой.
     private(set) var isLoaded = false
     private var didStart = false

@@ -55,9 +55,14 @@ enum CinemaPromoLayout {
 }
 
 /// Промоблок — крупные карточки, листаются по одной в обе стороны **по кругу**
-/// (задача пользователя 2026-10-04). Круг — лента из многих повторов набора,
-/// открытая на середине: до края её не долистать, а подмены позиции, которая
-/// дёргала бы картинку, нет вовсе.
+/// (задача пользователя 2026-10-04). Круг — три копии набора: работает средняя, а когда
+/// свайп остановился в крайней, лента перескакивает на тот же слайд средней — картинка
+/// та же, прыжка не видно.
+///
+/// Прежде круг был лентой из двухсот повторов, открытой на середине: на устройстве она
+/// открывалась пролистанной до конца (жалоба пользователя) — позиция по id ставилась
+/// раньше, чем лента знала ширину карточек, и смещение к шестисотому слайду упиралось
+/// в край. Текущий слайд живёт в каталоге — позиция сохраняется на всю сессию.
 ///
 /// Справа из-под края выглядывает следующая карточка (обновлённый макет); мета —
 /// логотип, описание, кнопки — проявляется прозрачностью **вслед за сдвигом**
@@ -65,24 +70,28 @@ enum CinemaPromoLayout {
 /// (правка пользователя тем же днём).
 struct CinemaPromoCarousel: View {
     let promos: [CinemaCatalog.Promo]
+    /// Слайд набора, на котором остановились, — живёт в каталоге, на всю сессию.
+    @Binding var savedIndex: Int
 
-    /// Повторов набора в ленте. В каждую сторону — сотня кругов.
-    private static let laps = 200
+    /// Копий набора в ленте: средняя — рабочая, крайние — запас под свайп за край.
+    private static let copies = 3
 
-    /// Видимый слайд — индекс в ленте повторов. Стартовый задан сразу, в `init`:
-    /// лента открывается на середине с первого кадра, без прыжка от нулевого слайда.
+    /// Видимый слайд — индекс в ленте копий. Стартовый задан сразу, в `init`: лента
+    /// открывается на сохранённом слайде средней копии, без прыжка от нулевого.
     @State private var page: Int?
 
-    init(promos: [CinemaCatalog.Promo]) {
+    init(promos: [CinemaCatalog.Promo], savedIndex: Binding<Int>) {
         self.promos = promos
-        _page = State(initialValue: promos.count * (Self.laps / 2))
+        _savedIndex = savedIndex
+        let count = max(promos.count, 1)
+        _page = State(initialValue: count + savedIndex.wrappedValue % count)
     }
 
     var body: some View {
         let count = promos.count
         ScrollView(.horizontal) {
             LazyHStack(spacing: CinemaPromoLayout.cardGap) {
-                ForEach(0..<(count * Self.laps), id: \.self) { index in
+                ForEach(0..<(count * Self.copies), id: \.self) { index in
                     CinemaPromoSlide(promo: promos[index % count], isCurrent: index == page)
                         .containerRelativeFrame(.horizontal) { length, _ in
                             length - CinemaPromoLayout.cardReserve
@@ -94,12 +103,18 @@ struct CinemaPromoCarousel: View {
         // По одной карточке за свайп, как бы ни бросили, — «послайдово».
         .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
         .contentMargins(.leading, CinemaPromoLayout.leading, for: .scrollContent)
-        .scrollPosition(id: $page)
+        // Якорь — левый край: без него перескок на среднюю копию прокручивал минимально,
+        // «лишь бы была видна», и карточка вставала у правого края (кадр 2026-10-04).
+        .scrollPosition(id: $page, anchor: .leading)
         .scrollIndicators(.hidden)
         // Один слайд — листать некуда.
         .scrollDisabled(count < 2)
         .frame(height: CinemaPromoLayout.height)
+        .onScrollPhaseChange { _, phase in
+            if phase == .idle { settle() }
+        }
         .onChange(of: promos.map(\.id)) {
+            savedIndex = 0
             page = startPage
         }
         #if DEBUG
@@ -118,9 +133,23 @@ struct CinemaPromoCarousel: View {
         #endif
     }
 
-    /// Середина ленты — начало первого слайда.
+    /// Первый слайд средней копии.
     private var startPage: Int {
-        promos.count * (Self.laps / 2)
+        promos.count
+    }
+
+    /// Свайп остановился: запомнить слайд и, если это крайняя копия, перескочить
+    /// на тот же слайд средней — без анимации, картинка та же.
+    private func settle() {
+        let count = promos.count
+        guard count > 0, let current = page else { return }
+        let index = ((current % count) + count) % count
+        savedIndex = index
+        let middle = count + index
+        guard current != middle else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { page = middle }
     }
 }
 

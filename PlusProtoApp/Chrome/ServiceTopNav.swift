@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import VariableBlur
 
 /// Числа верхней навигации — макет `2455:75953` (главная Кинопоиска).
 enum ServiceTopNavLayout {
@@ -69,9 +70,11 @@ enum ServiceTopNavMotion {
     static let dragThreshold: CGFloat = 8
     static let stripSettle: Animation = .smooth(duration: 0.45)
     static let rubber: CGFloat = 0.35
-    /// Оттяг ленты вниз: ряд навигации едет за ним в 2.5 раза медленнее — отступ над
-    /// баром тоже тянется, но не наравне с лентой (правка пользователя 2026-10-04)
-    static let pullFollow: CGFloat = 0.4
+    /// Оттяг ленты вниз: ряд навигации едет за ним вчетверо медленнее и упирается
+    /// в мягкий потолок — отступ над баром тянется, но заметно меньше ленты (правки
+    /// пользователя 2026-10-04: сначала 0.4 без потолка — «слишком далеко уходит»)
+    static let pullFollow: CGFloat = 0.25
+    static let pullLimit: CGFloat = 24
 }
 
 /// Верхняя навигация сервисного таба — табы-фильтры слева, аватар справа (макет
@@ -99,13 +102,28 @@ struct ServiceTopNav: View {
         }
         .frame(height: ServiceTopNavLayout.rowHeight)
         // Сдвиг — только у ряда: подложка стоит на месте, а она в покое прозрачна.
-        .offset(y: max(0, -scrollOffset) * ServiceTopNavMotion.pullFollow)
+        .offset(y: pullShift)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
-            NavBarBackdrop()
-                .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp))
-                .ignoresSafeArea(edges: .top)
+            // Только прогрессивный блюр, без затемнения: тёмный градиент подложки
+            // навбаров сущностей проявлялся на начале скролла и был лишним (правка
+            // пользователя 2026-10-04) — как у скрима витрины «Плюс».
+            VariableBlurView(
+                maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
+                direction: .blurredTopClearBottom
+            )
+            .frame(height: EntityNavBarGeometry.backdropHeight)
+            .allowsHitTesting(false)
+            .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp))
+            .ignoresSafeArea(edges: .top)
         }
+    }
+
+    /// Сдвиг ряда за оттягом ленты: четверть хода с мягким потолком — дальше ряд
+    /// почти стоит.
+    private var pullShift: CGFloat {
+        let raw = max(0, -scrollOffset) * ServiceTopNavMotion.pullFollow
+        return raw / (1 + raw / ServiceTopNavMotion.pullLimit)
     }
 
     // MARK: Табы
