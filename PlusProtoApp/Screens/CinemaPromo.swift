@@ -246,9 +246,10 @@ private struct CinemaPromoSlide: View {
         )
         return PlusSkeleton.fill
             .overlay { SkeletonArtwork(source: promo.cover) }
+            .overlay { PromoCoverEdge.border }
+            // Затемнение — поверх рамки: к низу она гаснет вместе с кадром (макет).
             .overlay { CinemaPromoLayout.fade }
             .clipShape(shape)
-            .overlay { PromoCoverEdge.stroke }
             .frame(height: CinemaPromoLayout.coverHeight)
     }
 
@@ -337,40 +338,24 @@ private struct CinemaPromoSlide: View {
     }
 }
 
-/// Кромка обложки — хайрлайн white 8 %, как у всех карточек проекта (правка
-/// пользователя 2026-10-04: прежде лежала под затемнением и к низу пропадала вместе
-/// с обложкой). Сверху и по бокам, поверх затемнения; снизу её нет — там обложка
-/// уходит в фон под мету, и линия прошла бы под кнопками.
-private struct PromoCoverEdge: Shape {
-    let radius: CGFloat
-    var lineWidth: CGFloat = PlusMetrics.hairline
+/// Рамка обложки — по макету карточки промо (`2455:75990`, правка пользователя
+/// 2026-10-04): 0.67 × белый 8 % по всему кадру обложки, скругление сверху 24.
+/// Лежит под затемнением, как в макете: к низу гаснет вместе с кадром, а под мету
+/// и кнопки не заходит. ~~Кромка сверху и по бокам поверх затемнения~~ — прежняя
+/// версия правки того же дня, линии по бокам доходили до самого низа.
+private enum PromoCoverEdge {
+    static let width: CGFloat = 0.67
 
-    static var stroke: some View {
-        PromoCoverEdge(radius: CinemaPromoLayout.coverRadius)
-            .stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
-            .allowsHitTesting(false)
-    }
-
-    func path(in rect: CGRect) -> Path {
-        // Линия внутри кадра, как `strokeBorder`.
-        let inset = lineWidth / 2
-        let left = rect.minX + inset
-        let right = rect.maxX - inset
-        let top = rect.minY + inset
-        var path = Path()
-        path.move(to: CGPoint(x: left, y: rect.maxY))
-        path.addArc(
-            tangent1End: CGPoint(x: left, y: top),
-            tangent2End: CGPoint(x: right, y: top),
-            radius: radius - inset
+    static var border: some View {
+        UnevenRoundedRectangle(
+            topLeadingRadius: CinemaPromoLayout.coverRadius,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: 0,
+            topTrailingRadius: CinemaPromoLayout.coverRadius,
+            style: .continuous
         )
-        path.addArc(
-            tangent1End: CGPoint(x: right, y: top),
-            tangent2End: CGPoint(x: right, y: rect.maxY),
-            radius: radius - inset
-        )
-        path.addLine(to: CGPoint(x: right, y: rect.maxY))
-        return path
+        .strokeBorder(Color.fillNine, lineWidth: width)
+        .allowsHitTesting(false)
     }
 }
 
@@ -446,6 +431,7 @@ struct CinemaPromoSkeleton: View {
 
     private var cover: some View {
         PlusSkeleton.fill
+            .overlay { PromoCoverEdge.border }
             .overlay { CinemaPromoLayout.fade }
             .clipShape(UnevenRoundedRectangle(
                 topLeadingRadius: CinemaPromoLayout.coverRadius,
@@ -454,7 +440,6 @@ struct CinemaPromoSkeleton: View {
                 topTrailingRadius: CinemaPromoLayout.coverRadius,
                 style: .continuous
             ))
-            .overlay { PromoCoverEdge.stroke }
             .frame(height: CinemaPromoLayout.coverHeight)
     }
 
