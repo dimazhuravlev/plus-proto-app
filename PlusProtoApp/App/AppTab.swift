@@ -19,15 +19,16 @@ enum AppTab: Int, CaseIterable, Identifiable {
     }
 
     /// Вектор глифа, template — форма у активного и неактивного состояния одна,
-    /// различается только заливка (её даёт `TabBarItem`). У «Моего» глифа нет —
-    /// в тайле две обложки коллекции (`CollectionTabGlyph`).
-    var glyphAsset: String? {
+    /// различается только заливка (её даёт `TabBarItem`). У «Моего» — сердце
+    /// (макеты `2463:79197` / `2463:79223`, правка пользователя 2026-10-04; прежде
+    /// в тайле стояли две обложки коллекции).
+    var glyphAsset: String {
         switch self {
         case .plus: "tabGlyphPlus"
         case .music: "tabGlyphMusic"
         case .kinopoisk: "tabGlyphKinopoisk"
         case .books: "tabGlyphBooks"
-        case .collection: nil
+        case .collection: "tabGlyphCollection"
         }
     }
 
@@ -48,7 +49,9 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .books:
             (CGSize(width: 28.75, height: 32.5), CGPoint(x: 0, y: 7.5))
         case .collection:
-            (.zero, .zero)
+            // Сердце в боксе 32 со сдвигом 6 вправо, бокс растянут в тайл ×1.25 —
+            // правый край сердца срезается тайлом, как в макете.
+            (CGSize(width: 40, height: 40), CGPoint(x: 7.5, y: 0))
         }
     }
 }
