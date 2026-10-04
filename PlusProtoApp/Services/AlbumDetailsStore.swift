@@ -60,7 +60,7 @@ final class AlbumDetailsStore {
 
 extension AlbumDetailsStore {
     /// `-debugAlbumId <id>` — открыть экран конкретного альбома Deezer, минуя витрину.
-    /// Флаг зарегистрирован в `parseDebugLaunchArguments`, как велит HANDOFF §4.
+    /// Флаг зарегистрирован в `parseDebugLaunchArguments`, как велит docs/DEBUG.md.
     static var debugID: Int? {
         #if DEBUG
         let id = UserDefaults.standard.integer(forKey: "debugAlbumId")

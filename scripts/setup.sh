@@ -58,5 +58,5 @@ cat <<'DONE'
 
 Если Xcode ругается на команду разработчика (Signing & Capabilities, team Z55ZV5538M) —
 поставь свою или очисти поле: для симулятора подпись не нужна.
-Что дальше читать — README.md и docs/HANDOFF.md.
+Что дальше читать — README.md и CLAUDE.md.
 DONE

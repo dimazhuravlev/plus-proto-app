@@ -67,7 +67,7 @@ private enum RateBlockGeometry {
 // MARK: - Карточка
 
 /// «Продолжить смотреть»: повёрнутый видеокадр с ореолом, логотип поверх, ✕ в углу
-/// и блок оценки под ним. Логики ни у кнопок, ни у оценок нет — по решению из DECISIONS.
+/// и блок оценки под ним. У ✕ логики нет, оценка — реакция без записи (`RateBlock`).
 struct ContinueWatchingCard: View {
     let block: WatchingBlock
 
