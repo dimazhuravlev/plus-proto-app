@@ -527,7 +527,8 @@ private struct SearchFilterChip: View {
 /// Строка полной выдачи — `list-item / music` макета: 64 = 8 + обложка 48 + 8,
 /// название и подпись 15/20, сердце справа, разделители 0.5. У фильма, книги,
 /// режиссёра и писателя обложка — вертикальный постер 48 × 72, строка 88.
-private struct SearchListRow: View {
+/// Строка полной выдачи — она же строка плоских списков экрана персоны.
+struct SearchListRow: View {
     let hit: SearchHit
     let isFirst: Bool
     let isLiked: Bool
@@ -547,12 +548,12 @@ private struct SearchListRow: View {
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button(action: onLike) {
-                Image(isLiked ? "iconLiked" : "iconLove")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(isLiked ? Color.fillOne : SearchSectionColors.like)
+            Button {
+                PlayerHaptics.tap()
+                onLike()
+            } label: {
+                // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).
+                LikeGlyph(isLiked: isLiked, box: 20, offColor: SearchSectionColors.like)
                     .padding(10)
                     .contentShape(.rect)
             }
@@ -668,7 +669,7 @@ private struct SearchRowThumbnail: View {
 
 /// Строка-скелетон — того же габарита, пока полная выдача собирается: у кино
 /// и книг — с вертикальным постером.
-private struct SearchListSkeletonRow: View {
+struct SearchListSkeletonRow: View {
     let isPoster: Bool
 
     private var thumbHeight: CGFloat { isPoster ? 72 : 48 }
@@ -741,29 +742,38 @@ private struct MusicWizardCard: View {
 
     private var topRow: some View {
         HStack(spacing: 0) {
-            PlusSkeleton.fill
-                .frame(width: Layout.avatar, height: Layout.avatar)
-                .overlay { artwork(wizard.artist.artwork) }
-                .clipShape(Circle())
+            // Фото и имя — переход на экран исполнителя, как строка исполнителя
+            // в списке (2026-10-04); сердце и play справа живут своей жизнью.
+            Button(action: openArtist) {
+                HStack(spacing: 0) {
+                    PlusSkeleton.fill
+                        .frame(width: Layout.avatar, height: Layout.avatar)
+                        .overlay { artwork(wizard.artist.artwork) }
+                        .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: -2) {
-                Text(wizard.artist.title)
-                    .plusText(.textM, .medium)
-                    .foregroundStyle(Color.fillOne)
-                    .lineLimit(1)
-                Text("Исполнитель")
-                    .plusText(.textM, .medium)
-                    .foregroundStyle(Color.fillSubtitle)
+                    VStack(alignment: .leading, spacing: -2) {
+                        Text(wizard.artist.title)
+                            .plusText(.textM, .medium)
+                            .foregroundStyle(Color.fillOne)
+                            .lineLimit(1)
+                        Text("Исполнитель")
+                            .plusText(.textM, .medium)
+                            .foregroundStyle(Color.fillSubtitle)
+                    }
+                    .padding(.leading, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(.rect)
             }
-            .padding(.leading, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
+            .modifier(SearchResultsView.SearchZoomSource(route: artistRoute, zoom: zoom))
 
-            Button(action: onLike) {
-                Image(isLiked ? "iconLiked" : "iconLove")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(isLiked ? Color.fillOne : SearchSectionColors.like)
+            Button {
+                PlayerHaptics.tap()
+                onLike()
+            } label: {
+                // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).
+                LikeGlyph(isLiked: isLiked, box: 20, offColor: SearchSectionColors.like)
                     .padding(10)
                     .contentShape(.rect)
             }
@@ -864,6 +874,21 @@ private struct MusicWizardCard: View {
     private var isBarOnThisArtist: Bool {
         (actionBar.mode == .music || actionBar.mode == .search)
             && actionBar.music?.artist == wizard.artist.title
+    }
+
+    /// Экран исполнителя колдунщика — и в «Искали недавно», как переход из выдачи.
+    private var artistRoute: EntityRoute {
+        wizard.artist.route ?? .artist(EntityRef(
+            id: wizard.artist.id.replacingOccurrences(of: "artist-", with: "dz-"),
+            title: wizard.artist.title,
+            subtitle: "",
+            artwork: wizard.artist.artwork ?? .asset("")
+        ))
+    }
+
+    private func openArtist() {
+        remember(wizard.artist)
+        open(artistRoute)
     }
 
     /// Играет ли сейчас этот исполнитель — play превращается в паузу.

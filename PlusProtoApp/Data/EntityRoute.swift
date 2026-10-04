@@ -19,6 +19,13 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     case movie(EntityRef)
     case book(EntityRef)
     case album(EntityRef)
+    /// Экраны персон — один экран на три роли (`PersonScreen`, задача 2026-10-04).
+    /// id: исполнитель — `dz-<id Deezer>`; режиссёр — `kp-<id персоны Кинопоиска>`
+    /// (из съёмочной группы фильма) или `wp-<страница Википедии>` (из выдачи поиска —
+    /// тогда персона ищется по имени); писатель — `wp-…` или `name-<имя>` (с экрана книги).
+    case artist(EntityRef)
+    case director(EntityRef)
+    case writer(EntityRef)
 
     /// Для показа слоем: `fullScreenCover(item:)` требует `Identifiable`.
     var id: String {
@@ -26,12 +33,16 @@ enum EntityRoute: Hashable, Identifiable, Codable {
         case .movie(let ref): "movie-" + ref.id
         case .book(let ref): "book-" + ref.id
         case .album(let ref): "album-" + ref.id
+        case .artist(let ref): "artist-" + ref.id
+        case .director(let ref): "director-" + ref.id
+        case .writer(let ref): "writer-" + ref.id
         }
     }
 
     var ref: EntityRef {
         switch self {
-        case .movie(let ref), .book(let ref), .album(let ref): ref
+        case .movie(let ref), .book(let ref), .album(let ref),
+             .artist(let ref), .director(let ref), .writer(let ref): ref
         }
     }
 
@@ -46,10 +57,13 @@ enum EntityRoute: Hashable, Identifiable, Codable {
         return false
     }
 
-    /// Обложка альбома круглая, у фильма и книги — скруглённый прямоугольник.
+    /// Обложка альбома круглая, у фильма и книги — скруглённый прямоугольник;
+    /// фото персоны — круг.
     var hasRoundArtwork: Bool {
-        if case .album = self { return true }
-        return false
+        switch self {
+        case .album, .artist, .director, .writer: true
+        case .movie, .book: false
+        }
     }
 }
 

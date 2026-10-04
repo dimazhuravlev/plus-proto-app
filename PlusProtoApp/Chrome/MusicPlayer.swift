@@ -491,7 +491,8 @@ struct MusicPlayerView: View {
             PlayerHaptics.tap()
             actionBar.toggleMusicLike()
         } label: {
-            swapIcon(off: "iconLike", on: "iconLiked", isOn: isLiked, box: MusicPlayerLayout.controlIconSmall)
+            // Общий рисунок лайка (`LikeGlyph`) — тот же, что в мини-плеере и везде.
+            LikeGlyph(isLiked: isLiked, box: MusicPlayerLayout.controlIconSmall)
                 .frame(width: MusicPlayerLayout.control, height: MusicPlayerLayout.control)
                 .contentShape(Circle())
         }

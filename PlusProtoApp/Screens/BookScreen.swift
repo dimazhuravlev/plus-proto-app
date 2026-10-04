@@ -60,7 +60,7 @@ private enum BookScreenLayout {
 enum BookScreenMotion {
     /// Скелетоны сменяются контентом за 300 мс (задача пользователя 2026-10-04):
     /// кроссфейд на месте, и раскладка под ним доезжает той же кривой.
-    static let reveal: Animation = .easeInOut(duration: 0.3)
+    static let reveal: Animation = EntityMotion.reveal
 }
 
 // MARK: - Экран
@@ -74,6 +74,7 @@ enum BookScreenMotion {
 struct BookScreen: View {
     let entity: EntityRef
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(AppNavigationState.self) private var navigation
     /// Автор и описание — из того же захода в Google Books, что и текст читалки.
     @State private var text = BookTextStore()
     @State private var shelf = AuthorBooksStore()
@@ -182,12 +183,18 @@ struct BookScreen: View {
         } person: {
             // Автора так и не узнали — строки нет; пока узнаём — скелетон.
             if author != nil || !text.isReady {
-                EntityPersonRow(
-                    picture: portrait,
-                    name: author,
-                    detail: text.year,
-                    isDetailLoading: !text.isReady
-                )
+                // Строка автора — переход на экран писателя (2026-10-04).
+                Button(action: openWriter) {
+                    EntityPersonRow(
+                        picture: portrait,
+                        name: author,
+                        detail: text.year,
+                        isDetailLoading: !text.isReady
+                    )
+                    .contentShape(.rect)
+                }
+                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+                .disabled(author == nil)
             }
         } primary: {
             EntityPrimaryButton(icon: "iconRead", title: "Читать", action: startReading)
@@ -223,9 +230,17 @@ struct BookScreen: View {
         entity.subtitle.isEmpty ? text.author : entity.subtitle
     }
 
+    /// Экран писателя: фото — то, что нашлось для строки (иначе экран поищет сам).
+    private func openWriter() {
+        guard let author, !author.isEmpty else { return }
+        let photo: ArtworkSource
+        if case .artwork(let source) = portrait { photo = source } else { photo = .asset("") }
+        navigation.open(.writer(EntityRef(id: "name-\(author)", title: author, subtitle: "", artwork: photo)))
+    }
+
     /// Фото автора — из Википедии, по имени из метаданных тома. Картинка грузится
-    /// до показа: круг меняет скелетон на фото, а не на пустоту. Фото нет — первая
-    /// буква имени.
+    /// до показа: круг меняет скелетон на фото, а не на пустоту. Фото нет — аватарки
+    /// нет, строка начинается с имени (правка пользователя 2026-10-04).
     private func loadPortrait() async {
         guard let author, !author.isEmpty else { return }
         let picture: EntityPersonRow.Picture
@@ -233,7 +248,7 @@ struct BookScreen: View {
            await ArtworkLoader.shared.image(for: url) != nil {
             picture = .artwork(.remote(url))
         } else {
-            picture = .monogram(String(author.prefix(1)).uppercased())
+            picture = .none
         }
         guard !Task.isCancelled else { return }
         portrait = picture

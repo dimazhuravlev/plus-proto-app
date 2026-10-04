@@ -202,11 +202,39 @@ enum EntityTitleLayout {
     static let skeletonDetailWidth: CGFloat = 44
 }
 
+/// Круглые действия под названием. Действий в прототипе нет — кнопки откликаются.
+enum EntityTitleAction: Hashable {
+    case like, download, share
+
+    /// Альбом и книга — все три; у персоны скачивать нечего (макет `2455:32136`).
+    static let all: [EntityTitleAction] = [.like, .download, .share]
+
+    var icon: String {
+        switch self {
+        case .like: "iconLove"
+        case .download: "iconDownload"
+        case .share: "iconShare"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .like: "Нравится"
+        case .download: "Скачать"
+        case .share: "Поделиться"
+        }
+    }
+}
+
 /// Блок под шапкой: название (кегль ступенью от длины, `EntityTitleType`), строка
 /// персоны — исполнитель или автор, — и ряд действий: пилюля главного действия
-/// и круглые «нравится», «скачать», «поделиться». Альбом и книга (2026-10-04).
+/// и круглые «нравится», «скачать», «поделиться». Альбом, книга и персона (2026-10-04).
 struct EntityTitleBlock<Person: View, Primary: View>: View {
     let title: String
+    var actions: [EntityTitleAction] = EntityTitleAction.all
+    /// Ряд действий есть: у писателя и режиссёра его нет — под именем сразу список
+    /// (правка пользователя 2026-10-04).
+    var showsControls = true
     @ViewBuilder var person: Person
     @ViewBuilder var primary: Primary
 
@@ -219,14 +247,21 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
                 person
             }
 
-            HStack(spacing: 0) {
-                primary
-                Spacer(minLength: 8)
-                // Действия в прототипе не спроектированы — кнопки только откликаются.
-                HStack(spacing: PlusMetrics.circleButtonGap) {
-                    GlassIconButton(icon: "iconLove", accessibilityTitle: "Нравится")
-                    GlassIconButton(icon: "iconDownload", accessibilityTitle: "Скачать")
-                    GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться")
+            if showsControls {
+                HStack(spacing: 0) {
+                    primary
+                    Spacer(minLength: 8)
+                    // «Нравится» переключается, как лайк мини-плеера (2026-10-04);
+                    // скачать и поделиться в прототипе не спроектированы — откликаются.
+                    HStack(spacing: PlusMetrics.circleButtonGap) {
+                        ForEach(actions, id: \.self) { action in
+                            if action == .like {
+                                LikeGlassButton()
+                            } else {
+                                GlassIconButton(icon: action.icon, accessibilityTitle: action.title)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -266,15 +301,15 @@ struct EntityPrimaryButton: View {
 }
 
 /// Строка персоны: круглое фото 40 и две строки — имя и подпись (год). Всё, чего ещё
-/// нет, стоит скелетоном и проявляется на месте (у книги — из сети, у альбома всё
-/// известно сразу).
+/// нет, стоит скелетоном и проявляется на месте. Фото нет вовсе — круга нет, строка
+/// начинается с имени (правка пользователя 2026-10-04; прежде — буква на круге).
 struct EntityPersonRow: View {
     enum Picture: Equatable {
         /// Фото ещё ищется — скелетон круга
         case loading
         case artwork(ArtworkSource)
-        /// Фото нет — первая буква имени на круге
-        case monogram(String)
+        /// Фото нет — аватарки нет
+        case none
     }
 
     let picture: Picture
@@ -286,7 +321,10 @@ struct EntityPersonRow: View {
 
     var body: some View {
         HStack(spacing: EntityTitleLayout.personRowGap) {
-            avatar
+            if picture != .none {
+                avatar
+                    .transition(.opacity)
+            }
 
             VStack(alignment: .leading, spacing: EntityTitleLayout.textStackGap) {
                 ZStack(alignment: .leading) {
@@ -326,14 +364,8 @@ struct EntityPersonRow: View {
                 ArtworkImage(source: source)
                     .scaledToFill()
                     .transition(.opacity)
-            case .monogram(let letter):
-                Circle().fill(Color.buttonsPrimary)
-                    .overlay {
-                        Text(letter)
-                            .plusText(.textM, .semibold)
-                            .foregroundStyle(Color.fillSubtitle)
-                    }
-                    .transition(.opacity)
+            case .none:
+                EmptyView()
             }
         }
         .frame(width: size, height: size)

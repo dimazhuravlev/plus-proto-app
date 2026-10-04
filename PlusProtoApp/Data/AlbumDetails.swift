@@ -26,8 +26,12 @@ struct AlbumDetails {
     let title: String
     let artist: String
     let year: String?
-    /// Фото артиста из `/album/{id}.artist` — аватар в шапке
-    let artistPicture: ArtworkSource
+    /// Фото артиста из `/album/{id}.artist` — аватар в шапке. `nil` — фото у Deezer
+    /// нет (серый силуэт по ссылке с пустым хешем): аватарки нет (правка 2026-10-04).
+    let artistPicture: ArtworkSource?
+    /// id исполнителя Deezer — строка исполнителя ведёт на его экран. `nil` — пока
+    /// детали не пришли (заглушка по данным витрины) или альбом моковый.
+    var artistID: Int? = nil
     /// Треки, сгруппированные по дискам: `disks[0]` — первый диск. Экран склеивает
     /// группы в один список — заголовок «Диск N» убран (правка пользователя
     /// 2026-08-29), но группировка нужна порядку: у Deezer позиция трека считается
@@ -42,11 +46,14 @@ struct AlbumDetails {
     init(album: DeezerAlbum, tracks: [DeezerAlbumTrack], otherAlbums: [DeezerAlbumBrief]) {
         title = album.title
         artist = album.artist?.name ?? ""
+        artistID = album.artist?.id
         year = Self.year(from: album.releaseDate)
-        artistPicture = Self.artwork(
-            from: album.artist?.pictureXl ?? album.artist?.pictureBig ?? album.artist?.pictureMedium,
-            fallback: "mockAvatar"
-        )
+        // Без бандленного фолбэка: моковое фото на месте исполнителя — ложь о нём.
+        artistPicture = album.artist.flatMap { artist in
+            guard artist.hasPhoto else { return nil }
+            return (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?
+                .deezerUpscaled.map { ArtworkSource.remote($0) }
+        }
 
         let grouped = Dictionary(grouping: tracks) { $0.diskNumber ?? 1 }
         disks = grouped.keys.sorted().map { disk in
@@ -89,7 +96,7 @@ struct AlbumDetails {
         title: String,
         artist: String,
         year: String?,
-        artistPicture: ArtworkSource,
+        artistPicture: ArtworkSource?,
         disks: [[Track]],
         others: [OtherAlbum]
     ) {
@@ -111,11 +118,13 @@ struct AlbumDetails {
         let artistName = entity.subtitle.isEmpty ? "" : entity.title
 
         guard mock else {
+            // Фото исполнителя ещё едет — пока его нет: экран держит на его месте
+            // скелетон, а не чужое моковое фото.
             return AlbumDetails(
                 title: albumTitle,
                 artist: artistName,
                 year: nil,
-                artistPicture: .asset("mockAvatar"),
+                artistPicture: nil,
                 disks: [],
                 others: []
             )

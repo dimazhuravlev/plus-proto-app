@@ -260,6 +260,41 @@ struct KinopoiskMovie: Codable, Identifiable {
     }
 }
 
+// MARK: - Персона (экран режиссёра)
+
+/// Персона из `/v1.4/person/search`: профессий поиск не отдаёт — только имя и фото.
+struct KinopoiskPersonHit: Decodable, Identifiable {
+    let id: Int
+    let name: String?
+    let enName: String?
+    let photo: String?
+
+    var hasPhoto: Bool { !(photo ?? "").isEmpty }
+}
+
+/// Персона из `/v1.4/person/{id}` — с фильмографией: у каждого тайтла своя профессия
+/// (`enProfession`), по ней отбираются фильмы, где персона режиссёр. Постеров
+/// фильмография не несёт — их добирает пачка `KinopoiskService.moviesBrief`.
+struct KinopoiskPersonDetails: Decodable, Identifiable {
+    let id: Int
+    let name: String?
+    let enName: String?
+    let photo: String?
+    let movies: [Movie]?
+
+    struct Movie: Decodable {
+        let id: Int
+        let name: String?
+        let alternativeName: String?
+        let enProfession: String?
+    }
+
+    var photoURL: URL? {
+        guard let photo, !photo.isEmpty else { return nil }
+        return URL(string: photo)
+    }
+}
+
 // MARK: - Movie List (подборка)
 
 /// Подборка каталога (`/v1.4/list`); `slug` — ключ для `/v1.4/movie?lists=<slug>`.

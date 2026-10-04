@@ -66,6 +66,7 @@ struct AlbumScreen: View {
     let entity: EntityRef
 
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(AppNavigationState.self) private var navigation
     @State private var store = AlbumDetailsStore()
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
@@ -157,11 +158,18 @@ struct AlbumScreen: View {
             cover
         } person: {
             if !details.artist.isEmpty {
-                EntityPersonRow(
-                    picture: .artwork(details.artistPicture),
-                    name: details.artist,
-                    detail: details.year
-                )
+                // Строка исполнителя — переход на его экран (2026-10-04), когда
+                // известен его id: детали альбома пришли.
+                Button(action: openArtist) {
+                    EntityPersonRow(
+                        picture: artistAvatar,
+                        name: details.artist,
+                        detail: details.year
+                    )
+                    .contentShape(.rect)
+                }
+                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+                .disabled(details.artistID == nil)
             }
         } primary: {
             EntityPrimaryButton(
@@ -184,6 +192,23 @@ struct AlbumScreen: View {
             .frame(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize)
             .clipShape(shape)
             .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+    }
+
+    /// Аватар исполнителя: пока детали едут — скелетон круга (моковое фото здесь было
+    /// бы чужим лицом); пришли — фото, а без фото у Deezer — аватарки нет.
+    private var artistAvatar: EntityPersonRow.Picture {
+        if let picture = details.artistPicture { return .artwork(picture) }
+        return store.details == nil && entity.deezerID != nil ? .loading : .none
+    }
+
+    private func openArtist() {
+        guard let id = details.artistID else { return }
+        navigation.open(.artist(EntityRef(
+            id: "dz-\(id)",
+            title: details.artist,
+            subtitle: "",
+            artwork: details.artistPicture ?? .asset("")
+        )))
     }
 
     /// Все треки альбома подряд: дисков в списке больше нет, а плееру они и не нужны.

@@ -46,9 +46,8 @@ enum SearchRecents {
 
     /// Стартовый набор — вперемешку, как в макете: альбом, фильмы, исполнитель,
     /// книга, режиссёр. Айтемы настоящие — те же id и картинки, что отдала бы выдача
-    /// (Deezer, Кинопоиск, Google Books, Википедия; сняты 2026-10-03), поэтому фильмы,
-    /// альбом и книга открывают свои экраны. Исполнитель и режиссёр не нажимаются —
-    /// как и в выдаче: их экранов в проекте нет.
+    /// (Deezer, Кинопоиск, Google Books, Википедия; сняты 2026-10-03), поэтому все
+    /// открывают свои экраны — исполнитель и режиссёр тоже (экран персоны, 2026-10-04).
     static let starter: [SearchHit] = [
         album(
             id: 10709540,
@@ -67,8 +66,13 @@ enum SearchRecents {
             kind: .artist,
             title: "The Weeknd",
             subtitle: "",
-            artwork: remote("https://cdn-images.dzcdn.net/images/artist/581693b4724a7fcfa754455101e13a44/1000x1000-000000-80-0-0.jpg"),
-            route: nil
+            artwork: remote(weekndPhoto),
+            route: .artist(EntityRef(
+                id: "dz-4050205",
+                title: "The Weeknd",
+                subtitle: "",
+                artwork: remote(weekndPhoto) ?? .asset("")
+            ))
         ),
         book(
             id: "wuiaEAAAQBAJ",
@@ -82,10 +86,14 @@ enum SearchRecents {
             kind: .director,
             title: "Альфред Хичкок",
             subtitle: "",
-            // Ссылка — как её отдаёт API Википедии: размеры превью у Wikimedia теперь
-            // фиксированные, произвольный (400px) отвечает 400.
-            artwork: remote("https://thumb.wikimedia.org/wikipedia/commons/thumb/9/94/Hitchcock%2C_Alfred_02.jpg/500px-Hitchcock%2C_Alfred_02.jpg"),
-            route: nil
+            artwork: remote(hitchcockPhoto),
+            // Персона Кинопоиска известна — экран режиссёра не ищет её по имени.
+            route: .director(EntityRef(
+                id: "kp-156444",
+                title: "Альфред Хичкок",
+                subtitle: "",
+                artwork: remote(hitchcockPhoto) ?? .asset("")
+            ))
         ),
         movie(
             id: 656,
@@ -94,6 +102,11 @@ enum SearchRecents {
             poster: "https://avatars.mds.yandex.net/get-kinopoisk-image/9784475/d31f4594-4215-434d-ac47-d4166059fbee/300x450"
         ),
     ]
+
+    private static let weekndPhoto = "https://cdn-images.dzcdn.net/images/artist/581693b4724a7fcfa754455101e13a44/1000x1000-000000-80-0-0.jpg"
+    /// Ссылка — как её отдаёт API Википедии: размеры превью у Wikimedia теперь
+    /// фиксированные, произвольный (400px) отвечает 400.
+    private static let hitchcockPhoto = "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/94/Hitchcock%2C_Alfred_02.jpg/500px-Hitchcock%2C_Alfred_02.jpg"
 
     // MARK: - Сборка айтемов — в форме мапперов выдачи (`SearchState`)
 

@@ -861,6 +861,8 @@ private extension SearchHit {
     }
 
     init(artist: DeezerArtistBrief) {
+        let picture = (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled
+            .map { ArtworkSource.remote($0) }
         self.init(
             id: "artist-\(artist.id)",
             kind: .artist,
@@ -868,9 +870,14 @@ private extension SearchHit {
             // Подписи нет: круглая карточка и так читается исполнителем (правка
             // пользователя 2026-10-03, прежде — «Исполнитель»).
             subtitle: "",
-            artwork: (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled.map { .remote($0) },
-            // Экрана исполнителя в проекте нет вовсе — строка не нажимается.
-            route: nil,
+            artwork: picture,
+            // Экран исполнителя (`PersonScreen`, 2026-10-04).
+            route: .artist(EntityRef(
+                id: "dz-\(artist.id)",
+                title: artist.name,
+                subtitle: "",
+                artwork: picture ?? .asset("")
+            )),
             // Фанаты растут на порядки, поэтому логарифм: 10 млн — это 1.0.
             authority: min(1, log10(Double(artist.nbFan ?? 0) + 1) / 7)
         )
@@ -902,9 +909,10 @@ private extension SearchHit {
         )
     }
 
-    /// Писатель или режиссёр: одно имя, фото с Википедии. Не нажимается — экрана
-    /// персоны в проекте нет. Вес высокий: совпадение запроса с именем — сильный
-    /// сигнал, что секция про него.
+    /// Писатель или режиссёр: одно имя, фото с Википедии; тап — экран персоны
+    /// (`PersonScreen`: режиссёр ищется в Кинопоиске по имени, писатель — в Google
+    /// Books). Вес высокий: совпадение запроса с именем — сильный сигнал, что секция
+    /// про него.
     /// Плейлист — только в полной выдаче: экрана нет, строка не нажимается.
     init(playlist: DeezerPlaylistBrief) {
         self.init(
@@ -924,9 +932,17 @@ private extension SearchHit {
             title: person.name,
             subtitle: "",
             artwork: .remote(person.photo),
-            route: nil,
+            route: Self.personRoute(person),
             authority: 0.8
         )
+    }
+
+    private static func personRoute(_ person: WikipediaPeople.Person) -> EntityRoute {
+        let ref = EntityRef(id: "wp-\(person.pageID)", title: person.name, subtitle: "", artwork: .remote(person.photo))
+        switch person.role {
+        case .director: return .director(ref)
+        case .writer: return .writer(ref)
+        }
     }
 
     init(book: GoogleBook) {

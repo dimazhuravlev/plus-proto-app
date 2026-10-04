@@ -23,6 +23,9 @@ struct MoviePersonSection: View {
     let title: String
     let people: [MovieCastMember]
 
+    @Environment(AppNavigationState.self) private var navigation
+    @Environment(\.entityZoomNamespace) private var zoomNamespace
+
     private enum Layout {
         static let cardWidth: CGFloat = 109
         static let photoAspect: CGFloat = 2.0 / 3.0
@@ -63,7 +66,31 @@ struct MoviePersonSection: View {
         }
     }
 
+    /// Режиссёр — переход на его экран (2026-10-04): персона Кинопоиска известна,
+    /// искать по имени не нужно. Экран встаёт в стопку слоя фильма, поверх него
+    /// (`AppNavigationState.open`), и разворачивается из карточки.
+    @ViewBuilder
     private func card(_ person: MovieCastMember) -> some View {
+        if person.role == "Режиссёр" {
+            let route = EntityRoute.director(EntityRef(
+                id: "kp-\(person.id)",
+                title: person.name,
+                subtitle: "",
+                artwork: person.photo.map { ArtworkSource.remote($0) } ?? .asset("")
+            ))
+            let button = Button { navigation.open(route) } label: { cardBody(person) }
+                .buttonStyle(PressScaleButtonStyle())
+            if let zoomNamespace {
+                button.matchedTransitionSource(id: route, in: zoomNamespace)
+            } else {
+                button
+            }
+        } else {
+            cardBody(person)
+        }
+    }
+
+    private func cardBody(_ person: MovieCastMember) -> some View {
         VStack(alignment: .leading, spacing: Layout.captionGap) {
             photo(person)
 

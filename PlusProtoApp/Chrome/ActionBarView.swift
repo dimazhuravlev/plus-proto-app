@@ -908,11 +908,12 @@ private enum SearchPlaceholderMotion {
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
-    /// фраза погасла вместе с подъёмом, и нахлёста нет. Глиф — 240 мс сильного ease-out
-    /// только из прозрачности, без сдвига (правка пользователя 2026-10-03); соседи
-    /// стартуют через 20 мс — на 14 знаков вся волна ~0.5s. Длиннее бюджета UI в 300 мс
-    /// сознательно: волну попросили видимой, она ничего не блокирует и гаснет мгновенно.
-    static let focusedWave = HeadlineWave(stagger: 0.02, glyph: 0.24)
+    /// фраза погасла вместе с подъёмом, и нахлёста нет. Символы встают резко, без
+    /// проявления прозрачностью и без сдвига — как печать (правки пользователя
+    /// 2026-10-03 и 2026-10-04; прежде глиф проявлялся за 240 мс). Шаг 30 мс: на 14 знаков
+    /// строка набирается за ~0.4 с — почти как прежняя волна. Волну попросили видимой,
+    /// она ничего не блокирует и гаснет мгновенно.
+    static let focusedWave = HeadlineWave(stagger: 0.03, glyph: 0)
     /// С «уменьшением движения» — без волны: строка проявляется целиком, прозрачностью
     /// за 250 мс (как было до волны).
     static let focusedReducedFade: Double = 0.25
@@ -1466,15 +1467,8 @@ struct MiniPlayerPill: View {
             PlayerHaptics.tap()
             onToggleLike()
         } label: {
-            ZStack {
-                actionIcon("iconLove")
-                    .opacity(isLiked ? 0 : 1)
-                    .scaleEffect(isLiked ? ActionBarMotion.iconSwapScale : 1)
-                actionIcon("iconLiked")
-                    .opacity(isLiked ? 1 : 0)
-                    .scaleEffect(isLiked ? 1 : ActionBarMotion.iconSwapScale)
-            }
-            .animation(ActionBarMotion.iconSwap, value: isLiked)
+            // Общий рисунок лайка (`LikeGlyph`) — эталон для всех сердец проекта.
+            LikeGlyph(isLiked: isLiked, box: ActionBarGeometry.searchIconBox)
             // Хит-зона крупнее глифа, раскладка — нет: тот же приём, что у play.
             .padding(.horizontal, 8)
             .padding(.vertical, 10)

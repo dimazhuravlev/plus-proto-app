@@ -54,7 +54,7 @@ final class AlbumDetailsStore {
     /// Аватар артиста нужен в первом же кадре шапки, карусель — ниже по скроллу.
     /// Заказываем всё сразу: загрузчик дедуплицирует, а без прогрева карусель въезжает дырами.
     private func preloadArtwork(_ details: AlbumDetails) {
-        ArtworkLoader.shared.preload([details.artistPicture] + details.others.map(\.cover))
+        ArtworkLoader.shared.preload([details.artistPicture].compactMap { $0 } + details.others.map(\.cover))
     }
 }
 

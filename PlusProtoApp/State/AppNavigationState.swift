@@ -91,14 +91,13 @@ final class AppNavigationState {
     /// Открыть экран сущности: пушем или слоем поверх хрома — решает сам маршрут.
     /// Одна точка входа, чтобы витрина и отладочный тап не расходились в способе.
     func open(_ route: EntityRoute, in tab: AppTab? = nil) {
-        if route.coversChrome {
-            // Слой уже показан («Похожее» на экране фильма) — следующий экран
-            // встаёт в стопку слоя, поверх текущего, а не подменяет его.
-            if coveredRoute == nil {
-                coveredRoute = route
-            } else {
-                coveredPath.append(route)
-            }
+        if coveredRoute != nil {
+            // Слой уже показан — всё, что открыто из него, встаёт в его стопку, поверх
+            // текущего экрана: «Похожее» на экране фильма, режиссёр из съёмочной
+            // группы. Пуш ушёл бы в стек таба — под слой, его бы не было видно.
+            coveredPath.append(route)
+        } else if route.coversChrome {
+            coveredRoute = route
         } else {
             push(route, in: tab)
         }
