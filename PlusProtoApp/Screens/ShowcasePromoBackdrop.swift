@@ -31,6 +31,8 @@ struct ShowcasePromoBackdrop: View {
     /// `nil` — по доле высоты (`solidShare`), до низа промо.
     var solid: CGFloat? = nil
     var fade: CGFloat? = nil
+    /// Прозрачность всего фона — у витрины своя
+    var opacity: Double = ShowcasePromoBackdropStyle.opacity
 
     var body: some View {
         ZStack {
@@ -48,7 +50,7 @@ struct ShowcasePromoBackdrop: View {
         .mask {
             LinearGradient(stops: maskStops, startPoint: .top, endPoint: .bottom)
         }
-        .opacity(ShowcasePromoBackdropStyle.opacity)
+        .opacity(opacity)
         .animation(ShowcasePromoBackdropStyle.fade, value: id)
         .scaleEffect((height + pull) / height, anchor: .bottom)
         .allowsHitTesting(false)

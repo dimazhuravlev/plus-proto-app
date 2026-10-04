@@ -31,6 +31,9 @@ enum CinemaPromoLayout {
     /// плавно уходит в чёрный (правка пользователя 2026-10-04)
     static let backdropSolid: CGFloat = 300
     static let backdropFade: CGFloat = 160
+    /// Фон над промо — едва заметный: 0.35 (правка пользователя 2026-10-04 — «сильно
+    /// незаметнее»; было 0.8, как у Книг)
+    static let backdropOpacity: Double = 0.35
     /// Мета прижата к низу блока: поля 24 внутри карточки, зазор 8
     static let metaSide: CGFloat = 24
     static let metaBottom: CGFloat = 24 - bottomTrim
@@ -134,7 +137,8 @@ struct CinemaPromoCarousel: View {
                 height: ServiceTopNavLayout.topSafeArea + CinemaLayout.contentTop + CinemaPromoLayout.height,
                 pull: pull,
                 solid: CinemaPromoLayout.backdropSolid,
-                fade: CinemaPromoLayout.backdropFade
+                fade: CinemaPromoLayout.backdropFade,
+                opacity: CinemaPromoLayout.backdropOpacity
             )
         }
         .onScrollPhaseChange { _, phase in
