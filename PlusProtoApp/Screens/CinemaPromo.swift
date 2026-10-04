@@ -41,7 +41,7 @@ enum CinemaPromoLayout {
     static let watchIconGap: CGFloat = 8
 
     /// Затемнение обложки к низу — 16 стопов макета (`fade`): обложка уходит в чёрный
-    /// фон экрана без кромки, а мета читается поверх неё.
+    /// фон экрана без нижней кромки, а мета читается поверх неё.
     static let fade = LinearGradient(
         stops: [
             (0, 0), (0.1459, 0.0103), (0.2658, 0.0393), (0.3632, 0.0848),
@@ -199,10 +199,9 @@ private struct CinemaPromoSlide: View {
         )
         return PlusSkeleton.fill
             .overlay { SkeletonArtwork(source: promo.cover) }
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
-            // Затемнение — поверх бордера: снизу обложка уходит в фон целиком.
             .overlay { CinemaPromoLayout.fade }
             .clipShape(shape)
+            .overlay { PromoCoverEdge.stroke }
             .frame(height: CinemaPromoLayout.coverHeight)
     }
 
@@ -287,6 +286,43 @@ private struct CinemaPromoSlide: View {
     }
 }
 
+/// Кромка обложки — хайрлайн white 8 %, как у всех карточек проекта (правка
+/// пользователя 2026-10-04: прежде лежала под затемнением и к низу пропадала вместе
+/// с обложкой). Сверху и по бокам, поверх затемнения; снизу её нет — там обложка
+/// уходит в фон под мету, и линия прошла бы под кнопками.
+private struct PromoCoverEdge: Shape {
+    let radius: CGFloat
+    var lineWidth: CGFloat = PlusMetrics.hairline
+
+    static var stroke: some View {
+        PromoCoverEdge(radius: CinemaPromoLayout.coverRadius)
+            .stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
+            .allowsHitTesting(false)
+    }
+
+    func path(in rect: CGRect) -> Path {
+        // Линия внутри кадра, как `strokeBorder`.
+        let inset = lineWidth / 2
+        let left = rect.minX + inset
+        let right = rect.maxX - inset
+        let top = rect.minY + inset
+        var path = Path()
+        path.move(to: CGPoint(x: left, y: rect.maxY))
+        path.addArc(
+            tangent1End: CGPoint(x: left, y: top),
+            tangent2End: CGPoint(x: right, y: top),
+            radius: radius - inset
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: right, y: top),
+            tangent2End: CGPoint(x: right, y: rect.maxY),
+            radius: radius - inset
+        )
+        path.addLine(to: CGPoint(x: right, y: rect.maxY))
+        return path
+    }
+}
+
 /// Логотип промо: вписан в бокс по центру, проявляется, приехав по сети.
 /// Тёмный PNG рисуется белым силуэтом — на затемнённой обложке чёрный не читается
 /// (`ArtworkLoader.isDarkLogo`).
@@ -365,6 +401,7 @@ struct CinemaPromoSkeleton: View {
                 topTrailingRadius: CinemaPromoLayout.coverRadius,
                 style: .continuous
             ))
+            .overlay { PromoCoverEdge.stroke }
             .frame(height: CinemaPromoLayout.coverHeight)
     }
 
