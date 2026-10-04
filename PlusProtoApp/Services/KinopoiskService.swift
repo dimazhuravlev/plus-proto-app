@@ -106,6 +106,41 @@ actor KinopoiskService {
         return ids.compactMap { byId[$0] }
     }
 
+    /// Персоны по имени — экран режиссёра, открытый из выдачи поиска: там у персоны
+    /// только имя и фото из Википедии. Однофамильцев много (на «Альфред Хичкок» —
+    /// пять, первый без фото), отбирает вызывающий.
+    func searchPersons(query: String, limit: Int = 10) async throws -> [KinopoiskPersonHit] {
+        let response: KinopoiskListResponse<KinopoiskPersonHit> = try await fetch(
+            path: "/v1.4/person/search",
+            query: [
+                URLQueryItem(name: "query", value: query),
+                URLQueryItem(name: "page", value: "1"),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ]
+        )
+        return response.docs
+    }
+
+    /// Персона с фильмографией. Фильтр `persons.enProfession` у `/v1.4/movie` с id
+    /// персоны не связывается (замер 2026-10-04: у Хичкока 116 «режиссёрских» —
+    /// вместе с документалками о нём), а здесь профессия — у каждого тайтла своя.
+    func person(id: Int) async throws -> KinopoiskPersonDetails {
+        try await fetch(path: "/v1.4/person/\(id)")
+    }
+
+    /// Пачка тайтлов по id с минимумом полей — постер, год, рейтинг: список фильмов
+    /// режиссёра. Тяжёлые `persons` и `videos` ему не нужны — ответ в разы легче.
+    func moviesBrief(ids: [Int]) async throws -> [KinopoiskMovie] {
+        guard !ids.isEmpty else { return [] }
+        var query = ids.prefix(250).map { URLQueryItem(name: "id", value: "\($0)") }
+        query.append(URLQueryItem(name: "limit", value: "\(min(ids.count, 250))"))
+        query.append(contentsOf: Self.selectFields([
+            "id", "name", "alternativeName", "year", "poster", "backdrop", "rating", "top250", "isSeries",
+        ]))
+        let response: KinopoiskListResponse<KinopoiskMovie> = try await fetch(path: "/v1.4/movie", query: query)
+        return response.docs
+    }
+
     /// Фильмы из подборки по slug (например `hd-must-see`, `top250`).
     func movies(list slug: String, limit: Int = 10, page: Int = 1) async throws -> [KinopoiskMovie] {
         var query = [

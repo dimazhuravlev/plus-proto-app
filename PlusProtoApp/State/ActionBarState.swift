@@ -130,6 +130,10 @@ final class ActionBarState {
     private(set) var movie: MovieInProgress? { didSet { persist() } }
     private(set) var book: BookInProgress? { didSet { persist() } }
 
+    /// «Смотреть дальше» главной Кинопоиска — всё, что запускали в киноплеере.
+    /// Живёт здесь, потому что вход в плеер один — `watch` (2026-10-04).
+    let watchHistory = WatchHistory()
+
     /// Транспорт музыки — отдельными свойствами, а не полями `music`: они меняются
     /// на каждом тике плеера, и при вложении в структуру тик инвалидировал бы
     /// и обложку с подписью.
@@ -139,7 +143,13 @@ final class ActionBarState {
     /// событием — паузой, сменой трека, запуском другого контента.
     var musicProgress: Double = 0
     var isMusicPlaying: Bool = false { didSet { persist() } }
-    var isMusicLiked: Bool = false { didSet { persist() } }
+
+    /// Сердце мини-плеера и плеера музыки — играющий трек в «Любимом» коллекции «Моё»
+    /// (2026-10-04). Прежде это был флаг бара, забывавший отметку на смене трека.
+    @MainActor var isMusicLiked: Bool {
+        guard let music else { return false }
+        return CollectionStore.shared.isFavorite(CollectionItem.track(music).id)
+    }
 
     /// Открытый плеер музыки, киноплеер или читалка. На диск не пишется: после
     /// перезапуска приложение поднимается на экране, а не посреди фильма.
@@ -193,7 +203,6 @@ final class ActionBarState {
         music = item
         musicProgress = 0
         isMusicPlaying = true
-        isMusicLiked = false
         mode = .music
         startProgressTicking()
     }
@@ -252,7 +261,6 @@ final class ActionBarState {
         var book: BookInProgress?
         var musicProgress: Double
         var isMusicPlaying: Bool
-        var isMusicLiked: Bool
     }
 
     private static let storageKey = "actionBarState"
@@ -269,8 +277,7 @@ final class ActionBarState {
             movie: movie,
             book: book,
             musicProgress: musicProgress,
-            isMusicPlaying: isMusicPlaying,
-            isMusicLiked: isMusicLiked
+            isMusicPlaying: isMusicPlaying
         )
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -289,7 +296,6 @@ final class ActionBarState {
         movie = snapshot.movie
         book = snapshot.book
         musicProgress = snapshot.musicProgress
-        isMusicLiked = snapshot.isMusicLiked
         isMusicPlaying = snapshot.isMusicPlaying
         // Играющий трек обязан и тикать: иначе плеер вернулся бы с крутящимся диском
         // и стоящим прогрессом.
@@ -368,8 +374,10 @@ final class ActionBarState {
         startMusic(next.nowPlaying)
     }
 
-    func toggleMusicLike() {
-        isMusicLiked.toggle()
+    /// Отметить играющий трек в «Любимом» коллекции или снять отметку.
+    @MainActor func toggleMusicLike() {
+        guard let music else { return }
+        CollectionStore.shared.toggleFavorite(.track(music))
     }
 
     // MARK: - Киноплеер и читалка
@@ -379,11 +387,18 @@ final class ActionBarState {
     func watch(_ item: MovieInProgress) {
         var item = item
         // Тот же фильм продолжается с места, где его закрыли: экран тайтла про
-        // сохранённую позицию не знает и приходит без неё.
-        if item.position == nil, movie?.id == item.id {
-            item.position = movie?.position
+        // сохранённую позицию не знает и приходит без неё. Не в чипе бара — из истории
+        // просмотра: «Смотреть дальше» продолжает любой запущенный фильм (2026-10-04).
+        if item.position == nil {
+            item.position = movie?.id == item.id ? movie?.position : watchHistory.position(for: item.id)
         }
-        resumeMovie(item)
+        // Хронометраж — тоже из истории, если вход его не знает (чип бара, витрина):
+        // иначе плеер шёл бы по числу макета, а карточка «Смотреть дальше» — по
+        // настоящему, и полосы разошлись бы.
+        if item.runtime == nil {
+            item.runtime = watchHistory.runtime(for: item.id)
+        }
+        deferResume(.movie(item))
         contentPlayer = .movie(item)
     }
 
@@ -391,19 +406,78 @@ final class ActionBarState {
     /// бар: мини-плеер в читалке — для музыки, которая звучала в момент запуска.
     func read(_ item: BookInProgress) {
         let showsMusic = isMusicPlaying && music != nil
-        resumeBook(item)
+        deferResume(.book(item))
         contentPlayer = .reader(item, showsMusic: showsMusic)
+    }
+
+    // MARK: Бар — после выезда плеера
+
+    /// Смена бара под запущенный фильм или книгу, отложенная до конца выезда плеера
+    /// (правка пользователя 2026-10-04): прежде бар морфился в чип на глазах, пока
+    /// киноплеер или читалка ещё ехали снизу. Теперь он меняется под плеером, когда
+    /// тот закрыл экран, — на закрытии плеера бар уже в новом состоянии. Так же
+    /// и «Смотреть дальше» на главной Кинопоиска (правка тем же днём): фильм встаёт
+    /// в карусель под плеером, а не переставляет её в момент тапа.
+    private enum PendingResume {
+        case movie(MovieInProgress)
+        case book(BookInProgress)
+    }
+
+    @ObservationIgnored private var pendingResume: PendingResume?
+    @ObservationIgnored private var pendingResumeFallback: Task<Void, Never>?
+
+    /// Запасной срок: презентер сообщает о конце выезда сам (`contentPlayerDidPresent`),
+    /// но если показать было не с чего, бар всё равно обязан догнать запуск.
+    private static let resumeFallback: Duration = .milliseconds(800)
+
+    /// Плеер встал на весь экран — бар меняется под ним, невидимо.
+    func contentPlayerDidPresent() {
+        applyPendingResume()
+    }
+
+    private func deferResume(_ resume: PendingResume) {
+        applyPendingResume()
+        pendingResume = resume
+        // На главном акторе: бар — состояние интерфейса.
+        pendingResumeFallback = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.resumeFallback)
+            guard !Task.isCancelled else { return }
+            self?.applyPendingResume()
+        }
+    }
+
+    private func applyPendingResume() {
+        pendingResumeFallback?.cancel()
+        pendingResumeFallback = nil
+        guard let pending = pendingResume else { return }
+        pendingResume = nil
+        switch pending {
+        case .movie(let item):
+            watchHistory.record(item)
+            resumeMovie(item)
+        case .book(let item):
+            resumeBook(item)
+        }
     }
 
     /// Закрыть киноплеер или читалку.
     ///
-    /// - Parameter moviePosition: где остановился фильм — чип бара продолжит с этого
-    ///   места. Нужен только киноплееру.
-    func closeContentPlayer(moviePosition: TimeInterval? = nil) {
+    /// - Parameters:
+    ///   - moviePosition: где остановился фильм — чип бара продолжит с этого места.
+    ///     Нужен только киноплееру.
+    ///   - movieRuntime: длина таймлайна, по которому шёл плеер, — с ней карточка
+    ///     «Смотреть дальше» показывает ту же полосу просмотра.
+    func closeContentPlayer(moviePosition: TimeInterval? = nil, movieRuntime: TimeInterval? = nil) {
+        // Закрыли раньше, чем плеер доехал, — бар догоняет запуск сейчас: позиция
+        // фильма пишется в его чип.
+        applyPendingResume()
         switch contentPlayer {
         case .movie(let item):
             if let moviePosition, movie?.id == item.id {
                 movie?.position = moviePosition
+            }
+            if let moviePosition {
+                watchHistory.update(id: item.id, position: moviePosition, runtime: movieRuntime)
             }
         case .music:
             break

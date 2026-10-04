@@ -15,6 +15,12 @@ struct AppRootView: View {
     /// `@Observable` перерисовывает только тех, кто читает `feed`, а корень
     /// его не читает.
     @State private var catalog = ShowcaseCatalog()
+    /// Главная Кинопоиска — по той же причине, что каталог витрины: экран таба
+    /// размонтируется на переключении, а лента собирается раз за процесс.
+    @State private var cinema = CinemaCatalog()
+    /// Главная Книг — так же (2026-10-04). У Музыки каталога нет: «Моя волна»
+    /// по скриншоту — шейдер, название и кнопка, данных ей не нужно.
+    @State private var books = BooksHomeCatalog()
     /// Заставка на запуске. `@State` корня, поэтому показывается ровно один раз
     /// за процесс: возврат из фона её не воскрешает.
     @State private var isSplashShown = !SplashTiming.isDisabled
@@ -48,12 +54,31 @@ struct AppRootView: View {
         .overlay(alignment: .top) {
             TopScrim()
                 .opacity(showsTopScrim ? 1 : 0)
+                // Смена таба — щелчком, как и сам контент таба: фейд скрима «Плюса»
+                // проходил блюром по навигации другой витрины, и её фон моргал (жалоба
+                // пользователя 2026-10-04). Фейдом — только пуш и поп внутри «Плюса».
+                // Внутренняя анимация перебивает внешнюю, поэтому `nil` для таба — ближе.
+                .animation(nil, value: navigation.activeTab)
                 .animation(TopScrimMotion.fade, value: showsTopScrim)
         }
         // Между контентом и хромом: расфокусить надо экран, но не бар с клавиатурой.
         .overlay(alignment: .bottom) {
             BottomChrome()
         }
+        // Профиль — с аватарки навигации витрин: выезжает снизу и закрывает всё,
+        // включая хром (в макете `2463:78551` таббара и бара нет).
+        .fullScreenCover(isPresented: $navigation.isProfileShown) {
+            ProfileScreen()
+        }
+        #if DEBUG
+        // `-debugProfile 1` — открыть профиль через 1.5 с после запуска: тапнуть аватарку
+        // из шелла нечем.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugProfile") else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            navigation.isProfileShown = true
+        }
+        #endif
         // Киноплеер, читалка и плеер музыки живут не здесь, а отдельной презентацией
         // поверх всего, включая слой карточки тайтла, — см. `ContentPlayerPresenter`.
         // В дереве корня от них только невидимый мост из состояния в UIKit.
@@ -86,38 +111,22 @@ struct AppRootView: View {
             await prepareShowcase()
             deadline.cancel()
             hideSplash()
+            // Главная Кинопоиска собирается следом, в фоне, пока на экране витрина:
+            // к первому переходу в таб лента и её первые картинки уже готовы, и экран
+            // открывается сразу собой, без скелетона (жалоба 2026-10-04 на рывки).
+            // После витрины, а не вместе с ней: промо берётся из запаса, который та
+            // как раз пополняет, — и заставку это не держит.
+            await cinema.loadIfNeeded()
+            await books.loadIfNeeded()
         }
         // Системное поднятие над клавиатурой отключаем на корне: иначе SwiftUI поднимает
         // весь overlay с хромом целиком (включая таббар), и это складывается с ручным
         // сдвигом бара — он улетал вдвое выше клавиатуры. Отступ считает `BottomChrome`.
         .ignoresSafeArea(.keyboard)
-        // Возврат из открытой сущности возвращает и поиск: сам запрос с выдачей
-        // никуда не девались, поэтому достаточно вернуть выдачу на экран — без
-        // клавиатуры. Слушаем здесь, а не в баре: глубина навигации — свойство
-        // корня, а не хрома.
-        .onChange(of: navigation.depth) { _, depth in
-            // Поиск, открытый на пуше, переезжает вместе с пользователем: свайп-назад
-            // с альбома клавиатуру не опускает, и слои обязаны оказаться на экране,
-            // куда он вернулся. Только пока из выдачи никуда не уходили — там глубина
-            // меняется как раз потому, что поиск остался позади.
-            // Выдачу без клавиатуры — так же: свайп-назад из неё её не закрывает.
-            //
-            // Возврат в выдачу — без клавиатуры (`SearchState.consumeResume`) и на тот
-            // экран, где пользователь оказался. Уйти назад можно и дальше экрана,
-            // с которого поиск открыли (поиск с альбома, повторный поиск на пуше), —
-            // и выдача, привязанная к старой глубине, не вставала нигде: таббар
-            // спрятан, в поле запрос, а выдачи нет (жалоба пользователя 2026-10-03).
-            // Прежде привязку обновлял фокус, который возврат ставил полю.
-            //
-            // Просмотру отметка ухода в карточку не помеха: уход в карточку гасит просмотр
-            // сам (`SearchState.suspend`), а забытая отметка — скажем, с другого таба —
-            // держала бы выдачу на экране, которого уже нет.
-            if search.consumeResume(tab: navigation.activeTab, depth: depth) {
-                search.host(at: depth)
-            } else if search.isBrowsing || (actionBar.isSearchFocused && !search.isSuspended) {
-                search.host(at: depth)
-            }
-        }
+        // Связка поиска с навигацией — возврат выдачи из карточки, переезд поиска
+        // по стеку, привязка к экрану фокуса. Висит и на экранах слоя фильма (у них
+        // свой хром, 2026-10-04), решает верхний — см. `SearchNavigationSync`.
+        .modifier(SearchNavigationSync(layer: nil))
         // Выдача без фокуса принадлежит своему табу: на другом табе её слой встал бы
         // на корне чужого стека.
         .onChange(of: navigation.activeTab) {
@@ -128,37 +137,16 @@ struct AppRootView: View {
             // И раскрытый раздел: новый поиск на другом табе начинается с обзора.
             search.collapse()
         }
-        // Поиск прикрепляется к экрану, с которого его открыли. Снятый фокус при
-        // непустой выдаче переводит её в просмотр без клавиатуры — это решает бар
-        // в том же апдейте, что и сам фокус (`ActionBarView`, onChange фокуса).
-        .onChange(of: actionBar.isSearchFocused) { _, focused in
-            guard focused else { return }
-            // Новый фокус — новый поиск на этом экране: отметка ухода в карточку из
-            // прежней выдачи гаснет. Иначе она держала затемнение над экраном после
-            // «Назад» и запрещала выдаче переходить в просмотр (проверка навигации
-            // 2026-10-03). Законный возврат не страдает: `open()` ставит отметку
-            // и сразу снимает фокус, а не получает его.
-            // Поиск открыт заново (а не возвращён фокус в просмотре выдачи) —
-            // с обзора: раскрытый раздел остался бы от прошлого поиска.
-            if !search.isBrowsing {
-                search.collapse()
-            }
-            search.dropSuspension()
-            search.host(at: navigation.depth)
-        }
-        // Просмотр выдачи кончается, когда поле получило клавиатуру: дальше слой держит
-        // она, а снятый фокус снова решает — закрыть поиск или вернуть просмотр (выше).
-        // Не на самом фокусе: бар едет по клавиатуре (`BottomChrome.raise`), и между
-        // фокусом и её подъёмом он перекладывался бы из раскладки просмотра
-        // в раскладку режима и обратно.
-        .onChange(of: keyboard.isUp) { _, isUp in
-            if isUp, actionBar.isSearchFocused { search.isBrowsing = false }
-        }
         .environment(navigation)
         .environment(actionBar)
         .environment(keyboard)
         .environment(search)
         .environment(catalog)
+        .environment(cinema)
+        .environment(books)
+        // Коллекция «Моё» — одна на приложение (`CollectionStore.shared`): сердце
+        // мини-плеера отмечает трек из `ActionBarState`, у которого окружения нет.
+        .environment(CollectionStore.shared)
         .environment(\.stackZoomNamespace, stackZoom)
     }
 
@@ -215,13 +203,13 @@ struct AppRootView: View {
         case .plus:
             tabStack(.plus) { ShowcaseScreen() }
         case .music:
-            tabStack(.music) { ServiceStubScreen(tab: .music) }
+            tabStack(.music) { MusicHomeScreen() }
         case .kinopoisk:
-            tabStack(.kinopoisk) { ServiceStubScreen(tab: .kinopoisk) }
+            tabStack(.kinopoisk) { CinemaHomeScreen() }
         case .books:
-            tabStack(.books) { ServiceStubScreen(tab: .books) }
-        case .alisa:
-            tabStack(.alisa) { ServiceStubScreen(tab: .alisa) }
+            tabStack(.books) { BooksHomeScreen() }
+        case .collection:
+            tabStack(.collection) { CollectionScreen() }
         }
     }
 

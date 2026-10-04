@@ -23,6 +23,9 @@ struct MoviePersonSection: View {
     let title: String
     let people: [MovieCastMember]
 
+    @Environment(AppNavigationState.self) private var navigation
+    @Environment(\.entityZoomNamespace) private var zoomNamespace
+
     private enum Layout {
         static let cardWidth: CGFloat = 109
         static let photoAspect: CGFloat = 2.0 / 3.0
@@ -61,9 +64,53 @@ struct MoviePersonSection: View {
             .scrollIndicators(.hidden)
             .contentMargins(.horizontal, MovieLayout.sectionSide, for: .scrollContent)
         }
+        #if DEBUG
+        // `-debugOpenDirector 1` — открыть экран режиссёра из съёмочной группы через 2с:
+        // экран в слое фильма — с таббаром и баром (2026-10-04), а тапнуть карточку из
+        // шелла нечем. Один раз на запуск — по образцу `-debugOpenSimilar`.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugOpenDirector"), !MovieDirectorDebug.fired,
+                  let director = people.first(where: { $0.role == Self.directorRole }) else { return }
+            MovieDirectorDebug.fired = true
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            navigation.open(Self.directorRoute(director))
+        }
+        #endif
     }
 
+    /// Режиссёр — переход на его экран (2026-10-04): персона Кинопоиска известна,
+    /// искать по имени не нужно. Экран встаёт в стопку слоя фильма, поверх него
+    /// (`AppNavigationState.open`), и разворачивается из карточки.
+    @ViewBuilder
     private func card(_ person: MovieCastMember) -> some View {
+        if person.role == Self.directorRole {
+            let route = Self.directorRoute(person)
+            let button = Button { navigation.open(route) } label: { cardBody(person) }
+                .buttonStyle(PressScaleButtonStyle())
+            if let zoomNamespace {
+                button.matchedTransitionSource(id: route, in: zoomNamespace)
+            } else {
+                button
+            }
+        } else {
+            cardBody(person)
+        }
+    }
+
+    /// Специальность режиссёра в съёмочной группе — по ней карточка нажимается.
+    private static let directorRole = "Режиссёр"
+
+    private static func directorRoute(_ person: MovieCastMember) -> EntityRoute {
+        .director(EntityRef(
+            id: "kp-\(person.id)",
+            title: person.name,
+            subtitle: "",
+            artwork: person.photo.map { ArtworkSource.remote($0) } ?? .asset("")
+        ))
+    }
+
+    private func cardBody(_ person: MovieCastMember) -> some View {
         VStack(alignment: .leading, spacing: Layout.captionGap) {
             photo(person)
 
@@ -97,7 +144,10 @@ struct MoviePersonSection: View {
     private func photo(_ person: MovieCastMember) -> some View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
 
-        Color.buttonsSecondary
+        // Подложка — серый скелетона, фото проявляется поверх без своего серого:
+        // прежде под ним стоял ещё и плейсхолдер картинки, и пока фото ехало, плашка
+        // была светлее остальных скелетонов (правка пользователя 2026-10-04).
+        PlusSkeleton.fill
             .frame(width: Layout.cardWidth)
             .frame(height: Layout.cardWidth / Layout.photoAspect)
             .overlay {
@@ -107,8 +157,7 @@ struct MoviePersonSection: View {
                     // Обесцвечивание (решение пользователя 2026-08-29): портреты у КП
                     // разных лет и цветокоррекции, и цветной ряд читался разнобоем.
                     // Плашке-подложке фильтр не нужен — она и так серая.
-                    ArtworkImage(source: .remote(photo))
-                        .scaledToFill()
+                    SkeletonArtwork(source: .remote(photo))
                         .grayscale(1)
                 }
             }
@@ -126,7 +175,9 @@ struct MoviePersonSection: View {
 /// поэтому расходиться с раскладкой ей нечем. Потолок подписи — две строки, так что
 /// вопрос сводится к «влезает ли в одну»: всё, что длиннее строки, занимает две и
 /// дальше режется многоточием, и точная раскладка длинного имени не нужна.
-private enum TileCaptionRuler {
+/// Сколько строк займёт подпись карточки (Text S Medium) в заданной ширине — 1 или 2.
+/// Общая с каруселями главной Кинопоиска: там та же беда `LazyHStack` с высотой ряда.
+enum TileCaptionRuler {
     static func lines(_ text: String, width: CGFloat) -> Int {
         guard !text.isEmpty else { return 0 }
         let size = PlusTextSize.textS.size
@@ -141,6 +192,11 @@ private enum TileCaptionRuler {
 #if DEBUG
 /// Одноразовость `-debugOpenSimilar` на процесс (см. задачу в секции).
 private enum MovieSimilarDebug {
+    static var fired = false
+}
+
+/// Одноразовость `-debugOpenDirector` на процесс (см. задачу в секции персон).
+private enum MovieDirectorDebug {
     static var fired = false
 }
 #endif
@@ -238,12 +294,12 @@ struct MovieSimilarSection: View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
 
         return VStack(alignment: .leading, spacing: Layout.captionGap) {
-            Color.buttonsSecondary
+            PlusSkeleton.fill
                 .frame(width: Layout.cardWidth)
                 .frame(height: Layout.cardWidth / Layout.posterAspect)
                 .overlay {
                     if let poster = title.poster {
-                        ArtworkImage(source: .remote(poster)).scaledToFill()
+                        SkeletonArtwork(source: .remote(poster))
                     }
                 }
                 .clipShape(shape)

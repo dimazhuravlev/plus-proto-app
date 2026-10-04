@@ -16,7 +16,16 @@ final class MovieDetailsStore {
     private(set) var failure: String?
 
     private static var cache: [Int: MovieDetails] = [:]
+    /// Тайтлы, полностью пришедшие подборкой (главная Кинопоиска): списочный роут
+    /// отдаёт их наравне с `/movie/{id}`, и карточке незачем спрашивать их снова.
+    private static var known: [Int: KinopoiskMovie] = [:]
     private var requested: Int?
+
+    /// Запомнить тайтлы, уже пришедшие целиком, — открытие их карточки не потратит
+    /// запрос из квоты на сам фильм (кадры, если их нет в запасе, по-прежнему спрашиваются).
+    static func remember(_ movies: [KinopoiskMovie]) {
+        for movie in movies { known[movie.id] = movie }
+    }
 
     /// Один заход на тайтл за жизнь экрана.
     func load(_ entity: EntityRef) async {
@@ -45,8 +54,14 @@ final class MovieDetailsStore {
         defer { isLoading = false }
 
         do {
+            let movie: KinopoiskMovie
+            if let known = Self.known[id] {
+                movie = known
+            } else {
+                movie = try await KinopoiskService.shared.movie(id: id)
+            }
             let parsed = MovieDetails(
-                movie: try await KinopoiskService.shared.movie(id: id),
+                movie: movie,
                 stills: await stills(for: id, pooled: false)
             )
             Self.cache[id] = parsed

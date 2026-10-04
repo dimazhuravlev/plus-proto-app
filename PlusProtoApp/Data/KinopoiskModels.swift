@@ -46,12 +46,17 @@ extension KinopoiskImage {
     /// поэтому подменяем его регуляркой. Если хвост на размер не похож — отдаём URL как есть.
     func url(size: KinopoiskPosterSize) -> URL? {
         guard let raw = url ?? previewUrl, !raw.isEmpty else { return nil }
-        let resized = raw.replacingOccurrences(
-            of: #"/(?:orig|\d*x\d*)$"#,
+        return URL(string: Self.resized(raw, to: size))
+    }
+
+    /// Подмена размера в ссылке Яндекс-CDN. Хвост бывает и голым числом — `…/600`:
+    /// такой CDN отдаёт 404 (замер 2026-10-04), поэтому он тоже размер и подменяется.
+    static func resized(_ raw: String, to size: KinopoiskPosterSize) -> String {
+        raw.replacingOccurrences(
+            of: #"/(?:orig|\d*x\d*|\d+)$"#,
             with: "/" + size.rawValue,
             options: .regularExpression
         )
-        return URL(string: resized)
     }
 
     /// Ссылка на PNG-логотип тайтла шириной `width` пикселей.
@@ -257,6 +262,41 @@ struct KinopoiskMovie: Codable, Identifiable {
     /// Заголовок для UI: русское название, иначе оригинальное.
     var displayTitle: String {
         name ?? alternativeName ?? ""
+    }
+}
+
+// MARK: - Персона (экран режиссёра)
+
+/// Персона из `/v1.4/person/search`: профессий поиск не отдаёт — только имя и фото.
+struct KinopoiskPersonHit: Decodable, Identifiable {
+    let id: Int
+    let name: String?
+    let enName: String?
+    let photo: String?
+
+    var hasPhoto: Bool { !(photo ?? "").isEmpty }
+}
+
+/// Персона из `/v1.4/person/{id}` — с фильмографией: у каждого тайтла своя профессия
+/// (`enProfession`), по ней отбираются фильмы, где персона режиссёр. Постеров
+/// фильмография не несёт — их добирает пачка `KinopoiskService.moviesBrief`.
+struct KinopoiskPersonDetails: Decodable, Identifiable {
+    let id: Int
+    let name: String?
+    let enName: String?
+    let photo: String?
+    let movies: [Movie]?
+
+    struct Movie: Decodable {
+        let id: Int
+        let name: String?
+        let alternativeName: String?
+        let enProfession: String?
+    }
+
+    var photoURL: URL? {
+        guard let photo, !photo.isEmpty else { return nil }
+        return URL(string: photo)
     }
 }
 

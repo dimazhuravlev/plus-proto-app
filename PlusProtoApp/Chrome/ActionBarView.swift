@@ -169,7 +169,17 @@ struct ActionBarView: View {
     /// выдача, а её показывает отдельный слой (`SearchResultsView`).
     @Environment(SearchState.self) private var search
     @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(AppNavigationState.self) private var navigation
+    /// Чей это бар: корня или экрана слоя фильма (см. `isLive`).
+    @Environment(\.chromeLayer) private var chromeLayer
     @FocusState private var searchFocused: Bool
+
+    /// Живой ли бар — его хром верхний на экране. У экранов, открытых из фильма
+    /// дальше, свой хром в слое (2026-10-04), а корневой бар остаётся под слоем:
+    /// фокус поиска берёт только верхний, иначе два поля тянули бы его друг у друга.
+    private var isLive: Bool {
+        navigation.isTop(layer: chromeLayer)
+    }
 
     /// «Назад»: выйти из поиска совсем — стереть запрос, убрать клавиатуру, погасить
     /// просмотр выдачи. Клавиатура уходит тем же мягким уходом, что и на скролле выдачи.
@@ -247,6 +257,9 @@ struct ActionBarView: View {
         // уходила вверх быстрее и на мгновение накрывала его собой.
         .animation(raise.motion ?? ActionBarMotion.morph, value: layout)
         .onChange(of: searchFocused) { _, focused in
+            // Бар под слоем решений не принимает: его поле теряет фокус само, уходя
+            // с окна вместе с экраном, — это не выход из поиска на верхнем экране.
+            guard isLive else { return }
             // Снятый фокус при непустой выдаче — в просмотр без клавиатуры (правка
             // пользователя 2026-10-03), и **в том же апдейте**, что и сам фокус.
             // Решение в корне приходило апдейтом позже: слой выдачи на кадр гас,
@@ -261,11 +274,15 @@ struct ActionBarView: View {
             actionBar.isSearchFocused = focused
         }
         .onChange(of: actionBar.isSearchFocused) { _, focused in
+            // Фокус берёт только живой бар, снимается — у всех.
+            if focused, !isLive { return }
             if searchFocused != focused { searchFocused = focused }
         }
         #if DEBUG
+        // Отладочные прогоны — только у корневого бара: у бара слоя они запускались бы
+        // заново на каждом экране, открытом из фильма.
         .onAppear {
-            if UserDefaults.standard.bool(forKey: "debugSearchFocus") {
+            if chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugSearchFocus") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     searchFocused = true
                 }
@@ -274,7 +291,8 @@ struct ActionBarView: View {
         .task {
             // `-debugSearchQuery <текст>` — набрать запрос без клавиатуры: выдачу
             // из шелла иначе не увидеть, а печатать по одной букве симулятор не даёт.
-            guard let text = UserDefaults.standard.string(forKey: "debugSearchQuery"), !text.isEmpty else { return }
+            guard chromeLayer == nil,
+                  let text = UserDefaults.standard.string(forKey: "debugSearchQuery"), !text.isEmpty else { return }
             // `-debugSearchDelay <сек>` отодвигает фокус: чтобы снять поиск, открытый
             // **с запушенного экрана**, он должен включиться уже после того, как пуш
             // доехал (отладочный тап витрины сам занимает 2.5с).
@@ -288,7 +306,7 @@ struct ActionBarView: View {
             // `-debugSearchCycle` — фокус и расфокус поля по кругу. Нужен, чтобы снять
             // на видео **уход** затемнения: тапнуть по нему из шелла нечем, а именно
             // на обратном движении видно, отстаёт слой от клавиатуры или идёт с ней.
-            guard UserDefaults.standard.bool(forKey: "debugSearchCycle") else { return }
+            guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugSearchCycle") else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 searchFocused = true
@@ -302,7 +320,7 @@ struct ActionBarView: View {
         .task {
             // `-debugMorphCycle` — прогон всех четырёх режимов по кругу, чтобы снять
             // морф на видео: тапнуть по бару из шелла симулятора нельзя.
-            guard UserDefaults.standard.bool(forKey: "debugMorphCycle") else { return }
+            guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugMorphCycle") else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(1600))
                 actionBar.cycleDebugMode()
@@ -311,7 +329,7 @@ struct ActionBarView: View {
         .task {
             // `-debugFullPlayer` — открыть и закрыть полноэкранный плеер музыки:
             // выезд и уход иначе не снять на видео, тапнуть по пилюле из шелла нечем.
-            guard UserDefaults.standard.bool(forKey: "debugFullPlayer") else { return }
+            guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugFullPlayer") else { return }
             try? await Task.sleep(for: .seconds(2))
             actionBar.openMusicPlayer()
             try? await Task.sleep(for: .seconds(6))
@@ -320,7 +338,7 @@ struct ActionBarView: View {
         .task {
             // `-debugPlayCycle` — play/pause по кругу: инерцию вращения обложки
             // иначе не снять, кнопку из шелла не нажать.
-            guard UserDefaults.standard.bool(forKey: "debugPlayCycle") else { return }
+            guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugPlayCycle") else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(4))
                 actionBar.toggleMusicPlayback()
@@ -330,7 +348,7 @@ struct ActionBarView: View {
             // `-debugTapChip 1` — тап по чипу кино или книги: киноплеер и читалку
             // из бара иначе не открыть, тапнуть по симулятору из шелла нечем.
             // Пара к `-debugActionBar movie|book`. Задержка — с запасом на заставку.
-            guard UserDefaults.standard.bool(forKey: "debugTapChip") else { return }
+            guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugTapChip") else { return }
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
             switch actionBar.mode {
@@ -908,11 +926,12 @@ private enum SearchPlaceholderMotion {
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
     static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
-    /// фраза погасла вместе с подъёмом, и нахлёста нет. Глиф — 240 мс сильного ease-out
-    /// только из прозрачности, без сдвига (правка пользователя 2026-10-03); соседи
-    /// стартуют через 20 мс — на 14 знаков вся волна ~0.5s. Длиннее бюджета UI в 300 мс
-    /// сознательно: волну попросили видимой, она ничего не блокирует и гаснет мгновенно.
-    static let focusedWave = HeadlineWave(stagger: 0.02, glyph: 0.24)
+    /// фраза погасла вместе с подъёмом, и нахлёста нет. Символы встают резко, без
+    /// проявления прозрачностью и без сдвига — как печать (правки пользователя
+    /// 2026-10-03 и 2026-10-04; прежде глиф проявлялся за 240 мс). Шаг 30 мс: на 14 знаков
+    /// строка набирается за ~0.4 с — почти как прежняя волна. Волну попросили видимой,
+    /// она ничего не блокирует и гаснет мгновенно.
+    static let focusedWave = HeadlineWave(stagger: 0.03, glyph: 0)
     /// С «уменьшением движения» — без волны: строка проявляется целиком, прозрачностью
     /// за 250 мс (как было до волны).
     static let focusedReducedFade: Double = 0.25
@@ -1466,15 +1485,8 @@ struct MiniPlayerPill: View {
             PlayerHaptics.tap()
             onToggleLike()
         } label: {
-            ZStack {
-                actionIcon("iconLove")
-                    .opacity(isLiked ? 0 : 1)
-                    .scaleEffect(isLiked ? ActionBarMotion.iconSwapScale : 1)
-                actionIcon("iconLiked")
-                    .opacity(isLiked ? 1 : 0)
-                    .scaleEffect(isLiked ? 1 : ActionBarMotion.iconSwapScale)
-            }
-            .animation(ActionBarMotion.iconSwap, value: isLiked)
+            // Общий рисунок лайка (`LikeGlyph`) — эталон для всех сердец проекта.
+            LikeGlyph(isLiked: isLiked, box: ActionBarGeometry.searchIconBox)
             // Хит-зона крупнее глифа, раскладка — нет: тот же приём, что у play.
             .padding(.horizontal, 8)
             .padding(.vertical, 10)
@@ -1547,7 +1559,7 @@ private struct BookChip: View {
                 .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
         }
         .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
-        .glassSurface(
+        .secondaryButtonSurface(
             RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous),
             blur: PlusMetrics.glassBlur
         )
@@ -1568,7 +1580,7 @@ private struct MovieChip: View {
                 .padding(ActionBarGeometry.movieChipPadding)
         }
         .frame(width: ActionBarGeometry.movieChipSize.width, height: ActionBarGeometry.movieChipSize.height)
-        .glassSurface(
+        .secondaryButtonSurface(
             RoundedRectangle(cornerRadius: PlusRadius.movieChip, style: .continuous),
             blur: PlusMetrics.glassBlur
         )

@@ -34,6 +34,12 @@ struct GlassSurface<S: InsettableShape>: ViewModifier {
     }
 }
 
+/// Бордер серых кнопок — 0.67 × белый 8 % (`Fill/Nine`), у всех один.
+enum SecondaryButtonBorder {
+    static let color = Color.fillNine
+    static let width: CGFloat = 0.67
+}
+
 extension View {
     /// Произвольная стеклянная поверхность. Дефолты — общий рецепт: заливка white 10%, бордер white 8% × 0.66pt.
     func glassSurface<S: InsettableShape>(
@@ -46,14 +52,34 @@ extension View {
         modifier(GlassSurface(shape: shape, blur: blur, fill: fill, border: border, borderWidth: borderWidth))
     }
 
-    /// Пилюли action bar (r32 при высоте 60 схлопывается в капсулу) — figma-actionbar §3.
-    func glassPill() -> some View {
-        glassSurface(Capsule(style: .continuous), blur: PlusMetrics.glassBlur)
+    /// Серая «вторичная» кнопка — стекло: блюр фона под полупрозрачной заливкой и бордер
+    /// 0.67 × белый 8 %. Одна поверхность на все серые кнопки проекта — круглые 40,
+    /// капсулы, чипы бара, кнопки плееров и виджетов (правка пользователя 2026-10-04:
+    /// прежде бордер был то 6 %, то 15 %, то не было его вовсе, как и блюра).
+    /// Заливка у кнопок своя: Buttons/Primary 10 % или Buttons/Secondary 8 %.
+    func secondaryButtonSurface<S: InsettableShape>(
+        _ shape: S,
+        fill: Color = .buttonsPrimary,
+        blur: CGFloat = PlusMetrics.buttonBlur
+    ) -> some View {
+        glassSurface(
+            shape,
+            blur: blur,
+            fill: fill,
+            border: SecondaryButtonBorder.color,
+            borderWidth: SecondaryButtonBorder.width
+        )
     }
 
-    /// Круглые кнопки 40pt на карточках — figma-screen1 §2: бордер там white 6%, а не 8% как у пилюль.
+    /// Пилюли action bar (r32 при высоте 60 схлопывается в капсулу) — figma-actionbar §3.
+    func glassPill() -> some View {
+        secondaryButtonSurface(Capsule(style: .continuous), blur: PlusMetrics.glassBlur)
+    }
+
+    /// Круглые кнопки 40pt — общий бордер серых кнопок. ~~Бордер white 6 % по figma-screen1
+    /// §2~~ — с 2026-10-04 у всех серых кнопок один: 0.67 × белый 8 %.
     func glassCircle() -> some View {
-        glassSurface(Circle(), blur: PlusMetrics.buttonBlur, border: .white.opacity(0.06))
+        secondaryButtonSurface(Circle())
     }
 
     /// Тайл иконки таба 40×40 r14 — figma-tabbar §5. Стекла у него нет: замер обоих вариантов

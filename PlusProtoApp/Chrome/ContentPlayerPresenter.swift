@@ -78,6 +78,7 @@ final class ContentPlayerPresenter {
         let root = ContentPlayerRoot(player: player)
             .environment(actionBar)
             .environment(navigation)
+            .environment(CollectionStore.shared)
             .preferredColorScheme(.dark)
         let controller = ContentPlayerHostingController(rootView: root)
         controller.isImmersive = player.isMovie
@@ -100,7 +101,10 @@ final class ContentPlayerPresenter {
         } else {
             controller.modalPresentationStyle = .fullScreen
         }
-        presenter.present(controller, animated: true)
+        // Бар меняется под уже выехавшим плеером, а не на глазах (`ActionBarState`).
+        presenter.present(controller, animated: true) {
+            actionBar.contentPlayerDidPresent()
+        }
         host = controller
         shownID = player.id
     }

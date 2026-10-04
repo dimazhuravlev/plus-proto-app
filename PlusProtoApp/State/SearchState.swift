@@ -305,11 +305,13 @@ final class SearchState {
         async let movies = fetchMovies(text)
         async let books = fetchBooks(text)
         async let person = WikipediaPeople.shared.person(matching: text)
-        let (musicHits, fetchedMovies, fetchedBooks, found) = await (music, movies, books, person)
+        let (fetchedMusic, fetchedMovies, fetchedBooks, found) = await (music, movies, books, person)
 
         guard !Task.isCancelled else { return }
-        var movieHits = fetchedMovies
-        var bookHits = fetchedBooks
+        // Внутри карусели — самое точное совпадение первым (`ranked`).
+        let musicHits = Self.ranked(fetchedMusic, for: text)
+        var movieHits = Self.ranked(fetchedMovies, for: text)
+        var bookHits = Self.ranked(fetchedBooks, for: text)
         // Персона — первой в карусели своего домена: запрос назвал её саму, а не её
         // книгу или фильм (правка пользователя 2026-10-03, вид — как у соседей).
         if let found {
@@ -440,17 +442,19 @@ final class SearchState {
         }
     }
 
+    /// Полная выдача ранжируется так же, как карусель обзора (`ranked`): раскрытый
+    /// раздел продолжает карусель, а не переставляет её.
     private func loadFull(_ kind: Section.Kind, _ text: String) async -> FullResults {
         switch kind {
         case .music:
             let (hits, wizard) = await fetchFullMusic(text)
-            return FullResults(kind: kind, text: text, hits: hits, wizard: wizard)
+            return FullResults(kind: kind, text: text, hits: Self.ranked(hits, for: text), wizard: wizard)
         case .movies:
-            let hits = await fetchFullMovies(text)
+            let hits = Self.ranked(await fetchFullMovies(text), for: text)
             return FullResults(kind: kind, text: text, hits: personFirst(.director, in: cache[text]?.movies, hits), wizard: nil)
         case .books:
             let found = (try? await BooksService.shared.search(text, limit: FullLimits.books)) ?? []
-            let hits = found.map(SearchHit.init(book:))
+            let hits = Self.ranked(found.map(SearchHit.init(book:)), for: text)
             return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: cache[text]?.books, hits), wizard: nil)
         }
     }
@@ -611,20 +615,48 @@ final class SearchState {
     private static func score(_ text: String, _ hits: [SearchHit]) -> Double {
         let needle = text.folded
         guard !needle.isEmpty else { return 0 }
+        return hits.map { match($0, needle) * (1 + $0.authority * MatchScore.authorityShare) }.max() ?? 0
+    }
 
-        return hits.map { hit -> Double in
-            let title = hit.title.folded
-            let match: Double
-            if title == needle { match = MatchScore.exact }
-            else if title.hasPrefix(needle) { match = MatchScore.prefix }
-            else if title.split(separator: " ").contains(where: { $0 == needle }) { match = MatchScore.word }
-            else if title.contains(needle) { match = MatchScore.substring }
-            else if let fuzzy = fuzzyMatch(title, needle) { match = fuzzy }
-            else if hit.subtitle.folded.contains(needle) { match = MatchScore.subtitle }
-            else { return 0 }
-            return match * (1 + hit.authority * MatchScore.authorityShare)
-        }
-        .max() ?? 0
+    /// Порядок внутри карусели — по той же ступени совпадения, что и порядок секций
+    /// (правка пользователя 2026-10-04: на «кино» группа «Кино» стояла третьей —
+    /// за своими песнями, которые совпадали с запросом только исполнителем).
+    ///
+    /// Ступень — первый ключ. В одной ступени исполнитель выше треков и альбомов:
+    /// запрос назвал его самого. Дальше — порядок ответа, то есть чередование видов
+    /// и ранжирование API внутри ступени остаются как были. Вес результата
+    /// (`authority`) сюда не входит: у альбомов его нет вовсе, и он сбил бы
+    /// чередование — все треки встали бы перед всеми альбомами.
+    private static func ranked(_ hits: [SearchHit], for text: String) -> [SearchHit] {
+        let needle = text.folded
+        guard !needle.isEmpty else { return hits }
+        return hits.enumerated()
+            .map { (hit: $0.element, offset: $0.offset, match: match($0.element, needle)) }
+            .sorted { left, right in
+                if left.match != right.match { return left.match > right.match }
+                let leftArtist = left.hit.kind == .artist
+                let rightArtist = right.hit.kind == .artist
+                if leftArtist != rightArtist { return leftArtist }
+                return left.offset < right.offset
+            }
+            .map(\.hit)
+    }
+
+    /// Ступень совпадения результата с запросом (`MatchScore`), без его веса:
+    /// по названию или второму названию, иначе по подзаголовку; 0 — не совпал.
+    private static func match(_ hit: SearchHit, _ needle: String) -> Double {
+        let titles = [hit.title] + (hit.altTitle.map { [$0] } ?? [])
+        let best = titles.map { titleMatch($0.folded, needle) }.max() ?? 0
+        if best > 0 { return best }
+        return hit.subtitle.folded.contains(needle) ? MatchScore.subtitle : 0
+    }
+
+    private static func titleMatch(_ title: String, _ needle: String) -> Double {
+        if title == needle { return MatchScore.exact }
+        if title.hasPrefix(needle) { return MatchScore.prefix }
+        if title.split(separator: " ").contains(where: { $0 == needle }) { return MatchScore.word }
+        if title.contains(needle) { return MatchScore.substring }
+        return fuzzyMatch(title, needle) ?? 0
     }
 
     /// Нечёткое совпадение по словам — когда запрос с опечаткой или с другой
@@ -861,6 +893,8 @@ private extension SearchHit {
     }
 
     init(artist: DeezerArtistBrief) {
+        let picture = (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled
+            .map { ArtworkSource.remote($0) }
         self.init(
             id: "artist-\(artist.id)",
             kind: .artist,
@@ -868,9 +902,14 @@ private extension SearchHit {
             // Подписи нет: круглая карточка и так читается исполнителем (правка
             // пользователя 2026-10-03, прежде — «Исполнитель»).
             subtitle: "",
-            artwork: (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled.map { .remote($0) },
-            // Экрана исполнителя в проекте нет вовсе — строка не нажимается.
-            route: nil,
+            artwork: picture,
+            // Экран исполнителя (`PersonScreen`, 2026-10-04).
+            route: .artist(EntityRef(
+                id: "dz-\(artist.id)",
+                title: artist.name,
+                subtitle: "",
+                artwork: picture ?? .asset("")
+            )),
             // Фанаты растут на порядки, поэтому логарифм: 10 млн — это 1.0.
             authority: min(1, log10(Double(artist.nbFan ?? 0) + 1) / 7)
         )
@@ -898,13 +937,15 @@ private extension SearchHit {
             )),
             // Топ-250 — сразу максимум; иначе рейтинг Кинопоиска, где 5 — дно шкалы,
             // а 9 — потолок.
-            authority: movie.top250 != nil ? 1 : min(1, max(0, ((movie.rating?.kp ?? 0) - 5) / 4))
+            authority: movie.top250 != nil ? 1 : min(1, max(0, ((movie.rating?.kp ?? 0) - 5) / 4)),
+            altTitle: movie.alternativeName
         )
     }
 
-    /// Писатель или режиссёр: одно имя, фото с Википедии. Не нажимается — экрана
-    /// персоны в проекте нет. Вес высокий: совпадение запроса с именем — сильный
-    /// сигнал, что секция про него.
+    /// Писатель или режиссёр: одно имя, фото с Википедии; тап — экран персоны
+    /// (`PersonScreen`: режиссёр ищется в Кинопоиске по имени, писатель — в Google
+    /// Books). Вес высокий: совпадение запроса с именем — сильный сигнал, что секция
+    /// про него.
     /// Плейлист — только в полной выдаче: экрана нет, строка не нажимается.
     init(playlist: DeezerPlaylistBrief) {
         self.init(
@@ -924,9 +965,17 @@ private extension SearchHit {
             title: person.name,
             subtitle: "",
             artwork: .remote(person.photo),
-            route: nil,
+            route: Self.personRoute(person),
             authority: 0.8
         )
+    }
+
+    private static func personRoute(_ person: WikipediaPeople.Person) -> EntityRoute {
+        let ref = EntityRef(id: "wp-\(person.pageID)", title: person.name, subtitle: "", artwork: .remote(person.photo))
+        switch person.role {
+        case .director: return .director(ref)
+        case .writer: return .writer(ref)
+        }
     }
 
     init(book: GoogleBook) {

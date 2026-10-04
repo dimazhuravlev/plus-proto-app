@@ -332,13 +332,14 @@ struct MusicPlayerView: View {
             .overlay { Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
     }
 
-    /// Кнопка 40 на подложке Buttons/Secondary — без стекла и бордера, как в макете.
-    /// Текст песни и меню трека в прототипе не спроектированы — кнопки только откликаются.
+    /// Кнопка 40 на подложке Buttons/Secondary — со стеклом и бордером серых кнопок
+    /// (правка пользователя 2026-10-04; в макете их не было). Текст песни и меню трека
+    /// в прототипе не спроектированы — кнопки только откликаются.
     private func rowButton(icon: String, title: String) -> some View {
         Button(action: PlayerHaptics.tap) {
             MovieIcon(name: icon, box: MusicPlayerLayout.rowButtonIcon)
                 .frame(width: MusicPlayerLayout.rowButton, height: MusicPlayerLayout.rowButton)
-                .background(Circle().fill(Color.buttonsSecondary))
+                .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(title)
@@ -478,7 +479,7 @@ struct MusicPlayerView: View {
         } label: {
             swapIcon(off: "iconPlay", on: "iconPause", isOn: isPlaying, box: MusicPlayerLayout.controlIconLarge)
                 .frame(width: MusicPlayerLayout.control, height: MusicPlayerLayout.control)
-                .background(Circle().fill(Color.buttonsPrimary))
+                .secondaryButtonSurface(Circle())
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
@@ -491,7 +492,8 @@ struct MusicPlayerView: View {
             PlayerHaptics.tap()
             actionBar.toggleMusicLike()
         } label: {
-            swapIcon(off: "iconLike", on: "iconLiked", isOn: isLiked, box: MusicPlayerLayout.controlIconSmall)
+            // Общий рисунок лайка (`LikeGlyph`) — тот же, что в мини-плеере и везде.
+            LikeGlyph(isLiked: isLiked, box: MusicPlayerLayout.controlIconSmall)
                 .frame(width: MusicPlayerLayout.control, height: MusicPlayerLayout.control)
                 .contentShape(Circle())
         }

@@ -7,57 +7,14 @@ import UIKit
 /// на 402: по ширине тянется зона кавера и разделители, фиксированные размеры
 /// (кавер 247, карточка карусели 159, поля 16) перенесены как есть.
 enum AlbumLayout {
-    /// Зона кавера — квадрат на всю ширину экрана (в макете 375×375)
-    static let coverArea: CGFloat = PlusMetrics.designWidth
-    /// Кавер `736:108655`: 247×247, скругление 18
+    /// Кавер `736:108655`: 247×247, скругление 18. Шапка вокруг него — общая
+    /// с книгой (`EntityCoverHeader`, `EntityCoverLayout`).
     static let coverSize: CGFloat = 247
     static let coverRadius: CGFloat = 18
-    /// Центр кавера смещён на 29pt ниже центра зоны (`top: calc(50% + 29px)`)
-    static let coverCenterShift: CGFloat = 29
-    /// Верхняя кромка кавера в покое — на неё он прибит при оттяге
-    static var coverTop: CGFloat { coverArea / 2 + coverCenterShift - coverSize / 2 }
-    /// Максимальный скейл кавера при оттяге: ширина экрана минус боковые поля 16
-    static var coverMaxScale: CGFloat { (PlusMetrics.designWidth - side * 2) / coverSize }
-
-    /// Зазор от нижней кромки кавера до названия. Раньше он был не величиной,
-    /// а остатком квадратной зоны (48.5 = зона 402 минус низ кавера 353.5); две
-    /// правки пользователя 2026-08-29 сделали его сперва вдвое меньше, потом
-    /// ровно 16 — в линию с боковыми полями экрана.
-    static let coverToTitle: CGFloat = 16
-
-    /// На сколько зона укоротилась против прежнего хвоста квадрата (48.5 − 16).
-    /// На столько же сдвинуты пороги навбара.
-    static var coverToTitleShrink: CGFloat { coverArea - coverTop - coverSize - coverToTitle }
-
-    /// Сколько зона кавера занимает в потоке. Отдельно от `coverArea`: сам квадрат
-    /// трогать нельзя — от него считаются фон, резина оттяга и скейл кавера. Фон
-    /// по-прежнему рисуется на всю `coverArea` и заходит под блок названия, но там
-    /// он уже чёрный по градиенту, и захода не видно.
-    static var coverZoneHeight: CGFloat { coverTop + coverSize + coverToTitle }
-
-    /// Фон зоны — тот же кавер: blur 30 + чёрный 30 % + градиент к чёрному снизу
-    static let backdropBlur: CGFloat = 30
-    static let backdropDim: Double = 0.3
 
     /// Поля контента. У экрана альбома они 16, а не хромовые 24: так стоит
     /// и весь контент карточки фильма (`MovieLayout.sectionSide`).
-    static let side: CGFloat = 16
-
-    // Блок названия `736:108141`
-    static let titleBlockGap: CGFloat = 12
-    static let titleToArtist: CGFloat = 4
-    static let titleBlockBottom: CGFloat = 24
-    static let artistRowGap: CGFloat = 8
-    static let avatarSize: CGFloat = 40
-    /// Отрицательный зазор двухстрочного текстового лейбла (`mb-[-2px]` в макете)
-    static let textStackGap: CGFloat = -2
-
-    // Пилюля «Слушать» `736:106975`
-    static let playLeading: CGFloat = 16
-    static let playTrailing: CGFloat = 20
-    static let playVertical: CGFloat = 10
-    static let playGap: CGFloat = 6
-    static let playIconBox: CGFloat = 20
+    static let side: CGFloat = EntityCoverLayout.side
 
     // Треклист `2079:11230`
     static let rowHeight: CGFloat = 56
@@ -68,6 +25,8 @@ enum AlbumLayout {
     static let moreBox: CGFloat = 20
     static let badgeBox: CGFloat = 16
     static let badgeGap: CGFloat = 4
+    /// Отрицательный зазор двухстрочного текстового лейбла (`mb-[-2px]` в макете)
+    static let textStackGap: CGFloat = EntityTitleLayout.textStackGap
 
     /// Дополнительный воздух под низом ленты, сверх клиренса хрома (правка
     /// пользователя 2026-08-29): последняя карточка не должна упираться в action bar.
@@ -79,23 +38,11 @@ enum AlbumLayout {
     static let sectionHeaderBottom: CGFloat = 12
     static let sectionTitleGap: CGFloat = 2
     static let sectionChevronBox: CGFloat = 20
-    static let cardWidth: CGFloat = 159
     static let cardGap: CGFloat = 8
-    static let cardTextGap: CGFloat = 6
-    static let cardTextTrailing: CGFloat = 8
 
-    /// Пороги навбара: подложка приезжает, когда зона кавера почти ушла под бар,
-    /// название — когда под бар уходит сам заголовок (лежит на 369.5…413.5).
-    /// Оба сдвинуты вверх ровно на то, на сколько укоротился зазор под кавером
-    /// (2026-08-29): пороги считаются в координатах прокрутки, и без сдвига тот же
-    /// момент наступал бы, когда контент уже заметно глубже под баром.
+    /// Пороги навбара — общие с книгой, от верха названия (`EntityCoverLayout`).
     static var navBarThresholds: EntityNavBarThresholds {
-        EntityNavBarThresholds(
-            backgroundStart: 280 - coverToTitleShrink,
-            backgroundRamp: 80,
-            titleStart: 380 - coverToTitleShrink,
-            titleRamp: 90
-        )
+        EntityCoverLayout.navBarThresholds(coverHeight: coverSize)
     }
 }
 
@@ -116,6 +63,7 @@ struct AlbumScreen: View {
     let entity: EntityRef
 
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(AppNavigationState.self) private var navigation
     @State private var store = AlbumDetailsStore()
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
@@ -193,26 +141,40 @@ struct AlbumScreen: View {
         #endif
     }
 
-    // MARK: Резиновая шапка
+    // MARK: Шапка
 
-    /// Оттяг вниз. Скролл вверх шапку не трогает — она обычным образом уезжает.
-    private var pull: CGFloat { max(0, -scrollOffset) }
-
-    /// Сколько «роста» получают фон и кавер. В жизни равно оттягу; в дебаге к нему
-    /// добавляется подставной, а компенсация смещения (`-pull`) остаётся на реальном:
-    /// подставной оттяг контент вниз не сдвигал, и компенсировать ему нечего.
-    private var growth: CGFloat {
-        #if DEBUG
-        pull + CGFloat(UserDefaults.standard.double(forKey: "debugAlbumPull"))
-        #else
-        pull
-        #endif
-    }
-
+    /// Шапка — общая с книгой (`EntityHeader`): резиновая зона кавера (фон-блюр
+    /// и кавер тянутся за оттягом) и блок названия — название, исполнитель, ряд действий.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            coverZone
-            titleBlock
+        EntityHeader(
+            artwork: entity.artwork,
+            coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
+            scrollOffset: scrollOffset,
+            title: details.title,
+            collectionItem: collectionItem
+        ) {
+            cover
+        } person: {
+            if !details.artist.isEmpty {
+                // Строка исполнителя — переход на его экран (2026-10-04), когда
+                // известен его id: детали альбома пришли.
+                Button(action: openArtist) {
+                    EntityPersonRow(
+                        picture: artistAvatar,
+                        name: details.artist,
+                        detail: details.year
+                    )
+                    .contentShape(.rect)
+                }
+                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+                .disabled(details.artistID == nil)
+            }
+        } primary: {
+            EntityPrimaryButton(
+                icon: isPlayingThisAlbum ? "iconPause" : "iconPlay",
+                title: isPlayingThisAlbum ? "Пауза" : "Слушать",
+                action: togglePlayback
+            )
         }
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -221,43 +183,14 @@ struct AlbumScreen: View {
         }
     }
 
-    /// Резина устроена на чистых transform'ах — ни одного пересчёта layout на кадр.
-    /// Оба слоя компенсируют оттяг `offset(y: -pull)` (контент едет вниз, слой — нет),
-    /// а рост даёт `scaleEffect` с якорем в верхней кромке:
-    /// - фон тянется ровно на величину оттяга — его низ остаётся приклеен к блоку названия;
-    /// - кавер растёт пункт-в-пункт с пальцем (`1 + pull/247`) до ширины экрана
-    ///   минус поля 16, дальше стоит.
-    private var coverZone: some View {
-        let bgScale = (AlbumLayout.coverArea + growth) / AlbumLayout.coverArea
-        let coverScale = min(AlbumLayout.coverMaxScale, 1 + growth / AlbumLayout.coverSize)
-
-        return ZStack(alignment: .top) {
-            backdrop
-                .scaleEffect(bgScale, anchor: .top)
-                .offset(y: -pull)
-
-            cover
-                .scaleEffect(coverScale, anchor: .top)
-                .offset(y: AlbumLayout.coverTop - pull)
-        }
-        .frame(maxWidth: .infinity)
-        // Выравнивание по верху обязательно: содержимое зоны выше её кадра (фон
-        // рисуется на всю `coverArea`), а `frame(height:)` по умолчанию центрирует
-        // переполнение — кавер уезжал вверх ровно на половину укорочения, и зазор
-        // под ним уменьшался вдвое меньше заказанного.
-        .frame(height: AlbumLayout.coverZoneHeight, alignment: .top)
-    }
-
-    /// Фон зоны — сам кавер: blur 30, чёрный 30 % и 16-стоповый градиент к чёрному
-    /// снизу (профиль общий с панелями карточки фильма — в макете те же стопы).
-    private var backdrop: some View {
-        ArtworkImage(source: entity.artwork)
-            .scaledToFill()
-            .frame(width: PlusMetrics.designWidth, height: AlbumLayout.coverArea)
-            .clipped()
-            .blur(radius: AlbumLayout.backdropBlur, opaque: true)
-            .overlay(Color.black.opacity(AlbumLayout.backdropDim))
-            .overlay(MovieScrim.gradient(peak: 1, from: .top, to: .bottom))
+    /// Альбом в коллекции «Моё» — его отмечают «нравится» и «скачать» шапки.
+    private var collectionItem: CollectionItem {
+        .album(EntityRef(
+            id: entity.id,
+            title: details.title,
+            subtitle: details.artist.isEmpty ? entity.subtitle : details.artist,
+            artwork: entity.artwork
+        ))
     }
 
     private var cover: some View {
@@ -269,60 +202,21 @@ struct AlbumScreen: View {
             .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
     }
 
-    // MARK: Блок названия
-
-    private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: AlbumLayout.titleBlockGap) {
-            VStack(alignment: .leading, spacing: AlbumLayout.titleToArtist) {
-                Text(details.title)
-                    .plusHeadline(EntityTitleType.style(for: details.title))
-                    .foregroundStyle(Color.fillOne)
-
-                if !details.artist.isEmpty {
-                    artistRow
-                }
-            }
-
-            controls
-        }
-        .padding(.horizontal, AlbumLayout.side)
-        .padding(.bottom, AlbumLayout.titleBlockBottom)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// Аватар исполнителя: пока детали едут — скелетон круга (моковое фото здесь было
+    /// бы чужим лицом); пришли — фото, а без фото у Deezer — аватарки нет.
+    private var artistAvatar: EntityPersonRow.Picture {
+        if let picture = details.artistPicture { return .artwork(picture) }
+        return store.details == nil && entity.deezerID != nil ? .loading : .none
     }
 
-    private var artistRow: some View {
-        HStack(spacing: AlbumLayout.artistRowGap) {
-            ArtworkImage(source: details.artistPicture)
-                .scaledToFill()
-                .frame(width: AlbumLayout.avatarSize, height: AlbumLayout.avatarSize)
-                .clipShape(Circle())
-                .overlay { Circle().stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
-
-            VStack(alignment: .leading, spacing: AlbumLayout.textStackGap) {
-                Text(details.artist)
-                    .plusText(.textM, .medium)
-                    .foregroundStyle(Color.fillOne)
-                    .lineLimit(1)
-
-                if let year = details.year {
-                    Text(year)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillSubtitle)
-                }
-            }
-        }
-    }
-
-    private var controls: some View {
-        HStack(spacing: 0) {
-            playButton
-            Spacer(minLength: 8)
-            HStack(spacing: PlusMetrics.circleButtonGap) {
-                GlassIconButton(icon: "iconLove", accessibilityTitle: "Нравится")
-                GlassIconButton(icon: "iconDownload", accessibilityTitle: "Скачать")
-                GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться")
-            }
-        }
+    private func openArtist() {
+        guard let id = details.artistID else { return }
+        navigation.open(.artist(EntityRef(
+            id: "dz-\(id)",
+            title: details.artist,
+            subtitle: "",
+            artwork: details.artistPicture ?? .asset("")
+        )))
     }
 
     /// Все треки альбома подряд: дисков в списке больше нет, а плееру они и не нужны.
@@ -359,28 +253,6 @@ struct AlbumScreen: View {
     private var isPlayingThisAlbum: Bool {
         guard actionBar.mode == .music, actionBar.isMusicPlaying else { return false }
         return currentTrack != nil || actionBar.music?.id == entity.id
-    }
-
-    private var playButton: some View {
-        Button(action: togglePlayback) {
-            HStack(spacing: AlbumLayout.playGap) {
-                Image(isPlayingThisAlbum ? "iconPause" : "iconPlay")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: AlbumLayout.playIconBox, height: AlbumLayout.playIconBox)
-                    .foregroundStyle(Color.fillOne)
-
-                Text(isPlayingThisAlbum ? "Пауза" : "Слушать")
-                    .plusText(.textM, .semibold)
-                    .foregroundStyle(Color.fillOne)
-            }
-            .padding(.leading, AlbumLayout.playLeading)
-            .padding(.trailing, AlbumLayout.playTrailing)
-            .padding(.vertical, AlbumLayout.playVertical)
-            // Общий акцентный стиль ДС (`2103:15149`): градиент + вспышка + бордер
-            .accentButtonSurface()
-        }
-        .buttonStyle(PressScaleButtonStyle())
     }
 
     /// Что включает пилюля: трек, который уже стоит в плеере (тогда `open` работает
@@ -542,45 +414,25 @@ struct AlbumScreen: View {
         .padding(.vertical, AlbumLayout.sectionPad)
     }
 
+    /// Карточка — общая с «Альбомами» исполнителя (`EntityAlbumCard`): обложка
+    /// на скелетоне, пока едет (2026-10-04). Переход — через навигацию, а не
+    /// `NavigationLink`: альбом бывает и в слое фильма (поиском из бара его экранов),
+    /// а у слоя стека нет — там переход встаёт в его стопку (`AppNavigationState.open`).
     private func otherCard(_ album: AlbumDetails.OtherAlbum) -> some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
         // Семантика `EntityRef` альбома повторяет витринную: `title` — артист.
-        return NavigationLink(value: EntityRoute.album(EntityRef(
+        let route = EntityRoute.album(EntityRef(
             id: "dz-\(album.id)",
             title: details.artist,
             subtitle: album.title,
             artwork: album.cover
-        ))) {
-            VStack(alignment: .leading, spacing: AlbumLayout.cardTextGap) {
-                ArtworkImage(source: album.cover)
-                    .scaledToFill()
-                    .frame(width: AlbumLayout.cardWidth, height: AlbumLayout.cardWidth)
-                    .clipShape(shape)
-                    .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
-
-                HStack(alignment: .top, spacing: AlbumLayout.badgeGap) {
-                    VStack(alignment: .leading, spacing: AlbumLayout.textStackGap) {
-                        Text(album.title)
-                            .plusText(.textM, .medium)
-                            .foregroundStyle(Color.fillOne)
-                            .lineLimit(1)
-
-                        if let year = album.year {
-                            Text(year)
-                                .plusText(.textM, .medium)
-                                .foregroundStyle(Color.fillSubtitle)
-                        }
-                    }
-
-                    if album.isExplicit {
-                        Spacer(minLength: 0)
-                        explicitBadge
-                            .padding(.top, 1)
-                    }
-                }
-                .padding(.trailing, AlbumLayout.cardTextTrailing)
-            }
-            .frame(width: AlbumLayout.cardWidth)
+        ))
+        return Button { navigation.open(route) } label: {
+            EntityAlbumCard(
+                cover: album.cover,
+                title: album.title,
+                detail: album.year,
+                isExplicit: album.isExplicit
+            )
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
     }

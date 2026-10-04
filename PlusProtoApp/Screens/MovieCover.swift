@@ -34,6 +34,8 @@ struct MovieTitleLogo: View {
 
     @State private var image: Image?
     @State private var natural: CGSize?
+    /// Тёмный PNG — рисуется белым силуэтом (`ArtworkLoader.isDarkLogo`).
+    @State private var isDark = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -48,7 +50,9 @@ struct MovieTitleLogo: View {
                 // картинкой, значит дёргать шапку на каждом входе.
                 if let image {
                     image
+                        .renderingMode(isDark ? .template : .original)
                         .resizable()
+                        .foregroundStyle(Color.fillOne)
                         .frame(width: drawn.width, height: drawn.height)
                         .accessibilityLabel(title)
                 }
@@ -75,6 +79,7 @@ struct MovieTitleLogo: View {
 
     private func load() async {
         if let hit = ArtworkLoader.shared.cached(url) {
+            isDark = ArtworkLoader.shared.isDarkLogo(url, image: hit)
             image = Image(uiImage: hit)
             natural = hit.size
             return
@@ -82,6 +87,7 @@ struct MovieTitleLogo: View {
         image = nil
         natural = nil
         guard let loaded = await ArtworkLoader.shared.image(for: url) else { return }
+        isDark = ArtworkLoader.shared.isDarkLogo(url, image: loaded)
         // Приехавший по сети логотип проявляется, а не вставает резко; кэшированный
         // (ветка выше) показан с первого кадра — анимировать нечего. Тот же паттерн,
         // что у чистого кадра кавера (`loadClean`).
@@ -261,9 +267,10 @@ enum MovieCoverMotion {
     static let logoFade: Double = 0.2
 }
 
-/// Плейсхолдер кадра, пока чистый кадр не доехал. Цвет — фон макета скелетона
-/// (`2097:13780`): не чёрный фон экрана, а тёмно-серая плашка, читающаяся
-/// «здесь будет картинка». Единственное место использования — токен не заводим.
+/// Плейсхолдер кадра, пока чистый кадр не доехал: серый скелетона — тот же, что
+/// у всех скелетонов экрана (правка пользователя 2026-10-04: на экране тайтла были
+/// разные серые). Прежний непрозрачный #141414 на чёрном фоне выглядел так же,
+/// но был отдельным цветом.
 enum MovieCoverPlaceholder {
-    static let color = Color(red: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255)
+    static let color = PlusSkeleton.fill
 }

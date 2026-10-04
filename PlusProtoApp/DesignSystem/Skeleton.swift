@@ -10,6 +10,22 @@ enum PlusSkeleton {
     static let fill = Color.fillNine
     /// Как картинка проявляется на месте скелетона: 150 мс ease-out. Из кэша — сразу.
     static let appear: Animation = .easeOut(duration: 0.15)
+    /// Скругление полос на месте текста — небольшое, одно на всё приложение
+    /// (правка пользователя 2026-10-04; прежде углы были прямые). У скелетонов
+    /// карточек скругление своё — то же, что у загруженной карточки.
+    static let textRadius: CGFloat = 4
+}
+
+/// Полоса скелетона на месте строки текста.
+struct SkeletonBar: View {
+    let width: CGFloat
+    var height: CGFloat = 12
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
+            .fill(PlusSkeleton.fill)
+            .frame(width: width, height: height)
+    }
 }
 
 extension Shape {
@@ -18,5 +34,33 @@ extension Shape {
     func plusSkeleton() -> some View {
         fill(PlusSkeleton.fill)
             .overlay { stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+    }
+}
+
+/// Живая картинка поверх скелетона: заливку под ней рисует вызывающий, сама картинка
+/// проявляется на ней за 150 мс (из кэша — сразу), как обложки выдачи поиска.
+///
+/// Бандленный фолбэк живого источника здесь не рисуется: моковая обложка на месте
+/// ещё не приехавшей — чужой альбом под чужим названием, и на каждой загрузке карусели
+/// альбомов исполнителя мелькал «другой альбом» (жалоба пользователя 2026-10-04).
+/// Бандленный ассет без сети (моковая витрина) — рисуется как есть; пустое имя —
+/// «картинки нет», под ним остаётся скелетон.
+struct SkeletonArtwork: View {
+    let source: ArtworkSource
+
+    var body: some View {
+        if let shown {
+            ResolvedArtwork(source: shown, appear: PlusSkeleton.appear) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.clear
+            }
+        }
+    }
+
+    private var shown: ArtworkSource? {
+        if let url = source.remoteURL { return .remote(url) }
+        guard let name = source.fallbackAsset, !name.isEmpty else { return nil }
+        return source
     }
 }

@@ -4,7 +4,7 @@ import UIKit
 /// Реакция в блоке оценки (задача пользователя 2026-10-03): выбранная кнопка плавно
 /// встаёт на белый фон, а из неё вверх улетают такие же эмодзи — как воздушные шарики,
 /// лёгкой синусоидой, и растворяются наверху. Сколько улетает — по силе оценки:
-/// «Шедевр» 6, «Супер» 2, «Ну такое» и «Нет» по одному. Хаптик — на каждый шарик.
+/// «Шедевр» 6, «Супер» 2, «Норм» и «Нет» по одному. Хаптик — на каждый шарик.
 ///
 /// Общая у двух блоков: «Что думаешь?» на витрине и «Уже смотрели? Как вам?»
 /// на экране фильма. Оценка по-прежнему никуда не отправляется — это отклик кнопки.
@@ -56,7 +56,8 @@ struct RateReactionChip: View {
             .resizable()
             .frame(width: emojiSize, height: emojiSize)
             .frame(width: diameter, height: diameter)
-            .background(Circle().fill(isSelected ? Color.white : Color.buttonsSecondary))
+            // Стекло серых кнопок: блюр фона и бордер 0.67 × белый 8 %; выбранная — белая.
+            .secondaryButtonSurface(Circle(), fill: isSelected ? Color.white : Color.buttonsSecondary)
             .animation(RateReactionMotion.select, value: isSelected)
             .accessibilityHidden(true)
     }

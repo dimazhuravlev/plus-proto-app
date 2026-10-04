@@ -238,7 +238,8 @@ private struct HeadlineInkRenderer: TextRenderer {
 struct HeadlineWave: Equatable {
     /// Между стартами соседних глифов, секунды.
     var stagger: Double
-    /// Проявление одного глифа, секунды.
+    /// Проявление одного глифа, секунды. Ноль — глиф встаёт сразу, шагом, без
+    /// проявления прозрачностью (печать).
     var glyph: Double
 
     /// Вся волна для строки из `glyphs` знаков.
@@ -287,9 +288,16 @@ private struct HeadlineWaveRenderer: TextRenderer, Animatable {
             lineContext.translateBy(x: 0, y: target - baseline)
             for run in line {
                 for slice in run {
-                    let raw = reduceMotion
-                        ? progress
-                        : min(max((time - wave.stagger * Double(index)) / wave.glyph, 0), 1)
+                    let start = wave.stagger * Double(index)
+                    let raw: Double
+                    if reduceMotion {
+                        raw = progress
+                    } else if wave.glyph <= 0 {
+                        // Шаг: глиф есть, как только до него дошла волна.
+                        raw = progress > 0 && time >= start ? 1 : 0
+                    } else {
+                        raw = min(max((time - start) / wave.glyph, 0), 1)
+                    }
                     index += 1
                     guard raw > 0 else { continue }
                     let eased = 1 - pow(1 - raw, 4)

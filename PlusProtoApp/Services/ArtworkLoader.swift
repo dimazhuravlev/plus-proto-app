@@ -34,6 +34,8 @@ final class ArtworkLoader {
     /// Идущие загрузки: два блока витрины могут просить одну обложку (плеер и карточка),
     /// и без дедупликации это два запроса вместо одного.
     private var inflight: [URL: Task<UIImage?, Never>] = [:]
+    /// Тёмный ли логотип — посчитанное на процесс (см. `isDarkLogo`).
+    private var darkLogos: [URL: Bool] = [:]
 
     private init() {}
 
@@ -101,79 +103,48 @@ final class ArtworkLoader {
         return Color(hue: tone.hue, saturation: min(tone.saturation * 0.9, 0.35), brightness: 0.86)
     }
 
-    /// Цвет свечения за обложкой на экране книги (`2427:26464`). В макете там чистый
-    /// красный — под обложку Atomic Heart с красными деталями; живым книгам берём
-    /// оттенок их собственной обложки.
+    /// Тёмный ли логотип тайтла. Часть PNG Кинопоиск отдаёт чёрными — под светлый
+    /// фон, — и на наших тёмных обложках их не прочесть («Большой куш», первый прогон
+    /// главной Кинопоиска 2026-10-04). Такой логотип рисуется белым силуэтом.
     ///
-    /// Не среднее, как у `accent`, а самый «громкий» оттенок: гистограмма тонов
-    /// с весом насыщенность × яркость по уменьшенной копии. Среднее у обложек уходит
-    /// в серое — у той же Atomic Heart верх серо-золотой, и свечение вышло бы серым,
-    /// а глаз считывает обложку по красному. Насыщенный — свечение лежит на чёрном
-    /// с прозрачностью 0.4, и пастель в нём растворилась бы. У серой обложки ярких
-    /// тонов нет — свечение нейтральное, а не случайно красное (оттенок ноль).
-    func glow(for source: ArtworkSource) async -> Color? {
-        let image: UIImage?
-        if let url = source.remoteURL {
-            image = await self.image(for: url)
-        } else {
-            image = source.fallbackAsset.flatMap { UIImage(named: $0) }
-        }
-        guard let cg = image?.cgImage else { return nil }
-        guard let hue = Self.vividHue(of: cg) else { return Color(white: Self.glowNeutralWhite) }
-        return Color(hue: hue, saturation: Self.glowSaturation, brightness: 1)
+    /// Средний цвет по непрозрачным пикселям: `CIAreaAverage` усредняет растр с альфой
+    /// в премультипладе, деление цвета на среднюю альфу даёт цвет самих букв.
+    func isDarkLogo(_ url: URL, image: UIImage) -> Bool {
+        if let known = darkLogos[url] { return known }
+        let dark = Self.letterLuminance(of: image).map { $0 < Self.darkLogoLuminance } ?? false
+        darkLogos[url] = dark
+        return dark
     }
 
-    private static let glowSaturation: CGFloat = 0.9
-    private static let glowNeutralWhite: CGFloat = 0.6
-    /// Сетка уменьшенной копии и число корзин гистограммы: больше не нужно —
-    /// ищется доминирующий тон, а не детали.
-    private static let vividSample = (width: 24, height: 36)
-    private static let vividBins = 24
-    /// Пиксель серее этого (разброс каналов) в гистограмму не идёт.
-    private static let vividMinChroma: CGFloat = 0.12
-    /// Сколько веса должен набрать лучший тон, в долях от числа пикселей, —
-    /// иначе ярких мест на обложке нет и свечение нейтральное.
-    private static let vividMinShare: CGFloat = 0.03
+    /// Ниже этой яркости логотип на тёмном фоне не читается.
+    private static let darkLogoLuminance: CGFloat = 0.3
 
-    /// Самый «громкий» оттенок картинки, 0…1, или `nil`, если она серая.
-    private static func vividHue(of cg: CGImage) -> CGFloat? {
-        let (width, height) = vividSample
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(
-                data: buffer.baseAddress,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return false }
-            context.interpolationQuality = .medium
-            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        guard drawn else { return nil }
-
-        var bins = [CGFloat](repeating: 0, count: vividBins)
-        for offset in stride(from: 0, to: pixels.count, by: 4) {
-            let red = CGFloat(pixels[offset]) / 255
-            let green = CGFloat(pixels[offset + 1]) / 255
-            let blue = CGFloat(pixels[offset + 2]) / 255
-            let maxChannel = max(red, green, blue)
-            let chroma = maxChannel - min(red, green, blue)
-            guard chroma >= vividMinChroma else { continue }
-
-            var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-            UIColor(red: red, green: green, blue: blue, alpha: 1)
-                .getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-            bins[min(vividBins - 1, Int(hue * CGFloat(vividBins)))] += saturation * brightness
-        }
-
-        guard let best = bins.indices.max(by: { bins[$0] < bins[$1] }),
-              bins[best] >= CGFloat(width * height) * vividMinShare
+    private static func letterLuminance(of image: UIImage) -> CGFloat? {
+        guard let cg = image.cgImage else { return nil }
+        let extent = CGRect(x: 0, y: 0, width: cg.width, height: cg.height)
+        guard
+            let filter = CIFilter(name: "CIAreaAverage", parameters: [
+                kCIInputImageKey: CIImage(cgImage: cg),
+                kCIInputExtentKey: CIVector(cgRect: extent)
+            ]),
+            let output = filter.outputImage
         else { return nil }
-        return (CGFloat(best) + 0.5) / CGFloat(vividBins)
+
+        var pixel = [UInt8](repeating: 0, count: 4)
+        ciContext.render(
+            output,
+            toBitmap: &pixel,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+        let alpha = CGFloat(pixel[3]) / 255
+        guard alpha > 0.01 else { return nil }
+        let red = CGFloat(pixel[0]) / 255 / alpha
+        let green = CGFloat(pixel[1]) / 255 / alpha
+        let blue = CGFloat(pixel[2]) / 255 / alpha
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
     }
 
     /// Средний тон верхней половины картинки.

@@ -127,6 +127,20 @@ actor DeezerService {
         return response.data
     }
 
+    /// Исполнитель целиком — фото и имя для экрана исполнителя.
+    func artist(id: Int) async throws -> DeezerArtistBrief {
+        try await fetch(path: "/artist/\(id)")
+    }
+
+    /// Популярные треки исполнителя — первая секция его экрана.
+    func artistTop(id: Int, limit: Int = 15) async throws -> [DeezerTrackHit] {
+        let response: DeezerListResponse<DeezerTrackHit> = try await fetch(
+            path: "/artist/\(id)/top",
+            query: [URLQueryItem(name: "limit", value: "\(limit)")]
+        )
+        return response.data
+    }
+
     /// Дискография артиста — секция «Другие альбомы» на экране альбома.
     func artistAlbums(id: Int, limit: Int = 50) async throws -> [DeezerAlbumBrief] {
         let response: DeezerListResponse<DeezerAlbumBrief> = try await fetch(

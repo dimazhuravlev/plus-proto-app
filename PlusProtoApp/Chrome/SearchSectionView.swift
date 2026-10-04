@@ -17,6 +17,7 @@ struct SearchSectionView: View {
     @Environment(SearchState.self) private var search
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(ActionBarState.self) private var actionBar
+    @Environment(CollectionStore.self) private var collection
 
     /// Выбранный фильтр — им подсвечен чипс, сразу по нажатию.
     @State private var filter: SearchFilter = .all
@@ -27,7 +28,7 @@ struct SearchSectionView: View {
     @State private var filterSwap: Task<Void, Never>?
     /// Сколько проскроллено — от него проявляется подложка закреплённых чипсов.
     @State private var scrolled: CGFloat = 0
-    /// Сердца — визуальные, на время экрана: избранного в прототипе нет.
+    /// Сердца строк, которых коллекция не хранит (персоны), — на время экрана.
     @State private var liked: Set<String> = []
     /// Текст выдачи, на который выбран фильтр: новый текст сбрасывает фильтр на «Всю
     /// музыку», а пропавшая на миг выдача (скелетон) — нет.
@@ -38,9 +39,6 @@ struct SearchSectionView: View {
         /// Список кино и книг — на 8 ниже безопасной зоны: столько же, сколько колдунщик
         /// музыки стоит ниже чипсов (`stack` макета, колдунщик на y = 8).
         static let listTop: CGFloat = 8
-        static let chipsVertical: CGFloat = 8
-        /// Шаг между чипсами — 6 (правка пользователя 2026-10-03; в макете 8).
-        static let chipGap: CGFloat = 6
         /// Подложка закреплённых чипсов проявляется за первые 24pt скролла: в покое
         /// верх экрана не темнеет, а уезжающие под чипсы строки уже размыты.
         static let backdropRamp: CGFloat = 24
@@ -56,9 +54,6 @@ struct SearchSectionView: View {
         static let fadeOutDuration: Duration = .milliseconds(300)
         static let fadeOut: Animation = .easeInOut(duration: 0.3)
         static let fadeIn: Animation = .easeInOut(duration: 0.3)
-        /// Подкрутка ленты к активному чипсу — та же длительность, сильный ease-out:
-        /// лента отвечает сразу и мягко встаёт.
-        static let centerChip: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
     }
 
     var body: some View {
@@ -106,6 +101,11 @@ struct SearchSectionView: View {
                                 PinnedChipsBackdrop()
                                     .opacity(NavBarRamp.progress(scrolled, start: 0, length: Layout.backdropRamp))
                             }
+                            // Оттяг ленты — как у навигации витрин: ряд едет за ним вчетверо
+                            // медленнее и упирается в мягкий потолок (правка пользователя
+                            // 2026-10-04). Заголовок секции при оттяге едет вместе с лентой —
+                            // сдвиг возвращает разницу.
+                            .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
                     }
                 }
             }
@@ -182,8 +182,8 @@ struct SearchSectionView: View {
                     if shownFilter == .all, let wizard = full.wizard {
                         MusicWizardCard(
                             wizard: wizard,
-                            isLiked: liked.contains(wizard.artist.id),
-                            onLike: { toggleLike(wizard.artist.id) },
+                            isLiked: isLiked(wizard.artist),
+                            onLike: { toggleLike(wizard.artist) },
                             remember: search.remember,
                             open: open,
                             zoom: zoom
@@ -202,29 +202,10 @@ struct SearchSectionView: View {
         }
     }
 
+    /// Чипсы — общий ряд (`FilterChipsRow`): тот же, что у полных списков коллекции.
     private var chips: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: Layout.chipGap) {
-                    ForEach(SearchFilter.options(for: kind), id: \.self) { option in
-                        SearchFilterChip(title: option.title, isActive: option == filter) {
-                            filter = option
-                        }
-                        .id(option)
-                    }
-                }
-                .padding(.horizontal, Layout.side)
-                .padding(.vertical, Layout.chipsVertical)
-            }
-            .scrollIndicators(.hidden)
+        FilterChipsRow(options: SearchFilter.options(for: kind), selection: $filter, title: \.title)
             .modifier(DismissKeyboardOnScroll())
-            // Выбранный чипс — в центр экрана; у краёв лента упирается в свои поля.
-            .onChange(of: filter) { _, active in
-                withAnimation(FilterMotion.centerChip) {
-                    proxy.scrollTo(active, anchor: .center)
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -232,8 +213,8 @@ struct SearchSectionView: View {
         let content = SearchListRow(
             hit: hit,
             isFirst: isFirst,
-            isLiked: liked.contains(hit.id),
-            onLike: { toggleLike(hit.id) }
+            isLiked: isLiked(hit),
+            onLike: { toggleLike(hit) }
         )
         if hit.kind == .track {
             // Трек из полного списка играет сразу, без перехода в альбом (правка
@@ -261,8 +242,15 @@ struct SearchSectionView: View {
         startTrack(track, in: actionBar)
     }
 
-    private func toggleLike(_ id: String) {
-        if liked.contains(id) { liked.remove(id) } else { liked.insert(id) }
+    /// Сердце строки — отметка коллекции «Моё» (2026-10-04); персоны, которых коллекция
+    /// не хранит, — на время экрана, как было.
+    private func isLiked(_ hit: SearchHit) -> Bool {
+        collection.isFavorite(hit: hit) ?? liked.contains(hit.id)
+    }
+
+    private func toggleLike(_ hit: SearchHit) {
+        if collection.toggleFavorite(hit: hit) { return }
+        if liked.contains(hit.id) { liked.remove(hit.id) } else { liked.insert(hit.id) }
     }
 }
 
@@ -297,7 +285,8 @@ struct SearchHistoryView: View {
     @Environment(SearchState.self) private var search
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(ActionBarState.self) private var actionBar
-    /// Сердца — визуальные, на время экрана, как в полных списках выдачи.
+    @Environment(CollectionStore.self) private var collection
+    /// Сердца строк, которых коллекция не хранит (персоны), — на время экрана.
     @State private var liked: Set<String> = []
     @State private var isConfirmingClear = false
 
@@ -345,8 +334,8 @@ struct SearchHistoryView: View {
         let content = SearchListRow(
             hit: hit,
             isFirst: isFirst,
-            isLiked: liked.contains(hit.id),
-            onLike: { toggleLike(hit.id) }
+            isLiked: isLiked(hit),
+            onLike: { toggleLike(hit) }
         )
         if hit.kind == .track {
             Button { startTrack(hit, in: actionBar) } label: { content }
@@ -371,14 +360,21 @@ struct SearchHistoryView: View {
                 .foregroundStyle(Color.fillOne)
                 .frame(maxWidth: .infinity)
                 .frame(height: Layout.buttonHeight)
-                .glassSurface(Capsule(style: .continuous), blur: PlusMetrics.buttonBlur)
+                .secondaryButtonSurface(Capsule(style: .continuous))
                 .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: Layout.buttonPressedScale))
     }
 
-    private func toggleLike(_ id: String) {
-        if liked.contains(id) { liked.remove(id) } else { liked.insert(id) }
+    /// Сердце строки — отметка коллекции «Моё» (2026-10-04); персоны, которых коллекция
+    /// не хранит, — на время экрана, как было.
+    private func isLiked(_ hit: SearchHit) -> Bool {
+        collection.isFavorite(hit: hit) ?? liked.contains(hit.id)
+    }
+
+    private func toggleLike(_ hit: SearchHit) {
+        if collection.toggleFavorite(hit: hit) { return }
+        if liked.contains(hit.id) { liked.remove(hit.id) } else { liked.insert(hit.id) }
     }
 }
 
@@ -462,72 +458,13 @@ private enum SearchSectionColors {
     static let dot = Color.white.opacity(0.3)
 }
 
-/// Чипс фильтра — `chips-row` макета: 15/20 Semibold, поля 16 × 10, капсула.
-/// Активный — фиолетовый с подсветкой снизу, остальные — стекло кнопок.
-private struct SearchFilterChip: View {
-    let title: String
-    let isActive: Bool
-    let action: () -> Void
-
-    /// Фиолетовый активного чипса — #A332FF макета, общий с лейблом тайтла.
-    private static let accent = Color.moviesAccent
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .plusText(.textM, .semibold)
-                .foregroundStyle(isActive ? Color.fillOne : Color.fillFour)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background {
-                    if isActive {
-                        ZStack {
-                            Capsule().fill(
-                                Self.accent.opacity(0.5)
-                                    .shadow(.inner(color: Self.accent.opacity(0.5), radius: 1, y: 1))
-                            )
-                            // Подсветка снизу — эллипс макета: центр под нижней кромкой
-                            // (0.505 ширины, 1.15 высоты), радиусы 0.696 ширины и 0.8875 высоты.
-                            GeometryReader { proxy in
-                                let size = proxy.size
-                                let center = UnitPoint(x: 0.505, y: 1.15)
-                                RadialGradient(
-                                    colors: [Self.accent.opacity(0.4), Self.accent.opacity(0)],
-                                    center: center,
-                                    startRadius: 0,
-                                    endRadius: 0.8875 * size.height
-                                )
-                                .scaleEffect(
-                                    x: (0.696 * size.width) / max(0.8875 * size.height, 1),
-                                    y: 1,
-                                    anchor: center
-                                )
-                            }
-                        }
-                    } else {
-                        Color.buttonsSecondary
-                    }
-                }
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule().strokeBorder(
-                        Color.white.opacity(isActive ? 0.3 : 0.15),
-                        lineWidth: PlusMetrics.hairline
-                    )
-                }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityAddTraits(isActive ? .isSelected : [])
-    }
-}
-
 // MARK: - Строка
 
 /// Строка полной выдачи — `list-item / music` макета: 64 = 8 + обложка 48 + 8,
 /// название и подпись 15/20, сердце справа, разделители 0.5. У фильма, книги,
 /// режиссёра и писателя обложка — вертикальный постер 48 × 72, строка 88.
-private struct SearchListRow: View {
+/// Строка полной выдачи — она же строка плоских списков экрана персоны.
+struct SearchListRow: View {
     let hit: SearchHit
     let isFirst: Bool
     let isLiked: Bool
@@ -547,12 +484,12 @@ private struct SearchListRow: View {
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button(action: onLike) {
-                Image(isLiked ? "iconLiked" : "iconLove")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(isLiked ? Color.fillOne : SearchSectionColors.like)
+            Button {
+                PlayerHaptics.tap()
+                onLike()
+            } label: {
+                // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).
+                LikeGlyph(isLiked: isLiked, box: 20, offColor: SearchSectionColors.like)
                     .padding(10)
                     .contentShape(.rect)
             }
@@ -668,7 +605,7 @@ private struct SearchRowThumbnail: View {
 
 /// Строка-скелетон — того же габарита, пока полная выдача собирается: у кино
 /// и книг — с вертикальным постером.
-private struct SearchListSkeletonRow: View {
+struct SearchListSkeletonRow: View {
     let isPoster: Bool
 
     private var thumbHeight: CGFloat { isPoster ? 72 : 48 }
@@ -680,8 +617,8 @@ private struct SearchListSkeletonRow: View {
                 .plusSkeleton()
                 .frame(width: SearchRowThumbnail.width, height: thumbHeight)
             VStack(alignment: .leading, spacing: 8) {
-                Rectangle().fill(PlusSkeleton.fill).frame(width: 160, height: 12)
-                Rectangle().fill(PlusSkeleton.fill).frame(width: 100, height: 12)
+                SkeletonBar(width: 160)
+                SkeletonBar(width: 100)
             }
             Spacer(minLength: 0)
         }
@@ -741,29 +678,38 @@ private struct MusicWizardCard: View {
 
     private var topRow: some View {
         HStack(spacing: 0) {
-            PlusSkeleton.fill
-                .frame(width: Layout.avatar, height: Layout.avatar)
-                .overlay { artwork(wizard.artist.artwork) }
-                .clipShape(Circle())
+            // Фото и имя — переход на экран исполнителя, как строка исполнителя
+            // в списке (2026-10-04); сердце и play справа живут своей жизнью.
+            Button(action: openArtist) {
+                HStack(spacing: 0) {
+                    PlusSkeleton.fill
+                        .frame(width: Layout.avatar, height: Layout.avatar)
+                        .overlay { artwork(wizard.artist.artwork) }
+                        .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: -2) {
-                Text(wizard.artist.title)
-                    .plusText(.textM, .medium)
-                    .foregroundStyle(Color.fillOne)
-                    .lineLimit(1)
-                Text("Исполнитель")
-                    .plusText(.textM, .medium)
-                    .foregroundStyle(Color.fillSubtitle)
+                    VStack(alignment: .leading, spacing: -2) {
+                        Text(wizard.artist.title)
+                            .plusText(.textM, .medium)
+                            .foregroundStyle(Color.fillOne)
+                            .lineLimit(1)
+                        Text("Исполнитель")
+                            .plusText(.textM, .medium)
+                            .foregroundStyle(Color.fillSubtitle)
+                    }
+                    .padding(.leading, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(.rect)
             }
-            .padding(.leading, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
+            .modifier(SearchResultsView.SearchZoomSource(route: artistRoute, zoom: zoom))
 
-            Button(action: onLike) {
-                Image(isLiked ? "iconLiked" : "iconLove")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
-                    .foregroundStyle(isLiked ? Color.fillOne : SearchSectionColors.like)
+            Button {
+                PlayerHaptics.tap()
+                onLike()
+            } label: {
+                // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).
+                LikeGlyph(isLiked: isLiked, box: 20, offColor: SearchSectionColors.like)
                     .padding(10)
                     .contentShape(.rect)
             }
@@ -778,7 +724,7 @@ private struct MusicWizardCard: View {
                     .frame(width: 20, height: 20)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: Layout.playSize, height: Layout.playSize)
-                    .background(Color.buttonsSecondary, in: Circle())
+                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
                     .contentShape(Circle())
             }
             .buttonStyle(PressScaleButtonStyle())
@@ -864,6 +810,21 @@ private struct MusicWizardCard: View {
     private var isBarOnThisArtist: Bool {
         (actionBar.mode == .music || actionBar.mode == .search)
             && actionBar.music?.artist == wizard.artist.title
+    }
+
+    /// Экран исполнителя колдунщика — и в «Искали недавно», как переход из выдачи.
+    private var artistRoute: EntityRoute {
+        wizard.artist.route ?? .artist(EntityRef(
+            id: wizard.artist.id.replacingOccurrences(of: "artist-", with: "dz-"),
+            title: wizard.artist.title,
+            subtitle: "",
+            artwork: wizard.artist.artwork ?? .asset("")
+        ))
+    }
+
+    private func openArtist() {
+        remember(wizard.artist)
+        open(artistRoute)
     }
 
     /// Играет ли сейчас этот исполнитель — play превращается в паузу.

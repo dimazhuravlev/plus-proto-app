@@ -90,6 +90,8 @@ struct DeezerTrackHit: Decodable, Identifiable {
     /// Популярность трека у Deezer, 0…1 000 000. Нужна ранжированию секций поиска:
     /// у культового трека и у кавера с тем же названием совпадает всё, кроме неё.
     let rank: Int?
+    /// Флаг explicit — приходит у `/artist/{id}/top` (бейдж в «Популярных треках»).
+    let explicitLyrics: Bool?
 }
 
 struct DeezerAlbum: Decodable, Identifiable {

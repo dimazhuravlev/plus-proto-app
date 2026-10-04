@@ -36,9 +36,18 @@ struct GoogleBookVolumeInfo: Decodable {
     let imageLinks: GoogleBookImageLinks?
 }
 
+/// Что поиск знает о томе сверх метаданных — короткое описание на пару строк.
+struct GoogleBookSearchInfo: Decodable {
+    /// Одна-две фразы о книге (с HTML-сущностями). У старых сканов бывает обрывком
+    /// текста самой книги с подсветкой запроса `<b>`.
+    let textSnippet: String?
+}
+
 struct GoogleBook: Decodable, Identifiable {
     let id: String
     let volumeInfo: GoogleBookVolumeInfo
+    /// Только в выдаче поиска; у `/volumes/{id}` его нет.
+    let searchInfo: GoogleBookSearchInfo?
 
     var title: String { volumeInfo.title ?? "" }
     var author: String { volumeInfo.authors?.first ?? "" }
