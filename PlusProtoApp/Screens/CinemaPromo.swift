@@ -11,16 +11,19 @@ enum CinemaPromoLayout {
     /// кадра, мета опущена на те же 16 — кнопки на месте, следующая секция ближе
     static let bottomTrim: CGFloat = 16
     static let height: CGFloat = frameHeight - bottomTrim
-    /// Карточка — габаритов макета: экран без 34 (341 из 375 — поле 8, зазор 8
-    /// и край следующей 18). Лента ставит её по центру экрана, и соседи выглядывают
-    /// поровну с обеих сторон — по 9 за зазором 8 (правка пользователя 2026-10-04:
-    /// габариты карточек те же, их только сдвинули; прежде карточка стояла у поля
-    /// слева, а выглядывала только следующая)
+    /// Карточка — та же ширина, что с первого прогона: экран без 42, 360 на холсте 402
+    /// (замер кадром). Лента ставит её по центру экрана, и соседи выглядывают поровну
+    /// с обеих сторон — по 13 за зазором 8 (правка пользователя 2026-10-04: габариты
+    /// не менять, только сдвинуть; прежде карточка стояла у поля 8 слева, а выглядывала
+    /// только следующая).
+    ///
+    /// Ширина — сам контейнер: `containerRelativeFrame` меряет ленту уже **без** её
+    /// полей. Две первые версии центровки этого не учли и вычитали поля ещё раз —
+    /// карточка сужалась до 298 и 334.
     static let cardGap: CGFloat = 8
-    /// Сколько ширины экрана не достаётся карточке
-    static let cardReserve: CGFloat = 8 + 8 + 18
-    /// Поле ленты с каждой стороны — половина недоставшегося: зазор и край соседа
-    static let sideInset: CGFloat = cardReserve / 2
+    /// Поле ленты с каждой стороны — зазор и край соседа
+    static let sideInset: CGFloat = 21
+    static var cardWidth: CGFloat { PlusMetrics.designWidth - 2 * sideInset }
     /// Обложка занимает верхние 83.2 % блока (416 из 500)
     static let coverHeight: CGFloat = frameHeight * 416 / 500
     static let coverRadius: CGFloat = 24
@@ -97,9 +100,8 @@ struct CinemaPromoCarousel: View {
             LazyHStack(spacing: CinemaPromoLayout.cardGap) {
                 ForEach(0..<(count * Self.copies), id: \.self) { index in
                     CinemaPromoSlide(promo: promos[index % count], isCurrent: index == page)
-                        .containerRelativeFrame(.horizontal) { length, _ in
-                            length - CinemaPromoLayout.cardReserve
-                        }
+                        // Во всю видимую ширину ленты — её поля уже вычтены.
+                        .containerRelativeFrame(.horizontal)
                 }
             }
             .scrollTargetLayout()
@@ -107,9 +109,11 @@ struct CinemaPromoCarousel: View {
         // По одной карточке за свайп, как бы ни бросили, — «послайдово».
         .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
         .contentMargins(.horizontal, CinemaPromoLayout.sideInset, for: .scrollContent)
-        // Якорь — центр: без якоря перескок на среднюю копию прокручивал минимально,
-        // «лишь бы была видна», и карточка вставала у края (кадр 2026-10-04).
-        .scrollPosition(id: $page, anchor: .center)
+        // Якорь — левый край: без якоря перескок на среднюю копию прокручивал минимально,
+        // «лишь бы была видна», и карточка вставала у края (кадр 2026-10-04). Левый
+        // край ложится ровно на поле ленты — а карточка шириной в ленту без полей,
+        // значит она по центру. Якорь `.center` промахивался на 3 (замер кадром).
+        .scrollPosition(id: $page, anchor: .leading)
         .scrollIndicators(.hidden)
         // Один слайд — листать некуда.
         .scrollDisabled(count < 2)
@@ -394,7 +398,7 @@ private struct CinemaPromoLogo: View {
 /// Ряд — оверлеем на распорке во всю ширину экрана: своей ширины ленте он не
 /// предлагает (иначе раздувал бы её, как было со скелетоном подборок).
 struct CinemaPromoSkeleton: View {
-    private static var cardWidth: CGFloat { PlusMetrics.designWidth - CinemaPromoLayout.cardReserve }
+    private static var cardWidth: CGFloat { CinemaPromoLayout.cardWidth }
 
     var body: some View {
         // Три карточки по центру — края соседей выглядывают поровну, как у ленты.
