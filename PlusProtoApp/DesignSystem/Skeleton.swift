@@ -10,6 +10,22 @@ enum PlusSkeleton {
     static let fill = Color.fillNine
     /// Как картинка проявляется на месте скелетона: 150 мс ease-out. Из кэша — сразу.
     static let appear: Animation = .easeOut(duration: 0.15)
+    /// Скругление полос на месте текста — небольшое, одно на всё приложение
+    /// (правка пользователя 2026-10-04; прежде углы были прямые). У скелетонов
+    /// карточек скругление своё — то же, что у загруженной карточки.
+    static let textRadius: CGFloat = 4
+}
+
+/// Полоса скелетона на месте строки текста.
+struct SkeletonBar: View {
+    let width: CGFloat
+    var height: CGFloat = 12
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
+            .fill(PlusSkeleton.fill)
+            .frame(width: width, height: height)
+    }
 }
 
 extension Shape {

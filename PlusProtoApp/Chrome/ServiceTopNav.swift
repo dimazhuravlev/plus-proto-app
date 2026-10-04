@@ -66,7 +66,8 @@ struct ServiceTopNav: View {
     @Binding var selection: Int
     /// Сколько ленты ушло под бар — от этого прозрачность подложки.
     var scrollOffset: CGFloat = 0
-    var avatar: ArtworkSource = .asset("mockAvatar")
+    /// Аватар профиля — из макета навигации (`userpics` `2455:75985`), кадр 40pt на ×3.
+    var avatar: ArtworkSource = .asset("avatarProfile")
 
     @Namespace private var pill
 

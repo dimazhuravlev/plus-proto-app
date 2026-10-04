@@ -79,12 +79,16 @@ struct CinemaHomeScreen: View {
 
     private var feed: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            // Скелетон и лента сменяются **на месте** — слоями `ZStack`. В `VStack` на время
+            // перехода оба стояли друг под другом: лента вставала под скелетоном и, когда
+            // тот уходил, прыгала вверх на всю его высоту (жалоба пользователя 2026-10-04:
+            // «дёргается при загрузке и первом переходе»).
+            ZStack(alignment: .top) {
                 if catalog.isLoaded {
-                    content
+                    VStack(spacing: 0) { content }
                         .transition(.opacity)
                 } else {
-                    skeleton
+                    VStack(spacing: 0) { skeleton }
                         .transition(.opacity)
                 }
             }
@@ -99,6 +103,17 @@ struct CinemaHomeScreen: View {
         .onChange(of: navigation.scrollToTopRequests[.kinopoisk]) {
             withAnimation(ShowcaseScrollMotion.toTop) { scrollPosition.scrollTo(edge: .top) }
         }
+        #if DEBUG
+        // `-debugCinemaScroll <pt>` — стартовая прокрутка ленты, когда она собралась:
+        // нижние карусели иначе не снять скриншотом.
+        .task(id: catalog.isLoaded) {
+            let offset = UserDefaults.standard.double(forKey: "debugCinemaScroll")
+            guard offset > 0, catalog.isLoaded else { return }
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            scrollPosition.scrollTo(y: offset)
+        }
+        #endif
     }
 
     @ViewBuilder
@@ -136,8 +151,15 @@ struct CinemaHomeScreen: View {
 /// Каркас карусели макета (`carousel / Movies`): поля 8 сверху и снизу, шапка
 /// с шевроном, лента с полями 16. Полных списков в прототипе нет — заголовок
 /// не нажимается, как у секций экранов сущностей.
+///
+/// **Высота ленты — явная**, из размеров карточки. Своей `LazyHStack` здесь не меряла:
+/// все карусели экрана получали одну и ту же высоту (238), будто по оценке, а не по
+/// карточкам, — под «Смотреть дальше» (ей нужно ~182) стояла дыра в 56pt, а подписи
+/// постеров (нужно 246) срезались снизу (жалобы пользователя 2026-10-04, замер кадром).
 private struct CinemaCarousel<Content: View>: View {
     let title: String
+    /// Высота карточки целиком — вместе с подписью.
+    let cardHeight: CGFloat
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -153,6 +175,7 @@ private struct CinemaCarousel<Content: View>: View {
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)
             .contentMargins(.horizontal, CinemaLayout.side, for: .scrollContent)
+            .frame(height: cardHeight)
         }
         .padding(.vertical, CinemaLayout.sectionPad)
     }
@@ -163,7 +186,13 @@ private struct CinemaHistoryRow: View {
     let entries: [WatchHistory.Entry]
 
     var body: some View {
-        CinemaCarousel(title: "Смотреть дальше") {
+        // Название — строка, год с жанром — вторая, если хоть у кого-то он есть.
+        let lines = entries.contains { $0.movie.subtitle != nil } ? 2 : 1
+        CinemaCarousel(
+            title: "Смотреть дальше",
+            cardHeight: CinemaLayout.historyHeight + CinemaLayout.captionGap
+                + CGFloat(lines) * CinemaLayout.captionLine
+        ) {
             ForEach(entries) { entry in
                 CinemaHistoryCard(entry: entry)
             }
@@ -182,9 +211,13 @@ private struct CinemaPosterRow: View {
         let lines = row.titles
             .map { TileCaptionRuler.lines($0.title, width: CinemaLayout.posterWidth - CinemaLayout.captionTrailing) }
             .max() ?? 1
-        CinemaCarousel(title: row.title) {
+        let captionHeight = CGFloat(lines) * CinemaLayout.captionLine
+        CinemaCarousel(
+            title: row.title,
+            cardHeight: CinemaLayout.posterHeight + CinemaLayout.captionGap + captionHeight
+        ) {
             ForEach(row.titles) { title in
-                CinemaPosterCard(title: title, captionHeight: CGFloat(lines) * CinemaLayout.captionLine)
+                CinemaPosterCard(title: title, captionHeight: captionHeight)
             }
         }
     }
@@ -364,22 +397,27 @@ private struct CinemaRowSkeleton: View {
         VStack(spacing: 0) {
             EntitySectionHeaderSkeleton(lineHeight: CinemaLayout.headerLine)
 
-            HStack(alignment: .top, spacing: CinemaLayout.cardGap) {
-                ForEach(0..<CinemaLayout.skeletonPosters, id: \.self) { _ in
-                    VStack(alignment: .leading, spacing: CinemaLayout.captionGap) {
-                        RoundedRectangle(cornerRadius: CinemaLayout.cardRadius, style: .continuous)
-                            .plusSkeleton()
-                            .frame(width: CinemaLayout.posterWidth, height: CinemaLayout.posterHeight)
-                        Rectangle()
-                            .fill(PlusSkeleton.fill)
-                            .frame(width: CinemaLayout.posterWidth * 0.7, height: EntitySectionLayout.skeletonBar)
-                            .frame(height: CinemaLayout.captionLine)
+            // Ряд постеров шире экрана (3 × 148 + поля = 492), и раскладкой он ленту
+            // раздувал: скелетон промо тянулся на всю эту ширину, мета уезжала вправо,
+            // а с приходом ленты всё прыгало обратно (запись 2026-10-04). Поэтому ряд —
+            // оверлеем на распорке во всю ширину экрана: своей ширины он не предлагает.
+            Color.clear
+                .frame(height: CinemaLayout.posterHeight + CinemaLayout.captionGap + CinemaLayout.captionLine)
+                .overlay(alignment: .topLeading) {
+                    HStack(alignment: .top, spacing: CinemaLayout.cardGap) {
+                        ForEach(0..<CinemaLayout.skeletonPosters, id: \.self) { _ in
+                            VStack(alignment: .leading, spacing: CinemaLayout.captionGap) {
+                                RoundedRectangle(cornerRadius: CinemaLayout.cardRadius, style: .continuous)
+                                    .plusSkeleton()
+                                    .frame(width: CinemaLayout.posterWidth, height: CinemaLayout.posterHeight)
+                                SkeletonBar(width: CinemaLayout.posterWidth * 0.7, height: EntitySectionLayout.skeletonBar)
+                                    .frame(height: CinemaLayout.captionLine)
+                            }
+                        }
                     }
+                    .padding(.leading, CinemaLayout.side)
                 }
-            }
-            .padding(.horizontal, CinemaLayout.side)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
+                .clipped()
         }
         .padding(.vertical, CinemaLayout.sectionPad)
         .accessibilityHidden(true)

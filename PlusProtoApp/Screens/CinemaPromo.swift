@@ -1,23 +1,30 @@
 import SwiftUI
 import UIKit
 
-/// Числа промоблока — макет `2269:16942` (кадр 375 перенесён на холст 402: поля
-/// те же, ширины тянутся, высота — от пропорций макета).
+/// Числа промоблока — макет `2269:16942`, обновлённый 2026-10-04: карточки лентой,
+/// справа из-под края выглядывает следующая. Кадр 375 перенесён на холст 402:
+/// поля и выглядывающий край те же, ширина карточки тянется, высота — от пропорций.
 enum CinemaPromoLayout {
     /// Блок — 3:4 от ширины экрана (`height fixer 3:4`)
     static let height: CGFloat = PlusMetrics.designWidth * 4 / 3
-    /// Обложка отступает от краёв на 8 и занимает верхние 83.2 % блока (416 из 500)
-    static let coverInset: CGFloat = 8
+    /// Лента: поле слева 8, зазор между карточками 8, от следующей видно 18
+    /// (341 + 8 + 8 + 18 = 375 в макете)
+    static let leading: CGFloat = 8
+    static let cardGap: CGFloat = 8
+    static let peek: CGFloat = 18
+    /// Сколько ширины экрана не достаётся карточке
+    static let cardReserve: CGFloat = leading + cardGap + peek
+    /// Обложка занимает верхние 83.2 % блока (416 из 500)
     static let coverHeight: CGFloat = height * 416 / 500
     static let coverRadius: CGFloat = 24
-    /// Мета прижата к низу блока: поля 24, зазоры 8
+    /// Мета прижата к низу блока: поля 24 внутри карточки, зазор 8
     static let metaSide: CGFloat = 24
     static let metaBottom: CGFloat = 24
     static let metaGap: CGFloat = 8
-    /// Логотип вписывается в бокс, под боксом ещё 8. В макете бокс 280×72 —
-    /// уменьшен на ~15 % (правка пользователя 2026-10-04: «немного уменьшить»).
-    static let logoBox = CGSize(width: 240, height: 62)
-    static let logoBottom: CGFloat = 8
+    /// Логотип вписывается в бокс 238×61.2, под ним 6.8 — бокс макета, уменьшенный
+    /// вслед за правкой пользователя «немного уменьшить» (280×72 × 0.85).
+    static let logoBox = CGSize(width: 238, height: 61.2)
+    static let logoBottom: CGFloat = 6.8
     static let leadLines = 3
     static let titleLines = 2
     /// Кнопки: ряд с полями 12 сверху и снизу, высота 48, зазор 8
@@ -43,10 +50,15 @@ enum CinemaPromoLayout {
     )
 }
 
-/// Промоблок — крупные слайды, листаются по одному в обе стороны **по кругу**
+/// Промоблок — крупные карточки, листаются по одной в обе стороны **по кругу**
 /// (задача пользователя 2026-10-04). Круг — лента из многих повторов набора,
 /// открытая на середине: до края её не долистать, а подмены позиции, которая
 /// дёргала бы картинку, нет вовсе.
+///
+/// Справа из-под края выглядывает следующая карточка (обновлённый макет); мета —
+/// логотип, описание, кнопки — проявляется прозрачностью **вслед за сдвигом**
+/// карточек, а не по таймеру: у уезжающей гаснет, у приезжающей проступает
+/// (правка пользователя тем же днём).
 struct CinemaPromoCarousel: View {
     let promos: [CinemaCatalog.Promo]
 
@@ -65,15 +77,19 @@ struct CinemaPromoCarousel: View {
     var body: some View {
         let count = promos.count
         ScrollView(.horizontal) {
-            LazyHStack(spacing: 0) {
+            LazyHStack(spacing: CinemaPromoLayout.cardGap) {
                 ForEach(0..<(count * Self.laps), id: \.self) { index in
                     CinemaPromoSlide(promo: promos[index % count], isCurrent: index == page)
-                        .containerRelativeFrame(.horizontal)
+                        .containerRelativeFrame(.horizontal) { length, _ in
+                            length - CinemaPromoLayout.cardReserve
+                        }
                 }
             }
             .scrollTargetLayout()
         }
-        .scrollTargetBehavior(.paging)
+        // По одной карточке за свайп, как бы ни бросили, — «послайдово».
+        .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
+        .contentMargins(.leading, CinemaPromoLayout.leading, for: .scrollContent)
         .scrollPosition(id: $page)
         .scrollIndicators(.hidden)
         // Один слайд — листать некуда.
@@ -155,24 +171,31 @@ private struct CinemaPromoSlide: View {
             .overlay { CinemaPromoLayout.fade }
             .clipShape(shape)
             .frame(height: CinemaPromoLayout.coverHeight)
-            .padding(.horizontal, CinemaPromoLayout.coverInset)
     }
 
+    /// Логотип, под ним описание и кнопки — последние два без зазора, кнопки
+    /// отступают своими полями (макет). Прозрачность — от положения в ленте:
+    /// 1 у карточки на месте, 0 у выглядывающей из-под края.
     private var meta: some View {
         VStack(spacing: CinemaPromoLayout.metaGap) {
             logo
                 .frame(width: CinemaPromoLayout.logoBox.width, height: CinemaPromoLayout.logoBox.height)
                 .padding(.bottom, CinemaPromoLayout.logoBottom)
 
-            Text(promo.lead)
-                .plusText(.textM, .medium)
-                .foregroundStyle(Color.fillFour)
-                .multilineTextAlignment(.center)
-                .lineLimit(CinemaPromoLayout.leadLines)
-                .frame(maxWidth: .infinity)
+            VStack(spacing: 0) {
+                Text(promo.lead)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillFour)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(CinemaPromoLayout.leadLines)
+                    .frame(maxWidth: .infinity)
 
-            buttons
-                .padding(.vertical, CinemaPromoLayout.buttonsPadding)
+                buttons
+                    .padding(.vertical, CinemaPromoLayout.buttonsPadding)
+            }
+        }
+        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+            content.opacity(1 - min(1, abs(phase.value)))
         }
     }
 
@@ -278,37 +301,53 @@ private struct CinemaPromoLogo: View {
     }
 }
 
-/// Скелетон промоблока — обложка той же формы и полосы меты.
+/// Скелетон промоблока — та же лента: карточка с полосами меты и край следующей.
+/// Ряд — оверлеем на распорке во всю ширину экрана: своей ширины ленте он не
+/// предлагает (иначе раздувал бы её, как было со скелетоном подборок).
 struct CinemaPromoSkeleton: View {
+    private static var cardWidth: CGFloat { PlusMetrics.designWidth - CinemaPromoLayout.cardReserve }
+
     var body: some View {
-        let shape = UnevenRoundedRectangle(
-            topLeadingRadius: CinemaPromoLayout.coverRadius,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: 0,
-            topTrailingRadius: CinemaPromoLayout.coverRadius,
-            style: .continuous
-        )
+        Color.clear
+            .frame(height: CinemaPromoLayout.height)
+            .overlay(alignment: .topLeading) {
+                HStack(alignment: .top, spacing: CinemaPromoLayout.cardGap) {
+                    card
+                    cover
+                        .frame(width: Self.cardWidth)
+                }
+                .padding(.leading, CinemaPromoLayout.leading)
+            }
+            .clipped()
+            .accessibilityHidden(true)
+    }
+
+    private var cover: some View {
+        PlusSkeleton.fill
+            .overlay { CinemaPromoLayout.fade }
+            .clipShape(UnevenRoundedRectangle(
+                topLeadingRadius: CinemaPromoLayout.coverRadius,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: CinemaPromoLayout.coverRadius,
+                style: .continuous
+            ))
+            .frame(height: CinemaPromoLayout.coverHeight)
+    }
+
+    private var card: some View {
         ZStack(alignment: .bottom) {
-            PlusSkeleton.fill
-                .overlay { CinemaPromoLayout.fade }
-                .clipShape(shape)
-                .frame(height: CinemaPromoLayout.coverHeight)
-                .padding(.horizontal, CinemaPromoLayout.coverInset)
+            cover
                 .frame(maxHeight: .infinity, alignment: .top)
 
             VStack(spacing: CinemaPromoLayout.metaGap) {
-                Capsule()
-                    .fill(PlusSkeleton.fill)
-                    .frame(width: 180, height: 32)
+                SkeletonBar(width: 160, height: 32)
                     .frame(height: CinemaPromoLayout.logoBox.height)
                     .padding(.bottom, CinemaPromoLayout.logoBottom)
                 // Описание — полосы по центру, как сам текст.
                 VStack(spacing: 8) {
-                    ForEach([260, 200] as [CGFloat], id: \.self) { width in
-                        Rectangle()
-                            .fill(PlusSkeleton.fill)
-                            .frame(width: width, height: EntitySectionLayout.skeletonBar)
-                    }
+                    SkeletonBar(width: 260)
+                    SkeletonBar(width: 200)
                 }
                 .padding(.vertical, 4)
                 Capsule()
@@ -318,7 +357,6 @@ struct CinemaPromoSkeleton: View {
             }
             .padding(.bottom, CinemaPromoLayout.metaBottom)
         }
-        .frame(height: CinemaPromoLayout.height)
-        .accessibilityHidden(true)
+        .frame(width: Self.cardWidth, height: CinemaPromoLayout.height)
     }
 }

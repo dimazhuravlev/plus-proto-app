@@ -79,7 +79,7 @@ struct EntitySectionHeaderSkeleton: View {
     var lineHeight: CGFloat = EntitySectionLayout.headerLine
 
     var body: some View {
-        Rectangle()
+        RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
             .fill(PlusSkeleton.fill)
             .frame(width: EntitySectionLayout.skeletonHeaderWidth, height: EntitySectionLayout.skeletonHeaderBar)
             .frame(height: lineHeight)
@@ -190,7 +190,7 @@ struct EntityPersonCardSkeleton: View {
             Circle()
                 .fill(PlusSkeleton.fill)
                 .frame(width: EntitySectionLayout.personCardWidth, height: EntitySectionLayout.personCardWidth)
-            Rectangle()
+            RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
                 .fill(PlusSkeleton.fill)
                 .frame(width: EntitySectionLayout.personCardWidth * 0.6, height: EntitySectionLayout.skeletonBar)
                 .frame(height: PlusTextSize.textS.lineHeight)
@@ -290,7 +290,7 @@ struct EntitySkeletonLines: View {
         let inset = (PlusTextSize.textM.lineHeight - EntitySectionLayout.skeletonBar) / 2
         VStack(alignment: .leading, spacing: 2 * inset) {
             ForEach(widths.indices, id: \.self) { index in
-                Rectangle()
+                RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
                     .fill(PlusSkeleton.fill)
                     .frame(width: widths[index], height: EntitySectionLayout.skeletonBar)
             }

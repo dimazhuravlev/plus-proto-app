@@ -209,7 +209,7 @@ struct BookScreen: View {
         return ZStack {
             if let aspect = coverAspect {
                 BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: aspect)) {
-                    ArtworkImage(source: entity.artwork).scaledToFill()
+                    SkeletonArtwork(source: entity.artwork)
                 }
                 .transition(.opacity)
             } else {
@@ -287,7 +287,7 @@ struct BookScreen: View {
                 ForEach(BookScreenLayout.skeletonParagraphs.indices, id: \.self) { index in
                     VStack(alignment: .leading, spacing: 2 * BookScreenLayout.skeletonBarInset) {
                         ForEach(BookScreenLayout.skeletonParagraphs[index].indices, id: \.self) { line in
-                            Rectangle()
+                            RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
                                 .fill(PlusSkeleton.fill)
                                 .frame(
                                     width: proxy.size.width * BookScreenLayout.skeletonParagraphs[index][line],
@@ -411,7 +411,7 @@ struct BookScreen: View {
         let geometry = BookScreenLayout.shelfBook
         let coverWidth = geometry.coverWidth(aspect: nil)
         return VStack(alignment: .leading, spacing: 0) {
-            Rectangle()
+            RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
                 .fill(PlusSkeleton.fill)
                 .frame(width: BookScreenLayout.skeletonHeaderWidth, height: BookScreenLayout.skeletonHeaderBar)
                 .frame(height: BookScreenLayout.sectionHeaderLine)
@@ -427,9 +427,9 @@ struct BookScreen: View {
                         VStack(alignment: .leading, spacing: BookScreenLayout.shelfTextGap) {
                             BookFigure(geometry: geometry, coverWidth: coverWidth) { EmptyView() }
                             VStack(alignment: .leading, spacing: 2 * BookScreenLayout.skeletonBarInset) {
-                                Rectangle().fill(PlusSkeleton.fill)
+                                RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous).fill(PlusSkeleton.fill)
                                     .frame(width: coverWidth * 0.8, height: BookScreenLayout.skeletonBar)
-                                Rectangle().fill(PlusSkeleton.fill)
+                                RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous).fill(PlusSkeleton.fill)
                                     .frame(width: coverWidth * 0.35, height: BookScreenLayout.skeletonBar)
                             }
                             .padding(.top, BookScreenLayout.skeletonBarInset)

@@ -498,7 +498,7 @@ struct SearchResultsView: View {
     /// секции стоят в порядке по умолчанию (правка пользователя 2026-10-03).
     /// Габарит — как у настоящего заголовка: строка той же высоты и те же поля.
     private var skeletonHeader: some View {
-        Rectangle()
+        RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
             .fill(PlusSkeleton.fill)
             .frame(width: Layout.skeletonHeaderWidth, height: Layout.skeletonHeaderBar)
             .frame(height: Layout.headerLine)
@@ -744,8 +744,8 @@ struct SearchResultsView: View {
     /// Полоски на месте строк названия и подписи — по центру своих строк.
     private var skeletonLabel: some View {
         VStack(alignment: .leading, spacing: 2 * Layout.skeletonBarInset) {
-            Rectangle().fill(PlusSkeleton.fill).frame(width: Layout.skeletonTitleBar, height: Layout.skeletonBar)
-            Rectangle().fill(PlusSkeleton.fill).frame(width: Layout.skeletonSubtitleBar, height: Layout.skeletonBar)
+            SkeletonBar(width: Layout.skeletonTitleBar, height: Layout.skeletonBar)
+            SkeletonBar(width: Layout.skeletonSubtitleBar, height: Layout.skeletonBar)
         }
         .padding(.top, Layout.skeletonBarInset)
         .frame(maxWidth: .infinity, alignment: .leading)

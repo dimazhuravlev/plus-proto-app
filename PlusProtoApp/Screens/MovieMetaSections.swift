@@ -144,7 +144,10 @@ struct MoviePersonSection: View {
     private func photo(_ person: MovieCastMember) -> some View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
 
-        Color.buttonsSecondary
+        // Подложка — серый скелетона, фото проявляется поверх без своего серого:
+        // прежде под ним стоял ещё и плейсхолдер картинки, и пока фото ехало, плашка
+        // была светлее остальных скелетонов (правка пользователя 2026-10-04).
+        PlusSkeleton.fill
             .frame(width: Layout.cardWidth)
             .frame(height: Layout.cardWidth / Layout.photoAspect)
             .overlay {
@@ -154,8 +157,7 @@ struct MoviePersonSection: View {
                     // Обесцвечивание (решение пользователя 2026-08-29): портреты у КП
                     // разных лет и цветокоррекции, и цветной ряд читался разнобоем.
                     // Плашке-подложке фильтр не нужен — она и так серая.
-                    ArtworkImage(source: .remote(photo))
-                        .scaledToFill()
+                    SkeletonArtwork(source: .remote(photo))
                         .grayscale(1)
                 }
             }
@@ -292,12 +294,12 @@ struct MovieSimilarSection: View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
 
         return VStack(alignment: .leading, spacing: Layout.captionGap) {
-            Color.buttonsSecondary
+            PlusSkeleton.fill
                 .frame(width: Layout.cardWidth)
                 .frame(height: Layout.cardWidth / Layout.posterAspect)
                 .overlay {
                     if let poster = title.poster {
-                        ArtworkImage(source: .remote(poster)).scaledToFill()
+                        SkeletonArtwork(source: .remote(poster))
                     }
                 }
                 .clipShape(shape)

@@ -88,8 +88,10 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
 }
 
 extension ResolvedArtwork where Placeholder == Color {
+    /// Пока картинки нет — бледный серый скелетона: серый в проекте один
+    /// (решение 2026-10-03; здесь оставался прежний white 10 %, правка 2026-10-04).
     @MainActor
     init(source: ArtworkSource, @ViewBuilder content: @escaping (Image) -> Content) {
-        self.init(source: source, content: content) { Color.buttonsPrimary }
+        self.init(source: source, content: content) { PlusSkeleton.fill }
     }
 }

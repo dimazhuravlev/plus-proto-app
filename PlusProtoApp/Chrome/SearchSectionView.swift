@@ -681,8 +681,8 @@ struct SearchListSkeletonRow: View {
                 .plusSkeleton()
                 .frame(width: SearchRowThumbnail.width, height: thumbHeight)
             VStack(alignment: .leading, spacing: 8) {
-                Rectangle().fill(PlusSkeleton.fill).frame(width: 160, height: 12)
-                Rectangle().fill(PlusSkeleton.fill).frame(width: 100, height: 12)
+                SkeletonBar(width: 160)
+                SkeletonBar(width: 100)
             }
             Spacer(minLength: 0)
         }

@@ -375,7 +375,7 @@ struct EntityPersonRow: View {
 
     /// Полоса скелетона по центру строки Text M — того же габарита, что текст.
     private func skeletonLine(width: CGFloat) -> some View {
-        Rectangle()
+        RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
             .fill(PlusSkeleton.fill)
             .frame(width: width, height: EntityTitleLayout.skeletonBar)
             .frame(height: PlusTextSize.textM.lineHeight)

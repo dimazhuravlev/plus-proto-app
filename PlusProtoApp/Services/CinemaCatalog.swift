@@ -53,10 +53,17 @@ final class CinemaCatalog {
     /// «Авторское кино» — лауреаты Каннского фестиваля, «Документальное» — полсотни
     /// главных документальных фильмов, «Смотреть на выходных» — самые кассовые
     /// в России (замер подборок 2026-10-04: постеры есть почти у всех).
+    ///
+    /// Ещё три — «Оскароносцы» (лауреаты за лучший фильм), «Фантастика» (сотня лучших
+    /// научно-фантастических) и «Мультфильмы» (лучшие анимационные по версии Time Out):
+    /// задача пользователя тем же днём — «+3 карусели с разными названиями».
     private static let rowSpecs: [(slug: String, title: String)] = [
         ("cannes-golden-palm", "Авторское кино"),
         ("top_50_documentary", "Документальное"),
         ("box-russia-dollar", "Смотреть на выходных"),
+        ("oscar-best-film", "Оскароносцы"),
+        ("top_100_scifi_by_total_scifi_online", "Фантастика"),
+        ("top_100_animation_by_time_out", "Мультфильмы"),
     ]
     static let promoLimit = 6
     private static let rowLimit = 15
@@ -107,8 +114,14 @@ final class CinemaCatalog {
         }
 
         MovieDetailsStore.remember(Array(fetched.values.joined()))
+        // Первый слайд — с картинками: обложка и логотип ждутся (не дольше потолка),
+        // иначе лента встала бы пустой рамкой и обложка проявлялась бы на глазах.
+        // Остальное догружается в фоне.
+        if let first = builtPromos.first {
+            await Self.prewarm([first.cover] + [first.logo].compactMap { $0 })
+        }
         ArtworkLoader.shared.preload(
-            builtPromos.prefix(2).flatMap { [$0.cover] + [$0.logo].compactMap { $0 } }
+            builtPromos.dropFirst().prefix(2).flatMap { [$0.cover] + [$0.logo].compactMap { $0 } }
                 + builtRows.flatMap { $0.titles.prefix(4).compactMap(\.poster) }
         )
 
@@ -118,6 +131,20 @@ final class CinemaCatalog {
     }
 
     // MARK: - Сеть
+
+    /// Сколько первый слайд ждёт свои картинки, прежде чем лента встанет без них.
+    private static let prewarmCeiling: Duration = .milliseconds(1500)
+
+    /// Прогрев с потолком: медленная сеть не держит скелетон дольше `prewarmCeiling` —
+    /// не доехавшее проявится на месте само.
+    private static func prewarm(_ sources: [ArtworkSource]) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await ArtworkLoader.shared.prewarm(sources) }
+            group.addTask { try? await Task.sleep(for: prewarmCeiling) }
+            await group.next()
+            group.cancelAll()
+        }
+    }
 
     /// Подборки — параллельно. Упавшая подборка просто не встаёт: карусели без неё.
     private static func fetchRows() async -> [String: [KinopoiskMovie]] {
@@ -222,6 +249,9 @@ enum CinemaMocks {
         row("mock-auteur", "Авторское кино", ["Идеальные дни", "Анатомия падения", "Паразиты", "Анора", "Титан"]),
         row("mock-docs", "Документальное", ["Человек на проволоке", "Выход через сувенирную лавку", "Корпорация «Еда»", "Вальс с Баширом"]),
         row("mock-weekend", "Смотреть на выходных", ["Летучий корабль", "Сто лет тому вперёд", "Батя", "Пророк"]),
+        row("mock-oscar", "Оскароносцы", ["Титаник", "Форрест Гамп", "Гладиатор", "Оппенгеймер"]),
+        row("mock-scifi", "Фантастика", ["Интерстеллар", "Матрица", "Начало", "Бегущий по лезвию"]),
+        row("mock-animation", "Мультфильмы", ["Унесённые призраками", "ВАЛЛ-И", "Головоломка", "Коко"]),
     ]
 
     private static func promo(
