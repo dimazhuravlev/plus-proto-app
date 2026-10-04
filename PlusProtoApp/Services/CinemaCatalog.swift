@@ -70,8 +70,12 @@ final class CinemaCatalog {
     ]
     static let promoLimit = 6
     private static let rowLimit = 15
-    /// Берём с запасом: часть отсеется — без постера или уже стоит выше.
-    private static let rowFetchLimit = 30
+    /// Берём с запасом: часть отсеется — без постера или уже стоит выше, а из остатка
+    /// карусель каждый холодный запуск набирает свои 15 (`rowPool`).
+    private static let rowFetchLimit = 60
+    /// Из скольких самых заметных тайтлов подборки (по голосам) выбирается карусель:
+    /// свежий набор на каждый запуск, но без глубоких задворков списка.
+    private static let rowPool = 45
     /// Кадра на логотип хватает с запасом: PNG ложится в бокс 280×72 на ×3.
     private static let logoPixelWidth = 840
 
@@ -88,15 +92,20 @@ final class CinemaCatalog {
         }
 
         let fetched = await Self.fetchRows()
+        // Каждый холодный запуск — свой набор: и промо, и подборки (правка пользователя
+        // 2026-10-04: лента повторялась из запуска в запуск). Зерно случайное на запуск,
+        // `-debugFrozenFeed` его фиксирует.
         var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.cinema)
-        var promoMovies = await MoviePool.shared.all(where: Self.isPromoEligible)
-            .shuffled(using: &rng)
-            .prefix(Self.promoLimit)
-            .map { $0 }
-        // Запас ещё не собран (первый запуск без кэша) — промо из самих подборок.
-        if promoMovies.isEmpty {
-            promoMovies = Array(fetched.values.joined().filter(Self.isPromoEligible).prefix(Self.promoLimit))
+        // Промо — из запаса витрины и из самих подборок вперемешку: одного запаса
+        // мало, слайды повторялись. Первый запуск без кэша — только подборки.
+        var candidates: [KinopoiskMovie] = []
+        var candidateIDs = Set<Int>()
+        for movie in await MoviePool.shared.all(where: Self.isPromoEligible)
+            + fetched.values.joined().filter(Self.isPromoEligible)
+        where candidateIDs.insert(movie.id).inserted {
+            candidates.append(movie)
         }
+        let promoMovies = Array(candidates.shuffled(using: &rng).prefix(Self.promoLimit))
 
         var builtPromos: [Promo] = []
         for movie in promoMovies {
@@ -110,6 +119,8 @@ final class CinemaCatalog {
             let movies = (fetched[spec.slug] ?? [])
                 .filter { $0.poster?.url != nil && !used.contains($0.id) }
                 .sorted { ($0.votes?.kp ?? 0) > ($1.votes?.kp ?? 0) }
+                .prefix(Self.rowPool)
+                .shuffled(using: &rng)
                 .prefix(Self.rowLimit)
             used.formUnion(movies.map(\.id))
             guard !movies.isEmpty else { continue }

@@ -58,6 +58,12 @@ struct BookFigure<Cover: View>: View {
     let coverWidth: CGFloat
     @ViewBuilder var cover: Cover
 
+    /// Скелетон — книга без обложки (`EmptyView` на её месте). Каждый слой рисунка
+    /// у него вполсилы: подложка, заливка обложки, кромки и сгиб ложатся друг на друга,
+    /// и книга выходила заметно ярче остальных скелетонов (правка пользователя
+    /// 2026-10-04, все размеры).
+    private var layerOpacity: Double { Cover.self == EmptyView.self ? 0.5 : 1 }
+
     var body: some View {
         let coverShape = UnevenRoundedRectangle(
             topLeadingRadius: 0,
@@ -71,25 +77,26 @@ struct BookFigure<Cover: View>: View {
 
         ZStack(alignment: .topLeading) {
             pages
-                .fill(BookFigureGeometry.pagesFill)
-                .overlay { pages.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+                .fill(BookFigureGeometry.pagesFill.opacity(layerOpacity))
+                .overlay { pages.stroke(PlusSkeleton.fill.opacity(layerOpacity), lineWidth: PlusMetrics.hairline) }
                 .frame(
                     width: coverWidth + geometry.pagesRight,
                     height: geometry.coverHeight + geometry.pagesTop
                 )
 
-            PlusSkeleton.fill
+            PlusSkeleton.fill.opacity(layerOpacity)
                 .overlay { cover }
                 .frame(width: coverWidth, height: geometry.coverHeight)
                 .clipShape(coverShape)
                 .overlay {
                     // Бордер только сверху, справа и снизу: слева корешок.
                     BookCoverEdge(radius: geometry.coverRadius)
-                        .stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
+                        .stroke(PlusSkeleton.fill.opacity(layerOpacity), lineWidth: PlusMetrics.hairline)
                 }
                 .overlay(alignment: .leading) {
                     BookHingeShade.gradient
                         .frame(width: geometry.hingeWidth)
+                        .opacity(layerOpacity)
                         .allowsHitTesting(false)
                 }
                 .padding(.top, geometry.pagesTop)
