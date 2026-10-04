@@ -18,6 +18,9 @@ struct AppRootView: View {
     /// Главная Кинопоиска — по той же причине, что каталог витрины: экран таба
     /// размонтируется на переключении, а лента собирается раз за процесс.
     @State private var cinema = CinemaCatalog()
+    /// Главные Музыки и Книг — так же, по каталогу на таб (2026-10-04).
+    @State private var music = MusicHomeCatalog()
+    @State private var books = BooksHomeCatalog()
     /// Заставка на запуске. `@State` корня, поэтому показывается ровно один раз
     /// за процесс: возврат из фона её не воскрешает.
     @State private var isSplashShown = !SplashTiming.isDisabled
@@ -95,6 +98,8 @@ struct AppRootView: View {
             // После витрины, а не вместе с ней: промо берётся из запаса, который та
             // как раз пополняет, — и заставку это не держит.
             await cinema.loadIfNeeded()
+            await music.loadIfNeeded()
+            await books.loadIfNeeded()
         }
         // Системное поднятие над клавиатурой отключаем на корне: иначе SwiftUI поднимает
         // весь overlay с хромом целиком (включая таббар), и это складывается с ручным
@@ -120,6 +125,8 @@ struct AppRootView: View {
         .environment(search)
         .environment(catalog)
         .environment(cinema)
+        .environment(music)
+        .environment(books)
         .environment(\.stackZoomNamespace, stackZoom)
     }
 
@@ -176,11 +183,11 @@ struct AppRootView: View {
         case .plus:
             tabStack(.plus) { ShowcaseScreen() }
         case .music:
-            tabStack(.music) { ServiceStubScreen(tab: .music) }
+            tabStack(.music) { MusicHomeScreen() }
         case .kinopoisk:
             tabStack(.kinopoisk) { CinemaHomeScreen() }
         case .books:
-            tabStack(.books) { ServiceStubScreen(tab: .books) }
+            tabStack(.books) { BooksHomeScreen() }
         case .alisa:
             tabStack(.alisa) { ServiceStubScreen(tab: .alisa) }
         }

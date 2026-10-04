@@ -60,10 +60,7 @@ struct CinemaHomeScreen: View {
             if filter == 0 {
                 feed
             } else {
-                Text(Self.filters[filter])
-                    .plusHeadline(.xl)
-                    .foregroundStyle(Color.fillSix)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ServiceFilterStub(title: Self.filters[filter])
             }
         }
         .overlay(alignment: .top) {
@@ -148,39 +145,6 @@ struct CinemaHomeScreen: View {
 
 // MARK: - Карусели
 
-/// Каркас карусели макета (`carousel / Movies`): поля 8 сверху и снизу, шапка
-/// с шевроном, лента с полями 16. Полных списков в прототипе нет — заголовок
-/// не нажимается, как у секций экранов сущностей.
-///
-/// **Высота ленты — явная**, из размеров карточки. Своей `LazyHStack` здесь не меряла:
-/// все карусели экрана получали одну и ту же высоту (238), будто по оценке, а не по
-/// карточкам, — под «Смотреть дальше» (ей нужно ~182) стояла дыра в 56pt, а подписи
-/// постеров (нужно 246) срезались снизу (жалобы пользователя 2026-10-04, замер кадром).
-private struct CinemaCarousel<Content: View>: View {
-    let title: String
-    /// Высота карточки целиком — вместе с подписью.
-    let cardHeight: CGFloat
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(spacing: 0) {
-            EntitySectionHeader(title: title, lineHeight: CinemaLayout.headerLine)
-
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: CinemaLayout.cardGap) {
-                    content
-                }
-                .scrollTargetLayout()
-            }
-            .scrollIndicators(.hidden)
-            .scrollTargetBehavior(.viewAligned)
-            .contentMargins(.horizontal, CinemaLayout.side, for: .scrollContent)
-            .frame(height: cardHeight)
-        }
-        .padding(.vertical, CinemaLayout.sectionPad)
-    }
-}
-
 /// «Смотреть дальше» — фильмы, запущенные в киноплеере, свежие первыми.
 private struct CinemaHistoryRow: View {
     let entries: [WatchHistory.Entry]
@@ -188,7 +152,7 @@ private struct CinemaHistoryRow: View {
     var body: some View {
         // Название — строка, год с жанром — вторая, если хоть у кого-то он есть.
         let lines = entries.contains { $0.movie.subtitle != nil } ? 2 : 1
-        CinemaCarousel(
+        ServiceCarousel(
             title: "Смотреть дальше",
             cardHeight: CinemaLayout.historyHeight + CinemaLayout.captionGap
                 + CGFloat(lines) * CinemaLayout.captionLine
@@ -212,7 +176,7 @@ private struct CinemaPosterRow: View {
             .map { TileCaptionRuler.lines($0.title, width: CinemaLayout.posterWidth - CinemaLayout.captionTrailing) }
             .max() ?? 1
         let captionHeight = CGFloat(lines) * CinemaLayout.captionLine
-        CinemaCarousel(
+        ServiceCarousel(
             title: row.title,
             cardHeight: CinemaLayout.posterHeight + CinemaLayout.captionGap + captionHeight
         ) {

@@ -5,6 +5,16 @@ import UIKit
 enum ServiceTopNavLayout {
     /// Ряд под статус-баром: табы 40 и аватар 48 по центру
     static let rowHeight: CGFloat = 56
+
+    /// Верхняя безопасная зона — витрине «Моей волны» вертикаль макета отмеряется
+    /// от низа навигации, а лента у неё начинается от физического верха экрана.
+    static var topSafeArea: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets.top ?? 0
+    }
     static let side: CGFloat = 16
     static let tabHeight: CGFloat = 40
     static let tabPadding: CGFloat = 10
