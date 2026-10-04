@@ -44,6 +44,9 @@ struct SearchHit: Identifiable, Hashable, Codable {
     /// с самой обложки, пока секция ещё на скелетоне: карточка книги — по ширине
     /// обложки, и узнай её поздно — карусель переложилась бы на глазах.
     var artworkAspect: CGFloat? = nil
+    /// Второе название — оригинальное у фильма, когда на экране русское. Только для
+    /// ранжирования: запрос латиницей («interstellar») узнаёт «Интерстеллар».
+    var altTitle: String? = nil
 }
 
 extension Array where Element == SearchHit {
