@@ -108,15 +108,20 @@ final class CinemaCatalog {
         where candidateIDs.insert(movie.id).inserted {
             candidates.append(movie)
         }
-        let promoMovies = Array(candidates.shuffled(using: &rng).prefix(Self.promoLimit))
-
+        // Обложка слайда — кадр из самого фильма, тот же, что встанет в кавер карточки
+        // тайтла (правка пользователя 2026-10-04: не постер и не официальная картинка).
+        // Кадры — из запаса: карточка тайтла из запаса берёт те же самые, и первый кадр
+        // совпадает. Тайтл без кадров в промо не попадает.
         var builtPromos: [Promo] = []
-        for movie in promoMovies {
-            builtPromos.append(Self.promo(movie, stills: await MoviePool.shared.stills(for: movie.id)))
+        for movie in candidates.shuffled(using: &rng) {
+            guard builtPromos.count < Self.promoLimit else { break }
+            let stills = await MoviePool.shared.stills(for: movie.id)
+            guard stills.first?.url(size: .huge) != nil else { continue }
+            builtPromos.append(Self.promo(movie, stills: stills))
         }
 
         // Тайтл — один раз на экран: промо выше подборок, подборки — по порядку.
-        var used = Set(promoMovies.map(\.id))
+        var used = Set(builtPromos.compactMap { Int($0.id.dropFirst("kp-".count)) })
         var builtRows: [Row] = []
         for spec in Self.rowSpecs {
             let movies = (fetched[spec.slug] ?? [])
@@ -193,11 +198,10 @@ final class CinemaCatalog {
 
     // MARK: - Разбор
 
-    /// Промо держится на картинке и логотипе: без кадра слайд пуст, без логотипа
-    /// и описания — немой.
+    /// Промо держится на логотипе и описании: без них слайд немой. Кадр из фильма
+    /// проверяется отдельно — по запасу кадров (`loadIfNeeded`).
     nonisolated private static func isPromoEligible(_ movie: KinopoiskMovie) -> Bool {
-        movie.backdrop?.url != nil
-            && movie.logo?.url != nil
+        movie.logo?.url != nil
             && !(movie.shortDescription ?? "").isEmpty
     }
 
