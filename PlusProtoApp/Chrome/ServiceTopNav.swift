@@ -18,6 +18,8 @@ enum ServiceTopNavLayout {
     static let side: CGFloat = 16
     static let tabHeight: CGFloat = 40
     static let tabPadding: CGFloat = 10
+    /// Затухание ленты табов перед аватаром — под ним табы и уходят
+    static let avatarFade: CGFloat = 32
 
     /// Активный таб — стеклянная пилюля: фиолетовая заливка 50 %, розовое свечение
     /// снизу, бордер white 30 % и светлая внутренняя кромка сверху.
@@ -62,6 +64,11 @@ enum ServiceTopNavMotion {
     /// Подложка проявляется, как только лента заезжает под бар: в покое под ним
     /// чёрный фон, и затемнять там нечего.
     static let backdropRamp: CGFloat = 24
+    /// Лента табов: с этого хода палец её тянет (меньше — это тап по табу), отпущенная
+    /// доезжает по инерции, за краями тянется вполсилы
+    static let dragThreshold: CGFloat = 8
+    static let stripSettle: Animation = .smooth(duration: 0.45)
+    static let rubber: CGFloat = 0.35
 }
 
 /// Верхняя навигация сервисного таба — табы-фильтры слева, аватар справа (макет
@@ -85,7 +92,7 @@ struct ServiceTopNav: View {
         HStack(spacing: 0) {
             tabs
             avatarView
-                .padding(.horizontal, ServiceTopNavLayout.side)
+                .padding(.trailing, ServiceTopNavLayout.side)
         }
         .frame(height: ServiceTopNavLayout.rowHeight)
         .frame(maxWidth: .infinity)
@@ -98,18 +105,105 @@ struct ServiceTopNav: View {
 
     // MARK: Табы
 
-    /// Табы — ряд без прокрутки: у сервисов их два-три, и они влезают с запасом
-    /// (до аватара ~320pt). Горизонтальный `ScrollView` здесь не годится: у верхней
-    /// кромки безопасной зоны он растягивается в неё и рисует табы поверх статус-бара
-    /// (первый прогон 2026-10-04).
+    /// Табы — лента до самого аватара: не влезли — листаются пальцем и уходят под маску
+    /// перед ним (правка пользователя 2026-10-04: у Музыки четыре таба). Слева, когда
+    /// ленту сдвинули, — такое же затухание; в покое оно лежит на поле и пилюлю не трогает.
+    ///
+    /// **Без `ScrollView`.** Горизонтальный скролл у верхней кромки безопасной зоны
+    /// растягивался в неё: в первом прогоне табы встали поверх статус-бара, а с маской
+    /// и явной высотой исчезали вовсе — содержимое рисовалось выше своей рамки. Поэтому
+    /// лента — ряд со сдвигом за пальцем: с инерцией, резиновыми краями и выездом
+    /// выбранного таба из-под маски.
     private var tabs: some View {
-        HStack(spacing: 0) {
-            ForEach(filters.indices, id: \.self) { index in
-                tab(index)
+        Color.clear
+            .frame(height: ServiceTopNavLayout.tabHeight)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .leading) {
+                HStack(spacing: 0) {
+                    ForEach(filters.indices, id: \.self) { index in
+                        tab(index)
+                            .onGeometryChange(for: CGRect.self) { proxy in
+                                proxy.frame(in: .named(Self.stripSpace))
+                            } action: { frame in
+                                tabFrames[index] = frame
+                            }
+                    }
+                }
+                .fixedSize()
+                .padding(.leading, ServiceTopNavLayout.side)
+                .padding(.trailing, ServiceTopNavLayout.avatarFade)
+                .coordinateSpace(name: Self.stripSpace)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
+                .offset(x: stripOffset)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { visibleWidth = $0 }
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: ServiceTopNavLayout.side)
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: ServiceTopNavLayout.avatarFade)
+                }
+            }
+            .contentShape(.rect)
+            .gesture(stripDrag)
+            .onChange(of: selection) { _, index in
+                reveal(index)
+            }
+    }
+
+    private static let stripSpace = "serviceTopNavStrip"
+
+    /// Сдвиг ленты: 0 — в покое, отрицательный — пролистана влево.
+    @State private var stripOffset: CGFloat = 0
+    @State private var dragStart: CGFloat?
+    @State private var stripWidth: CGFloat = 0
+    @State private var visibleWidth: CGFloat = 0
+    @State private var tabFrames: [Int: CGRect] = [:]
+
+    /// Дальше этого лента не уходит: последний таб встаёт у маски.
+    private var minOffset: CGFloat {
+        min(0, visibleWidth - stripWidth)
+    }
+
+    private var stripDrag: some Gesture {
+        DragGesture(minimumDistance: ServiceTopNavMotion.dragThreshold)
+            .onChanged { value in
+                guard minOffset < 0 else { return }
+                let start = dragStart ?? stripOffset
+                dragStart = start
+                stripOffset = rubberBand(start + value.translation.width)
+            }
+            .onEnded { value in
+                guard let start = dragStart else { return }
+                dragStart = nil
+                let target = min(0, max(minOffset, start + value.predictedEndTranslation.width))
+                withAnimation(ServiceTopNavMotion.stripSettle) { stripOffset = target }
+            }
+    }
+
+    /// За краями лента тянется вполсилы — резина, а не стена.
+    private func rubberBand(_ offset: CGFloat) -> CGFloat {
+        if offset > 0 { return offset * ServiceTopNavMotion.rubber }
+        if offset < minOffset { return minOffset + (offset - minOffset) * ServiceTopNavMotion.rubber }
+        return offset
+    }
+
+    /// Выбранный таб, ушедший под маску или за левый край, выезжает на место.
+    private func reveal(_ index: Int) {
+        guard let frame = tabFrames[index], minOffset < 0 else { return }
+        let left = frame.minX + stripOffset
+        let right = frame.maxX + stripOffset
+        var target = stripOffset
+        if right > visibleWidth - ServiceTopNavLayout.avatarFade {
+            target -= right - (visibleWidth - ServiceTopNavLayout.avatarFade)
+        } else if left < ServiceTopNavLayout.side {
+            target += ServiceTopNavLayout.side - left
         }
-        .padding(.leading, ServiceTopNavLayout.side)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        target = min(0, max(minOffset, target))
+        guard target != stripOffset else { return }
+        withAnimation(ServiceTopNavMotion.select) { stripOffset = target }
     }
 
     private func tab(_ index: Int) -> some View {

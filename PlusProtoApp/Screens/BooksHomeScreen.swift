@@ -4,13 +4,13 @@ import UIKit
 /// Числа промо книжной витрины. Макета нет — раскладка по скриншоту Книг (задача
 /// пользователя 2026-10-04), книга — наша, в проекции (`BookFigure`).
 enum BooksPromoLayout {
-    /// Книга по центру: обложка 260 по высоте, пропорции не шире 0.72 — иначе
-    /// альбомный скан распёр бы слот
-    static let geometry = BookFigureGeometry(coverHeight: 260)
+    /// Книга по центру: обложка 290 по высоте (было 260 — «немного увеличить», правка
+    /// пользователя), пропорции не шире 0.72 — иначе альбомный скан распёр бы слот
+    static let geometry = BookFigureGeometry(coverHeight: 290)
     static let maxAspect: CGFloat = 0.72
-    /// Слот книги в ленте и зазор: соседи выглядывают из-за краёв на ~60
-    static let slot: CGFloat = 200
-    static let gap: CGFloat = 28
+    /// Слот книги в ленте и зазор: соседи выглядывают из-за краёв на ~50
+    static let slot: CGFloat = 222
+    static let gap: CGFloat = 24
     static var step: CGFloat { slot + gap }
     /// Соседи меньше и наклонены на 3° наружу — как обложки соседей в большом плеере
     /// музыки (`MusicPlayerLayout.neighborTilt`), угол — от расстояния до центра
@@ -22,6 +22,13 @@ enum BooksPromoLayout {
     static var carouselHeight: CGFloat {
         carouselTop + geometry.frameSize(coverWidth: 0).height + carouselBottom
     }
+    /// Описание под книгой — Text M в три строки, по центру; место под три строки
+    /// держится всегда, чтобы кнопка не прыгала от книги к книге
+    static let blurbLines = 3
+    static var blurbHeight: CGFloat { PlusTextSize.textM.lineHeight * CGFloat(blurbLines) }
+    static let blurbSide: CGFloat = 32
+    static let blurbToButton: CGFloat = 20
+    static let blurbFade: Animation = .easeInOut(duration: 0.25)
     static let buttonHeight: CGFloat = 48
     static let buttonPadding: CGFloat = 32
     static let buttonBottom: CGFloat = 24
@@ -144,10 +151,31 @@ private struct BooksPromoCarousel: View {
     var body: some View {
         VStack(spacing: 0) {
             carousel
+            blurb
+                .padding(.horizontal, BooksPromoLayout.blurbSide)
+                .padding(.bottom, BooksPromoLayout.blurbToButton)
             readButton
                 .padding(.bottom, BooksPromoLayout.buttonBottom)
         }
         .background(alignment: .bottom) { backdrop }
+    }
+
+    /// Коротко о текущей книге — сменяется кроссфейдом вместе с фоном.
+    private var blurb: some View {
+        ZStack(alignment: .top) {
+            if let current {
+                Text(current.blurb ?? current.author)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillFour)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(BooksPromoLayout.blurbLines)
+                    .frame(maxWidth: .infinity)
+                    .id(current.id)
+                    .transition(.opacity)
+            }
+        }
+        .frame(height: BooksPromoLayout.blurbHeight, alignment: .top)
+        .animation(BooksPromoLayout.blurbFade, value: current?.id)
     }
 
     private var carousel: some View {
@@ -159,8 +187,11 @@ private struct BooksPromoCarousel: View {
                     bookView(book, isCurrent: index == page)
                         .frame(width: BooksPromoLayout.slot)
                         .visualEffect { content, proxy in
-                            // Доля пути до соседнего места: 0 по центру, ±1 у соседей.
-                            let mid = proxy.frame(in: .scrollView(axis: .horizontal)).midX
+                            // Доля пути до соседнего места: 0 по центру экрана, ±1 у соседей.
+                            // Кадр — в координатах экрана: в координатах скролла он отсчитан
+                            // от поля ленты, и самая крупная книга стояла правее центра на
+                            // это поле (жалоба пользователя 2026-10-04).
+                            let mid = proxy.frame(in: .global).midX
                             let t = max(-1, min(1, (mid - PlusMetrics.designWidth / 2) / BooksPromoLayout.step))
                             return content
                                 .scaleEffect(1 - BooksPromoLayout.sideShrink * abs(t))
@@ -224,7 +255,8 @@ private struct BooksPromoCarousel: View {
     /// промо, затемнённая и уходящая в чёрный. Смена книги — кроссфейдом.
     private var backdrop: some View {
         let height = ServiceTopNavLayout.topSafeArea + CinemaLayout.contentTop
-            + BooksPromoLayout.carouselHeight + BooksPromoLayout.buttonHeight + BooksPromoLayout.buttonBottom
+            + BooksPromoLayout.carouselHeight + BooksPromoLayout.blurbHeight + BooksPromoLayout.blurbToButton
+            + BooksPromoLayout.buttonHeight + BooksPromoLayout.buttonBottom
         return ZStack {
             if let current {
                 SkeletonArtwork(source: current.cover)
@@ -268,6 +300,13 @@ private struct BooksPromoSkeleton: View {
                     }
                 }
                 .clipped()
+            VStack(spacing: 8) {
+                SkeletonBar(width: 280)
+                SkeletonBar(width: 220)
+            }
+            .frame(height: BooksPromoLayout.blurbHeight, alignment: .top)
+            .padding(.top, 4)
+            .padding(.bottom, BooksPromoLayout.blurbToButton)
             Capsule()
                 .fill(PlusSkeleton.fill)
                 .frame(width: 180, height: BooksPromoLayout.buttonHeight)

@@ -671,9 +671,10 @@ final class ShowcaseCatalog {
 
 // MARK: - Помощники
 
-private extension String {
+extension String {
     /// Подпись карточки: у макета под неё отведено 3–4 строки, а описания в API
     /// бывают на абзац. Режем по границе предложения, иначе — по слову.
+    /// Общая с описанием в промо главной Книг.
     func showcaseCaption(maxCharacters: Int) -> String {
         let flat = replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)

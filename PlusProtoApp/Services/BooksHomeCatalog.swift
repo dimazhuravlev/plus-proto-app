@@ -22,6 +22,8 @@ final class BooksHomeCatalog {
         let cover: ArtworkSource
         /// Пропорции обложки — ширина книги в проекции идёт от них. `nil` — по умолчанию.
         let aspect: CGFloat?
+        /// Коротко о книге — под книгой в промо, в несколько строк. `nil` — описания нет.
+        var blurb: String? = nil
 
         var route: EntityRoute {
             .book(EntityRef(id: id, title: title, subtitle: author, artwork: cover))
@@ -122,8 +124,26 @@ final class BooksHomeCatalog {
             title: volume.title,
             author: volume.author,
             cover: volume.coverURL.map { ArtworkSource.remote($0) } ?? .asset("mockBookTechno"),
-            aspect: aspects[volume.id]
+            aspect: aspects[volume.id],
+            blurb: blurb(volume.volumeInfo.description ?? volume.volumeInfo.subtitle)
         )
+    }
+
+    /// Описание Google Books — HTML (`<p>`, `<br>`, `<b>`) с сущностями: под книгой нужен
+    /// плоский текст в три строки, обрезанный по предложению.
+    private static let blurbLength = 150
+
+    private static func blurb(_ html: String?) -> String? {
+        guard let html, !html.isEmpty else { return nil }
+        var text = html.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+        for (entity, symbol) in [
+            ("&nbsp;", " "), ("&quot;", "\""), ("&laquo;", "«"), ("&raquo;", "»"),
+            ("&mdash;", "—"), ("&ndash;", "–"), ("&hellip;", "…"), ("&#39;", "'"), ("&amp;", "&"),
+        ] {
+            text = text.replacingOccurrences(of: entity, with: symbol)
+        }
+        let caption = text.showcaseCaption(maxCharacters: Self.blurbLength)
+        return caption.isEmpty ? nil : caption
     }
 
     /// Пропорции обложек — по самим картинкам, с потолком ожидания (приём
@@ -163,7 +183,14 @@ final class BooksHomeCatalog {
     private func applyMocks() {
         let covers = ["mockBookTechno", "mockBookMini", "mockChipBookCover", "mockBookIsometric"]
         func mockBook(_ id: String, _ title: String, _ author: String, _ index: Int) -> Book {
-            Book(id: "mock-book-\(id)", title: title, author: author, cover: .asset(covers[index % covers.count]), aspect: nil)
+            Book(
+                id: "mock-book-\(id)",
+                title: title,
+                author: author,
+                cover: .asset(covers[index % covers.count]),
+                aspect: nil,
+                blurb: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику"
+            )
         }
         promos = [
             mockBook("techno", "Технофеодализм", "Янис Варуфакис", 0),

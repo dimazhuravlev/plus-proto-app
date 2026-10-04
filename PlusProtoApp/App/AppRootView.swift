@@ -18,8 +18,8 @@ struct AppRootView: View {
     /// Главная Кинопоиска — по той же причине, что каталог витрины: экран таба
     /// размонтируется на переключении, а лента собирается раз за процесс.
     @State private var cinema = CinemaCatalog()
-    /// Главные Музыки и Книг — так же, по каталогу на таб (2026-10-04).
-    @State private var music = MusicHomeCatalog()
+    /// Главная Книг — так же (2026-10-04). У Музыки каталога нет: «Моя волна»
+    /// по скриншоту — шейдер, название и кнопка, данных ей не нужно.
     @State private var books = BooksHomeCatalog()
     /// Заставка на запуске. `@State` корня, поэтому показывается ровно один раз
     /// за процесс: возврат из фона её не воскрешает.
@@ -98,7 +98,6 @@ struct AppRootView: View {
             // После витрины, а не вместе с ней: промо берётся из запаса, который та
             // как раз пополняет, — и заставку это не держит.
             await cinema.loadIfNeeded()
-            await music.loadIfNeeded()
             await books.loadIfNeeded()
         }
         // Системное поднятие над клавиатурой отключаем на корне: иначе SwiftUI поднимает
@@ -125,7 +124,6 @@ struct AppRootView: View {
         .environment(search)
         .environment(catalog)
         .environment(cinema)
-        .environment(music)
         .environment(books)
         .environment(\.stackZoomNamespace, stackZoom)
     }
