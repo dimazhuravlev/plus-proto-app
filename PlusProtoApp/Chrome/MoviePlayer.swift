@@ -571,7 +571,7 @@ struct MoviePlayerView: View {
     // MARK: Действия
 
     private func close() {
-        actionBar.closeContentPlayer(moviePosition: clock.livePosition)
+        actionBar.closeContentPlayer(moviePosition: clock.livePosition, movieRuntime: clock.duration)
     }
 
     private func toggleFill() {

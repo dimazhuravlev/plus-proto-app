@@ -388,7 +388,12 @@ final class ActionBarState {
         if item.position == nil {
             item.position = movie?.id == item.id ? movie?.position : watchHistory.position(for: item.id)
         }
-        watchHistory.record(item)
+        // Хронометраж — тоже из истории, если вход его не знает (чип бара, витрина):
+        // иначе плеер шёл бы по числу макета, а карточка «Смотреть дальше» — по
+        // настоящему, и полосы разошлись бы.
+        if item.runtime == nil {
+            item.runtime = watchHistory.runtime(for: item.id)
+        }
         deferResume(.movie(item))
         contentPlayer = .movie(item)
     }
@@ -406,7 +411,9 @@ final class ActionBarState {
     /// Смена бара под запущенный фильм или книгу, отложенная до конца выезда плеера
     /// (правка пользователя 2026-10-04): прежде бар морфился в чип на глазах, пока
     /// киноплеер или читалка ещё ехали снизу. Теперь он меняется под плеером, когда
-    /// тот закрыл экран, — на закрытии плеера бар уже в новом состоянии.
+    /// тот закрыл экран, — на закрытии плеера бар уже в новом состоянии. Так же
+    /// и «Смотреть дальше» на главной Кинопоиска (правка тем же днём): фильм встаёт
+    /// в карусель под плеером, а не переставляет её в момент тапа.
     private enum PendingResume {
         case movie(MovieInProgress)
         case book(BookInProgress)
@@ -441,16 +448,22 @@ final class ActionBarState {
         guard let pending = pendingResume else { return }
         pendingResume = nil
         switch pending {
-        case .movie(let item): resumeMovie(item)
-        case .book(let item): resumeBook(item)
+        case .movie(let item):
+            watchHistory.record(item)
+            resumeMovie(item)
+        case .book(let item):
+            resumeBook(item)
         }
     }
 
     /// Закрыть киноплеер или читалку.
     ///
-    /// - Parameter moviePosition: где остановился фильм — чип бара продолжит с этого
-    ///   места. Нужен только киноплееру.
-    func closeContentPlayer(moviePosition: TimeInterval? = nil) {
+    /// - Parameters:
+    ///   - moviePosition: где остановился фильм — чип бара продолжит с этого места.
+    ///     Нужен только киноплееру.
+    ///   - movieRuntime: длина таймлайна, по которому шёл плеер, — с ней карточка
+    ///     «Смотреть дальше» показывает ту же полосу просмотра.
+    func closeContentPlayer(moviePosition: TimeInterval? = nil, movieRuntime: TimeInterval? = nil) {
         // Закрыли раньше, чем плеер доехал, — бар догоняет запуск сейчас: позиция
         // фильма пишется в его чип.
         applyPendingResume()
@@ -460,7 +473,7 @@ final class ActionBarState {
                 movie?.position = moviePosition
             }
             if let moviePosition {
-                watchHistory.update(id: item.id, position: moviePosition)
+                watchHistory.update(id: item.id, position: moviePosition, runtime: movieRuntime)
             }
         case .music:
             break

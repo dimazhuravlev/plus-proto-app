@@ -80,11 +80,20 @@ final class WatchHistory {
         }
     }
 
-    /// Плеер закрыли на этой позиции.
-    func update(id: String, position: TimeInterval) {
+    /// Плеер закрыли на этой позиции. Хронометраж — тот, по которому шёл его таймлайн:
+    /// без своего у фильма плеер берёт число макета, и карточка «Смотреть дальше»
+    /// обязана показать ту же полосу, что плеер (правка пользователя 2026-10-04: прежде
+    /// у такого фильма полосы на карточке не было вовсе).
+    func update(id: String, position: TimeInterval, runtime: TimeInterval? = nil) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].movie.position = position
+        if let runtime, runtime > 0 { entries[index].movie.runtime = runtime }
         entries[index].updatedAt = .now
+    }
+
+    /// Хронометраж, по которому фильм уже шёл, — следующий запуск продолжит по нему же.
+    func runtime(for id: String) -> TimeInterval? {
+        entries.first { $0.id == id }?.movie.runtime
     }
 
     /// Где остановились в прошлый раз — продолжить с этого места.
