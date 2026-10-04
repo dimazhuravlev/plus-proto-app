@@ -241,7 +241,7 @@ struct ServiceTopNav: View {
         let isActive = index == selection
         return Button {
             guard !isActive, !isDraggingStrip else { return }
-            UISelectionFeedbackGenerator().selectionChanged()
+            TabBarMotion.tapHaptic()
             withAnimation(ServiceTopNavMotion.select) { selection = index }
         } label: {
             ZStack {

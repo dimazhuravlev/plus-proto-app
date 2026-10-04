@@ -30,7 +30,7 @@ enum BooksPromoLayout {
     static var blurbHeight: CGFloat { PlusTextSize.textM.lineHeight * CGFloat(blurbLines) }
     static let blurbSide: CGFloat = 32
     static let blurbToButton: CGFloat = 20
-    static let blurbFade: Animation = .easeInOut(duration: 0.25)
+    static let blurbFade: Animation = .smooth(duration: 0.3)
     static let buttonHeight: CGFloat = 48
     static let buttonPadding: CGFloat = 32
     static let buttonBottom: CGFloat = 24
@@ -191,7 +191,8 @@ private struct BooksPromoCarousel: View {
         .background(alignment: .bottom) { backdrop }
     }
 
-    /// Коротко о текущей книге — сменяется кроссфейдом вместе с фоном.
+    /// Коротко о текущей книге — сменяется вместе с фоном, кроссфейдом через блюр
+    /// (системный `.blurReplace`, правка пользователя 2026-10-04).
     private var blurb: some View {
         ZStack(alignment: .top) {
             if let current {
@@ -202,7 +203,7 @@ private struct BooksPromoCarousel: View {
                     .lineLimit(BooksPromoLayout.blurbLines)
                     .frame(maxWidth: .infinity)
                     .id(current.id)
-                    .transition(.opacity)
+                    .transition(.blurReplace)
             }
         }
         .frame(height: BooksPromoLayout.blurbHeight, alignment: .top)

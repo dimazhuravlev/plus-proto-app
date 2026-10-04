@@ -20,6 +20,12 @@ enum TabBarMotion {
 
     /// Хаптика тапа по табу — карта MusicPlayer (nav-chrome §11): impact medium
     static let tapHapticIntensity: CGFloat = 0.7
+
+    /// Отклик тапа по табу. Тот же — у верхних табов витрин (`ServiceTopNav`, правка
+    /// пользователя 2026-10-04: «такие же, как в табах снизу»).
+    @MainActor static func tapHaptic() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: tapHapticIntensity)
+    }
 }
 
 /// Числа таббара, которых нет в `Tokens.swift`: каждое встречается ровно здесь
@@ -117,8 +123,7 @@ struct TabBarView: View {
     }
 
     private func select(_ tab: AppTab) {
-        UIImpactFeedbackGenerator(style: .medium)
-            .impactOccurred(intensity: TabBarMotion.tapHapticIntensity)
+        TabBarMotion.tapHaptic()
         // Тап по своему табу — домой, к его контенту: стек уходит на корень, и поиск,
         // из которого сюда пришли, на корне не встаёт (правка пользователя 2026-10-03).
         // Прежде поп до корня читался возвратом из карточки, и вместо витрины вставала
