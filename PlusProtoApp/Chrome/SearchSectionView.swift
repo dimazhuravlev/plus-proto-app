@@ -32,6 +32,8 @@ struct SearchSectionView: View {
     /// Текст выдачи, на который выбран фильтр: новый текст сбрасывает фильтр на «Всю
     /// музыку», а пропавшая на миг выдача (скелетон) — нет.
     @State private var filterText: String?
+    /// Фиолетовая капсула активного чипса переезжает с чипса на чипс.
+    @Namespace private var chipPill
 
     private enum Layout {
         static let side: CGFloat = 16
@@ -106,6 +108,11 @@ struct SearchSectionView: View {
                                 PinnedChipsBackdrop()
                                     .opacity(NavBarRamp.progress(scrolled, start: 0, length: Layout.backdropRamp))
                             }
+                            // Оттяг ленты — как у навигации витрин: ряд едет за ним вчетверо
+                            // медленнее и упирается в мягкий потолок (правка пользователя
+                            // 2026-10-04). Заголовок секции при оттяге едет вместе с лентой —
+                            // сдвиг возвращает разницу.
+                            .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
                     }
                 }
             }
@@ -207,8 +214,8 @@ struct SearchSectionView: View {
             ScrollView(.horizontal) {
                 HStack(spacing: Layout.chipGap) {
                     ForEach(SearchFilter.options(for: kind), id: \.self) { option in
-                        SearchFilterChip(title: option.title, isActive: option == filter) {
-                            filter = option
+                        SearchFilterChip(title: option.title, isActive: option == filter, pill: chipPill) {
+                            select(option)
                         }
                         .id(option)
                     }
@@ -225,6 +232,14 @@ struct SearchSectionView: View {
                 }
             }
         }
+    }
+
+    /// Тап по чипсу — как по табу навигации витрин: хаптик таббара, капсула переезжает
+    /// той же пружиной (правка пользователя 2026-10-04).
+    private func select(_ option: SearchFilter) {
+        guard option != filter else { return }
+        TabBarMotion.tapHaptic()
+        withAnimation(ServiceTopNavMotion.select) { filter = option }
     }
 
     @ViewBuilder
@@ -463,10 +478,13 @@ private enum SearchSectionColors {
 }
 
 /// Чипс фильтра — `chips-row` макета: 15/20 Semibold, поля 16 × 10, капсула.
-/// Активный — фиолетовый с подсветкой снизу, остальные — стекло кнопок.
+/// Активный — фиолетовый с подсветкой снизу, остальные — заливка кнопок. Внутри обоих —
+/// размытие фона, как у пилюли навигации витрин (правка пользователя 2026-10-04).
 private struct SearchFilterChip: View {
     let title: String
     let isActive: Bool
+    /// Общий у ряда: фиолетовая капсула переезжает с чипса на чипс.
+    let pill: Namespace.ID
     let action: () -> Void
 
     /// Фиолетовый активного чипса — #A332FF макета, общий с лейблом тайтла.
@@ -479,36 +497,22 @@ private struct SearchFilterChip: View {
                 .foregroundStyle(isActive ? Color.fillOne : Color.fillFour)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+                // Фиолетовая капсула — над стеклом, под текстом. Переезжает на выбранный
+                // чипс, как пилюля навигации витрин (`ServiceTopNav`); общей обрезки
+                // у чипса нет — иначе в пути её срезало бы по его кромке.
                 .background {
                     if isActive {
-                        ZStack {
-                            Capsule().fill(
-                                Self.accent.opacity(0.5)
-                                    .shadow(.inner(color: Self.accent.opacity(0.5), radius: 1, y: 1))
-                            )
-                            // Подсветка снизу — эллипс макета: центр под нижней кромкой
-                            // (0.505 ширины, 1.15 высоты), радиусы 0.696 ширины и 0.8875 высоты.
-                            GeometryReader { proxy in
-                                let size = proxy.size
-                                let center = UnitPoint(x: 0.505, y: 1.15)
-                                RadialGradient(
-                                    colors: [Self.accent.opacity(0.4), Self.accent.opacity(0)],
-                                    center: center,
-                                    startRadius: 0,
-                                    endRadius: 0.8875 * size.height
-                                )
-                                .scaleEffect(
-                                    x: (0.696 * size.width) / max(0.8875 * size.height, 1),
-                                    y: 1,
-                                    anchor: center
-                                )
-                            }
-                        }
-                    } else {
-                        Color.buttonsSecondary
+                        activeFill
+                            .matchedGeometryEffect(id: "activeChip", in: pill)
                     }
                 }
-                .clipShape(Capsule())
+                .background {
+                    ZStack {
+                        BackdropBlurView(radius: ServiceTopNavLayout.pillBlur)
+                        Color.buttonsSecondary.opacity(isActive ? 0 : 1)
+                    }
+                    .clipShape(Capsule())
+                }
                 .overlay {
                     Capsule().strokeBorder(
                         Color.white.opacity(isActive ? 0.3 : 0.15),
@@ -519,6 +523,34 @@ private struct SearchFilterChip: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    /// Заливка активного: фиолетовый 50 % с внутренней тенью и подсветкой снизу.
+    private var activeFill: some View {
+        ZStack {
+            Capsule().fill(
+                Self.accent.opacity(0.5)
+                    .shadow(.inner(color: Self.accent.opacity(0.5), radius: 1, y: 1))
+            )
+            // Подсветка снизу — эллипс макета: центр под нижней кромкой
+            // (0.505 ширины, 1.15 высоты), радиусы 0.696 ширины и 0.8875 высоты.
+            GeometryReader { proxy in
+                let size = proxy.size
+                let center = UnitPoint(x: 0.505, y: 1.15)
+                RadialGradient(
+                    colors: [Self.accent.opacity(0.4), Self.accent.opacity(0)],
+                    center: center,
+                    startRadius: 0,
+                    endRadius: 0.8875 * size.height
+                )
+                .scaleEffect(
+                    x: (0.696 * size.width) / max(0.8875 * size.height, 1),
+                    y: 1,
+                    anchor: center
+                )
+            }
+        }
+        .clipShape(Capsule())
     }
 }
 

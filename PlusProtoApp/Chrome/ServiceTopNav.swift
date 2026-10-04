@@ -75,15 +75,21 @@ enum ServiceTopNavMotion {
     /// пользователя 2026-10-04: сначала 0.4 без потолка — «слишком далеко уходит»)
     static let pullFollow: CGFloat = 0.25
     static let pullLimit: CGFloat = 24
+
+    /// Сдвиг ряда за оттягом ленты: четверть хода с мягким потолком — дальше ряд
+    /// почти стоит. Общий с чипсами полной выдачи поиска (`SearchSectionView`).
+    static func pullShift(for scrollOffset: CGFloat) -> CGFloat {
+        let raw = max(0, -scrollOffset) * pullFollow
+        return raw / (1 + raw / pullLimit)
+    }
 }
 
 /// Верхняя навигация сервисного таба — табы-фильтры слева, аватар справа (макет
 /// `2455:75953`). Общая: главная Кинопоиска — первая, дальше «Музыка» и «Книги»
 /// со своими фильтрами (задача пользователя 2026-10-04).
 ///
-/// Стоит поверх ленты и не уезжает с ней. Под ней — та же подложка, что у навбаров
-/// экранов сущностей (`NavBarBackdrop`: затемнение и прогрессивный блюр), она
-/// проявляется по скроллу ленты.
+/// Стоит поверх ленты и не уезжает с ней. Под ней — прогрессивный блюр без
+/// затемнения, он проявляется по скроллу ленты.
 struct ServiceTopNav: View {
     let filters: [String]
     @Binding var selection: Int
@@ -102,7 +108,7 @@ struct ServiceTopNav: View {
         }
         .frame(height: ServiceTopNavLayout.rowHeight)
         // Сдвиг — только у ряда: подложка стоит на месте, а она в покое прозрачна.
-        .offset(y: pullShift)
+        .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
             // Только прогрессивный блюр, без затемнения: тёмный градиент подложки
@@ -117,13 +123,6 @@ struct ServiceTopNav: View {
             .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp))
             .ignoresSafeArea(edges: .top)
         }
-    }
-
-    /// Сдвиг ряда за оттягом ленты: четверть хода с мягким потолком — дальше ряд
-    /// почти стоит.
-    private var pullShift: CGFloat {
-        let raw = max(0, -scrollOffset) * ServiceTopNavMotion.pullFollow
-        return raw / (1 + raw / ServiceTopNavMotion.pullLimit)
     }
 
     // MARK: Табы
