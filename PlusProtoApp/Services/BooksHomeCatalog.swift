@@ -81,6 +81,11 @@ final class BooksHomeCatalog {
         }
         #endif
 
+        // Каждый холодный запуск — свой набор книг тем и своё промо (правка пользователя
+        // 2026-10-04: витрина повторялась из запуска в запуск — книги брались в порядке
+        // ответа API). Зерно случайное на запуск, `-debugFrozenFeed` его фиксирует.
+        // Авторы тем те же: запросы — с диска `URLCache`, сеть не трогается.
+        var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.booksHome)
         var built: [(id: String, title: String, volumes: [GoogleBook])] = []
         var seenIDs = Set<String>()
         for spec in Self.rowSpecs {
@@ -97,7 +102,7 @@ final class BooksHomeCatalog {
                           !seenIDs.contains(volume.id)
                     else { return false }
                     return seenTitles.insert(volume.title.lowercased()).inserted
-                })
+                }.shuffled(using: &rng))
             }
             // Авторы вперемешку — по книге от каждого по очереди.
             var mixed: [GoogleBook] = []
@@ -117,8 +122,10 @@ final class BooksHomeCatalog {
         }
         let aspects = await Self.aspects(of: all)
 
-        // Промо — первая книга каждой темы; в своей карусели её уже нет.
+        // Промо — первая книга каждой темы (после перемешивания — случайная); в своей
+        // карусели её уже нет. Порядок тем в промо — тоже свой на запуск.
         promos = built.compactMap { $0.volumes.first.map { Self.book($0, aspects) } }
+            .shuffled(using: &rng)
         rows = built.map { row in
             Row(id: row.id, title: row.title, books: row.volumes.dropFirst().map { Self.book($0, aspects) })
         }
