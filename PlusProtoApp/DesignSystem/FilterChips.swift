@@ -17,16 +17,14 @@ enum FilterChipsMotion {
 }
 
 /// Ряд чипсов-фильтров — общий для полной выдачи музыки в поиске и полных списков
-/// коллекции «Моё» (2026-10-04): лента вбок, выбранный чипс доезжает в центр,
-/// фиолетовая капсула переезжает за выбором пружиной навигации витрин, тап — хаптик
-/// таббара. Ведёт себя как верхняя навигация витрин (`ServiceTopNav`).
+/// коллекции «Моё» (2026-10-04) — фильтры второго уровня: лента вбок, выбранный чипс
+/// доезжает в центр, тап — хаптик таббара. Активная капсула **не переезжает** с чипса
+/// на чипс, как пилюля верхней навигации витрин: прежняя гаснет, новая загорается на
+/// месте (правка пользователя 2026-10-04).
 struct FilterChipsRow<Option: Hashable>: View {
     let options: [Option]
     @Binding var selection: Option
     let title: (Option) -> String
-
-    /// Фиолетовая капсула активного чипса переезжает с чипса на чипс.
-    @Namespace private var pill
 
     /// Сколько ждать раскладки ленты, прежде чем ставить стартовый чипс в центр.
     private static var layoutDelay: Duration { .milliseconds(50) }
@@ -36,7 +34,7 @@ struct FilterChipsRow<Option: Hashable>: View {
             ScrollView(.horizontal) {
                 HStack(spacing: FilterChipsLayout.gap) {
                     ForEach(options, id: \.self) { option in
-                        FilterChip(title: title(option), isActive: option == selection, pill: pill) {
+                        FilterChip(title: title(option), isActive: option == selection) {
                             select(option)
                         }
                         .id(option)
@@ -69,8 +67,8 @@ struct FilterChipsRow<Option: Hashable>: View {
         }
     }
 
-    /// Тап по чипсу — как по табу навигации витрин: хаптик таббара, капсула переезжает
-    /// той же пружиной (правка пользователя 2026-10-04).
+    /// Тап по чипсу — как по табу навигации витрин: хаптик таббара; смена капсулы —
+    /// той же пружиной 0.3 с, но прозрачностью на месте (правки пользователя 2026-10-04).
     private func select(_ option: Option) {
         guard option != selection else { return }
         TabBarMotion.tapHaptic()
@@ -80,16 +78,17 @@ struct FilterChipsRow<Option: Hashable>: View {
 
 /// Чипс фильтра — `chips-row` макета: 15/20 Semibold, поля 16 × 10, капсула.
 /// Активный — фиолетовый с подсветкой снизу, остальные — заливка кнопок. Внутри обоих —
-/// размытие фона, как у пилюли навигации витрин (правка пользователя 2026-10-04).
+/// размытие фона, как у пилюли навигации витрин; бордер у обоих — 0.67 × белый 8 %
+/// (правки пользователя 2026-10-04).
 private struct FilterChip: View {
     let title: String
     let isActive: Bool
-    /// Общий у ряда: фиолетовая капсула переезжает с чипса на чипс.
-    let pill: Namespace.ID
     let action: () -> Void
 
     /// Фиолетовый активного чипса — #A332FF макета, общий с лейблом тайтла.
     private static let accent = Color.moviesAccent
+    /// Бордер капсулы — 0.67, белый 8 % (`fillNine`), у активного и неактивного.
+    private static let borderWidth: CGFloat = 0.67
 
     var body: some View {
         Button(action: action) {
@@ -98,14 +97,11 @@ private struct FilterChip: View {
                 .foregroundStyle(isActive ? Color.fillOne : Color.fillFour)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                // Фиолетовая капсула — над стеклом, под текстом. Переезжает на выбранный
-                // чипс, как пилюля навигации витрин (`ServiceTopNav`); общей обрезки
-                // у чипса нет — иначе в пути её срезало бы по его кромке.
+                // Фиолетовая капсула — над стеклом, под текстом. Своя у каждого чипса
+                // и всегда в дереве: смена — прозрачностью на месте, без переезда.
                 .background {
-                    if isActive {
-                        activeFill
-                            .matchedGeometryEffect(id: "activeChip", in: pill)
-                    }
+                    activeFill
+                        .opacity(isActive ? 1 : 0)
                 }
                 .background {
                     ZStack {
@@ -115,10 +111,7 @@ private struct FilterChip: View {
                     .clipShape(Capsule())
                 }
                 .overlay {
-                    Capsule().strokeBorder(
-                        Color.white.opacity(isActive ? 0.3 : 0.15),
-                        lineWidth: PlusMetrics.hairline
-                    )
+                    Capsule().strokeBorder(Color.fillNine, lineWidth: Self.borderWidth)
                 }
                 .contentShape(Capsule())
         }
