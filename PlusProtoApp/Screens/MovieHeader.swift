@@ -90,7 +90,7 @@ struct MovieHeader<Actions: View>: View {
     /// плавно проявляется либо png, либо текст.
     let logoResolved: Bool
     /// Сколько уже прокручено. Приходит снаружи: читать свой размер и позицию вью,
-    /// от которых зависит её же раскладка, в проекте запрещено (DECISIONS).
+    /// от которых зависит её же раскладка, в проекте запрещено (CLAUDE.md).
     let scrollOffset: CGFloat
     @ViewBuilder var actions: () -> Actions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

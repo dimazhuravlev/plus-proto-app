@@ -5,7 +5,7 @@ enum GlassIconButtonConfig {
     /// Диаметр круга
     static let size = PlusMetrics.circleButton
     /// Бокс глифа: padding 10 внутри круга 40. Ассет рисуется ровно в этот бокс —
-    /// собственные поля глифа уже внутри холста, см. DECISIONS про единый холст 16×16.
+    /// собственные поля глифа уже внутри его единого холста 16×16.
     static let iconBox: CGFloat = 20
     /// Насколько кнопка проседает под пальцем — как в MusicPlayer (BottomBarV2)
     static let pressedScale: CGFloat = 0.92
@@ -13,7 +13,7 @@ enum GlassIconButtonConfig {
 }
 
 /// Круглая стеклянная кнопка 40×40: ассет заполняет бокс 20×20.
-/// По решению из DECISIONS логики по тапу пока нет — колбэк опционален.
+/// Колбэк опционален: у части кнопок логики по тапу пока нет.
 struct GlassIconButton: View {
     let icon: String
     var accessibilityTitle: String = ""

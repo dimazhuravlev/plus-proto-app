@@ -124,7 +124,7 @@ struct EntityNavBar<Trailing: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // Подложка выше бара и прижата к его низу — так она накрывает статус-бар,
         // не заставляя бар лезть под safe area. Размер бара при этом ни на что
-        // не влияет: высота подложки — константа, а не замер (запрет из DECISIONS).
+        // не влияет: высота подложки — константа, а не замер (запрет из CLAUDE.md).
         .background(alignment: .bottom) { backdrop }
     }
 
