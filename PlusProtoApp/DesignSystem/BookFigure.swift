@@ -23,12 +23,14 @@ struct BookFigureGeometry {
 
     private var scale: CGFloat { coverHeight / Self.referenceHeight }
 
-    /// Блок страниц выглядывает из-за обложки на 2 сверху и на 3 справа (на эталоне).
+    /// Блок страниц выглядывает из-за обложки на 2 сверху и на 2 справа (на эталоне).
+    /// Справа было 3, как в макете; на большой книге лишний пункт рос до ~2.5 и выступ
+    /// читался кривым — правый теперь равен верхнему (правка пользователя 2026-10-04).
     var pagesTop: CGFloat { 2 * scale }
-    var pagesRight: CGFloat { 3 * scale }
-    /// Сколько из этих 3 книга забирает в свою ширину — `pr-[2px]` макета;
-    /// последний пункт уходит в зазор до соседа.
-    var pagesInset: CGFloat { 2 * scale }
+    var pagesRight: CGFloat { pagesTop }
+    /// Сколько подложки книга забирает в свою ширину — `pr-[2px]` макета: теперь это
+    /// весь правый выступ, в зазор до соседа ничего не уходит.
+    var pagesInset: CGFloat { pagesRight }
     var coverRadius: CGFloat { 8 * scale }
     /// Скругление серой подложки — 10, у обложки 8 (правка пользователя 2026-10-03).
     var pagesRadius: CGFloat { 10 * scale }
@@ -43,7 +45,7 @@ struct BookFigureGeometry {
         return (coverHeight * clamped).rounded()
     }
 
-    /// Кадр книги: блок страниц сверху, без последнего пункта подложки справа.
+    /// Кадр книги: обложка и выступы подложки — сверху и справа.
     func frameSize(coverWidth: CGFloat) -> CGSize {
         CGSize(width: coverWidth + pagesInset, height: coverHeight + pagesTop)
     }
@@ -92,8 +94,7 @@ struct BookFigure<Cover: View>: View {
                 }
                 .padding(.top, geometry.pagesTop)
         }
-        // Кадр книги — без последнего пункта подложки справа: он уходит в зазор
-        // до соседней карточки, как в макете.
+        // Кадр книги — вместе с правым выступом подложки (`frameSize`).
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
     }
 }

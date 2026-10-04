@@ -106,8 +106,10 @@ final class PersonStore {
         explicitAlbums = Set(picked.filter { $0.explicitLyrics == true }.map { "album-\($0.id)" })
         albums = picked
             .map { album in
+                // Без бандленного фолбэка: пока обложка едет, под ней скелетон, а не
+                // моковый чужой альбом (жалоба пользователя 2026-10-04).
                 let cover = (album.coverXl ?? album.coverBig ?? album.coverMedium)?.deezerUpscaled
-                    .map { ArtworkSource.remote($0, fallback: "mockAlbumCover") }
+                    .map { ArtworkSource.remote($0) }
                 // Семантика `EntityRef` альбома — витринная: `title` — исполнитель.
                 return SearchHit(
                     id: "album-\(album.id)",
@@ -119,7 +121,7 @@ final class PersonStore {
                         id: "dz-\(album.id)",
                         title: entity.title,
                         subtitle: album.title,
-                        artwork: cover ?? .asset("mockAlbumCover")
+                        artwork: cover ?? .asset("")
                     ))
                 )
             }

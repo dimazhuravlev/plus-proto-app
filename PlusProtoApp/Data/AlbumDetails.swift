@@ -83,10 +83,7 @@ struct AlbumDetails {
                     id: brief.id,
                     title: brief.title,
                     year: Self.year(from: brief.releaseDate),
-                    cover: Self.artwork(
-                        from: brief.coverXl ?? brief.coverBig ?? brief.coverMedium,
-                        fallback: "mockAlbumCover"
-                    ),
+                    cover: Self.artwork(from: brief.coverXl ?? brief.coverBig ?? brief.coverMedium),
                     isExplicit: brief.explicitLyrics ?? false
                 )
             }
@@ -176,8 +173,11 @@ struct AlbumDetails {
         return string
     }
 
-    private static func artwork(from urlString: String?, fallback: String) -> ArtworkSource {
-        guard let url = urlString?.deezerUpscaled else { return .asset(fallback) }
-        return .remote(url, fallback: fallback)
+    /// Обложка — без бандленного фолбэка: пока едет, под ней скелетон карточки, а не
+    /// моковый чужой альбом (жалоба пользователя 2026-10-04). Ссылки нет — пустой
+    /// ассет, «картинки нет»: на её месте так и остаётся скелетон.
+    private static func artwork(from urlString: String?) -> ArtworkSource {
+        guard let url = urlString?.deezerUpscaled else { return .asset("") }
+        return .remote(url)
     }
 }

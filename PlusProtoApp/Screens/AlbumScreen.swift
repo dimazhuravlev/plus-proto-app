@@ -38,10 +38,7 @@ enum AlbumLayout {
     static let sectionHeaderBottom: CGFloat = 12
     static let sectionTitleGap: CGFloat = 2
     static let sectionChevronBox: CGFloat = 20
-    static let cardWidth: CGFloat = 159
     static let cardGap: CGFloat = 8
-    static let cardTextGap: CGFloat = 6
-    static let cardTextTrailing: CGFloat = 8
 
     /// Пороги навбара — общие с книгой, от верха названия (`EntityCoverLayout`).
     static var navBarThresholds: EntityNavBarThresholds {
@@ -406,45 +403,25 @@ struct AlbumScreen: View {
         .padding(.vertical, AlbumLayout.sectionPad)
     }
 
+    /// Карточка — общая с «Альбомами» исполнителя (`EntityAlbumCard`): обложка
+    /// на скелетоне, пока едет (2026-10-04). Переход — через навигацию, а не
+    /// `NavigationLink`: альбом бывает и в слое фильма (поиском из бара его экранов),
+    /// а у слоя стека нет — там переход встаёт в его стопку (`AppNavigationState.open`).
     private func otherCard(_ album: AlbumDetails.OtherAlbum) -> some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
         // Семантика `EntityRef` альбома повторяет витринную: `title` — артист.
-        return NavigationLink(value: EntityRoute.album(EntityRef(
+        let route = EntityRoute.album(EntityRef(
             id: "dz-\(album.id)",
             title: details.artist,
             subtitle: album.title,
             artwork: album.cover
-        ))) {
-            VStack(alignment: .leading, spacing: AlbumLayout.cardTextGap) {
-                ArtworkImage(source: album.cover)
-                    .scaledToFill()
-                    .frame(width: AlbumLayout.cardWidth, height: AlbumLayout.cardWidth)
-                    .clipShape(shape)
-                    .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
-
-                HStack(alignment: .top, spacing: AlbumLayout.badgeGap) {
-                    VStack(alignment: .leading, spacing: AlbumLayout.textStackGap) {
-                        Text(album.title)
-                            .plusText(.textM, .medium)
-                            .foregroundStyle(Color.fillOne)
-                            .lineLimit(1)
-
-                        if let year = album.year {
-                            Text(year)
-                                .plusText(.textM, .medium)
-                                .foregroundStyle(Color.fillSubtitle)
-                        }
-                    }
-
-                    if album.isExplicit {
-                        Spacer(minLength: 0)
-                        explicitBadge
-                            .padding(.top, 1)
-                    }
-                }
-                .padding(.trailing, AlbumLayout.cardTextTrailing)
-            }
-            .frame(width: AlbumLayout.cardWidth)
+        ))
+        return Button { navigation.open(route) } label: {
+            EntityAlbumCard(
+                cover: album.cover,
+                title: album.title,
+                detail: album.year,
+                isExplicit: album.isExplicit
+            )
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
     }

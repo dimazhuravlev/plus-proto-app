@@ -20,3 +20,31 @@ extension Shape {
             .overlay { stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
     }
 }
+
+/// Живая картинка поверх скелетона: заливку под ней рисует вызывающий, сама картинка
+/// проявляется на ней за 150 мс (из кэша — сразу), как обложки выдачи поиска.
+///
+/// Бандленный фолбэк живого источника здесь не рисуется: моковая обложка на месте
+/// ещё не приехавшей — чужой альбом под чужим названием, и на каждой загрузке карусели
+/// альбомов исполнителя мелькал «другой альбом» (жалоба пользователя 2026-10-04).
+/// Бандленный ассет без сети (моковая витрина) — рисуется как есть; пустое имя —
+/// «картинки нет», под ним остаётся скелетон.
+struct SkeletonArtwork: View {
+    let source: ArtworkSource
+
+    var body: some View {
+        if let shown {
+            ResolvedArtwork(source: shown, appear: PlusSkeleton.appear) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.clear
+            }
+        }
+    }
+
+    private var shown: ArtworkSource? {
+        if let url = source.remoteURL { return .remote(url) }
+        guard let name = source.fallbackAsset, !name.isEmpty else { return nil }
+        return source
+    }
+}

@@ -100,7 +100,7 @@ struct EntityAlbumCard: View {
                 .frame(width: EntitySectionLayout.albumCardWidth, height: EntitySectionLayout.albumCardWidth)
                 .overlay {
                     if let cover {
-                        ArtworkImage(source: cover).scaledToFill()
+                        SkeletonArtwork(source: cover)
                     }
                 }
                 .clipShape(shape)
@@ -160,7 +160,7 @@ struct EntityPersonCard: View {
                 .frame(width: EntitySectionLayout.personCardWidth, height: EntitySectionLayout.personCardWidth)
                 .overlay {
                     if let photo {
-                        ArtworkImage(source: photo).scaledToFill()
+                        SkeletonArtwork(source: photo)
                     }
                 }
                 .clipShape(Circle())
@@ -215,7 +215,7 @@ struct EntityTrackRow: View {
                 .frame(width: Self.coverSize, height: Self.coverSize)
                 .overlay {
                     if let cover {
-                        ArtworkImage(source: cover).scaledToFill()
+                        SkeletonArtwork(source: cover)
                     }
                 }
                 .clipShape(shape)

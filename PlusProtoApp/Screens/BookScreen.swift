@@ -367,19 +367,22 @@ struct BookScreen: View {
         .padding(.vertical, BookScreenLayout.sectionPad)
     }
 
-    /// Книга карусели открывает свой экран — пушем, как «Другие альбомы».
+    /// Книга карусели открывает свой экран, как «Другие альбомы», — через навигацию,
+    /// а не `NavigationLink`: в слое фильма стека нет (`AppNavigationState.open`).
+    /// Обложка — на скелетоне подложки, пока едет.
     private func shelfCard(_ book: AuthorBooksStore.Book) -> some View {
         let geometry = BookScreenLayout.shelfBook
         let coverWidth = geometry.coverWidth(aspect: book.aspect)
-        return NavigationLink(value: EntityRoute.book(EntityRef(
+        let route = EntityRoute.book(EntityRef(
             id: "gb-\(book.id)",
             title: book.title,
             subtitle: author ?? "",
             artwork: .remote(book.cover)
-        ))) {
+        ))
+        return Button { navigation.open(route) } label: {
             VStack(alignment: .leading, spacing: BookScreenLayout.shelfTextGap) {
                 BookFigure(geometry: geometry, coverWidth: coverWidth) {
-                    ArtworkImage(source: .remote(book.cover)).scaledToFill()
+                    SkeletonArtwork(source: .remote(book.cover))
                 }
 
                 VStack(alignment: .leading, spacing: 0) {

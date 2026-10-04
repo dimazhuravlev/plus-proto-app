@@ -31,6 +31,13 @@ struct EntityScreen: View {
 ///
 /// Вложенный переход — тоже зум: источник помечает карточка «Похожего» через
 /// `entityZoomNamespace`, и экран разворачивается из неё, а свайп сворачивает обратно.
+///
+/// **Экраны, открытые из фильма дальше** (режиссёр, а с его экрана — альбомы, книги,
+/// персоны), — с таббаром и action bar (правка пользователя 2026-10-04): фильм хром
+/// накрывает, остальные экраны живут с ним, как в стеке таба. Корневой хром под
+/// полноэкранным слоем не виден, поэтому у такого экрана хром свой — тот же
+/// `BottomChrome` с подложкой и слоями поиска. Фокус поиска берёт только верхний бар
+/// (`AppNavigationState.isTop`), тап по табу снимает слой (`AppNavigationState.select`).
 struct CoveredEntityScreen: View {
     let route: EntityRoute
     /// Сколько экранов слоя лежит под этим: корень — 0, его «похожее» — 1…
@@ -39,12 +46,46 @@ struct CoveredEntityScreen: View {
     @Namespace private var zoom
 
     var body: some View {
-        EntityScreen(route: route)
+        screen
             .environment(\.entityZoomNamespace, zoom)
+            // Связка поиска с навигацией — на каждом экране слоя, и на фильме тоже:
+            // решает верхний, а корень под слоем снят с окна (`SearchNavigationSync`).
+            .modifier(SearchNavigationSync(layer: depth))
             .fullScreenCover(item: next) { pushed in
                 CoveredEntityScreen(route: pushed, depth: depth + 1)
                     .navigationTransition(.zoom(sourceID: pushed, in: zoom))
             }
+    }
+
+    @ViewBuilder
+    private var screen: some View {
+        if route.coversChrome {
+            EntityScreen(route: route)
+        } else {
+            // Тот же состав, что у корня (`AppRootView`): контент со слоями поиска,
+            // подложка хрома во всю высоту и хром оверлеем.
+            ZStack {
+                SearchLayers(host: .pushed) {
+                    EntityScreen(route: route)
+                }
+                // Карточки выдачи — источник зума в namespace слоя: следующий экран
+                // стопки разворачивается из них, как из выдачи в стеке таба.
+                .environment(\.stackZoomNamespace, zoom)
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    TabBarUnderlay()
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottom) {
+                BottomChrome()
+            }
+            .environment(\.chromeLayer, depth)
+            // Подъём над клавиатурой хром считает сам — как в корне.
+            .ignoresSafeArea(.keyboard)
+        }
     }
 
     /// Следующий экран слоя — элемент `coveredPath` своей глубины. Сброс в nil

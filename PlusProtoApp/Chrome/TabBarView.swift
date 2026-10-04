@@ -58,6 +58,8 @@ private enum TabBarGeometry {
 struct TabBarView: View {
     @Environment(AppNavigationState.self) private var navigation
     @Environment(SearchState.self) private var search
+    /// Чей это таббар: корня или экрана слоя фильма (`SearchNavigationSync`).
+    @Environment(\.chromeLayer) private var chromeLayer
     @State private var debugPressed: AppTab?
 
     var body: some View {
@@ -82,9 +84,11 @@ struct TabBarView: View {
         #if DEBUG
         // `-debugRetapTab <сек>` — через столько секунд тап по уже активному табу:
         // поп до корня (или скролл к началу) не проверить без тапа, а шелл не тапает.
+        // Только у корневого таббара: его отсчёт идёт от запуска, и слой фильма, открытый
+        // к тому времени, он снимает так же, как таббар самого слоя.
         .task {
             let delay = UserDefaults.standard.double(forKey: "debugRetapTab")
-            guard delay > 0 else { return }
+            guard delay > 0, chromeLayer == nil else { return }
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             select(navigation.activeTab)
@@ -97,7 +101,7 @@ struct TabBarView: View {
     /// в `onEnded`. Пара «scaleEffect + animation(value:)» выше повторяет тело
     /// `PressScaleButtonStyle`, но снаружи кнопки — это заведомо более жёсткий случай.
     private func debugTapCycle() async {
-        guard UserDefaults.standard.bool(forKey: "debugTapCycle") else { return }
+        guard UserDefaults.standard.bool(forKey: "debugTapCycle"), chromeLayer == nil else { return }
         // Два круга и стоп: цикл существует для записи анимаций, а не вечной жизни.
         // Бесконечный отбирал таббар у пользователя до перезапуска приложения —
         // дебаг-флоу обязан заканчиваться сам (жалоба 2026-08-25).
@@ -123,7 +127,11 @@ struct TabBarView: View {
         // Сброс — мгновенный: карточку стек снимает срезом, и гаснущий 0.3 с поиск
         // лёг бы поверх контента таба (второе ревью 2026-10-03). Только когда есть что
         // снимать: на корне тап — уезд к началу экрана, и ему анимация нужна.
-        if tab == navigation.activeTab, navigation.stackDepth > 0 {
+        //
+        // Из слоя фильма (таббар его экранов, 2026-10-04) — так же мгновенно и на любой
+        // таб: слой снимается срезом, а не сворачивается зумом в карточку, которой
+        // на новом табе нет.
+        if navigation.coveredRoute != nil || (tab == navigation.activeTab && navigation.stackDepth > 0) {
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {

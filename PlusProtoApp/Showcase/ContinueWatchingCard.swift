@@ -225,7 +225,7 @@ private struct RateBlock: View {
 
     private let options = [
         Option(emoji: "emojiRateDislike", label: "Нет", burst: 1),
-        Option(emoji: "emojiRateMeh", label: "Ну такое", burst: 1),
+        Option(emoji: "emojiRateMeh", label: "Норм", burst: 1),
         Option(emoji: "emojiRateGood", label: "Супер", burst: 2),
         Option(emoji: "emojiRateLove", label: "Шедевр", burst: 6),
     ]

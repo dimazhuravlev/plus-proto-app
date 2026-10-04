@@ -17,8 +17,14 @@ final class AppNavigationState {
     var coveredRoute: EntityRoute? {
         didSet {
             // Новый слой — чистый стек: путь прошлого слоя не должен доставаться
-            // следующему ни при закрытии, ни при подмене корня.
-            if coveredRoute != oldValue { coveredPath.removeAll() }
+            // следующему, в том числе при подмене корня.
+            //
+            // На закрытии путь не трогаем: слой со всей стопкой снимает одна
+            // презентация корня. Срезанный путь заставлял каждый экран стопки снимать
+            // свой экран сам — два `dismiss` разом, и второму UIKit отказывал
+            // («dismiss is in progress», таб из слоя, 2026-10-04). Остаток пути без слоя
+            // ничего не значит: все, кто его читает, сперва смотрят на `coveredRoute`.
+            if coveredRoute != oldValue, coveredRoute != nil { coveredPath.removeAll() }
         }
     }
 
@@ -43,7 +49,29 @@ final class AppNavigationState {
     /// Считается внутри класса, потому что снаружи `paths` приватны, а `@Observable`
     /// отслеживает чтение — вью, читающая `depth`, обновится на каждый пуш и поп.
     var depth: Int {
-        stackDepth + (coveredRoute == nil ? 0 : 1 + coveredPath.count)
+        level.stack + level.layer
+    }
+
+    /// Та же глубина по частям: пуши стека активного таба и экраны слоя поверх хрома
+    /// (0 — слоя нет, 1 — корень слоя, дальше — его стопка). Нужна связке поиска
+    /// с навигацией (`SearchNavigationSync`): возврат из слоя и поп в стеке таба —
+    /// разные случаи, хотя глубина в обоих падает.
+    struct Level: Equatable {
+        var stack: Int
+        var layer: Int
+    }
+
+    var level: Level {
+        Level(stack: stackDepth, layer: coveredRoute == nil ? 0 : 1 + coveredPath.count)
+    }
+
+    /// Верхний ли экран — тот, чей нижний хром сейчас живой. `layer` — глубина экрана
+    /// в стопке слоя (`CoveredEntityScreen.depth`), `nil` — корень приложения: его
+    /// хром общий для всех стеков табов и живой, пока слоя нет. У экранов, открытых
+    /// из фильма дальше, хром свой (2026-10-04), а все, что под верхним, накрыты им.
+    func isTop(layer: Int?) -> Bool {
+        guard let layer else { return coveredRoute == nil }
+        return coveredRoute != nil && coveredPath.count == layer
     }
 
     /// Пуши в стеке активного таба — без слоя поверх хрома. По нему корень понимает,
@@ -66,8 +94,22 @@ final class AppNavigationState {
 
     /// Тап по уже активному табу возвращает его стек на корень — привычное поведение
     /// системных таббаров, заодно единственный выход из пуша без свайпа. Стек уже
-    /// на корне — корневой экран уезжает к началу (`scrollToTopRequests`).
+    /// на корне — корневой экран уезжает к началу (`scrollToTopRequests`). Тап из слоя
+    /// фильма (таббар его экранов) снимает слой.
     func select(_ tab: AppTab) {
+        // Таббар слоя — у экранов, открытых из фильма дальше (2026-10-04): таб ведёт
+        // к своему контенту, слой снимается целиком. Свой таб — ещё и стек на корень,
+        // как повторный тап с пуша. Слой переключение таба не переживает и так:
+        // он не элемент стека (см. `coveredRoute`).
+        if coveredRoute != nil {
+            coveredRoute = nil
+            if tab == activeTab {
+                paths[tab] = NavigationPath()
+            } else {
+                activeTab = tab
+            }
+            return
+        }
         guard tab != activeTab else {
             if !(paths[tab]?.isEmpty ?? true) {
                 paths[tab] = NavigationPath()
@@ -105,10 +147,12 @@ final class AppNavigationState {
 
     /// Закрыть то, что открыто последним: верхний экран стека слоя, затем сам слой.
     func close(in tab: AppTab? = nil) {
-        if !coveredPath.isEmpty {
-            coveredPath.removeLast()
-        } else if coveredRoute != nil {
-            coveredRoute = nil
+        if coveredRoute != nil {
+            if coveredPath.isEmpty {
+                coveredRoute = nil
+            } else {
+                coveredPath.removeLast()
+            }
         } else {
             pop(in: tab)
         }

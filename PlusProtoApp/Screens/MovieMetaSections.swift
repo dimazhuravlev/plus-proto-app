@@ -64,6 +64,19 @@ struct MoviePersonSection: View {
             .scrollIndicators(.hidden)
             .contentMargins(.horizontal, MovieLayout.sectionSide, for: .scrollContent)
         }
+        #if DEBUG
+        // `-debugOpenDirector 1` — открыть экран режиссёра из съёмочной группы через 2с:
+        // экран в слое фильма — с таббаром и баром (2026-10-04), а тапнуть карточку из
+        // шелла нечем. Один раз на запуск — по образцу `-debugOpenSimilar`.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugOpenDirector"), !MovieDirectorDebug.fired,
+                  let director = people.first(where: { $0.role == Self.directorRole }) else { return }
+            MovieDirectorDebug.fired = true
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            navigation.open(Self.directorRoute(director))
+        }
+        #endif
     }
 
     /// Режиссёр — переход на его экран (2026-10-04): персона Кинопоиска известна,
@@ -71,13 +84,8 @@ struct MoviePersonSection: View {
     /// (`AppNavigationState.open`), и разворачивается из карточки.
     @ViewBuilder
     private func card(_ person: MovieCastMember) -> some View {
-        if person.role == "Режиссёр" {
-            let route = EntityRoute.director(EntityRef(
-                id: "kp-\(person.id)",
-                title: person.name,
-                subtitle: "",
-                artwork: person.photo.map { ArtworkSource.remote($0) } ?? .asset("")
-            ))
+        if person.role == Self.directorRole {
+            let route = Self.directorRoute(person)
             let button = Button { navigation.open(route) } label: { cardBody(person) }
                 .buttonStyle(PressScaleButtonStyle())
             if let zoomNamespace {
@@ -88,6 +96,18 @@ struct MoviePersonSection: View {
         } else {
             cardBody(person)
         }
+    }
+
+    /// Специальность режиссёра в съёмочной группе — по ней карточка нажимается.
+    private static let directorRole = "Режиссёр"
+
+    private static func directorRoute(_ person: MovieCastMember) -> EntityRoute {
+        .director(EntityRef(
+            id: "kp-\(person.id)",
+            title: person.name,
+            subtitle: "",
+            artwork: person.photo.map { ArtworkSource.remote($0) } ?? .asset("")
+        ))
     }
 
     private func cardBody(_ person: MovieCastMember) -> some View {
@@ -168,6 +188,11 @@ private enum TileCaptionRuler {
 #if DEBUG
 /// Одноразовость `-debugOpenSimilar` на процесс (см. задачу в секции).
 private enum MovieSimilarDebug {
+    static var fired = false
+}
+
+/// Одноразовость `-debugOpenDirector` на процесс (см. задачу в секции персон).
+private enum MovieDirectorDebug {
     static var fired = false
 }
 #endif
