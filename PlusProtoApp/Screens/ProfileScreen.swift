@@ -152,6 +152,10 @@ struct ProfileScreen: View {
         }
         .padding(.horizontal, ProfileLayout.side)
         .frame(height: ProfileLayout.headerRow)
+        // Оттяг — как у навигации витрин: ряд едет за лентой вчетверо медленнее
+        // и упирается в мягкий потолок (правка пользователя 2026-10-04). Сдвиг —
+        // только у ряда: подложка стоит на месте, а при оттяге она прозрачна.
+        .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
         .background(alignment: .top) {
             VariableBlurView(
                 maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
