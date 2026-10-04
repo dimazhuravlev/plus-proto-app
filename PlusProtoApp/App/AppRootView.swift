@@ -15,6 +15,9 @@ struct AppRootView: View {
     /// `@Observable` перерисовывает только тех, кто читает `feed`, а корень
     /// его не читает.
     @State private var catalog = ShowcaseCatalog()
+    /// Главная Кинопоиска — по той же причине, что каталог витрины: экран таба
+    /// размонтируется на переключении, а лента собирается раз за процесс.
+    @State private var cinema = CinemaCatalog()
     /// Заставка на запуске. `@State` корня, поэтому показывается ровно один раз
     /// за процесс: возврат из фона её не воскрешает.
     @State private var isSplashShown = !SplashTiming.isDisabled
@@ -110,6 +113,7 @@ struct AppRootView: View {
         .environment(keyboard)
         .environment(search)
         .environment(catalog)
+        .environment(cinema)
         .environment(\.stackZoomNamespace, stackZoom)
     }
 
@@ -168,7 +172,7 @@ struct AppRootView: View {
         case .music:
             tabStack(.music) { ServiceStubScreen(tab: .music) }
         case .kinopoisk:
-            tabStack(.kinopoisk) { ServiceStubScreen(tab: .kinopoisk) }
+            tabStack(.kinopoisk) { CinemaHomeScreen() }
         case .books:
             tabStack(.books) { ServiceStubScreen(tab: .books) }
         case .alisa:

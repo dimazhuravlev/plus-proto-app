@@ -173,7 +173,9 @@ struct MoviePersonSection: View {
 /// поэтому расходиться с раскладкой ей нечем. Потолок подписи — две строки, так что
 /// вопрос сводится к «влезает ли в одну»: всё, что длиннее строки, занимает две и
 /// дальше режется многоточием, и точная раскладка длинного имени не нужна.
-private enum TileCaptionRuler {
+/// Сколько строк займёт подпись карточки (Text S Medium) в заданной ширине — 1 или 2.
+/// Общая с каруселями главной Кинопоиска: там та же беда `LazyHStack` с высотой ряда.
+enum TileCaptionRuler {
     static func lines(_ text: String, width: CGFloat) -> Int {
         guard !text.isEmpty else { return 0 }
         let size = PlusTextSize.textS.size

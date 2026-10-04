@@ -35,6 +35,8 @@ enum ShowcaseRotation {
         static let movies: UInt64 = 1
         static let music: UInt64 = 2
         static let books: UInt64 = 3
+        /// Промо главной Кинопоиска — свой выбор из того же запаса, что у витрины.
+        static let cinema: UInt64 = 4
     }
 }
 

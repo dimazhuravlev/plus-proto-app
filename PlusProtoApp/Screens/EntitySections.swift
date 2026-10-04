@@ -43,6 +43,9 @@ enum EntitySectionLayout {
 struct EntitySectionHeader: View {
     let title: String
     var showsChevron = true
+    /// Высота строки заголовка. У каруселей главной Кинопоиска она 24 — Headline M
+    /// при 100 % (`carousel / Movies`, шапка 52 = 16 + 24 + 12).
+    var lineHeight: CGFloat = EntitySectionLayout.headerLine
 
     var body: some View {
         HStack(spacing: EntitySectionLayout.titleGap) {
@@ -61,7 +64,7 @@ struct EntitySectionHeader: View {
                     .offset(y: PlusMetrics.headerChevronDrop)
             }
         }
-        .frame(height: EntitySectionLayout.headerLine)
+        .frame(height: lineHeight)
         .accessibilityAddTraits(.isHeader)
         .padding(.top, EntitySectionLayout.headerTop)
         .padding(.bottom, EntitySectionLayout.headerBottom)
@@ -72,11 +75,14 @@ struct EntitySectionHeader: View {
 
 /// Скелетон заголовка секции — полоса в строке 28 с теми же полями.
 struct EntitySectionHeaderSkeleton: View {
+    /// Та же строка, что у заголовка, которого он ждёт (`EntitySectionHeader.lineHeight`).
+    var lineHeight: CGFloat = EntitySectionLayout.headerLine
+
     var body: some View {
         Rectangle()
             .fill(PlusSkeleton.fill)
             .frame(width: EntitySectionLayout.skeletonHeaderWidth, height: EntitySectionLayout.skeletonHeaderBar)
-            .frame(height: EntitySectionLayout.headerLine)
+            .frame(height: lineHeight)
             .padding(.top, EntitySectionLayout.headerTop)
             .padding(.bottom, EntitySectionLayout.headerBottom)
             .padding(.horizontal, EntitySectionLayout.side)

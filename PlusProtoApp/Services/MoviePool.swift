@@ -107,6 +107,12 @@ actor MoviePool {
 
     // MARK: - Чтение
 
+    /// Все годные — без оглядки на показанные. Главная Кинопоиска берёт отсюда промо:
+    /// она не расходует запас витрины и ничего в нём не помечает (2026-10-04).
+    func all(where isEligible: @Sendable (KinopoiskMovie) -> Bool) -> [KinopoiskMovie] {
+        storage.movies.filter(isEligible)
+    }
+
     /// Годные и ещё не показанные.
     func unseen(where isEligible: @Sendable (KinopoiskMovie) -> Bool) -> [KinopoiskMovie] {
         storage.movies.filter { !storage.shown.contains($0.id) && isEligible($0) }

@@ -34,7 +34,8 @@ enum ShowcaseMotion {
 
 /// Уезд ленты к началу по повторному тапу таба — движение по экрану: ease-in-out,
 /// длинная лента доезжает за ту же длительность, что и короткая.
-private enum ShowcaseScrollMotion {
+/// Уезд к началу ленты по повторному тапу таба — общий у витрины и главной Кинопоиска.
+enum ShowcaseScrollMotion {
     static let toTop: Animation = .timingCurve(0.65, 0, 0.35, 1, duration: 0.5)
 }
 

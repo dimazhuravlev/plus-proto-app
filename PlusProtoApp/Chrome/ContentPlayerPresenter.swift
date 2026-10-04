@@ -100,7 +100,10 @@ final class ContentPlayerPresenter {
         } else {
             controller.modalPresentationStyle = .fullScreen
         }
-        presenter.present(controller, animated: true)
+        // Бар меняется под уже выехавшим плеером, а не на глазах (`ActionBarState`).
+        presenter.present(controller, animated: true) {
+            actionBar.contentPlayerDidPresent()
+        }
         host = controller
         shownID = player.id
     }

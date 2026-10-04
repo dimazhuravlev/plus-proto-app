@@ -130,6 +130,10 @@ final class ActionBarState {
     private(set) var movie: MovieInProgress? { didSet { persist() } }
     private(set) var book: BookInProgress? { didSet { persist() } }
 
+    /// «Смотреть дальше» главной Кинопоиска — всё, что запускали в киноплеере.
+    /// Живёт здесь, потому что вход в плеер один — `watch` (2026-10-04).
+    let watchHistory = WatchHistory()
+
     /// Транспорт музыки — отдельными свойствами, а не полями `music`: они меняются
     /// на каждом тике плеера, и при вложении в структуру тик инвалидировал бы
     /// и обложку с подписью.
@@ -379,11 +383,13 @@ final class ActionBarState {
     func watch(_ item: MovieInProgress) {
         var item = item
         // Тот же фильм продолжается с места, где его закрыли: экран тайтла про
-        // сохранённую позицию не знает и приходит без неё.
-        if item.position == nil, movie?.id == item.id {
-            item.position = movie?.position
+        // сохранённую позицию не знает и приходит без неё. Не в чипе бара — из истории
+        // просмотра: «Смотреть дальше» продолжает любой запущенный фильм (2026-10-04).
+        if item.position == nil {
+            item.position = movie?.id == item.id ? movie?.position : watchHistory.position(for: item.id)
         }
-        resumeMovie(item)
+        watchHistory.record(item)
+        deferResume(.movie(item))
         contentPlayer = .movie(item)
     }
 
@@ -391,8 +397,53 @@ final class ActionBarState {
     /// бар: мини-плеер в читалке — для музыки, которая звучала в момент запуска.
     func read(_ item: BookInProgress) {
         let showsMusic = isMusicPlaying && music != nil
-        resumeBook(item)
+        deferResume(.book(item))
         contentPlayer = .reader(item, showsMusic: showsMusic)
+    }
+
+    // MARK: Бар — после выезда плеера
+
+    /// Смена бара под запущенный фильм или книгу, отложенная до конца выезда плеера
+    /// (правка пользователя 2026-10-04): прежде бар морфился в чип на глазах, пока
+    /// киноплеер или читалка ещё ехали снизу. Теперь он меняется под плеером, когда
+    /// тот закрыл экран, — на закрытии плеера бар уже в новом состоянии.
+    private enum PendingResume {
+        case movie(MovieInProgress)
+        case book(BookInProgress)
+    }
+
+    @ObservationIgnored private var pendingResume: PendingResume?
+    @ObservationIgnored private var pendingResumeFallback: Task<Void, Never>?
+
+    /// Запасной срок: презентер сообщает о конце выезда сам (`contentPlayerDidPresent`),
+    /// но если показать было не с чего, бар всё равно обязан догнать запуск.
+    private static let resumeFallback: Duration = .milliseconds(800)
+
+    /// Плеер встал на весь экран — бар меняется под ним, невидимо.
+    func contentPlayerDidPresent() {
+        applyPendingResume()
+    }
+
+    private func deferResume(_ resume: PendingResume) {
+        applyPendingResume()
+        pendingResume = resume
+        // На главном акторе: бар — состояние интерфейса.
+        pendingResumeFallback = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.resumeFallback)
+            guard !Task.isCancelled else { return }
+            self?.applyPendingResume()
+        }
+    }
+
+    private func applyPendingResume() {
+        pendingResumeFallback?.cancel()
+        pendingResumeFallback = nil
+        guard let pending = pendingResume else { return }
+        pendingResume = nil
+        switch pending {
+        case .movie(let item): resumeMovie(item)
+        case .book(let item): resumeBook(item)
+        }
     }
 
     /// Закрыть киноплеер или читалку.
@@ -400,10 +451,16 @@ final class ActionBarState {
     /// - Parameter moviePosition: где остановился фильм — чип бара продолжит с этого
     ///   места. Нужен только киноплееру.
     func closeContentPlayer(moviePosition: TimeInterval? = nil) {
+        // Закрыли раньше, чем плеер доехал, — бар догоняет запуск сейчас: позиция
+        // фильма пишется в его чип.
+        applyPendingResume()
         switch contentPlayer {
         case .movie(let item):
             if let moviePosition, movie?.id == item.id {
                 movie?.position = moviePosition
+            }
+            if let moviePosition {
+                watchHistory.update(id: item.id, position: moviePosition)
             }
         case .music:
             break

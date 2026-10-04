@@ -34,6 +34,8 @@ final class ArtworkLoader {
     /// Идущие загрузки: два блока витрины могут просить одну обложку (плеер и карточка),
     /// и без дедупликации это два запроса вместо одного.
     private var inflight: [URL: Task<UIImage?, Never>] = [:]
+    /// Тёмный ли логотип — посчитанное на процесс (см. `isDarkLogo`).
+    private var darkLogos: [URL: Bool] = [:]
 
     private init() {}
 
@@ -99,6 +101,50 @@ final class ArtworkLoader {
     func accent(for url: URL) async -> Color? {
         guard let image = await image(for: url), let tone = Self.averageTone(of: image) else { return nil }
         return Color(hue: tone.hue, saturation: min(tone.saturation * 0.9, 0.35), brightness: 0.86)
+    }
+
+    /// Тёмный ли логотип тайтла. Часть PNG Кинопоиск отдаёт чёрными — под светлый
+    /// фон, — и на наших тёмных обложках их не прочесть («Большой куш», первый прогон
+    /// главной Кинопоиска 2026-10-04). Такой логотип рисуется белым силуэтом.
+    ///
+    /// Средний цвет по непрозрачным пикселям: `CIAreaAverage` усредняет растр с альфой
+    /// в премультипладе, деление цвета на среднюю альфу даёт цвет самих букв.
+    func isDarkLogo(_ url: URL, image: UIImage) -> Bool {
+        if let known = darkLogos[url] { return known }
+        let dark = Self.letterLuminance(of: image).map { $0 < Self.darkLogoLuminance } ?? false
+        darkLogos[url] = dark
+        return dark
+    }
+
+    /// Ниже этой яркости логотип на тёмном фоне не читается.
+    private static let darkLogoLuminance: CGFloat = 0.3
+
+    private static func letterLuminance(of image: UIImage) -> CGFloat? {
+        guard let cg = image.cgImage else { return nil }
+        let extent = CGRect(x: 0, y: 0, width: cg.width, height: cg.height)
+        guard
+            let filter = CIFilter(name: "CIAreaAverage", parameters: [
+                kCIInputImageKey: CIImage(cgImage: cg),
+                kCIInputExtentKey: CIVector(cgRect: extent)
+            ]),
+            let output = filter.outputImage
+        else { return nil }
+
+        var pixel = [UInt8](repeating: 0, count: 4)
+        ciContext.render(
+            output,
+            toBitmap: &pixel,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+        let alpha = CGFloat(pixel[3]) / 255
+        guard alpha > 0.01 else { return nil }
+        let red = CGFloat(pixel[0]) / 255 / alpha
+        let green = CGFloat(pixel[1]) / 255 / alpha
+        let blue = CGFloat(pixel[2]) / 255 / alpha
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
     }
 
     /// Средний тон верхней половины картинки.

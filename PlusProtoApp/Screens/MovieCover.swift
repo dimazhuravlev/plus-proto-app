@@ -34,6 +34,8 @@ struct MovieTitleLogo: View {
 
     @State private var image: Image?
     @State private var natural: CGSize?
+    /// Тёмный PNG — рисуется белым силуэтом (`ArtworkLoader.isDarkLogo`).
+    @State private var isDark = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -48,7 +50,9 @@ struct MovieTitleLogo: View {
                 // картинкой, значит дёргать шапку на каждом входе.
                 if let image {
                     image
+                        .renderingMode(isDark ? .template : .original)
                         .resizable()
+                        .foregroundStyle(Color.fillOne)
                         .frame(width: drawn.width, height: drawn.height)
                         .accessibilityLabel(title)
                 }
@@ -75,6 +79,7 @@ struct MovieTitleLogo: View {
 
     private func load() async {
         if let hit = ArtworkLoader.shared.cached(url) {
+            isDark = ArtworkLoader.shared.isDarkLogo(url, image: hit)
             image = Image(uiImage: hit)
             natural = hit.size
             return
@@ -82,6 +87,7 @@ struct MovieTitleLogo: View {
         image = nil
         natural = nil
         guard let loaded = await ArtworkLoader.shared.image(for: url) else { return }
+        isDark = ArtworkLoader.shared.isDarkLogo(url, image: loaded)
         // Приехавший по сети логотип проявляется, а не вставает резко; кэшированный
         // (ветка выше) показан с первого кадра — анимировать нечего. Тот же паттерн,
         // что у чистого кадра кавера (`loadClean`).
