@@ -147,7 +147,9 @@ struct ServiceTopNav: View {
                 }
             }
             .contentShape(.rect)
-            .gesture(stripDrag)
+            // Одновременно с кнопками табов: обычный жест на родителе кнопки перебивали —
+            // палец, попавший на таб, ленту не тянул (жалоба пользователя 2026-10-04).
+            .simultaneousGesture(stripDrag)
             .onChange(of: selection) { _, index in
                 reveal(index)
             }
@@ -161,6 +163,8 @@ struct ServiceTopNav: View {
     @State private var stripWidth: CGFloat = 0
     @State private var visibleWidth: CGFloat = 0
     @State private var tabFrames: [Int: CGRect] = [:]
+    /// Ленту тянули — отпускание пальца на табе его не выбирает.
+    @State private var isDraggingStrip = false
 
     /// Дальше этого лента не уходит: последний таб встаёт у маски.
     private var minOffset: CGFloat {
@@ -171,11 +175,15 @@ struct ServiceTopNav: View {
         DragGesture(minimumDistance: ServiceTopNavMotion.dragThreshold)
             .onChanged { value in
                 guard minOffset < 0 else { return }
+                isDraggingStrip = true
                 let start = dragStart ?? stripOffset
                 dragStart = start
                 stripOffset = rubberBand(start + value.translation.width)
             }
             .onEnded { value in
+                // Сброс — следующим тактом: тап кнопки приходит тем же отпусканием,
+                // и он должен застать отметку перетаскивания.
+                DispatchQueue.main.async { isDraggingStrip = false }
                 guard let start = dragStart else { return }
                 dragStart = nil
                 let target = min(0, max(minOffset, start + value.predictedEndTranslation.width))
@@ -209,7 +217,7 @@ struct ServiceTopNav: View {
     private func tab(_ index: Int) -> some View {
         let isActive = index == selection
         return Button {
-            guard !isActive else { return }
+            guard !isActive, !isDraggingStrip else { return }
             UISelectionFeedbackGenerator().selectionChanged()
             withAnimation(ServiceTopNavMotion.select) { selection = index }
         } label: {

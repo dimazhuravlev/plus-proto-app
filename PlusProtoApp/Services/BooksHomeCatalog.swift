@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Главная Книг — промо и пять тематических каруселей (задача пользователя 2026-10-04).
+/// Главная Книг — промо и тематические карусели (задача пользователя 2026-10-04):
+/// упор на научпоп, рядом — мировая и русская классика (правка тем же днём).
 ///
 /// Живёт в корне приложения, как остальные каталоги витрин: экран таба размонтируется
 /// на переключении, а лента собирается раз за процесс.
@@ -50,12 +51,15 @@ final class BooksHomeCatalog {
         let surname: String
     }
 
+    /// Научпоп вперемешку с классикой. Авторы научпопа — из сидов витрины, по замеру
+    /// у них есть сканы обложек (у Сапольски и Каку — по шесть томов).
     private static let rowSpecs: [(id: String, title: String, seeds: [Seed])] = [
-        ("classics", "Русская классика", [Seed(query: "Толстой Лев", surname: "Толстой"), Seed(query: "Чехов", surname: "Чехов")]),
-        ("scifi", "Фантастика", [Seed(query: "Беляев", surname: "Беляев"), Seed(query: "Стругацкие", surname: "Стругацкий")]),
-        ("adventure", "Приключения", [Seed(query: "Жюль Верн", surname: "Верн"), Seed(query: "Конан Дойл", surname: "Дойл")]),
-        ("poetry", "Поэзия", [Seed(query: "Пушкин", surname: "Пушкин"), Seed(query: "Лермонтов", surname: "Лермонтов")]),
-        ("stories", "Рассказы и повести", [Seed(query: "Куприн", surname: "Куприн"), Seed(query: "Тургенев", surname: "Тургенев")]),
+        ("history", "История человечества", [Seed(query: "Юваль Ной Харари", surname: "Харари"), Seed(query: "Джаред Даймонд", surname: "Даймонд")]),
+        ("world-classics", "Мировая классика", [Seed(query: "Жюль Верн", surname: "Верн"), Seed(query: "Конан Дойл", surname: "Дойл")]),
+        ("brain", "Мозг и поведение", [Seed(query: "Роберт Сапольски", surname: "Сапольски"), Seed(query: "Оливер Сакс", surname: "Сакс")]),
+        ("russian-classics", "Русская классика", [Seed(query: "Толстой Лев", surname: "Толстой"), Seed(query: "Чехов", surname: "Чехов")]),
+        ("space", "Космос и физика", [Seed(query: "Стивен Хокинг", surname: "Хокинг"), Seed(query: "Митио Каку", surname: "Каку")]),
+        ("decisions", "Психология решений", [Seed(query: "Даниэль Канеман", surname: "Канеман"), Seed(query: "Дэн Ариели", surname: "Ариели")]),
     ]
 
     private static let rowLimit = 10
@@ -125,15 +129,29 @@ final class BooksHomeCatalog {
             author: volume.author,
             cover: volume.coverURL.map { ArtworkSource.remote($0) } ?? .asset("mockBookTechno"),
             aspect: aspects[volume.id],
-            blurb: blurb(volume.volumeInfo.description ?? volume.volumeInfo.subtitle)
+            blurb: blurb(volume)
         )
     }
 
-    /// Описание Google Books — HTML (`<p>`, `<br>`, `<b>`) с сущностями: под книгой нужен
-    /// плоский текст в три строки, обрезанный по предложению.
-    private static let blurbLength = 150
+    /// Под книгой в промо — три строки, по предложению.
+    private static let blurbLength = 130
 
-    private static func blurb(_ html: String?) -> String? {
+    /// Коротко о книге — **короткое описание из выдачи поиска** (`textSnippet`, правка
+    /// пользователя 2026-10-04: прежде резалась длинная аннотация). У старых сканов
+    /// сниппет бывает обрывком текста самой книги с подсветкой запроса `<b>` — тогда
+    /// начало аннотации; нет и её — подзаголовок.
+    private static func blurb(_ volume: GoogleBook) -> String? {
+        if let snippet = volume.searchInfo?.textSnippet, !snippet.contains("<b>"),
+           let text = plainText(snippet) {
+            return text.showcaseCaption(maxCharacters: Self.blurbLength)
+        }
+        return plainText(volume.volumeInfo.description ?? volume.volumeInfo.subtitle)?
+            .showcaseCaption(maxCharacters: Self.blurbLength)
+    }
+
+    /// HTML Google Books (`<p>`, `<br>`, сущности) — в плоский текст. Хвост сниппета
+    /// « ...» — в многоточие.
+    private static func plainText(_ html: String?) -> String? {
         guard let html, !html.isEmpty else { return nil }
         var text = html.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
         for (entity, symbol) in [
@@ -142,8 +160,16 @@ final class BooksHomeCatalog {
         ] {
             text = text.replacingOccurrences(of: entity, with: symbol)
         }
-        let caption = text.showcaseCaption(maxCharacters: Self.blurbLength)
-        return caption.isEmpty ? nil : caption
+        text = text
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*\.\.\.\s*$"#, with: "…", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Сниппет бывает начат посреди цитаты: закрывающая «»» раньше открывающей —
+        // открывающую возвращаем («Рождение человечества» у графического Sapiens).
+        if let close = text.firstIndex(of: "»"), text.firstIndex(of: "«").map({ $0 > close }) ?? true {
+            text = "«" + text
+        }
+        return text.isEmpty ? nil : text
     }
 
     /// Пропорции обложек — по самим картинкам, с потолком ожидания (приём

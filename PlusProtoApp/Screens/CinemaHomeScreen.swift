@@ -47,7 +47,8 @@ struct CinemaHomeScreen: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
 
-    static let filters = ["Кино", "Спорт", "Каналы"]
+    /// «Детям» — последним, как во всех витринах (правка пользователя 2026-10-04)
+    static let filters = ["Кино", "Спорт", "Каналы", "Детям"]
 
     @State private var filter = 0
     @State private var scrollOffset: CGFloat = 0

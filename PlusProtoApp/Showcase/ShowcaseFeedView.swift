@@ -89,6 +89,8 @@ struct ShowcaseFeedView: View {
         // заголовок на 70.79 должен лечь сразу под статус-бар. Иначе лента съезжает вниз
         // на всю высоту выреза.
         .ignoresSafeArea(edges: .top)
+        // Первый показ отыграл — следующие появления витрины без проявления.
+        .onDisappear { ShowcaseAppearMemory.hasShown = true }
         .background(alignment: .top) {
             ShowcaseBackdrop(source: feed.backdrop)
         }
@@ -198,7 +200,10 @@ struct ShowcaseFeedView: View {
 /// в экран. Срабатывает один раз — обратно при уходе не гаснет, иначе лента мерцала бы
 /// при быстром скролле туда-обратно.
 private struct ShowcaseAppear: ViewModifier {
-    @State private var shown = false
+    /// Проявление — только при первом показе витрины за процесс (правка пользователя
+    /// 2026-10-04): экран таба пересоздаётся на каждом переключении, и прежде лента
+    /// заново всплывала сдвигом при каждом возврате на «Плюс».
+    @State private var shown = ShowcaseAppearMemory.hasShown
 
     func body(content: Content) -> some View {
         content
@@ -209,6 +214,13 @@ private struct ShowcaseAppear: ViewModifier {
                 withAnimation(ShowcaseMotion.appear) { shown = true }
             }
     }
+}
+
+/// Витрина уже показывалась в этом процессе — дальше она встаёт сразу, без проявления.
+/// Отметка ставится, когда витрина уходит с экрана (переключение таба, пуш).
+@MainActor
+enum ShowcaseAppearMemory {
+    static var hasShown = false
 }
 
 #if DEBUG

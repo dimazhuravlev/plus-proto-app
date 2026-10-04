@@ -58,7 +58,8 @@ struct BooksHomeScreen: View {
     @Environment(BooksHomeCatalog.self) private var catalog
     @Environment(AppNavigationState.self) private var navigation
 
-    static let filters = ["Книги", "Аудиокниги"]
+    /// «Детям» — последним, как во всех витринах (правка пользователя 2026-10-04)
+    static let filters = ["Книги", "Аудиокниги", "Детям"]
 
     @State private var filter = 0
     @State private var scrollOffset: CGFloat = 0
@@ -92,7 +93,7 @@ struct BooksHomeScreen: View {
                 if catalog.isLoaded {
                     VStack(spacing: 0) {
                         if !catalog.promos.isEmpty {
-                            BooksPromoCarousel(books: catalog.promos)
+                            BooksPromoCarousel(books: catalog.promos, pull: max(0, -scrollOffset))
                         }
                         ForEach(catalog.rows) { row in
                             BooksRow(row: row)
@@ -127,6 +128,9 @@ struct BooksHomeScreen: View {
 /// текущей книги, под каруселью — «Читать книгу».
 private struct BooksPromoCarousel: View {
     let books: [BooksHomeCatalog.Book]
+    /// Оттяг ленты вниз — фон тянется за ним вверх, без чёрной полосы (резина, как
+    /// у фона альбома и книги — `EntityCoverHeader`)
+    let pull: CGFloat
 
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
@@ -137,8 +141,9 @@ private struct BooksPromoCarousel: View {
 
     @State private var page: Int?
 
-    init(books: [BooksHomeCatalog.Book]) {
+    init(books: [BooksHomeCatalog.Book], pull: CGFloat) {
         self.books = books
+        self.pull = pull
         _page = State(initialValue: books.count * (Self.laps / 2))
     }
 
@@ -277,6 +282,9 @@ private struct BooksPromoCarousel: View {
             )
         }
         .animation(BooksPromoLayout.backdropFade, value: current?.id)
+        // Оттяг вниз — фон растёт вверх от нижней кромки ровно на его величину
+        // (правка пользователя 2026-10-04: сверху не должно быть чёрного).
+        .scaleEffect((height + pull) / height, anchor: .bottom)
         .allowsHitTesting(false)
     }
 }

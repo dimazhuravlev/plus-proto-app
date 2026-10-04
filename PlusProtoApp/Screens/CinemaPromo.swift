@@ -5,8 +5,12 @@ import UIKit
 /// справа из-под края выглядывает следующая. Кадр 375 перенесён на холст 402:
 /// поля и выглядывающий край те же, ширина карточки тянется, высота — от пропорций.
 enum CinemaPromoLayout {
-    /// Блок — 3:4 от ширины экрана (`height fixer 3:4`)
-    static let height: CGFloat = PlusMetrics.designWidth * 4 / 3
+    /// Кадр макета — 3:4 от ширины экрана (`height fixer 3:4`): от него считается обложка
+    static let frameHeight: CGFloat = PlusMetrics.designWidth * 4 / 3
+    /// Под кнопками воздух поджат на 16 (правка пользователя 2026-10-04): блок короче
+    /// кадра, мета опущена на те же 16 — кнопки на месте, следующая секция ближе
+    static let bottomTrim: CGFloat = 16
+    static let height: CGFloat = frameHeight - bottomTrim
     /// Лента: поле слева 8, зазор между карточками 8, от следующей видно 18
     /// (341 + 8 + 8 + 18 = 375 в макете)
     static let leading: CGFloat = 8
@@ -15,11 +19,11 @@ enum CinemaPromoLayout {
     /// Сколько ширины экрана не достаётся карточке
     static let cardReserve: CGFloat = leading + cardGap + peek
     /// Обложка занимает верхние 83.2 % блока (416 из 500)
-    static let coverHeight: CGFloat = height * 416 / 500
+    static let coverHeight: CGFloat = frameHeight * 416 / 500
     static let coverRadius: CGFloat = 24
     /// Мета прижата к низу блока: поля 24 внутри карточки, зазор 8
     static let metaSide: CGFloat = 24
-    static let metaBottom: CGFloat = 24
+    static let metaBottom: CGFloat = 24 - bottomTrim
     static let metaGap: CGFloat = 8
     /// Логотип вписывается в бокс 238×61.2, под ним 6.8 — бокс макета, уменьшенный
     /// вслед за правкой пользователя «немного уменьшить» (280×72 × 0.85).
