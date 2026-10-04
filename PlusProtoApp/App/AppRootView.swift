@@ -65,6 +65,20 @@ struct AppRootView: View {
         .overlay(alignment: .bottom) {
             BottomChrome()
         }
+        // Профиль — с аватарки навигации витрин: выезжает снизу и закрывает всё,
+        // включая хром (в макете `2463:78551` таббара и бара нет).
+        .fullScreenCover(isPresented: $navigation.isProfileShown) {
+            ProfileScreen()
+        }
+        #if DEBUG
+        // `-debugProfile 1` — открыть профиль через 1.5 с после запуска: тапнуть аватарку
+        // из шелла нечем.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugProfile") else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            navigation.isProfileShown = true
+        }
+        #endif
         // Киноплеер, читалка и плеер музыки живут не здесь, а отдельной презентацией
         // поверх всего, включая слой карточки тайтла, — см. `ContentPlayerPresenter`.
         // В дереве корня от них только невидимый мост из состояния в UIKit.

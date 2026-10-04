@@ -99,6 +99,7 @@ struct ServiceTopNav: View {
     var avatar: ArtworkSource = .asset("avatarProfile")
 
     @Namespace private var pill
+    @Environment(AppNavigationState.self) private var navigation
 
     var body: some View {
         HStack(spacing: 0) {
@@ -277,17 +278,22 @@ struct ServiceTopNav: View {
 
     // MARK: Аватар
 
+    /// Аватар — вход в профиль: экран выезжает снизу поверх всего (макет `2463:78551`).
     private var avatarView: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(ServiceTopNavLayout.aura, lineWidth: ServiceTopNavLayout.auraWidth)
-            ArtworkImage(source: avatar)
-                .scaledToFill()
-                .frame(width: ServiceTopNavLayout.avatarSize, height: ServiceTopNavLayout.avatarSize)
-                .clipShape(Circle())
-                .overlay { Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+        Button { navigation.isProfileShown = true } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(ServiceTopNavLayout.aura, lineWidth: ServiceTopNavLayout.auraWidth)
+                ArtworkImage(source: avatar)
+                    .scaledToFill()
+                    .frame(width: ServiceTopNavLayout.avatarSize, height: ServiceTopNavLayout.avatarSize)
+                    .clipShape(Circle())
+                    .overlay { Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            }
+            .frame(width: ServiceTopNavLayout.avatarFrame, height: ServiceTopNavLayout.avatarFrame)
+            .contentShape(Circle())
         }
-        .frame(width: ServiceTopNavLayout.avatarFrame, height: ServiceTopNavLayout.avatarFrame)
+        .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel("Профиль")
     }
 }
