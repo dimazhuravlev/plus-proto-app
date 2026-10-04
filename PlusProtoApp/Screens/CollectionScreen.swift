@@ -7,8 +7,9 @@ enum CollectionLayout {
     static let contentTop: CGFloat = ServiceTopNavLayout.rowHeight + 1
     /// Воздух под последней секцией сверх клиренса хрома
     static let feedBottom: CGFloat = 16
-    /// Между секциями — 8
-    static let sectionGap: CGFloat = 8
+    /// Между секциями — вплотную: воздух даёт поле 16 над заголовком (правка
+    /// пользователя 2026-10-04 — «минус 8 между всеми блоками»; в макете было 8)
+    static let sectionGap: CGFloat = 0
     static let side: CGFloat = 16
     static let cardGap: CGFloat = 8
     /// Подпись — 6 под обложкой, Text S
