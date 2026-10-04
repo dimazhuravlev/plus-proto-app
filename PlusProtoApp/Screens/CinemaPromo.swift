@@ -77,6 +77,8 @@ enum CinemaPromoLayout {
 /// (правка пользователя тем же днём).
 struct CinemaPromoCarousel: View {
     let promos: [CinemaCatalog.Promo]
+    /// Оттяг ленты — фон промо растёт вверх вслед за ним.
+    let pull: CGFloat
     /// Слайд набора, на котором остановились, — живёт в каталоге, на всю сессию.
     @Binding var savedIndex: Int
 
@@ -87,8 +89,9 @@ struct CinemaPromoCarousel: View {
     /// открывается на сохранённом слайде средней копии, без прыжка от нулевого.
     @State private var page: Int?
 
-    init(promos: [CinemaCatalog.Promo], savedIndex: Binding<Int>) {
+    init(promos: [CinemaCatalog.Promo], pull: CGFloat = 0, savedIndex: Binding<Int>) {
         self.promos = promos
+        self.pull = pull
         _savedIndex = savedIndex
         let count = max(promos.count, 1)
         _page = State(initialValue: count + savedIndex.wrappedValue % count)
@@ -118,6 +121,16 @@ struct CinemaPromoCarousel: View {
         // Один слайд — листать некуда.
         .scrollDisabled(count < 2)
         .frame(height: CinemaPromoLayout.height)
+        // Над промо и под навигацией — размытый кадр текущего слайда, как у промо Книг
+        // (задача пользователя 2026-10-04): область над промо не стоит пустой чёрной.
+        .background(alignment: .bottom) {
+            ShowcasePromoBackdrop(
+                source: current?.cover,
+                id: current?.id,
+                height: ServiceTopNavLayout.topSafeArea + CinemaLayout.contentTop + CinemaPromoLayout.height,
+                pull: pull
+            )
+        }
         .onScrollPhaseChange { _, phase in
             if phase == .idle { settle() }
         }
@@ -144,6 +157,14 @@ struct CinemaPromoCarousel: View {
     /// Первый слайд средней копии.
     private var startPage: Int {
         promos.count
+    }
+
+    /// Слайд набора на месте — по видимому слайду ленты копий.
+    private var current: CinemaCatalog.Promo? {
+        let count = promos.count
+        guard count > 0 else { return nil }
+        let index = ((page ?? startPage) % count + count) % count
+        return promos[index]
     }
 
     /// Свайп остановился: запомнить слайд и, если это крайняя копия, перескочить

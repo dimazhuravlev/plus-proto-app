@@ -121,7 +121,7 @@ struct CinemaHomeScreen: View {
     private var content: some View {
         if !catalog.promos.isEmpty {
             @Bindable var catalog = catalog
-            CinemaPromoCarousel(promos: catalog.promos, savedIndex: $catalog.promoIndex)
+            CinemaPromoCarousel(promos: catalog.promos, pull: max(0, -scrollOffset), savedIndex: $catalog.promoIndex)
         }
         history
         ForEach(catalog.rows) { row in

@@ -34,11 +34,6 @@ enum BooksPromoLayout {
     static let buttonHeight: CGFloat = 48
     static let buttonPadding: CGFloat = 32
     static let buttonBottom: CGFloat = 24
-    /// Фон — размытая копия обложки текущей книги, затемнённая и уходящая в чёрный.
-    /// Размытие 60 (было 40 — «размыть сильнее», правка пользователя 2026-10-04)
-    static let backdropBlur: CGFloat = 60
-    static let backdropDim: Double = 0.35
-    static let backdropFade: Animation = .easeInOut(duration: 0.4)
 }
 
 /// Карточка книги в карусели темы.
@@ -290,36 +285,17 @@ private struct BooksPromoCarousel: View {
         actionBar.open(.book(book.reading))
     }
 
-    /// Размытая копия обложки текущей книги — от физического верха экрана до низа
-    /// промо, затемнённая и уходящая в чёрный. Смена книги — кроссфейдом.
+    /// Размытая копия обложки текущей книги — общий фон промо витрин
+    /// (`ShowcasePromoBackdrop`): от верха экрана до низа промо, смена — кроссфейдом.
     private var backdrop: some View {
-        let height = ServiceTopNavLayout.topSafeArea + CinemaLayout.contentTop
-            + BooksPromoLayout.carouselHeight + BooksPromoLayout.blurbHeight + BooksPromoLayout.blurbToButton
-            + BooksPromoLayout.buttonHeight + BooksPromoLayout.buttonBottom
-        return ZStack {
-            if let current {
-                SkeletonArtwork(source: current.cover)
-                    .frame(width: PlusMetrics.designWidth, height: height)
-                    .blur(radius: BooksPromoLayout.backdropBlur, opaque: true)
-                    .overlay { Color.black.opacity(BooksPromoLayout.backdropDim) }
-                    .id(current.id)
-                    .transition(.opacity)
-            }
-        }
-        .frame(width: PlusMetrics.designWidth, height: height)
-        .clipped()
-        .mask {
-            LinearGradient(
-                stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55), .init(color: .clear, location: 1)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .animation(BooksPromoLayout.backdropFade, value: current?.id)
-        // Оттяг вниз — фон растёт вверх от нижней кромки ровно на его величину
-        // (правка пользователя 2026-10-04: сверху не должно быть чёрного).
-        .scaleEffect((height + pull) / height, anchor: .bottom)
-        .allowsHitTesting(false)
+        ShowcasePromoBackdrop(
+            source: current?.cover,
+            id: current?.id,
+            height: ServiceTopNavLayout.topSafeArea + CinemaLayout.contentTop
+                + BooksPromoLayout.carouselHeight + BooksPromoLayout.blurbHeight + BooksPromoLayout.blurbToButton
+                + BooksPromoLayout.buttonHeight + BooksPromoLayout.buttonBottom,
+            pull: pull
+        )
     }
 }
 
