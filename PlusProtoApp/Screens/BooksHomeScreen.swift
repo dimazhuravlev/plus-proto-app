@@ -34,6 +34,9 @@ enum BooksPromoLayout {
     static let buttonHeight: CGFloat = 48
     static let buttonPadding: CGFloat = 32
     static let buttonBottom: CGFloat = 24
+    /// Фон промо — в полную силу (правка пользователя 2026-10-04 — «опасити больше»;
+    /// прежде 0.8, как просили тем же днём раньше)
+    static let backdropOpacity: Double = 1
 }
 
 /// Карточка книги в карусели темы.
@@ -294,7 +297,8 @@ private struct BooksPromoCarousel: View {
             height: ServiceTopNavLayout.topSafeArea + CinemaLayout.contentTop
                 + BooksPromoLayout.carouselHeight + BooksPromoLayout.blurbHeight + BooksPromoLayout.blurbToButton
                 + BooksPromoLayout.buttonHeight + BooksPromoLayout.buttonBottom,
-            pull: pull
+            pull: pull,
+            opacity: BooksPromoLayout.backdropOpacity
         )
     }
 }
