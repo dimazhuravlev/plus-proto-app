@@ -96,7 +96,7 @@ struct ServiceTopNav: View {
     /// Сколько ленты ушло под бар — от этого прозрачность подложки.
     var scrollOffset: CGFloat = 0
     /// Аватар профиля — из макета навигации (`userpics` `2455:75985`), кадр 40pt на ×3.
-    var avatar: ArtworkSource = .asset("avatarProfile")
+    var avatar: ArtworkSource = .asset(ProfileMock.avatar)
 
     @Namespace private var pill
     @Environment(AppNavigationState.self) private var navigation

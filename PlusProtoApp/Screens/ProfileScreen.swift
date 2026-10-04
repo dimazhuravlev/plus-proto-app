@@ -116,7 +116,7 @@ struct ProfileScreen: View {
     /// без затемнения, как у навигации витрин: проявляется, когда лента уходит под шапку.
     private var header: some View {
         HStack(spacing: ProfileLayout.avatarToName) {
-            Image("profileUserpic")
+            Image(ProfileMock.avatar)
                 .resizable()
                 .scaledToFill()
                 .frame(width: ProfileLayout.avatar, height: ProfileLayout.avatar)
@@ -246,6 +246,10 @@ struct ProfileScreen: View {
 
 /// Моковый профиль — данные макета.
 enum ProfileMock {
+    /// Аватарка пользователя — одна на всё приложение: навигация витрин, шапка профиля,
+    /// его круг в семейной группе (правка пользователя 2026-10-04). Фото — из макета
+    /// навигации (`userpics` `2455:75985`).
+    static let avatar = "avatarProfile"
     static let name = "Мила Йовович"
     static let subscriptionEnd = "29 декабря 2026"
     static let points = "5000"
@@ -345,7 +349,8 @@ private struct ProfileFamilyWidget: View {
     private var avatars: some View {
         Grid(horizontalSpacing: ProfileLayout.familyAvatarGap, verticalSpacing: ProfileLayout.familyAvatarGap) {
             GridRow {
-                avatar("profileUserpic", bordered: true)
+                // Пользователь в своей семье — его аватарка, с бордером, как в макете.
+                avatar(ProfileMock.avatar, bordered: true)
                 avatar("profileFamilyYoung")
             }
             GridRow {
