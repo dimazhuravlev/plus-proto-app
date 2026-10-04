@@ -27,6 +27,10 @@ enum CinemaPromoLayout {
     /// Обложка занимает верхние 83.2 % блока (416 из 500)
     static let coverHeight: CGFloat = frameHeight * 416 / 500
     static let coverRadius: CGFloat = 24
+    /// Фон над промо — в полную силу только верхние 300 от верха экрана, дальше за 160
+    /// плавно уходит в чёрный (правка пользователя 2026-10-04)
+    static let backdropSolid: CGFloat = 300
+    static let backdropFade: CGFloat = 160
     /// Мета прижата к низу блока: поля 24 внутри карточки, зазор 8
     static let metaSide: CGFloat = 24
     static let metaBottom: CGFloat = 24 - bottomTrim
@@ -128,7 +132,9 @@ struct CinemaPromoCarousel: View {
                 source: current?.cover,
                 id: current?.id,
                 height: ServiceTopNavLayout.topSafeArea + CinemaLayout.contentTop + CinemaPromoLayout.height,
-                pull: pull
+                pull: pull,
+                solid: CinemaPromoLayout.backdropSolid,
+                fade: CinemaPromoLayout.backdropFade
             )
         }
         .onScrollPhaseChange { _, phase in

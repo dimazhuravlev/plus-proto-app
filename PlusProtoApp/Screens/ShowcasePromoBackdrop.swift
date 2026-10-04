@@ -27,6 +27,10 @@ struct ShowcasePromoBackdrop: View {
     let id: String?
     let height: CGFloat
     let pull: CGFloat
+    /// Сколько сверху фон стоит в полную силу и за сколько затем уходит в чёрный, pt.
+    /// `nil` — по доле высоты (`solidShare`), до низа промо.
+    var solid: CGFloat? = nil
+    var fade: CGFloat? = nil
 
     var body: some View {
         ZStack {
@@ -42,19 +46,27 @@ struct ShowcasePromoBackdrop: View {
         .frame(width: PlusMetrics.designWidth, height: height)
         .clipped()
         .mask {
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: ShowcasePromoBackdropStyle.solidShare),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            LinearGradient(stops: maskStops, startPoint: .top, endPoint: .bottom)
         }
         .opacity(ShowcasePromoBackdropStyle.opacity)
         .animation(ShowcasePromoBackdropStyle.fade, value: id)
         .scaleEffect((height + pull) / height, anchor: .bottom)
         .allowsHitTesting(false)
+    }
+
+    private var maskStops: [Gradient.Stop] {
+        guard let solid, let fade else {
+            return [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: ShowcasePromoBackdropStyle.solidShare),
+                .init(color: .clear, location: 1),
+            ]
+        }
+        return [
+            .init(color: .black, location: 0),
+            .init(color: .black, location: min(1, solid / height)),
+            .init(color: .clear, location: min(1, (solid + fade) / height)),
+            .init(color: .clear, location: 1),
+        ]
     }
 }
