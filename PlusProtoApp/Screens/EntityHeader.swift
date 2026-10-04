@@ -12,9 +12,9 @@ enum EntityCoverLayout {
     /// Зазор от низа обложки до названия — 16, в линию с полями экрана (правки
     /// пользователя 2026-08-29).
     static let coverToTitle: CGFloat = 16
-    /// Фон уходит ниже обложки на 48.5 — там градиент уже довёл его до чёрного.
-    /// У альбома ровно столько оставалось от квадрата 402 под кавером.
-    static let backdropTail: CGFloat = 48.5
+    /// Сколько от верха блока названия до низа его ряда действий — пока блок
+    /// не замерен (первый кадр): название в две строки, персона, ряд.
+    static let typicalActionsBottom: CGFloat = 160
     /// Фон — сама обложка: blur 30 + чёрный 30 % + градиент к чёрному снизу.
     static let backdropBlur: CGFloat = 30
     static let backdropDim: Double = 0.3
@@ -26,10 +26,12 @@ enum EntityCoverLayout {
         coverTop + coverHeight + coverToTitle
     }
 
-    /// Высота фона. Рисуется больше зоны и заходит под блок названия — там он уже
-    /// чёрный по градиенту, и захода не видно.
-    static func backdropHeight(coverHeight: CGFloat) -> CGFloat {
-        coverTop + coverHeight + backdropTail
+    /// Высота фона: от верха экрана до низа ряда действий под названием (правка
+    /// пользователя 2026-10-04: размытие кончается в районе кнопок; прежде — 48.5
+    /// под обложкой). Градиент к чёрному растянут на ту же высоту, поэтому полностью
+    /// чёрным фон становится ровно у низа ряда.
+    static func backdropHeight(coverHeight: CGFloat, actionsBottom: CGFloat) -> CGFloat {
+        zoneHeight(coverHeight: coverHeight) + actionsBottom
     }
 
     /// Обложка растёт за оттягом до ширины экрана минус поля 16, дальше стоит.
@@ -69,6 +71,8 @@ struct EntityCoverHeader<Cover: View>: View {
     let scrollOffset: CGFloat
     /// Прозрачность фона: у книги он проявляется вместе с обложкой.
     var backdropOpacity: Double = 1
+    /// От верха блока названия до низа ряда действий — докуда тянется фон.
+    var actionsBottom: CGFloat = EntityCoverLayout.typicalActionsBottom
     @ViewBuilder var cover: Cover
 
     /// Оттяг вниз. Скролл вверх шапку не трогает — она обычным образом уезжает.
@@ -86,7 +90,10 @@ struct EntityCoverHeader<Cover: View>: View {
     }
 
     var body: some View {
-        let backdropHeight = EntityCoverLayout.backdropHeight(coverHeight: coverSize.height)
+        let backdropHeight = EntityCoverLayout.backdropHeight(
+            coverHeight: coverSize.height,
+            actionsBottom: actionsBottom
+        )
         let backdropScale = (backdropHeight + growth) / backdropHeight
         let coverScale = min(
             EntityCoverLayout.maxCoverScale(coverWidth: coverSize.width),
@@ -125,12 +132,59 @@ struct EntityCoverHeader<Cover: View>: View {
     }
 }
 
+// MARK: - Шапка целиком
+
+/// Шапка экрана сущности целиком — резиновая зона обложки и блок названия под ней
+/// (альбом и книга). Вместе, а не порознь: фон тянется до низа ряда действий блока
+/// названия, а высота блока зависит от числа строк названия — шапка знает её только
+/// по замеру.
+struct EntityHeader<Cover: View, Person: View, Primary: View>: View {
+    let artwork: ArtworkSource
+    let coverSize: CGSize
+    let scrollOffset: CGFloat
+    var backdropOpacity: Double = 1
+    let title: String
+    @ViewBuilder var cover: Cover
+    @ViewBuilder var person: Person
+    @ViewBuilder var primary: Primary
+
+    /// Замер блока названия: от его верха до низа ряда действий.
+    @State private var actionsBottom = EntityCoverLayout.typicalActionsBottom
+
+    var body: some View {
+        VStack(spacing: 0) {
+            EntityCoverHeader(
+                artwork: artwork,
+                coverSize: coverSize,
+                scrollOffset: scrollOffset,
+                backdropOpacity: backdropOpacity,
+                actionsBottom: actionsBottom
+            ) {
+                cover
+            }
+
+            EntityTitleBlock(title: title) {
+                person
+            } primary: {
+                primary
+            }
+            // Высота блока от фона не зависит — замер круга не замыкает.
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height - EntityTitleLayout.blockBottom
+            } action: { height in
+                actionsBottom = height
+            }
+        }
+    }
+}
+
 // MARK: - Блок названия
 
 /// Числа блока названия альбома `736:108141` — общие с книгой.
 enum EntityTitleLayout {
     static let blockGap: CGFloat = 12
-    static let titleToPerson: CGFloat = 4
+    /// Название ↔ строка персоны: макетные 4 + 8 (правка пользователя 2026-10-04).
+    static let titleToPerson: CGFloat = 12
     static let blockBottom: CGFloat = 24
     static let personRowGap: CGFloat = 8
     static let avatarSize: CGFloat = 40

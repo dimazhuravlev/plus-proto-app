@@ -101,7 +101,6 @@ struct BookScreen: View {
             ScrollView {
                 VStack(spacing: 0) {
                     header
-                    titleBlock
                     description
                     shelfSection
                 }
@@ -165,19 +164,33 @@ struct BookScreen: View {
         BookScreenLayout.book.coverWidth(aspect: coverAspect ?? nil)
     }
 
-    /// Резиновая шапка — общая с альбомом. Фон проявляется вместе с книгой: до
-    /// обложки размывать нечего.
+    /// Шапка — общая с альбомом (`EntityHeader`): резиновая зона обложки и блок
+    /// названия — название кеглем по длине, строка автора (фото, имя, год), «Читать»
+    /// и три круглые. Фон проявляется вместе с книгой: до обложки размывать нечего.
     private var header: some View {
-        EntityCoverHeader(
+        EntityHeader(
             artwork: entity.artwork,
             coverSize: CGSize(
                 width: BookScreenLayout.book.frameSize(coverWidth: coverWidth).width,
                 height: BookScreenLayout.bookHeight
             ),
             scrollOffset: scrollOffset,
-            backdropOpacity: coverAspect == nil ? 0 : 1
+            backdropOpacity: coverAspect == nil ? 0 : 1,
+            title: entity.title
         ) {
             bookCover
+        } person: {
+            // Автора так и не узнали — строки нет; пока узнаём — скелетон.
+            if author != nil || !text.isReady {
+                EntityPersonRow(
+                    picture: portrait,
+                    name: author,
+                    detail: text.year,
+                    isDetailLoading: !text.isReady
+                )
+            }
+        } primary: {
+            EntityPrimaryButton(icon: "iconRead", title: "Читать", action: startReading)
         }
     }
 
@@ -203,25 +216,7 @@ struct BookScreen: View {
         .frame(height: BookScreenLayout.bookHeight)
     }
 
-    // MARK: Название, автор, действия
-
-    /// Та же конструкция, что у альбома (`EntityTitleBlock`): название — кеглем
-    /// по длине, строка автора — фото, имя и год, ряд — «Читать» и три круглые.
-    private var titleBlock: some View {
-        EntityTitleBlock(title: entity.title) {
-            // Автора так и не узнали — строки нет; пока узнаём — скелетон.
-            if author != nil || !text.isReady {
-                EntityPersonRow(
-                    picture: portrait,
-                    name: author,
-                    detail: text.year,
-                    isDetailLoading: !text.isReady
-                )
-            }
-        } primary: {
-            EntityPrimaryButton(icon: "iconRead", title: "Читать", action: startReading)
-        }
-    }
+    // MARK: Автор
 
     /// Из поиска книга приходит с автором, с витрины — без: тогда он из API.
     private var author: String? {

@@ -145,17 +145,30 @@ struct AlbumScreen: View {
 
     // MARK: Шапка
 
+    /// Шапка — общая с книгой (`EntityHeader`): резиновая зона кавера (фон-блюр
+    /// и кавер тянутся за оттягом) и блок названия — название, исполнитель, ряд действий.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Резиновая шапка — общая с книгой: фон-блюр и кавер тянутся за оттягом.
-            EntityCoverHeader(
-                artwork: entity.artwork,
-                coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
-                scrollOffset: scrollOffset
-            ) {
-                cover
+        EntityHeader(
+            artwork: entity.artwork,
+            coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
+            scrollOffset: scrollOffset,
+            title: details.title
+        ) {
+            cover
+        } person: {
+            if !details.artist.isEmpty {
+                EntityPersonRow(
+                    picture: .artwork(details.artistPicture),
+                    name: details.artist,
+                    detail: details.year
+                )
             }
-            titleBlock
+        } primary: {
+            EntityPrimaryButton(
+                icon: isPlayingThisAlbum ? "iconPause" : "iconPlay",
+                title: isPlayingThisAlbum ? "Пауза" : "Слушать",
+                action: togglePlayback
+            )
         }
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -171,27 +184,6 @@ struct AlbumScreen: View {
             .frame(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize)
             .clipShape(shape)
             .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
-    }
-
-    // MARK: Блок названия
-
-    /// Название, исполнитель и ряд действий — общий блок с книгой (`EntityTitleBlock`).
-    private var titleBlock: some View {
-        EntityTitleBlock(title: details.title) {
-            if !details.artist.isEmpty {
-                EntityPersonRow(
-                    picture: .artwork(details.artistPicture),
-                    name: details.artist,
-                    detail: details.year
-                )
-            }
-        } primary: {
-            EntityPrimaryButton(
-                icon: isPlayingThisAlbum ? "iconPause" : "iconPlay",
-                title: isPlayingThisAlbum ? "Пауза" : "Слушать",
-                action: togglePlayback
-            )
-        }
     }
 
     /// Все треки альбома подряд: дисков в списке больше нет, а плееру они и не нужны.
