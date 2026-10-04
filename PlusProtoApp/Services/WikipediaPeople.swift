@@ -28,6 +28,7 @@ actor WikipediaPeople {
 
     /// Ответы на процесс — и пустые тоже: повторный ввод того же запроса бесплатен.
     private var cache: [String: Person?] = [:]
+    private var portraits: [String: URL?] = [:]
     private let session: URLSession
 
     private static let directorMarkers = ["режиссёр", "режиссер"]
@@ -57,7 +58,35 @@ actor WikipediaPeople {
         return found
     }
 
+    /// Фото автора книги для строки под названием на экране книги (2026-10-04).
+    /// Ищется по имени из метаданных тома, поэтому профессию не проверяем: у авторов
+    /// нон-фикшена в описании «экономист», «лингвист», а не «писатель». Страница
+    /// обязана быть статьёй о человеке («Фамилия, Имя») и с фото — иначе `nil`.
+    func portrait(of name: String) async -> URL? {
+        let key = name.lowercased()
+        if let cached = portraits[key] { return cached }
+        let found = await page(for: name).flatMap { page -> URL? in
+            guard Self.displayName(fromTitle: page.title) != nil else { return nil }
+            return page.thumbnail.flatMap { URL(string: $0.source) }
+        }
+        guard !Task.isCancelled else { return found }
+        portraits[key] = found
+        return found
+    }
+
     private func fetch(_ query: String) async -> Person? {
+        guard
+            let page = await page(for: query),
+            let source = page.thumbnail?.source,
+            let photo = URL(string: source),
+            let name = Self.displayName(fromTitle: page.title),
+            let role = Self.role(from: page.description)
+        else { return nil }
+        return Person(pageID: page.pageid, name: name, role: role, photo: photo)
+    }
+
+    /// Первая страница поиска Википедии с главной картинкой и описанием.
+    private func page(for query: String) async -> Page? {
         var components = URLComponents(string: "https://ru.wikipedia.org/w/api.php")
         components?.queryItems = [
             URLQueryItem(name: "action", value: "query"),
@@ -73,14 +102,9 @@ actor WikipediaPeople {
         guard
             let url = components?.url,
             let result = try? await session.data(from: url),
-            (result.1 as? HTTPURLResponse)?.statusCode == 200,
-            let page = (try? JSONDecoder().decode(Response.self, from: result.0))?.query?.pages.first,
-            let source = page.thumbnail?.source,
-            let photo = URL(string: source),
-            let name = Self.displayName(fromTitle: page.title),
-            let role = Self.role(from: page.description)
+            (result.1 as? HTTPURLResponse)?.statusCode == 200
         else { return nil }
-        return Person(pageID: page.pageid, name: name, role: role, photo: photo)
+        return (try? JSONDecoder().decode(Response.self, from: result.0))?.query?.pages.first
     }
 
     /// «Толстой, Лев Николаевич» → «Лев Толстой», «Ремарк, Эрих Мария» → «Эрих Мария

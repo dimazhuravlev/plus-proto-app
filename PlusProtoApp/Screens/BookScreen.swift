@@ -5,40 +5,18 @@ import SwiftUI
 /// Числа макета `2427:26464` и правок пользователя 2026-10-04. Холст макета — 375,
 /// у проекта 402: поля 16 остаются, колонка становится шире.
 private enum BookScreenLayout {
-    static let sideInset: CGFloat = 16
+    static let sideInset: CGFloat = EntityCoverLayout.side
 
-    // Шапка — как у альбома (правка 2026-10-04): фон — размытая копия обложки
-    // от физического верха экрана, обложка — книга в проекции, как в выдаче поиска.
-    /// Верх книги — там же, где кавер альбома: сразу под навбаром.
-    static var coverTop: CGFloat { AlbumLayout.coverTop }
-    /// Высота обложки — прежняя макетная 324; ширина — по пропорциям самой обложки.
+    /// Шапка — общая с альбомом (`EntityCoverHeader`, правки 2026-10-04): фон — размытая
+    /// копия обложки, обложка тянется за оттягом. Обложка — книга в проекции, как
+    /// в выдаче поиска: высота обложки — прежняя макетная 324, ширина — по пропорциям.
     static let book = BookFigureGeometry(coverHeight: 324)
     /// Книга с блоком страниц над обложкой.
     static var bookHeight: CGFloat { book.frameSize(coverWidth: 0).height }
-    /// Зазор от книги до названия — 16, как у альбома (прежде 8 + 8 макета).
-    static let coverToTitle: CGFloat = 16
-    static var coverZoneHeight: CGFloat { coverTop + bookHeight + coverToTitle }
-    /// Фон уходит ниже книги на столько же, на сколько у альбома ниже кавера (48.5):
-    /// там градиент уже довёл его до чёрного.
-    static var backdropTail: CGFloat { AlbumLayout.coverArea - AlbumLayout.coverTop - AlbumLayout.coverSize }
-    static var backdropHeight: CGFloat { coverTop + bookHeight + backdropTail }
 
-    /// Название и автор: под ними 8, между ними 8.
-    static let textBottom: CGFloat = 8
-    static let titleToAuthor: CGFloat = 8
-    /// Кнопка «Читать» — компонент `12:8770` (Size=xl, Type=accent, Icon=leading):
-    /// глиф 24 и по 14 сверху и снизу, поля 22/26. Вокруг — 8 + 12 сверху и снизу
-    /// и ряд с полями 10.
-    static let buttonHeight: CGFloat = 52
-    static let buttonIcon: CGFloat = 24
-    static let buttonIconGap: CGFloat = 8
-    static let buttonLeading: CGFloat = 22
-    static let buttonTrailing: CGFloat = 26
-    static let buttonRowInset: CGFloat = 10
-    static let buttonsInnerPadding: CGFloat = 12
-    static let buttonsOuterPadding: CGFloat = 8
-    /// Описание: 8 сверху, 16 снизу, абзацы через 16.
-    static let descriptionTop: CGFloat = 8
+    /// Описание: сразу под блоком названия (его 24 снизу — как у альбома до треклиста),
+    /// 16 снизу, абзацы через 16.
+    static let descriptionTop: CGFloat = 0
     static let descriptionBottom: CGFloat = 16
     static let paragraphGap: CGFloat = 16
 
@@ -62,7 +40,6 @@ private enum BookScreenLayout {
     // Скелетоны — `PlusSkeleton`: полосы 12 по центрам строк Text M (20).
     static let skeletonBar: CGFloat = 12
     static var skeletonBarInset: CGFloat { (PlusTextSize.textM.lineHeight - skeletonBar) / 2 }
-    static let skeletonAuthorWidth: CGFloat = 140
     /// Абзацы описания в скелетоне — доли ширины колонки по строкам.
     static let skeletonParagraphs: [[CGFloat]] = [
         [1, 0.96, 0.93, 0.98, 0.62],
@@ -74,15 +51,9 @@ private enum BookScreenLayout {
     /// Дополнительный воздух под низом ленты, сверх клиренса хрома — как у альбома.
     static var bottomClearance: CGFloat { AlbumLayout.bottomClearance }
 
-    /// Пороги навбара — в той же связке с блоком названия, что у альбома: подложка —
-    /// когда шапка почти ушла под бар, обложка с названием — когда под ним название.
+    /// Пороги навбара — общие с альбомом, от верха названия.
     static var navBarThresholds: EntityNavBarThresholds {
-        EntityNavBarThresholds(
-            backgroundStart: coverZoneHeight - 122,
-            backgroundRamp: 80,
-            titleStart: coverZoneHeight - 22,
-            titleRamp: 90
-        )
+        EntityCoverLayout.navBarThresholds(coverHeight: bookHeight)
     }
 }
 
@@ -94,11 +65,12 @@ enum BookScreenMotion {
 
 // MARK: - Экран
 
-/// Экран книги — макет `2427:26464` с правками 2026-10-04: шапка как у альбома (фон —
-/// размытая копия обложки с той же резиной оттяга), обложка — книга в проекции
-/// своих пропорций, как карточка выдачи поиска, название и автор, акцентная «Читать»,
-/// описание и карусель «Книги писателя». Всё, что едет из сети, стоит скелетоном
-/// и проявляется на его месте. Сверху — общий навбар с «назад» и «поделиться».
+/// Экран книги — макет `2427:26464` с правками 2026-10-04: та же конструкция, что
+/// у альбома — общая резиновая шапка (фон — размытая копия обложки, обложка тянется
+/// за оттягом) и общий блок названия (название, строка автора с фото и годом, «Читать»
+/// и круглые «нравится», «скачать», «поделиться»). Обложка — книга в проекции своих
+/// пропорций, как карточка выдачи поиска. Ниже — описание и «Книги писателя». Всё,
+/// что едет из сети, стоит скелетоном и проявляется на его месте.
 struct BookScreen: View {
     let entity: EntityRef
     @Environment(ActionBarState.self) private var actionBar
@@ -108,6 +80,8 @@ struct BookScreen: View {
     /// Пропорции обложки: `nil` — картинка ещё едет, стоит скелетон книги.
     /// `.some(nil)` — картинки нет вовсе, книга встаёт с пропорциями по умолчанию.
     @State private var coverAspect: CGFloat??
+    /// Фото автора — из Википедии; пока ищется — скелетон круга.
+    @State private var portrait: EntityPersonRow.Picture = .loading
     @State private var scrollOffset: CGFloat = 0
     #if DEBUG
     /// `-debugTapPlay` уже нажал «Читать» на этом экране: читалка открывается
@@ -126,9 +100,8 @@ struct BookScreen: View {
         ZStack(alignment: .top) {
             ScrollView {
                 VStack(spacing: 0) {
-                    coverZone
-                    titles
-                    readButton
+                    header
+                    titleBlock
                     description
                     shelfSection
                 }
@@ -138,6 +111,7 @@ struct BookScreen: View {
                 .animation(BookScreenMotion.reveal, value: text.isReady)
                 .animation(BookScreenMotion.reveal, value: shelf.isLoaded)
                 .animation(BookScreenMotion.reveal, value: author)
+                .animation(BookScreenMotion.reveal, value: portrait)
             }
             .scrollIndicators(.hidden)
             // Хром (таббар + action bar) на этом экране виден — лента едет под ним.
@@ -150,17 +124,14 @@ struct BookScreen: View {
             .ignoresSafeArea(edges: .top)
             .trackNavBarScroll(into: $scrollOffset)
 
-            // Общий навбар как есть: кнопки 40, поля 16 с обеих сторон — правка
-            // пользователя 2026-10-03 поверх макета, где кнопки 32 (`Size=sm`).
+            // Общий навбар, как у альбома, — без правого слота: «поделиться» теперь
+            // в ряду действий под названием.
             EntityNavBar(
                 title: entity.title,
                 artwork: entity.artwork,
                 scrollOffset: scrollOffset,
                 thresholds: BookScreenLayout.navBarThresholds
-            ) {
-                // Поделиться пока нечем — кнопка из макета, с пресс-стейтом.
-                GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться")
-            }
+            )
         }
         .background(Color.black.ignoresSafeArea())
         // Системный бар выключен: на пуше он рисовал бы свой back поверх нашего.
@@ -174,6 +145,7 @@ struct BookScreen: View {
         // «Книги писателя» — когда известен автор: из выдачи он приходит сразу,
         // с витрины — из того же захода, что описание.
         .task(id: shelfKey) { await loadShelf() }
+        .task(id: author) { await loadPortrait() }
         #if DEBUG
         // `-debugTapPlay` — нажать «Читать»: из шелла тапнуть нечем.
         .task {
@@ -188,42 +160,25 @@ struct BookScreen: View {
 
     // MARK: Шапка
 
-    /// Оттяг вниз. Скролл вверх шапку не трогает — она обычным образом уезжает.
-    private var pull: CGFloat { max(0, -scrollOffset) }
-
-    /// Зона шапки: фон и книга. Фон — как у альбома, с той же резиной: компенсирует
-    /// оттяг (`offset(y: -pull)`) и тянется ровно на его величину от верхней кромки —
-    /// низ остаётся приклеен к блоку названия. Книга едет с контентом.
-    private var coverZone: some View {
-        let backdropScale = (BookScreenLayout.backdropHeight + pull) / BookScreenLayout.backdropHeight
-
-        return ZStack(alignment: .top) {
-            backdrop
-                .scaleEffect(backdropScale, anchor: .top)
-                .offset(y: -pull)
-                // Фон проявляется вместе с книгой: до обложки размывать нечего.
-                .opacity(coverAspect == nil ? 0 : 1)
-
-            bookCover
-                .padding(.top, BookScreenLayout.coverTop)
-        }
-        .frame(maxWidth: .infinity)
-        // По верху: содержимое зоны выше её кадра (фон рисуется на всю свою высоту),
-        // а `frame(height:)` по умолчанию центрирует переполнение — см. альбом.
-        .frame(height: BookScreenLayout.coverZoneHeight, alignment: .top)
+    /// Ширина обложки сейчас: своих пропорций, а пока они едут — по умолчанию.
+    private var coverWidth: CGFloat {
+        BookScreenLayout.book.coverWidth(aspect: coverAspect ?? nil)
     }
 
-    /// Фон — сама обложка: blur 30, чёрный 30 % и 16-стоповый градиент к чёрному
-    /// снизу — ровно тот же, что у альбома.
-    private var backdrop: some View {
-        ArtworkImage(source: entity.artwork)
-            .scaledToFill()
-            .frame(width: PlusMetrics.designWidth, height: BookScreenLayout.backdropHeight)
-            .clipped()
-            .blur(radius: AlbumLayout.backdropBlur, opaque: true)
-            .overlay(Color.black.opacity(AlbumLayout.backdropDim))
-            .overlay(MovieScrim.gradient(peak: 1, from: .top, to: .bottom))
-            .allowsHitTesting(false)
+    /// Резиновая шапка — общая с альбомом. Фон проявляется вместе с книгой: до
+    /// обложки размывать нечего.
+    private var header: some View {
+        EntityCoverHeader(
+            artwork: entity.artwork,
+            coverSize: CGSize(
+                width: BookScreenLayout.book.frameSize(coverWidth: coverWidth).width,
+                height: BookScreenLayout.bookHeight
+            ),
+            scrollOffset: scrollOffset,
+            backdropOpacity: coverAspect == nil ? 0 : 1
+        ) {
+            bookCover
+        }
     }
 
     /// Книга — тот же рисунок, что карточка выдачи поиска, только крупно. Пока
@@ -248,39 +203,23 @@ struct BookScreen: View {
         .frame(height: BookScreenLayout.bookHeight)
     }
 
-    // MARK: Название и автор
+    // MARK: Название, автор, действия
 
-    /// Кегль названия — ступенью от длины, тем же правилом, что у альбома
-    /// (`EntityTitleType`).
-    private var titles: some View {
-        VStack(spacing: BookScreenLayout.titleToAuthor) {
-            Text(entity.title)
-                .plusHeadline(EntityTitleType.style(for: entity.title))
-                .foregroundStyle(Color.fillOne)
-            authorLine
-        }
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, BookScreenLayout.sideInset)
-        .padding(.bottom, BookScreenLayout.textBottom)
-    }
-
-    /// Строка автора держит место всегда: и до ответа API (там скелетон), и у книги
-    /// без автора — иначе кнопка и описание съезжали бы на её высоту.
-    private var authorLine: some View {
-        ZStack {
-            Text(author ?? " ")
-                .plusText(.textM, .medium)
-                .foregroundStyle(Color.fillSubtitle)
-                .opacity(author == nil ? 0 : 1)
-
-            if author == nil, !text.isReady {
-                Capsule(style: .continuous)
-                    .fill(PlusSkeleton.fill)
-                    .frame(width: BookScreenLayout.skeletonAuthorWidth, height: BookScreenLayout.skeletonBar)
-                    .transition(.opacity)
-                    .accessibilityHidden(true)
+    /// Та же конструкция, что у альбома (`EntityTitleBlock`): название — кеглем
+    /// по длине, строка автора — фото, имя и год, ряд — «Читать» и три круглые.
+    private var titleBlock: some View {
+        EntityTitleBlock(title: entity.title) {
+            // Автора так и не узнали — строки нет; пока узнаём — скелетон.
+            if author != nil || !text.isReady {
+                EntityPersonRow(
+                    picture: portrait,
+                    name: author,
+                    detail: text.year,
+                    isDetailLoading: !text.isReady
+                )
             }
+        } primary: {
+            EntityPrimaryButton(icon: "iconRead", title: "Читать", action: startReading)
         }
     }
 
@@ -289,30 +228,20 @@ struct BookScreen: View {
         entity.subtitle.isEmpty ? text.author : entity.subtitle
     }
 
-    // MARK: Кнопка
-
-    private var readButton: some View {
-        Button(action: startReading) {
-            HStack(spacing: BookScreenLayout.buttonIconGap) {
-                MovieIcon(name: "iconRead", box: BookScreenLayout.buttonIcon)
-                Text("Читать")
-                    .plusText(.textM, .semibold)
-                    .foregroundStyle(Color.fillOne)
-                    .fixedSize()
-            }
-            .padding(.leading, BookScreenLayout.buttonLeading)
-            .padding(.trailing, BookScreenLayout.buttonTrailing)
-            .frame(maxWidth: .infinity)
-            .frame(height: BookScreenLayout.buttonHeight)
-            // Общий акцентный стиль ДС — тот же, что у «Смотреть» и «Слушать»:
-            // это одна и та же кнопка «включить контент».
-            .accentButtonSurface()
+    /// Фото автора — из Википедии, по имени из метаданных тома. Картинка грузится
+    /// до показа: круг меняет скелетон на фото, а не на пустоту. Фото нет — первая
+    /// буква имени.
+    private func loadPortrait() async {
+        guard let author, !author.isEmpty else { return }
+        let picture: EntityPersonRow.Picture
+        if let url = await WikipediaPeople.shared.portrait(of: author),
+           await ArtworkLoader.shared.image(for: url) != nil {
+            picture = .artwork(.remote(url))
+        } else {
+            picture = .monogram(String(author.prefix(1)).uppercased())
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .padding(.horizontal, BookScreenLayout.buttonRowInset)
-        .padding(.vertical, BookScreenLayout.buttonsInnerPadding)
-        .padding(.horizontal, BookScreenLayout.sideInset)
-        .padding(.vertical, BookScreenLayout.buttonsOuterPadding)
+        guard !Task.isCancelled else { return }
+        portrait = picture
     }
 
     // MARK: Описание

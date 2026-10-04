@@ -26,6 +26,8 @@ final class BookTextStore {
     private(set) var pages: [String] = []
     /// Автор из API — если экран, открывший читалку, его не знал.
     private(set) var author: String?
+    /// Год издания тома — подпись под автором на экране книги.
+    private(set) var year: String?
     /// Текст готов. До этого колонка пустая и проявляется целиком, а не набирается
     /// на глазах абзац за абзацем.
     private(set) var isReady = false
@@ -41,6 +43,7 @@ final class BookTextStore {
         if let volumeID = Self.volumeID(for: bookID),
            let volume = try? await BooksService.shared.volume(id: volumeID) {
             author = volume.volumeInfo.authors?.first
+            year = volume.volumeInfo.publishedDate.map { String($0.prefix(4)) }
             fromAPI = Self.paragraphs(fromDescription: volume.volumeInfo.description ?? "")
                 .map(Self.bindingShortWords)
         }
