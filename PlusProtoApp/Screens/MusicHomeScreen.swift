@@ -36,19 +36,35 @@ struct MusicHomeScreen: View {
     static let filters = ["Моя волна", "Для вас", "Подкасты", "Тренды", "Детям"]
 
     @State private var filter = 0
+    @State private var scrollOffset: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
 
             if filter == 0 {
-                MyVibeHero()
+                // Экран в один кадр, но пружинит при оттяге, как остальные витрины:
+                // за оттягом едет и навигация (правка пользователя 2026-10-04).
+                // Вверх ему ехать некуда — нижнее поле под хром снято.
+                ScrollView {
+                    MyVibeHero()
+                        .containerRelativeFrame(.vertical)
+                }
+                .scrollBounceBehavior(.always, axes: .vertical)
+                .scrollIndicators(.hidden)
+                .contentMargins(.bottom, 0, for: .scrollContent)
+                .ignoresSafeArea(edges: .top)
+                .trackNavBarScroll(into: $scrollOffset)
             } else {
                 ServiceFilterStub(title: Self.filters[filter])
             }
         }
         .overlay(alignment: .top) {
-            ServiceTopNav(filters: Self.filters, selection: $filter)
+            ServiceTopNav(
+                filters: Self.filters,
+                selection: $filter,
+                scrollOffset: filter == 0 ? scrollOffset : 0
+            )
         }
         .toolbar(.hidden, for: .navigationBar)
     }

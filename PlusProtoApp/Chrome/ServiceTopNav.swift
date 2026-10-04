@@ -69,6 +69,9 @@ enum ServiceTopNavMotion {
     static let dragThreshold: CGFloat = 8
     static let stripSettle: Animation = .smooth(duration: 0.45)
     static let rubber: CGFloat = 0.35
+    /// Оттяг ленты вниз: ряд навигации едет за ним в 2.5 раза медленнее — отступ над
+    /// баром тоже тянется, но не наравне с лентой (правка пользователя 2026-10-04)
+    static let pullFollow: CGFloat = 0.4
 }
 
 /// Верхняя навигация сервисного таба — табы-фильтры слева, аватар справа (макет
@@ -95,6 +98,8 @@ struct ServiceTopNav: View {
                 .padding(.trailing, ServiceTopNavLayout.side)
         }
         .frame(height: ServiceTopNavLayout.rowHeight)
+        // Сдвиг — только у ряда: подложка стоит на месте, а она в покое прозрачна.
+        .offset(y: max(0, -scrollOffset) * ServiceTopNavMotion.pullFollow)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
             NavBarBackdrop()
