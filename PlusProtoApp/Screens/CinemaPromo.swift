@@ -294,7 +294,7 @@ private struct CinemaPromoSlide: View {
             } label: {
                 BookmarkGlyph(isSaved: isSaved, box: CinemaPromoLayout.buttonIcon)
                     .frame(width: CinemaPromoLayout.buttonHeight, height: CinemaPromoLayout.buttonHeight)
-                    .glassSurface(Circle(), blur: PlusMetrics.buttonBlur)
+                    .secondaryButtonSurface(Circle())
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel(isSaved ? "Убрать из «Позже»" : "Буду смотреть")

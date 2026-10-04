@@ -87,8 +87,6 @@ private struct FilterChip: View {
 
     /// Фиолетовый активного чипса — #A332FF макета, общий с лейблом тайтла.
     private static let accent = Color.moviesAccent
-    /// Бордер капсулы — 0.67, белый 8 % (`fillNine`), у активного и неактивного.
-    private static let borderWidth: CGFloat = 0.67
 
     var body: some View {
         Button(action: action) {
@@ -111,7 +109,8 @@ private struct FilterChip: View {
                     .clipShape(Capsule())
                 }
                 .overlay {
-                    Capsule().strokeBorder(Color.fillNine, lineWidth: Self.borderWidth)
+                    // Бордер серых кнопок — у активного и неактивного один.
+                    Capsule().strokeBorder(SecondaryButtonBorder.color, lineWidth: SecondaryButtonBorder.width)
                 }
                 .contentShape(Capsule())
         }

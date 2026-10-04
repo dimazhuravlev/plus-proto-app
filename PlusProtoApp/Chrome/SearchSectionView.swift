@@ -360,7 +360,7 @@ struct SearchHistoryView: View {
                 .foregroundStyle(Color.fillOne)
                 .frame(maxWidth: .infinity)
                 .frame(height: Layout.buttonHeight)
-                .glassSurface(Capsule(style: .continuous), blur: PlusMetrics.buttonBlur)
+                .secondaryButtonSurface(Capsule(style: .continuous))
                 .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: Layout.buttonPressedScale))
@@ -724,7 +724,7 @@ private struct MusicWizardCard: View {
                     .frame(width: 20, height: 20)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: Layout.playSize, height: Layout.playSize)
-                    .background(Color.buttonsSecondary, in: Circle())
+                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
                     .contentShape(Circle())
             }
             .buttonStyle(PressScaleButtonStyle())

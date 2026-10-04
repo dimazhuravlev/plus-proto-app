@@ -750,7 +750,7 @@ private struct MovieMainButtons: View {
             .frame(height: MovieLayout.buttonHeight)
             // Дефолтный бордер стекла (white 8% × 0.66) вернулся по макету
             // `2103:15123` — раньше выключался явно (правка 2026-08-25)
-            .glassSurface(Capsule(style: .continuous), blur: PlusMetrics.buttonBlur)
+            .secondaryButtonSurface(Capsule(style: .continuous))
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isSaved ? "Убрать из «Позже»" : "Позже")
@@ -765,7 +765,7 @@ private struct MovieMainButtons: View {
         } label: {
             DownloadGlyph(isDownloaded: isDownloaded, box: MovieLayout.buttonIconBox)
             .frame(width: MovieLayout.buttonHeight, height: MovieLayout.buttonHeight)
-            .glassSurface(Circle(), blur: PlusMetrics.buttonBlur)
+            .secondaryButtonSurface(Circle())
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isDownloaded ? "Удалить из скачанного" : "Скачать")

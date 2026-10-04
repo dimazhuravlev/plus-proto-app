@@ -56,7 +56,8 @@ struct RateReactionChip: View {
             .resizable()
             .frame(width: emojiSize, height: emojiSize)
             .frame(width: diameter, height: diameter)
-            .background(Circle().fill(isSelected ? Color.white : Color.buttonsSecondary))
+            // Стекло серых кнопок: блюр фона и бордер 0.67 × белый 8 %; выбранная — белая.
+            .secondaryButtonSurface(Circle(), fill: isSelected ? Color.white : Color.buttonsSecondary)
             .animation(RateReactionMotion.select, value: isSelected)
             .accessibilityHidden(true)
     }

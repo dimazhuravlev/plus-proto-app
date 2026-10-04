@@ -1559,7 +1559,7 @@ private struct BookChip: View {
                 .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
         }
         .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
-        .glassSurface(
+        .secondaryButtonSurface(
             RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous),
             blur: PlusMetrics.glassBlur
         )
@@ -1580,7 +1580,7 @@ private struct MovieChip: View {
                 .padding(ActionBarGeometry.movieChipPadding)
         }
         .frame(width: ActionBarGeometry.movieChipSize.width, height: ActionBarGeometry.movieChipSize.height)
-        .glassSurface(
+        .secondaryButtonSurface(
             RoundedRectangle(cornerRadius: PlusRadius.movieChip, style: .continuous),
             blur: PlusMetrics.glassBlur
         )

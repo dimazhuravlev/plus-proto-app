@@ -504,7 +504,7 @@ private struct CollectionTracksBlock: View {
                     .frame(width: CollectionLayout.playIcon, height: CollectionLayout.playIcon)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: CollectionLayout.playButton, height: CollectionLayout.playButton)
-                    .background(Circle().fill(Color.buttonsSecondary))
+                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
                     .contentShape(Circle())
             }
             .buttonStyle(PressScaleButtonStyle())

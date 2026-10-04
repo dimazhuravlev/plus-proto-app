@@ -44,9 +44,8 @@ private enum MoviePlayerLayout {
     static let pillTrailing: CGFloat = 20
     static let pillIconGap: CGFloat = 6
     static let pillIcon: CGFloat = 20
-    /// Бордер стеклянных кнопок плеера — сырые white 6 %, как у круглой кнопки 40pt
-    /// (DECISIONS 2026-08-22): у пилюль-кнопок макета он тот же.
-    static let buttonBorder = Color.white.opacity(0.06)
+    // Бордер стеклянных кнопок плеера — общий у серых кнопок: 0.67 × белый 8 %
+    // (`secondaryButtonSurface`, 2026-10-04; прежде сырые white 6 %).
 }
 
 // MARK: - Движение
@@ -559,11 +558,7 @@ struct MoviePlayerView: View {
             .padding(.leading, MoviePlayerLayout.pillLeading)
             .padding(.trailing, MoviePlayerLayout.pillTrailing)
             .frame(height: MoviePlayerLayout.pillHeight)
-            .glassSurface(
-                Capsule(style: .continuous),
-                blur: PlusMetrics.buttonBlur,
-                border: MoviePlayerLayout.buttonBorder
-            )
+            .secondaryButtonSurface(Capsule(style: .continuous))
         }
         .buttonStyle(PressScaleButtonStyle())
     }

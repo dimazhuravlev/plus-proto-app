@@ -139,13 +139,7 @@ struct ProfileScreen: View {
                     .frame(width: ProfileLayout.closeIcon, height: ProfileLayout.closeIcon)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: ProfileLayout.closeButton, height: ProfileLayout.closeButton)
-                    .glassSurface(
-                        Circle(),
-                        blur: ProfileLayout.closeBlur,
-                        fill: .buttonsSecondary,
-                        border: ProfileLayout.widgetBorder,
-                        borderWidth: ProfileLayout.borderWidth
-                    )
+                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary, blur: ProfileLayout.closeBlur)
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel("Закрыть")
@@ -358,9 +352,9 @@ private struct ProfileFamilyWidget: View {
             GridRow {
                 avatar("profileFamilyElder")
                 Button {} label: {
-                    Circle()
-                        .fill(Color.fillNine)
+                    Color.clear
                         .aspectRatio(1, contentMode: .fit)
+                        .secondaryButtonSurface(Circle(), fill: .fillNine)
                         .overlay {
                             Image("iconAdd")
                                 .renderingMode(.template)
@@ -405,9 +399,24 @@ private struct ProfilePill: View {
                 .foregroundStyle(isInverted ? Color.black : Color.fillOne)
                 .padding(.horizontal, ProfileLayout.pillHorizontal)
                 .padding(.vertical, ProfileLayout.pillVertical)
-                .background(Capsule().fill(isInverted ? Color.white : Color.buttonsPrimary))
+                .background { if isInverted { Capsule().fill(Color.white) } }
+                // Серая — стекло серых кнопок; инвертированная белая — без него.
+                .modifier(ProfilePillSurface(isInverted: isInverted))
         }
         .buttonStyle(PressScaleButtonStyle())
+    }
+}
+
+/// Поверхность капсулы: серая — общее стекло серых кнопок (блюр, бордер 0.67 × 8 %).
+private struct ProfilePillSurface: ViewModifier {
+    let isInverted: Bool
+
+    func body(content: Content) -> some View {
+        if isInverted {
+            content
+        } else {
+            content.secondaryButtonSurface(Capsule(style: .continuous))
+        }
     }
 }
 
