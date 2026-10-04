@@ -157,25 +157,11 @@ struct SearchResultsView: View {
         /// Высота обложки — по размеру карточек; ширина — по её пропорциям, обложка
         /// не режется.
         static var bookCoverHeight: CGFloat { size.bookCoverHeight }
-        /// Пропорции, пока своих нет, — постер 2:3.
-        static let bookDefaultAspect: CGFloat = 2.0 / 3.0
-        /// Крайние пропорции: дальше обложка уже режется — иначе альбомный скан
-        /// растянул бы карточку на пол-экрана, а узкий сжал бы подпись в столбик.
-        static let bookAspectRange: ClosedRange<CGFloat> = 0.55...1.0
-        /// Подложка-блок страниц выглядывает из-за обложки на 2 сверху и на 3 справа.
-        static let bookPagesTop: CGFloat = 2
-        static let bookPagesRight: CGFloat = 3
-        /// Сколько из этих 3 карточка забирает в свою ширину — `pr-[2px]` макета;
-        /// последний пункт уходит в зазор до соседа.
-        static let bookPagesInset: CGFloat = 2
-        static let bookCoverRadius: CGFloat = 8
-        /// Скругление серой подложки — 10, у обложки 8 (правка пользователя 2026-10-03;
-        /// в экспорте макета было 16).
-        static let bookPagesRadius: CGFloat = 10
-        /// Скошенный верх корешка у подложки: 4.1 % её ширины по горизонтали, 1.93 вниз.
-        static let bookSpineBevel = CGSize(width: 0.0406, height: 1.93)
-        static let bookPagesFill = Color.white.opacity(0.15)
-        static let bookHingeWidth: CGFloat = 10
+        /// Сама книга — общий рисунок `BookFigure` (он же на экране книги и в «Книгах
+        /// писателя»); числа его эталона сняты ровно на этой высоте обложки, 128.
+        static var book: BookFigureGeometry { BookFigureGeometry(coverHeight: bookCoverHeight) }
+        /// Блок страниц над обложкой — в высоту книги.
+        static var bookPagesTop: CGFloat { book.pagesTop }
 
         /// «Искали недавно» — лента вперемешку: обложки разной высоты стоят на одном
         /// низе, а подписи — на одной линии (`cover` макета: 129 и квадрат внизу).
@@ -669,63 +655,19 @@ struct SearchResultsView: View {
             .padding(.trailing, labelTrailing(.book))
             .frame(height: Layout.labelHeight, alignment: .top)
         }
-        .frame(width: coverWidth + Layout.bookPagesInset)
+        .frame(width: Layout.book.frameSize(coverWidth: coverWidth).width)
         .contentShape(.rect)
     }
 
     /// Ширина обложки книги — по её пропорциям в допустимых пределах.
     private static func bookCoverWidth(_ aspect: CGFloat?) -> CGFloat {
-        let range = Layout.bookAspectRange
-        let clamped = min(max(aspect ?? Layout.bookDefaultAspect, range.lowerBound), range.upperBound)
-        return (Layout.bookCoverHeight * clamped).rounded()
+        Layout.book.coverWidth(aspect: aspect)
     }
 
-    /// Книга целиком: блок страниц, обложка с бордером на трёх сторонах, сгиб у корешка.
-    /// Обложку подставляет вызывающий — у скелетона на её месте только заливка.
+    /// Книга целиком — общий рисунок (`BookFigure`). Обложку подставляет вызывающий —
+    /// у скелетона на её месте только заливка.
     private func bookFigure(coverWidth: CGFloat, @ViewBuilder cover: () -> some View) -> some View {
-        let coverShape = UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: Layout.bookCoverRadius,
-            topTrailingRadius: Layout.bookCoverRadius,
-            style: .continuous
-        )
-        let pages = BookPagesShape(
-            radius: Layout.bookPagesRadius,
-            bevel: Layout.bookSpineBevel
-        )
-        return ZStack(alignment: .topLeading) {
-            pages
-                .fill(Layout.bookPagesFill)
-                .overlay { pages.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
-                .frame(
-                    width: coverWidth + Layout.bookPagesRight,
-                    height: Layout.bookCoverHeight + Layout.bookPagesTop
-                )
-
-            PlusSkeleton.fill
-                .overlay { cover() }
-                .frame(width: coverWidth, height: Layout.bookCoverHeight)
-                .clipShape(coverShape)
-                .overlay {
-                    // Бордер только сверху, справа и снизу: слева корешок.
-                    BookCoverEdge(radius: Layout.bookCoverRadius)
-                        .stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
-                }
-                .overlay(alignment: .leading) {
-                    BookHingeShade.gradient
-                        .frame(width: Layout.bookHingeWidth)
-                        .allowsHitTesting(false)
-                }
-                .padding(.top, Layout.bookPagesTop)
-        }
-        // Кадр книги — без последнего пункта подложки справа: он уходит в зазор
-        // до соседней карточки, как в макете.
-        .frame(
-            width: coverWidth + Layout.bookPagesInset,
-            height: Layout.bookCoverHeight + Layout.bookPagesTop,
-            alignment: .topLeading
-        )
+        BookFigure(geometry: Layout.book, coverWidth: coverWidth) { cover() }
     }
 
     /// Скролл выдачи начался — клавиатура уходит мягко (`KeyboardDismissMotion`).
@@ -782,7 +724,7 @@ struct SearchResultsView: View {
                 bookFigure(coverWidth: coverWidth) { EmptyView() }
                 skeletonLabel
             }
-            .frame(width: coverWidth + Layout.bookPagesInset)
+            .frame(width: Layout.book.frameSize(coverWidth: coverWidth).width)
             .accessibilityLabel("Загрузка")
         } else {
             let shape = RoundedRectangle(cornerRadius: Layout.coverRadius, style: .continuous)
@@ -809,82 +751,6 @@ struct SearchResultsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: Layout.labelHeight, alignment: .top)
     }
-}
-
-// MARK: - Книга в проекции
-
-/// Блок страниц за обложкой — `bg` макета `2311:25096`: правые углы скруглены
-/// сильнее обложки, левый верхний скошен — это верх корешка, видный в проекции.
-private struct BookPagesShape: Shape {
-    let radius: CGFloat
-    /// Скос: доля ширины по горизонтали и пункты по вертикали.
-    let bevel: CGSize
-
-    func path(in rect: CGRect) -> Path {
-        let body = UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: radius,
-            topTrailingRadius: radius,
-            style: .continuous
-        ).path(in: rect)
-        var corner = Path()
-        corner.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        corner.addLine(to: CGPoint(x: rect.minX + rect.width * bevel.width, y: rect.minY))
-        corner.addLine(to: CGPoint(x: rect.minX, y: rect.minY + bevel.height))
-        corner.closeSubpath()
-        return body.subtracting(corner)
-    }
-}
-
-/// Бордер обложки на трёх сторонах — сверху, справа и снизу: слева корешок,
-/// и кромки там нет (макет `2311:25096`). Линия внутри кадра, как `border` макета.
-private struct BookCoverEdge: Shape {
-    let radius: CGFloat
-    var lineWidth: CGFloat = PlusMetrics.hairline
-
-    func path(in rect: CGRect) -> Path {
-        let inset = lineWidth / 2
-        let top = rect.minY + inset
-        let bottom = rect.maxY - inset
-        let right = rect.maxX - inset
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: top))
-        path.addArc(
-            tangent1End: CGPoint(x: right, y: top),
-            tangent2End: CGPoint(x: right, y: bottom),
-            radius: radius - inset
-        )
-        path.addArc(
-            tangent1End: CGPoint(x: right, y: bottom),
-            tangent2End: CGPoint(x: rect.minX, y: bottom),
-            radius: radius - inset
-        )
-        path.addLine(to: CGPoint(x: rect.minX, y: bottom))
-        return path
-    }
-}
-
-/// Притенённый сгиб у корешка — полоска `Rectangle 240661877` макета, снятая
-/// по пикселям: блик у самой кромки, тень с пиком 15 % в 3pt от неё, спад к 10-му.
-/// Мягче, чем у объёмной книги витрины: книга в выдаче почти анфас.
-private enum BookHingeShade {
-    static let gradient = LinearGradient(
-        stops: [
-            .init(color: .white.opacity(0.02), location: 0.05),
-            .init(color: .white.opacity(0.03), location: 0.15),
-            .init(color: .black.opacity(0.11), location: 0.25),
-            .init(color: .black.opacity(0.15), location: 0.35),
-            .init(color: .black.opacity(0.13), location: 0.45),
-            .init(color: .black.opacity(0.11), location: 0.55),
-            .init(color: .black.opacity(0.08), location: 0.65),
-            .init(color: .black.opacity(0.06), location: 0.75),
-            .init(color: .black.opacity(0.035), location: 0.85),
-            .init(color: .clear, location: 1),
-        ],
-        startPoint: .leading,
-        endPoint: .trailing
-    )
 }
 
 // MARK: - Пустая выдача

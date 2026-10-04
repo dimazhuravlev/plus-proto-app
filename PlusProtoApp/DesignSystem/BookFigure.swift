@@ -1,0 +1,175 @@
+import SwiftUI
+
+/// Книга в небольшой проекции — макет `2311:25096`: обложка своих пропорций (ширина
+/// по ней, обложка не режется), за ней выглядывает блок страниц, у корешка —
+/// притенённый сгиб, бордер обложки — только сверху, справа и снизу.
+///
+/// Один рисунок на все размеры: карточка выдачи поиска (обложка 128), экран книги
+/// (324) и карусель «Книги писателя». Числа сняты на эталонной высоте 128 и растут
+/// пропорционально высоте обложки — большая книга выглядит ровно так же, как
+/// маленькая (задача пользователя 2026-10-04: «кавер как в карточке поиска, только
+/// большой»). Хайрлайн бордера от размера не зависит.
+struct BookFigureGeometry {
+    let coverHeight: CGFloat
+
+    /// Высота обложки, на которой сняты числа макета
+    static let referenceHeight: CGFloat = 128
+    /// Пропорции, пока своих нет, — постер 2:3.
+    static let defaultAspect: CGFloat = 2.0 / 3.0
+    /// Крайние пропорции: дальше обложка уже режется — иначе альбомный скан
+    /// растянул бы книгу на пол-экрана, а узкий сжал бы её в столбик.
+    static let aspectRange: ClosedRange<CGFloat> = 0.55...1.0
+    static let pagesFill = Color.white.opacity(0.15)
+
+    private var scale: CGFloat { coverHeight / Self.referenceHeight }
+
+    /// Блок страниц выглядывает из-за обложки на 2 сверху и на 3 справа (на эталоне).
+    var pagesTop: CGFloat { 2 * scale }
+    var pagesRight: CGFloat { 3 * scale }
+    /// Сколько из этих 3 книга забирает в свою ширину — `pr-[2px]` макета;
+    /// последний пункт уходит в зазор до соседа.
+    var pagesInset: CGFloat { 2 * scale }
+    var coverRadius: CGFloat { 8 * scale }
+    /// Скругление серой подложки — 10, у обложки 8 (правка пользователя 2026-10-03).
+    var pagesRadius: CGFloat { 10 * scale }
+    /// Скошенный верх корешка у подложки: 4.1 % её ширины по горизонтали, 1.93 вниз.
+    var spineBevel: CGSize { CGSize(width: 0.0406, height: 1.93 * scale) }
+    var hingeWidth: CGFloat { 10 * scale }
+
+    /// Ширина обложки — по её пропорциям в допустимых пределах.
+    func coverWidth(aspect: CGFloat?) -> CGFloat {
+        let range = Self.aspectRange
+        let clamped = min(max(aspect ?? Self.defaultAspect, range.lowerBound), range.upperBound)
+        return (coverHeight * clamped).rounded()
+    }
+
+    /// Кадр книги: блок страниц сверху, без последнего пункта подложки справа.
+    func frameSize(coverWidth: CGFloat) -> CGSize {
+        CGSize(width: coverWidth + pagesInset, height: coverHeight + pagesTop)
+    }
+}
+
+/// Книга целиком. Обложку подставляет вызывающий — у скелетона на её месте только
+/// заливка `PlusSkeleton`.
+struct BookFigure<Cover: View>: View {
+    let geometry: BookFigureGeometry
+    let coverWidth: CGFloat
+    @ViewBuilder var cover: Cover
+
+    var body: some View {
+        let coverShape = UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: geometry.coverRadius,
+            topTrailingRadius: geometry.coverRadius,
+            style: .continuous
+        )
+        let pages = BookPagesShape(radius: geometry.pagesRadius, bevel: geometry.spineBevel)
+        let frame = geometry.frameSize(coverWidth: coverWidth)
+
+        ZStack(alignment: .topLeading) {
+            pages
+                .fill(BookFigureGeometry.pagesFill)
+                .overlay { pages.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+                .frame(
+                    width: coverWidth + geometry.pagesRight,
+                    height: geometry.coverHeight + geometry.pagesTop
+                )
+
+            PlusSkeleton.fill
+                .overlay { cover }
+                .frame(width: coverWidth, height: geometry.coverHeight)
+                .clipShape(coverShape)
+                .overlay {
+                    // Бордер только сверху, справа и снизу: слева корешок.
+                    BookCoverEdge(radius: geometry.coverRadius)
+                        .stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
+                }
+                .overlay(alignment: .leading) {
+                    BookHingeShade.gradient
+                        .frame(width: geometry.hingeWidth)
+                        .allowsHitTesting(false)
+                }
+                .padding(.top, geometry.pagesTop)
+        }
+        // Кадр книги — без последнего пункта подложки справа: он уходит в зазор
+        // до соседней карточки, как в макете.
+        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    }
+}
+
+// MARK: - Формы
+
+/// Блок страниц за обложкой — `bg` макета `2311:25096`: правые углы скруглены
+/// сильнее обложки, левый верхний скошен — это верх корешка, видный в проекции.
+private struct BookPagesShape: Shape {
+    let radius: CGFloat
+    /// Скос: доля ширины по горизонтали и пункты по вертикали.
+    let bevel: CGSize
+
+    func path(in rect: CGRect) -> Path {
+        let body = UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: radius,
+            topTrailingRadius: radius,
+            style: .continuous
+        ).path(in: rect)
+        var corner = Path()
+        corner.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        corner.addLine(to: CGPoint(x: rect.minX + rect.width * bevel.width, y: rect.minY))
+        corner.addLine(to: CGPoint(x: rect.minX, y: rect.minY + bevel.height))
+        corner.closeSubpath()
+        return body.subtracting(corner)
+    }
+}
+
+/// Бордер обложки на трёх сторонах — сверху, справа и снизу: слева корешок,
+/// и кромки там нет (макет `2311:25096`). Линия внутри кадра, как `border` макета.
+private struct BookCoverEdge: Shape {
+    let radius: CGFloat
+    var lineWidth: CGFloat = PlusMetrics.hairline
+
+    func path(in rect: CGRect) -> Path {
+        let inset = lineWidth / 2
+        let top = rect.minY + inset
+        let bottom = rect.maxY - inset
+        let right = rect.maxX - inset
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: top))
+        path.addArc(
+            tangent1End: CGPoint(x: right, y: top),
+            tangent2End: CGPoint(x: right, y: bottom),
+            radius: radius - inset
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: right, y: bottom),
+            tangent2End: CGPoint(x: rect.minX, y: bottom),
+            radius: radius - inset
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: bottom))
+        return path
+    }
+}
+
+/// Притенённый сгиб у корешка — полоска `Rectangle 240661877` макета, снятая
+/// по пикселям: блик у самой кромки, тень с пиком 15 % в 3/10 ширины от неё, спад
+/// к краю полоски. Мягче, чем у объёмной книги витрины: книга почти анфас.
+private enum BookHingeShade {
+    static let gradient = LinearGradient(
+        stops: [
+            .init(color: .white.opacity(0.02), location: 0.05),
+            .init(color: .white.opacity(0.03), location: 0.15),
+            .init(color: .black.opacity(0.11), location: 0.25),
+            .init(color: .black.opacity(0.15), location: 0.35),
+            .init(color: .black.opacity(0.13), location: 0.45),
+            .init(color: .black.opacity(0.11), location: 0.55),
+            .init(color: .black.opacity(0.08), location: 0.65),
+            .init(color: .black.opacity(0.06), location: 0.75),
+            .init(color: .black.opacity(0.035), location: 0.85),
+            .init(color: .clear, location: 1),
+        ],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
+}
