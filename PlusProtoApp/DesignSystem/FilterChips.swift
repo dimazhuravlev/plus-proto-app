@@ -55,14 +55,16 @@ struct FilterChipsRow<Option: Hashable>: View {
             // Экран, открытый сразу на дальнем фильтре (полный список коллекции), встаёт
             // с выбранным чипсом на виду — мгновенно, без подкрутки. Ни `scrollTo`
             // на появлении, ни стартовая позиция по id ленту не двигали: приходили раньше
-            // раскладки, и выбранный чипс торчал из-за края (кадры 2026-10-04).
+            // раскладки, и выбранный чипс торчал из-за края (кадры 2026-10-04). Лента
+            // доезжает ровно настолько, чтобы чипс стал виден, — без центровки: та
+            // уводила за левый край первые чипсы, хотя выбранный и так был на виду.
             .task {
                 guard selection != options.first else { return }
                 try? await Task.sleep(for: Self.layoutDelay)
                 guard !Task.isCancelled else { return }
                 var instant = Transaction()
                 instant.disablesAnimations = true
-                withTransaction(instant) { proxy.scrollTo(selection, anchor: .center) }
+                withTransaction(instant) { proxy.scrollTo(selection) }
             }
         }
     }

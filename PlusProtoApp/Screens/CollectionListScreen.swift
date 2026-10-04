@@ -13,11 +13,18 @@ enum CollectionListLayout {
     /// Строка 96: обложка 80 и поля 8, между обложкой и текстом 12
     static let cover: CGFloat = 80
     static let coverRadius: CGFloat = 12
-    /// Постер фильма — 2:3 той же высоты; скругление — как у постеров коллекции
-    static let posterWidth: CGFloat = cover * 2 / 3
-    static let posterRadius: CGFloat = CollectionLayout.cardRadius
-    /// Книга — наша проекция, вписанная в высоту обложки вместе с блоком страниц
-    static let book = BookFigureGeometry(coverHeight: 78)
+    /// Постер фильма и книга — той же ширины, что обложка альбома и плейлиста, а высота —
+    /// своя (правка пользователя 2026-10-04): постер 2:3 — 80 × 120, строка выше
+    static let posterHeight: CGFloat = cover * 3 / 2
+
+    /// Книга — наша проекция шириной 80 вместе с выступом страниц справа; высота
+    /// обложки — от её пропорций, поэтому строки книг разной высоты.
+    static func book(aspect: CGFloat?) -> BookFigureGeometry {
+        let range = BookFigureGeometry.aspectRange
+        let clamped = min(max(aspect ?? BookFigureGeometry.defaultAspect, range.lowerBound), range.upperBound)
+        // Кадр книги — обложка и выступ страниц: 2 на каждые 128 высоты.
+        return BookFigureGeometry(coverHeight: cover / (clamped + 2 / BookFigureGeometry.referenceHeight))
+    }
     static let side: CGFloat = 16
     static let rowPadding: CGFloat = 8
     static let textGap: CGFloat = 12
@@ -87,7 +94,13 @@ struct CollectionListScreen: View {
                     }
                 }
                 .padding(.top, CollectionListLayout.listTop)
+                // Строки съезжают плавно, только когда отметку сняли в этом же списке.
                 .animation(CollectionMotion.itemsChange, value: items.map(\.id))
+                // Список другого фильтра — новый целиком, а не те же строки с другим
+                // содержимым: иначе на смене фильтра строки переезжали и морфились
+                // под проявлением (правка пользователя 2026-10-04 — «не нужно это»).
+                // Смена — одной прозрачностью: старый гаснет, новый проявляется.
+                .id(shownKind)
                 .opacity(listOpacity)
             }
             .scrollIndicators(.hidden)
@@ -99,15 +112,14 @@ struct CollectionListScreen: View {
             .scrollPosition($scrollPosition)
             .trackNavBarScroll(into: $scrollOffset)
 
+            // Пустой список гаснет и проявляется вместе со строками — той же прозрачностью.
             if items.isEmpty {
                 Text("Здесь пока ничего нет")
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillSubtitle)
                     .opacity(listOpacity)
-                    .transition(.opacity)
             }
         }
-        .animation(CollectionMotion.itemsChange, value: items.isEmpty)
         .overlay(alignment: .top) { header }
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: kind) { _, selected in swapList(to: selected) }
@@ -252,19 +264,12 @@ private struct CollectionListRow: View {
         case .movie:
             source(CollectionArtwork(
                 source: item.artwork,
-                width: CollectionListLayout.posterWidth,
-                height: CollectionListLayout.cover,
-                shape: RoundedRectangle(cornerRadius: CollectionListLayout.posterRadius, style: .continuous)
+                width: CollectionListLayout.cover,
+                height: CollectionListLayout.posterHeight,
+                shape: RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
             ))
         case .book:
-            source(BookFigure(
-                geometry: CollectionListLayout.book,
-                coverWidth: CollectionListLayout.book.coverWidth(aspect: item.aspect)
-            ) {
-                if let artwork = item.artwork {
-                    SkeletonArtwork(source: artwork)
-                }
-            })
+            source(bookFigure)
         case .artist:
             source(CollectionArtwork(
                 source: item.artwork,
@@ -279,6 +284,15 @@ private struct CollectionListRow: View {
                 height: CollectionListLayout.cover,
                 shape: RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
             ))
+        }
+    }
+
+    private var bookFigure: some View {
+        let geometry = CollectionListLayout.book(aspect: item.aspect)
+        return BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: item.aspect)) {
+            if let artwork = item.artwork {
+                SkeletonArtwork(source: artwork)
+            }
         }
     }
 
