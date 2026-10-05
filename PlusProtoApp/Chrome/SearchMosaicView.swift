@@ -95,16 +95,22 @@ struct SearchMosaicView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                Color.clear.frame(height: 0).id(Self.topAnchor)
-                // Чипсы закреплены заголовком секции — как у полной выдачи музыки.
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    Section {
-                        grid
-                            .opacity(gridOpacity)
-                            .padding(.horizontal, MosaicLayout.side)
-                            .padding(.top, MosaicLayout.gridTop)
-                    } header: {
-                        chips
+                // Стопка без зазоров: якорь и лента в стопке скролла по умолчанию
+                // разделены 8 pt — над чипсами стояла лишняя полоса, и на старте
+                // скролла ряд сперва съезжал на неё, а потом закреплялся (правка
+                // пользователя 2026-10-05).
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
+                    // Чипсы закреплены заголовком секции — как у полной выдачи музыки.
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        Section {
+                            grid
+                                .opacity(gridOpacity)
+                                .padding(.horizontal, MosaicLayout.side)
+                                .padding(.top, MosaicLayout.gridTop)
+                        } header: {
+                            chips
+                        }
                     }
                 }
                 // Как у каруселей: сетка уходит под поле и клавиатуру, последний ряд
@@ -382,8 +388,26 @@ private struct MosaicCard: View {
     let zoom: Namespace.ID?
     let open: (EntityRoute) -> Void
 
-    /// Исполнитель по макету центрирован — и обложка кругом, и подпись по центру.
-    private var isArtist: Bool { hit.kind.isRoundArtwork }
+    /// Люди — кругом, с подписью по центру: исполнитель по макету, режиссёр и писатель —
+    /// так же (в каруселях они постерами, в ряд с работами; в сетке рядов нет, и круг
+    /// сразу отличает человека от фильма и книги).
+    private var isPerson: Bool {
+        switch hit.kind {
+        case .artist, .director, .writer: true
+        case .track, .album, .playlist, .movie, .book: false
+        }
+    }
+
+    /// Вторая строка: своя у карточки, а у режиссёра и писателя — роль, иначе непонятно,
+    /// почему человек стоит среди фильмов и книг.
+    private var caption: String {
+        guard hit.subtitle.isEmpty else { return hit.subtitle }
+        return switch hit.kind {
+        case .director: "Режиссёр"
+        case .writer: "Писатель"
+        case .track, .album, .artist, .playlist, .movie, .book: ""
+        }
+    }
 
     var body: some View {
         if let route = hit.route {
@@ -398,11 +422,11 @@ private struct MosaicCard: View {
     }
 
     private var content: some View {
-        VStack(alignment: isArtist ? .center : .leading, spacing: MosaicLayout.coverGap) {
+        VStack(alignment: isPerson ? .center : .leading, spacing: MosaicLayout.coverGap) {
             cover
             label
         }
-        .frame(maxWidth: .infinity, alignment: isArtist ? .center : .leading)
+        .frame(maxWidth: .infinity, alignment: isPerson ? .center : .leading)
         .contentShape(.rect)
     }
 
@@ -414,7 +438,7 @@ private struct MosaicCard: View {
             let book = BookFigureGeometry.fitting(width: MosaicLayout.card, aspect: hit.artworkAspect)
             BookFigure(geometry: book.geometry, coverWidth: book.coverWidth) { artwork }
         } else {
-            let shape: AnyShape = isArtist
+            let shape: AnyShape = isPerson
                 ? AnyShape(Circle())
                 : AnyShape(RoundedRectangle(cornerRadius: MosaicLayout.coverRadius, style: .continuous))
             // Заливка — та же, что у скелетона: карточка встаёт на его место без смены
@@ -438,24 +462,24 @@ private struct MosaicCard: View {
         }
     }
 
-    /// Квадрат у музыки, постер 2:3 у кино и персон.
+    /// Квадрат у музыки и людей, постер 2:3 у кино.
     private var coverHeight: CGFloat {
         switch hit.kind {
-        case .track, .album, .artist, .playlist: MosaicLayout.card
-        case .movie, .book, .director, .writer: MosaicLayout.card / MosaicLayout.posterAspect
+        case .track, .album, .artist, .playlist, .director, .writer: MosaicLayout.card
+        case .movie, .book: MosaicLayout.card / MosaicLayout.posterAspect
         }
     }
 
     private var label: some View {
-        VStack(alignment: isArtist ? .center : .leading, spacing: 0) {
+        VStack(alignment: isPerson ? .center : .leading, spacing: 0) {
             Text(hit.title)
                 .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(2)
-                .multilineTextAlignment(isArtist ? .center : .leading)
+                .multilineTextAlignment(isPerson ? .center : .leading)
 
-            if !hit.subtitle.isEmpty {
-                Text(hit.subtitle)
+            if !caption.isEmpty {
+                Text(caption)
                     .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillSubtitle)
                     .lineLimit(1)
@@ -464,7 +488,7 @@ private struct MosaicCard: View {
         // Своей высоты: в сетке подпись не держит общую рамку, как в карусели, —
         // карточка кончается там, где кончился текст (16, 32 или 48, как в макете).
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: isArtist ? .center : .leading)
+        .frame(maxWidth: .infinity, alignment: isPerson ? .center : .leading)
     }
 }
 

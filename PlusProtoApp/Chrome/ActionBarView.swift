@@ -527,6 +527,8 @@ private struct SearchPill: View {
     /// Волна в этом фокусе уже сыграна: второй показ (стёрли запрос) — без неё.
     @State private var didPlayFocusedPlaceholderWave = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Мягкий уход клавиатуры по «Найти» (`dismissSmoothly`).
+    @Environment(KeyboardObserver.self) private var keyboard
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
     /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
@@ -818,6 +820,11 @@ private struct SearchPill: View {
             // Не `plusHeadline`: у поля точная строка срезала хвосты букв снизу.
             .plusHeadlineField(.s)
             .submitLabel(.search)
+            // «Найти» — тем же мягким уходом клавиатуры, что скролл выдачи: системный
+            // уход перегружен в начало, и бар, едущий своей кривой, за ним отставал
+            // (правка пользователя 2026-10-05). Дальше — как при любом снятом фокусе:
+            // выдача в просмотре без клавиатуры.
+            .onSubmit { keyboard.dismissSmoothly() }
             // Без автокоррекции — и, как следствие, без строки автоподсказок
             // (QuickType): она стояла плашкой прямо под полем и отбирала у выдачи
             // полсотни пунктов (правка пользователя 2026-08-25).

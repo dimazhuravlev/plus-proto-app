@@ -88,28 +88,33 @@ struct SearchSectionView: View {
 
     private var sectionScroll: some View {
         ScrollView {
-            Color.clear.frame(height: 0).id(Self.topAnchor)
-            // Чипсы музыки закреплены — заголовком секции, который липнет к верху
-            // при скролле (правка пользователя 2026-10-03). У кино и книг фильтров нет.
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: kind == .music ? [.sectionHeaders] : []) {
-                Section {
-                    list
-                } header: {
-                    if kind == .music {
-                        chips
-                            .background(alignment: .top) {
-                                PinnedChipsBackdrop()
-                                    .opacity(NavBarRamp.progress(scrolled, start: 0, length: Layout.backdropRamp))
-                            }
-                            // Оттяг ленты — как у навигации витрин: ряд едет за ним вчетверо
-                            // медленнее и упирается в мягкий потолок (правка пользователя
-                            // 2026-10-04). Заголовок секции при оттяге едет вместе с лентой —
-                            // сдвиг возвращает разницу.
-                            .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
+            // Стопка без зазоров: в стопке скролла по умолчанию якорь и лента разделены
+            // 8 pt — над чипсами стояла лишняя полоса, и на старте скролла ряд сперва
+            // съезжал на неё (правка пользователя 2026-10-05, поймано на сетке).
+            VStack(spacing: 0) {
+                Color.clear.frame(height: 0).id(Self.topAnchor)
+                // Чипсы музыки закреплены — заголовком секции, который липнет к верху
+                // при скролле (правка пользователя 2026-10-03). У кино и книг фильтров нет.
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: kind == .music ? [.sectionHeaders] : []) {
+                    Section {
+                        list
+                    } header: {
+                        if kind == .music {
+                            chips
+                                .background(alignment: .top) {
+                                    PinnedChipsBackdrop()
+                                        .opacity(NavBarRamp.progress(scrolled, start: 0, length: Layout.backdropRamp))
+                                }
+                                // Оттяг ленты — как у навигации витрин: ряд едет за ним вчетверо
+                                // медленнее и упирается в мягкий потолок (правка пользователя
+                                // 2026-10-04). Заголовок секции при оттяге едет вместе с лентой —
+                                // сдвиг возвращает разницу.
+                                .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
+                        }
                     }
                 }
+                .padding(.top, kind == .music ? 0 : Layout.listTop)
             }
-            .padding(.top, kind == .music ? 0 : Layout.listTop)
             // Как у обзора: список уходит под поле и клавиатуру, последняя строка
             // выкручивается из-под них.
             .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)

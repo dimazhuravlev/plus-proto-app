@@ -309,13 +309,17 @@ final class SearchState {
         async let movies = fetchMovies(text)
         async let books = fetchBooks(text)
         async let person = WikipediaPeople.shared.person(matching: text)
-        let (fetchedMusic, fetchedMovies, fetchedBooks, found) = await (music, movies, books, person)
+        // Плейлисты — только сетке: в карусели музыки их нет, а свой запрос к Deezer
+        // бесплатен и идёт параллельно остальным (правка пользователя 2026-10-05).
+        async let playlists = try? DeezerService.shared.searchPlaylists(query: text, limit: Self.perKind)
+        let (fetchedMusic, fetchedMovies, fetchedBooks, found, foundPlaylists) =
+            await (music, movies, books, person, playlists)
 
         guard !Task.isCancelled else { return }
         // Внутри карусели — самое точное совпадение первым (`ranked`).
         let musicHits = Self.ranked(fetchedMusic, for: text)
         var movieHits = Self.ranked(fetchedMovies, for: text)
-        var bookHits = Self.ranked(fetchedBooks, for: text)
+        var bookHits = Self.ranked(fetchedBooks.hits, for: text)
         // Персона — первой в карусели своего домена: запрос назвал её саму, а не её
         // книгу или фильм (правка пользователя 2026-10-03, вид — как у соседей).
         if let found {
@@ -326,14 +330,31 @@ final class SearchState {
             }
         }
         let order = Self.order(for: text, music: musicHits, movies: movieHits, books: bookHits)
-        let byKind: [Section.Kind: [SearchHit]] = [.music: musicHits, .movies: movieHits, .books: bookHits]
+
+        // Сетке — шире каруселей: плейлисты в музыке, режиссёры и писатели — сразу
+        // за своими работами (`creators`).
+        let directors = await directors(for: movieHits, text: text)
+        guard !Task.isCancelled else { return }
+        let playlistHits = (foundPlaylists ?? []).map(SearchHit.init(playlist:))
+        let (mosaicMovies, movieCreators) = Self.withCreators(directors, in: movieHits, for: text)
+        let (mosaicBooks, bookCreators) = Self.withCreators(fetchedBooks.writers, in: bookHits, for: text)
+        let mosaicByKind: [Section.Kind: [SearchHit]] = [
+            .music: Self.ranked(musicHits + playlistHits, for: text),
+            .movies: mosaicMovies,
+            .books: mosaicBooks,
+        ]
         let results = Results(
             text: text,
             order: order,
             music: musicHits,
             movies: movieHits,
             books: bookHits,
-            mixed: Self.mixed(order.map { ($0, byKind[$0] ?? []) }, for: text, leadsWithHeads: true)
+            mixed: Self.mixed(
+                order.map { ($0, mosaicByKind[$0] ?? []) },
+                for: text,
+                leadsWithHeads: true,
+                inherited: movieCreators.merging(bookCreators) { left, _ in left }
+            )
         )
         cache[text] = results
         // Одно присваивание — один кадр: все блоки появляются разом и сразу
@@ -615,8 +636,7 @@ final class SearchState {
             var known = Set(base.mixed.map(\.id))
             var fresh: [Section.Kind: [SearchHit]] = [:]
             for result in full {
-                // Плейлисты — вне сетки: своего экрана у них нет, карточка не нажималась бы.
-                fresh[result.kind] = result.hits.filter { $0.kind != .playlist && known.insert($0.id).inserted }
+                fresh[result.kind] = result.hits.filter { known.insert($0.id).inserted }
             }
             // Книге в сетке высоту задают пропорции обложки — снимаем их до показа,
             // как в обзоре (`fetchBooks`): узнай их поздно, колонки переложились бы.
@@ -664,16 +684,24 @@ final class SearchState {
         static let floor = 1.0
     }
 
+    /// Вес карточки — ступень совпадения × (1 + доля × вес внутри домена); тот же,
+    /// что у порядка секций (`score`).
+    private static func weight(_ hit: SearchHit, _ needle: String) -> Double {
+        match(hit, needle) * (1 + hit.authority * MatchScore.authorityShare)
+    }
+
     /// `after` — раздел последней уже показанной карточки: добор продолжает её серию.
+    /// `inherited` — вес создателей, взятый от их работ (`withCreators`).
     private static func mixed(
         _ queues: [(kind: Section.Kind, hits: [SearchHit])],
         for text: String,
         leadsWithHeads: Bool,
-        after previous: Section.Kind? = nil
+        after previous: Section.Kind? = nil,
+        inherited: [String: Double] = [:]
     ) -> [SearchHit] {
         let needle = text.folded
         func weight(_ hit: SearchHit) -> Double {
-            match(hit, needle) * (1 + hit.authority * MatchScore.authorityShare)
+            max(Self.weight(hit, needle), inherited[hit.id] ?? 0)
         }
 
         var queues = queues.map { (kind: $0.kind, hits: ArraySlice($0.hits)) }
@@ -734,8 +762,16 @@ final class SearchState {
         static let word = 45.0
         /// Запрос где-то внутри названия
         static let substring = 25.0
-        /// Совпал только подзаголовок — исполнитель, автор, год с жанром
+        /// Совпал подзаголовок — исполнитель, автор, год с жанром
         static let subtitle = 15.0
+        /// Нечёткое совпадение (`fuzzyMatch`) — опечатка или другая транслитерация,
+        /// умноженное на похожесть. Ниже и вхождения запроса в название, и подзаголовка:
+        /// похожее слово — догадка, а запрос целиком — факт. На «mars volta» «Marc Volt»
+        /// и «Marie Volta» прежней ступенью «начало × похожесть» (до 52) стояли выше
+        /// самих The Mars Volta и их альбомов (жалоба пользователя 2026-10-05).
+        /// Но и не ниже порога перестановки секций (`swap`, 10): домен, где нашлось
+        /// только похожее, по-прежнему обходит домен совсем без совпадений.
+        static let fuzzy = 14.0
         /// Доля прибавки за вес результата внутри домена (`SearchHit.authority`):
         /// совпадение × (1 + доля × вес), то есть не больше +25 % к своей ступени.
         ///
@@ -786,7 +822,7 @@ final class SearchState {
     private static func score(_ text: String, _ hits: [SearchHit]) -> Double {
         let needle = text.folded
         guard !needle.isEmpty else { return 0 }
-        return hits.map { match($0, needle) * (1 + $0.authority * MatchScore.authorityShare) }.max() ?? 0
+        return hits.map { weight($0, needle) }.max() ?? 0
     }
 
     /// Порядок внутри карусели — по той же ступени совпадения, что и порядок секций
@@ -814,20 +850,51 @@ final class SearchState {
     }
 
     /// Ступень совпадения результата с запросом (`MatchScore`), без его веса:
-    /// по названию или второму названию, иначе по подзаголовку; 0 — не совпал.
+    /// лучшая из названия, второго названия и подзаголовка; 0 — не совпал.
+    /// Подзаголовок спорит с названием на равных: альбом The Mars Volta на запрос
+    /// «mars volta» совпадает исполнителем (15), и это сильнее похожего названия
+    /// чужой группы (`fuzzy`).
     private static func match(_ hit: SearchHit, _ needle: String) -> Double {
         let titles = [hit.title] + (hit.altTitle.map { [$0] } ?? [])
         let best = titles.map { titleMatch($0.folded, needle) }.max() ?? 0
-        if best > 0 { return best }
-        return hit.subtitle.folded.contains(needle) ? MatchScore.subtitle : 0
+        let bySubtitle = hit.subtitle.folded.contains(needle) ? MatchScore.subtitle : 0
+        return max(best, bySubtitle)
     }
 
     private static func titleMatch(_ title: String, _ needle: String) -> Double {
+        // Артикль в начале — не часть имени: «The Mars Volta» на «mars volta» — точное
+        // совпадение, а не вхождение. Вхождением группа стояла за треком «Mars Volta»
+        // другого исполнителя (жалоба пользователя 2026-10-05).
+        let title = withoutArticle(title)
+        let needle = withoutArticle(needle)
         if title == needle { return MatchScore.exact }
         if title.hasPrefix(needle) { return MatchScore.prefix }
-        if title.split(separator: " ").contains(where: { $0 == needle }) { return MatchScore.word }
+        if containsWords(title, needle) { return MatchScore.word }
         if title.contains(needle) { return MatchScore.substring }
         return fuzzyMatch(title, needle) ?? 0
+    }
+
+    /// Английские артикли: в каталогах Deezer и Кинопоиска они стоят в начале имён
+    /// («The Beatles», «A Tribe Called Quest»), а запрос их обычно опускает.
+    private static let articles = ["the ", "a ", "an "]
+
+    private static func withoutArticle(_ text: String) -> String {
+        for article in articles where text.hasPrefix(article) && text.count > article.count {
+            return String(text.dropFirst(article.count))
+        }
+        return text
+    }
+
+    /// Запрос — целыми словами подряд внутри названия: «mars volta» в «the mars volta
+    /// live». Прежде целым словом считался только однословный запрос, а многословный
+    /// падал до вхождения подстроки.
+    private static func containsWords(_ title: String, _ needle: String) -> Bool {
+        let titleWords = words(title)
+        let needleWords = words(needle)
+        guard !needleWords.isEmpty, needleWords.count <= titleWords.count else { return false }
+        return (0...(titleWords.count - needleWords.count)).contains { start in
+            titleWords[start..<(start + needleWords.count)].elementsEqual(needleWords)
+        }
     }
 
     /// Нечёткое совпадение по словам — когда запрос с опечаткой или с другой
@@ -836,21 +903,19 @@ final class SearchState {
     /// «Чунгкингский экспресс», кино получало ноль, и выше вставала музыка, где
     /// в названиях этого слова нет вовсе (жалоба пользователя 2026-10-03).
     ///
-    /// Каждое слово запроса должно найти в названии похожее слово; ступень — как
-    /// у точного совпадения (первое слово названия — «начало», иначе «слово»),
-    /// умноженная на похожесть худшего из слов. `nil` — не похоже.
+    /// Каждое слово запроса должно найти в названии похожее слово; ступень — своя,
+    /// `MatchScore.fuzzy`, умноженная на похожесть худшего из слов. `nil` — не похоже.
     private static func fuzzyMatch(_ title: String, _ needle: String) -> Double? {
         let titleWords = words(title)
         let queryWords = words(needle)
-        guard let firstTitle = titleWords.first, let firstQuery = queryWords.first else { return nil }
+        guard !titleWords.isEmpty, !queryWords.isEmpty else { return nil }
         var worst = 1.0
         for query in queryWords {
             let best = titleWords.map { similarity(query, $0) }.max() ?? 0
             guard best > 0 else { return nil }
             worst = min(worst, best)
         }
-        let tier = similarity(firstQuery, firstTitle) > 0 ? MatchScore.prefix : MatchScore.word
-        return tier * worst
+        return MatchScore.fuzzy * worst
     }
 
     private static func words(_ text: String) -> [Substring] {
@@ -965,18 +1030,110 @@ final class SearchState {
         return !title.isEmpty && movie.poster?.url(size: .small) != nil
     }
 
-    private func fetchBooks(_ text: String) async -> [SearchHit] {
+    /// Книги и писатели лучших из них (для сетки, `writers`).
+    private func fetchBooks(_ text: String) async -> (hits: [SearchHit], writers: [Creator]) {
         let found = (try? await BooksService.shared.search(text, limit: Self.perKind)) ?? []
-        guard !Task.isCancelled else { return [] }
-        var hits = found.prefix(Self.perSection).map(SearchHit.init(book:))
+        guard !Task.isCancelled else { return ([], []) }
+        var hits = Array(found.prefix(Self.perSection).map(SearchHit.init(book:)))
         // Карточка книги — по пропорциям обложки (макет `2311:25096`), поэтому книги
         // готовы, когда обложки уже приехали: ширины известны, карусель не
-        // перекладывается, а сами обложки встают из кэша без проявления.
-        let aspects = await Self.coverAspects(of: hits)
+        // перекладывается, а сами обложки встают из кэша без проявления. Портреты
+        // писателей ищутся в это же время — выдачу они не задерживают.
+        let measured = hits
+        async let aspects = Self.coverAspects(of: measured)
+        async let writers = Self.writers(for: Self.ranked(measured, for: text))
+        let (coverAspects, foundWriters) = await (aspects, writers)
         for index in hits.indices {
-            hits[index].artworkAspect = aspects[hits[index].id]
+            hits[index].artworkAspect = coverAspects[hits[index].id]
         }
-        return Array(hits)
+        return (hits, foundWriters)
+    }
+
+    // MARK: - Создатели для сетки
+
+    /// Персона, найденная по работе: режиссёр фильма, писатель книги. `source` — id
+    /// карточки этой работы: в сетке персона встаёт сразу за ней.
+    private typealias Creator = (person: SearchHit, source: String)
+
+    /// Создатели найденного — только для сетки (правка пользователя 2026-10-05:
+    /// «добавить авторов/писателей и режиссёров»). Карусели их не показывают: там
+    /// персона одна — та, кого назвал сам запрос (`WikipediaPeople.person`).
+    private enum CreatorLimits {
+        /// Из скольких лучших работ раздела брать создателей
+        static let sources = 3
+        /// Персон на раздел — не больше двух: сетка про контент, а не про людей
+        static let perDomain = 2
+        /// Вес персоны — доля веса её работы: встаёт сразу за ней, но не впереди
+        static let inheritedShare = 0.9
+    }
+
+    /// Режиссёры лучших фильмов — из состава, который уже на руках: у запаса на диске
+    /// съёмочная группа лежит в деталях (`MoviePool.details`), у сетевой выдачи — весь
+    /// состав. Ни одного нового запроса к Кинопоиску. Без фото режиссёра в сетке нет —
+    /// как исполнителей без фото в выдаче.
+    private func directors(for movies: [SearchHit], text: String) async -> [Creator] {
+        var seen: Set<String> = []
+        var result: [Creator] = []
+        for movie in movies.filter({ $0.kind == .movie }).prefix(CreatorLimits.sources) {
+            guard result.count < CreatorLimits.perDomain,
+                  let id = Int(movie.id.replacingOccurrences(of: "movie-", with: ""))
+            else { continue }
+            let pooled = await MoviePool.shared.details(id: id)
+            guard let full = kinopoiskRaw[text]?.first(where: { $0.id == id }) ?? pooled,
+                  let director = full.persons?.first(where: { $0.enProfession == "director" }),
+                  let personID = director.id,
+                  let name = director.displayName, !name.isEmpty,
+                  let photo = director.photoURL,
+                  seen.insert(name.folded).inserted
+            else { continue }
+            result.append((SearchHit(director: personID, name: name, photo: photo), movie.id))
+        }
+        return result
+    }
+
+    /// Писатели лучших книг — портреты из Википедии, параллельно. Без портрета писателя
+    /// в сетке нет.
+    private static func writers(for books: [SearchHit]) async -> [Creator] {
+        var seen: Set<String> = []
+        let candidates = books
+            .filter { $0.kind == .book && !$0.subtitle.isEmpty }
+            .prefix(CreatorLimits.sources)
+            .filter { seen.insert($0.subtitle.folded).inserted }
+        let names = candidates.map(\.subtitle)
+        let portraits = await withTaskGroup(of: (Int, URL?).self) { group in
+            for (index, name) in names.enumerated() {
+                group.addTask { (index, await WikipediaPeople.shared.portrait(of: name)) }
+            }
+            var found: [Int: URL] = [:]
+            for await (index, url) in group {
+                if let url { found[index] = url }
+            }
+            return found
+        }
+        return Array(candidates.enumerated().compactMap { index, book -> Creator? in
+            portraits[index].map { (SearchHit(writer: book.subtitle, photo: $0), book.id) }
+        }.prefix(CreatorLimits.perDomain))
+    }
+
+    /// Вставить создателей сразу за их работами и дать им вес: доля веса работы
+    /// (`CreatorLimits.inheritedShare`) — иначе персона без совпадения имени с запросом
+    /// стояла бы головой очереди с нулём и держала за собой весь раздел. Персона,
+    /// которую назвал сам запрос, уже в разделе — второй раз её не ставим.
+    private static func withCreators(
+        _ creators: [Creator],
+        in hits: [SearchHit],
+        for text: String
+    ) -> (hits: [SearchHit], inherited: [String: Double]) {
+        let needle = text.folded
+        var present = Set(hits.filter { $0.kind == .director || $0.kind == .writer }.map { $0.title.folded })
+        var result = hits
+        var inherited: [String: Double] = [:]
+        for creator in creators where present.insert(creator.person.title.folded).inserted {
+            guard let index = result.firstIndex(where: { $0.id == creator.source }) else { continue }
+            result.insert(creator.person, at: index + 1)
+            inherited[creator.person.id] = weight(result[index], needle) * CreatorLimits.inheritedShare
+        }
+        return (result, inherited)
     }
 
     /// Сколько ждём обложки книг. Не дождались — карточка встаёт на пропорции
@@ -1149,6 +1306,31 @@ private extension SearchHit {
             artwork: .remote(person.photo),
             route: Self.personRoute(person),
             authority: 0.8
+        )
+    }
+
+    /// Режиссёр из состава фильма — для сетки. Экран — тот же, что из «Съёмочной группы»
+    /// карточки тайтла: персона Кинопоиска по id.
+    init(director id: Int, name: String, photo: URL) {
+        self.init(
+            id: "person-kp-\(id)",
+            kind: .director,
+            title: name,
+            subtitle: "",
+            artwork: .remote(photo),
+            route: .director(EntityRef(id: "kp-\(id)", title: name, subtitle: "", artwork: .remote(photo)))
+        )
+    }
+
+    /// Писатель — автор книги из выдачи. Экран ищет его по имени — как с экрана книги.
+    init(writer name: String, photo: URL) {
+        self.init(
+            id: "person-name-\(name)",
+            kind: .writer,
+            title: name,
+            subtitle: "",
+            artwork: .remote(photo),
+            route: .writer(EntityRef(id: "name-\(name)", title: name, subtitle: "", artwork: .remote(photo)))
         )
     }
 
