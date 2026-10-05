@@ -293,9 +293,9 @@ struct SearchRecentsMosaicView: View {
     @State private var gridOpacity: Double = 1
 
     private enum Layout {
-        /// Заголовок — как у ленты каруселей: 16 сверху, строка 28, 12 снизу; шеврона
-        /// нет, переходить некуда.
-        static let headerTop: CGFloat = 16
+        /// Заголовок — строка 28, 12 снизу, как у ленты каруселей; сверху 8, а не 16
+        /// (правка пользователя 2026-10-05). Шеврона нет, переходить некуда.
+        static let headerTop: CGFloat = 8
         static let headerLine: CGFloat = 28
         static let headerBottom: CGFloat = 12
         /// Кнопка — на 24 ниже сетки, как под полным списком истории.
