@@ -35,9 +35,10 @@ enum MosaicLayout {
     static let skeletonTitleBar: CGFloat = (card * 0.8).rounded()
     static let skeletonSubtitleBar: CGFloat = (card * 0.55).rounded()
     /// Скелетон первой выдачи — вперемешку, как будущая лента. Порядок разделов ещё
-    /// неизвестен, поэтому формы чередуются, а не повторяют какой-то из них.
+    /// неизвестен, поэтому формы чередуются, а не повторяют какой-то из них. Первым —
+    /// круг исполнителя (правка пользователя 2026-10-05).
     static let skeletonPattern: [MosaicSkeletonShape] = [
-        .poster, .book, .round, .square, .poster, .square,
+        .round, .poster, .book, .square, .poster, .square,
         .book, .poster, .square, .round, .book, .poster,
     ]
 }
