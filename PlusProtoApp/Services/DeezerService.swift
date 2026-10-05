@@ -79,6 +79,25 @@ actor DeezerService {
         return response.data
     }
 
+    /// Трек целиком — ради ссылки на 30-секундное превью (`MusicAudio`). Мимо кэша:
+    /// ссылка подписана и протухает, а кэш отдавал бы её вечно.
+    func freshTrack(id: Int) async throws -> DeezerTrack {
+        try await fetch(path: "/track/\(id)", fresh: true)
+    }
+
+    /// Поиск трека ради превью — тоже мимо кэша, по той же причине.
+    func freshSearchTracks(query: String, limit: Int = 5) async throws -> [DeezerTrackHit] {
+        let response: DeezerListResponse<DeezerTrackHit> = try await fetch(
+            path: "/search/track",
+            query: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ],
+            fresh: true
+        )
+        return response.data
+    }
+
     func searchArtists(query: String, limit: Int = 10) async throws -> [DeezerArtistBrief] {
         let response: DeezerListResponse<DeezerArtistBrief> = try await fetch(
             path: "/search/artist",
@@ -152,7 +171,7 @@ actor DeezerService {
 
     // MARK: - Private
 
-    private func fetch<T: Decodable>(path: String, query: [URLQueryItem] = []) async throws -> T {
+    private func fetch<T: Decodable>(path: String, query: [URLQueryItem] = [], fresh: Bool = false) async throws -> T {
         await throttle()
 
         guard var components = URLComponents(string: baseURL + path) else {
@@ -162,6 +181,7 @@ actor DeezerService {
         guard let url = components.url else { throw DeezerError.invalidResponse }
 
         var request = URLRequest(url: url)
+        if fresh { request.cachePolicy = .reloadIgnoringLocalCacheData }
         // Каталог у Deezer геолокализован по IP; язык фиксируем, чтобы выдача
         // не менялась от того, откуда показывают прототип.
         request.setValue("en", forHTTPHeaderField: "Accept-Language")

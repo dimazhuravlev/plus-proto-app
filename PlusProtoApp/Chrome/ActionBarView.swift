@@ -42,6 +42,34 @@ enum ActionBarMotion {
     static let iconSwapScale: CGFloat = 0.4
     /// Хаптика транспорта — impact light, как на play/pause в MusicPlayer.
     static let transportHapticIntensity: CGFloat = 1.0
+    /// Смена трека в подписях плееров — нативный `.blurReplace` (правка пользователя
+    /// 2026-10-05): старое название уходит в блюр, новое из него проявляется. Смена
+    /// текста на месте — ~300–400 мс, как у списков.
+    static let trackSwap: Animation = .smooth(duration: 0.4)
+}
+
+extension View {
+    /// Подписи трека меняются блюром при смене трека — в мини-плеере и в большом.
+    /// Уходящая и приходящая копии лежат друг на друге (`ZStack`), а не стопкой.
+    /// Reduce Motion — только прозрачность: в `.blurReplace` есть и масштаб.
+    func trackSwap(id: String, alignment: Alignment = .leading) -> some View {
+        modifier(TrackSwap(id: id, alignment: alignment))
+    }
+}
+
+private struct TrackSwap: ViewModifier {
+    let id: String
+    let alignment: Alignment
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        ZStack(alignment: alignment) {
+            content
+                .id(id)
+                .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+        }
+        .animation(ActionBarMotion.trackSwap, value: id)
+    }
 }
 
 /// Состояние «бар поднят над клавиатурой». Обе величины считаются в BottomChrome
@@ -1459,6 +1487,7 @@ struct MiniPlayerPill: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .trackSwap(id: item.id)
     }
 
     private var actions: some View {

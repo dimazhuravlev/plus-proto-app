@@ -258,6 +258,8 @@ struct MusicPlayerView: View {
                 column: column,
                 screenWidth: width
             )
+            // Новый трек — блюром, как в мини-плеере; бегущая строка стартует заново.
+            .trackSwap(id: music.id)
             .padding(.top, MusicPlayerLayout.coverToTitle)
 
             artistRow(music)
@@ -314,6 +316,7 @@ struct MusicPlayerView: View {
                         .foregroundStyle(Color.fillSubtitle)
                         .lineLimit(1)
                 }
+                .trackSwap(id: music.id)
             }
             Spacer(minLength: MusicPlayerLayout.rowButtonGap)
             HStack(spacing: MusicPlayerLayout.rowButtonGap) {
