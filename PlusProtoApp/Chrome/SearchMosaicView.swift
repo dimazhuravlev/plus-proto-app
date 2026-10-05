@@ -98,7 +98,7 @@ struct SearchMosaicView: View {
     /// а последовательно, как фильтр: старая сетка гаснет, новая проявляется (правка
     /// пользователя 2026-10-05: «при обновлении выдачи плавнее» — прежде карточки
     /// перепрыгивали на новые места в один кадр). Добор того же запроса дописывается
-    /// в снимок сразу — карточки встают в конец.
+    /// в снимок сразу — карточки встают в конец; первая выдача сменяет скелетон на месте.
     @State private var displayedHits: [SearchHit] = []
     /// Текст показанной выдачи; `nil` — первой ещё нет, на экране скелетон.
     @State private var displayedText: String?
@@ -288,11 +288,14 @@ struct SearchMosaicView: View {
     }
 
     /// Свести снимок с выдачей. Тот же текст — добор: дописать в конец сразу. Новый текст
-    /// (или первая выдача после скелетона) — смена по фазам, как у фильтра: старая сетка
-    /// гаснет, в паузе подменяется — с начала, на «Всё», первой порцией, — новая
-    /// проявляется. Быстрый набор прерывает незаконченную смену: встанет последняя.
-    /// Сетка, появившаяся с уже готовой выдачей (запрос из кэша), ставит её сразу:
-    /// скелетон, который тут же гаснет, был бы лишним миганием.
+    /// на месте прежней выдачи — смена по фазам, как у фильтра: старая сетка гаснет,
+    /// в паузе подменяется — с начала, на «Всё», первой порцией, — новая проявляется.
+    /// Быстрый набор прерывает незаконченную смену: встанет последняя.
+    ///
+    /// Первая выдача — на месте скелетона или сетки, появившейся с готовой выдачей
+    /// (запрос из кэша), — встаёт сразу, без кроссфейда сетки (правка пользователя
+    /// 2026-10-05: скелетон гас, и выдача проявлялась следом). Заливки обложек того же
+    /// цвета, что скелетон, — проявляются только постеры и подписи (`contentAppear`).
     private func syncResults(isAppearing: Bool) {
         let text = search.shownText
         guard let text else { return }
@@ -300,9 +303,22 @@ struct SearchMosaicView: View {
             displayedHits = search.mosaicHits
             return
         }
-        if isAppearing {
-            displayedText = text
-            displayedHits = search.mosaicHits
+        if isAppearing || displayedText == nil {
+            resultsSwap?.cancel()
+            filterSwap?.cancel()
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                displayedText = text
+                displayedHits = search.mosaicHits
+                filter = .all
+                shownFilter = .all
+                revealed = MosaicLayout.chunk
+            }
+            // Скелетон гас под сменой фильтра — сетку возвращаем, а не ставим щелчком.
+            if gridOpacity < 1 {
+                withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
+            }
             return
         }
         resultsSwap?.cancel()
