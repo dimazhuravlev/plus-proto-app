@@ -18,6 +18,10 @@ enum MosaicLayout {
     /// Карточка крупная — пресс мягче кнопочного (0.92): сильный скейл на большой
     /// площади читается прыжком.
     static let pressedScale: CGFloat = 0.97
+    /// Кнопка play на обложке трека (`2479:25744`): круг 30, глиф 15, отступ 4 от кромок.
+    static let playButton: CGFloat = 30
+    static let playIcon: CGFloat = 15
+    static let playInset: CGFloat = 4
     /// Порция — четыре ряда. Первая сразу, следующие — на подходе к низу.
     static let chunk = 12
     /// За сколько до низа ленты дописывать следующую порцию — около трёх рядов:
@@ -52,6 +56,12 @@ enum MosaicMotion {
     static let fadeOutDuration: Duration = .milliseconds(300)
     static let fadeOut: Animation = .easeInOut(duration: 0.3)
     static let fadeIn: Animation = .easeInOut(duration: 0.3)
+    /// Пауза между подменой карточек и проявлением — пара кадров. В одном апдейте
+    /// с проявлением подмена уезжала под его анимацию: карточки, оставшиеся под новым
+    /// фильтром, перелетали на новые места — сквозь клавиатуру было видно, как они
+    /// мечутся в стороны (правка пользователя 2026-10-05). Подмена должна закоммититься
+    /// без анимации, пока сетки не видно.
+    static let swapCommit: Duration = .milliseconds(32)
     /// Карточка проявляет содержимое — постер и подпись — за 400 мс (правка пользователя
     /// 2026-10-05: «более плавная загрузка карточек»; прежде постер шёл общими 150 мс
     /// скелетонов, а подпись вставала сразу). Заливка обложки стоит с первого кадра:
@@ -83,6 +93,19 @@ struct SearchMosaicView: View {
 
     @Environment(SearchState.self) private var search
     @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(ActionBarState.self) private var actionBar
+
+    /// Выдача на экране — снимок `search.mosaicHits`. Новый запрос сменяет его не сразу,
+    /// а последовательно, как фильтр: старая сетка гаснет, новая проявляется (правка
+    /// пользователя 2026-10-05: «при обновлении выдачи плавнее» — прежде карточки
+    /// перепрыгивали на новые места в один кадр). Добор того же запроса дописывается
+    /// в снимок сразу — карточки встают в конец.
+    @State private var displayedHits: [SearchHit] = []
+    /// Текст показанной выдачи; `nil` — первой ещё нет, на экране скелетон.
+    @State private var displayedText: String?
+    @State private var resultsSwap: Task<Void, Never>?
+    /// Подменённая выдача — с начала ленты; счётчик, а не флаг: каждая подмена своя.
+    @State private var scrollResets = 0
 
     /// Выбранный фильтр — им подсвечен чипс, сразу по нажатию.
     @State private var filter: MosaicFilter = .all
@@ -141,8 +164,11 @@ struct SearchMosaicView: View {
                 requestMore()
             }
             .modifier(DismissKeyboardOnScroll())
-            .onChange(of: search.shownText) {
-                startOver()
+            .onChange(of: MosaicResultsKey(text: search.shownText, count: search.mosaicHits.count), initial: true) { old, new in
+                // Первый вызов — на появлении (старое значение равно новому).
+                syncResults(isAppearing: old == new)
+            }
+            .onChange(of: scrollResets) {
                 proxy.scrollTo(Self.topAnchor, anchor: .top)
             }
             .onChange(of: shownFilter) {
@@ -169,19 +195,20 @@ struct SearchMosaicView: View {
 
     /// Карточки под показанным фильтром — в порядке смешанной выдачи.
     private var items: [SearchHit] {
-        search.mosaicHits.filter(shownFilter.matches)
+        displayedHits.filter(shownFilter.matches)
     }
 
     private var grid: some View {
         let items = items
         let visible = Array(items.prefix(revealed))
-        let zoomSources = visible.firstPerRouteIDs
+        // Трек играет сам и экран не открывает — источником зума его альбома он не будет.
+        let zoomSources = visible.filter { $0.kind != .track }.firstPerRouteIDs
         return MosaicGrid(
             columns: MosaicLayout.columns,
             columnSpacing: MosaicLayout.columnGap,
             rowSpacing: MosaicLayout.rowGap
         ) {
-            if search.shownText == nil {
+            if displayedText == nil {
                 // Первая выдача в пути — скелетон вперемешку (уточнение запроса держит
                 // прежнюю выдачу, и скелетона не будет).
                 ForEach(MosaicLayout.skeletonPattern.indices, id: \.self) { index in
@@ -189,13 +216,22 @@ struct SearchMosaicView: View {
                 }
             } else {
                 ForEach(visible) { hit in
-                    MosaicCard(hit: hit, zoom: zoomSources.contains(hit.id) ? zoom : nil) { route in
-                        search.remember(hit)
-                        open(route)
-                    }
+                    MosaicCard(
+                        hit: hit,
+                        zoom: zoomSources.contains(hit.id) ? zoom : nil,
+                        open: { route in
+                            search.remember(hit)
+                            open(route)
+                        },
+                        play: { track in
+                            // Включённый трек — тот же выбор из выдачи, что переход.
+                            search.remember(track)
+                            playMosaicTrack(track, actionBar: actionBar)
+                        }
+                    )
                     .transition(.opacity)
                 }
-                if search.isExtendingMosaic, revealed >= items.count {
+                if search.isExtendingMosaic, !items.isEmpty, revealed >= items.count {
                     ForEach(0..<MosaicLayout.tailSkeletons, id: \.self) { index in
                         MosaicSkeletonCard(shape: MosaicLayout.skeletonPattern[index])
                             .transition(.opacity)
@@ -211,8 +247,8 @@ struct SearchMosaicView: View {
         FilterChipsRow(options: chipOptions, selection: $filter, title: \.title)
             .modifier(DismissKeyboardOnScroll())
             // Пустая выдача — только текст «ничего не нашлось», чипсов без карточек нет.
-            .opacity(search.isEmptyResult ? 0 : 1)
-            .allowsHitTesting(!search.isEmptyResult)
+            .opacity(isShowingEmpty ? 0 : 1)
+            .allowsHitTesting(!isShowingEmpty)
             .background(alignment: .top) {
                 PinnedChipsBackdrop()
                     .opacity(NavBarRamp.progress(scrolled, start: 0, length: MosaicLayout.backdropRamp))
@@ -222,20 +258,29 @@ struct SearchMosaicView: View {
             .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
     }
 
+    /// На экране пустая выдача — по снимку, а не по поиску: пока старая сетка гаснет,
+    /// её чипсы ещё стоят.
+    private var isShowingEmpty: Bool {
+        displayedText != nil && displayedHits.isEmpty
+    }
+
     /// Чипсы — только разделы, в которых что-то нашлось: пустой фильтр показал бы пустую
     /// сетку. Пока первая выдача в пути — все четыре: пустые разделы ещё неизвестны.
     private var chipOptions: [MosaicFilter] {
-        guard search.shownText != nil else { return MosaicFilter.allCases }
-        let hits = search.mosaicHits
-        return MosaicFilter.allCases.filter { $0 == .all || hits.contains(where: $0.matches) }
+        guard displayedText != nil else { return MosaicFilter.allCases }
+        return MosaicFilter.allCases.filter { $0 == .all || displayedHits.contains(where: $0.matches) }
     }
 
-    /// Лента у низа: следующая порция, а когда показано всё — добор.
+    /// Лента у низа: следующая порция, а когда показано всё — добор. Пока выдача
+    /// сменяется, не трогаем: снимок ещё прежний, а добор просился бы для нового текста.
     private func requestMore() {
-        guard isNearEnd, search.shownText != nil else { return }
+        guard isNearEnd, let text = displayedText, text == search.shownText else { return }
         let total = items.count
         if revealed < total {
-            withAnimation(MosaicMotion.reveal) {
+            // Пока сетка погашена сменой (фильтр, новый запрос), порция встаёт без анимации:
+            // иначе её транзакция подхватила бы и перестановку только что подменённых
+            // карточек — они перелетали бы на свои места.
+            withAnimation(gridOpacity < 1 ? nil : MosaicMotion.reveal) {
                 revealed = min(total, revealed + MosaicLayout.chunk)
             }
         } else if search.canExtendMosaic {
@@ -243,16 +288,43 @@ struct SearchMosaicView: View {
         }
     }
 
-    /// Пришла выдача нового запроса — сетка с начала: «Всё», первая порция.
-    private func startOver() {
+    /// Свести снимок с выдачей. Тот же текст — добор: дописать в конец сразу. Новый текст
+    /// (или первая выдача после скелетона) — смена по фазам, как у фильтра: старая сетка
+    /// гаснет, в паузе подменяется — с начала, на «Всё», первой порцией, — новая
+    /// проявляется. Быстрый набор прерывает незаконченную смену: встанет последняя.
+    /// Сетка, появившаяся с уже готовой выдачей (запрос из кэша), ставит её сразу:
+    /// скелетон, который тут же гаснет, был бы лишним миганием.
+    private func syncResults(isAppearing: Bool) {
+        let text = search.shownText
+        guard let text else { return }
+        if text == displayedText {
+            displayedHits = search.mosaicHits
+            return
+        }
+        if isAppearing {
+            displayedText = text
+            displayedHits = search.mosaicHits
+            return
+        }
+        resultsSwap?.cancel()
         filterSwap?.cancel()
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            filter = .all
-            shownFilter = .all
-            gridOpacity = 1
-            revealed = MosaicLayout.chunk
+        resultsSwap = Task { @MainActor in
+            withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
+            try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
+            guard !Task.isCancelled else { return }
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                displayedText = search.shownText
+                displayedHits = search.mosaicHits
+                filter = .all
+                shownFilter = .all
+                revealed = MosaicLayout.chunk
+                scrollResets += 1
+            }
+            try? await Task.sleep(for: MosaicMotion.swapCommit)
+            guard !Task.isCancelled else { return }
+            withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
         }
     }
 
@@ -276,6 +348,8 @@ struct SearchMosaicView: View {
                 shownFilter = selected
                 revealed = MosaicLayout.chunk
             }
+            try? await Task.sleep(for: MosaicMotion.swapCommit)
+            guard !Task.isCancelled else { return }
             withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
         }
     }
@@ -294,6 +368,7 @@ struct SearchRecentsMosaicView: View {
     let open: (EntityRoute) -> Void
     let zoom: Namespace.ID?
 
+    @Environment(ActionBarState.self) private var actionBar
     @Environment(SearchState.self) private var search
     @Environment(KeyboardObserver.self) private var keyboard
     @State private var isConfirmingClear = false
@@ -316,7 +391,8 @@ struct SearchRecentsMosaicView: View {
 
     var body: some View {
         let items = search.history
-        let zoomSources = items.firstPerRouteIDs
+        // Трек экран не открывает — источником зума его альбома он не будет.
+        let zoomSources = items.filter { $0.kind != .track }.firstPerRouteIDs
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Искали недавно")
@@ -335,7 +411,13 @@ struct SearchRecentsMosaicView: View {
                     rowSpacing: MosaicLayout.rowGap
                 ) {
                     ForEach(items) { hit in
-                        MosaicCard(hit: hit, zoom: zoomSources.contains(hit.id) ? zoom : nil, open: open)
+                        // Трек играет и отсюда — но историю не переставляет, как и переход.
+                        MosaicCard(
+                            hit: hit,
+                            zoom: zoomSources.contains(hit.id) ? zoom : nil,
+                            open: open,
+                            play: { track in playMosaicTrack(track, actionBar: actionBar) }
+                        )
                     }
                 }
                 .padding(.horizontal, MosaicLayout.side)
@@ -391,6 +473,25 @@ struct SearchRecentsMosaicView: View {
                 gridOpacity = 1
             }
         }
+    }
+}
+
+/// Что сверять снимку сетки с выдачей: текст (новый запрос) и число карточек (добор).
+private struct MosaicResultsKey: Equatable {
+    let text: String?
+    let count: Int
+}
+
+/// Трек сетки — сразу в плеер бара, без перехода в альбом (правка пользователя
+/// 2026-10-05, макет `2479:25744`). Уже стоящий в плеере — на паузу и обратно,
+/// как кнопка мини-плеера; иначе запуск, как у строки полной выдачи (`startTrack`).
+@MainActor
+private func playMosaicTrack(_ track: SearchHit, actionBar: ActionBarState) {
+    if actionBar.mode == .music, actionBar.music?.id == track.id {
+        PlayerHaptics.tap()
+        actionBar.toggleMusicPlayback()
+    } else {
+        startTrack(track, in: actionBar)
     }
 }
 
@@ -507,6 +608,10 @@ private struct MosaicCard: View {
     /// ведут в один экран, и источник у него один.
     let zoom: Namespace.ID?
     let open: (EntityRoute) -> Void
+    /// Тап по треку — сразу в плеер, без перехода в альбом (`playMosaicTrack`).
+    let play: (SearchHit) -> Void
+
+    @Environment(ActionBarState.self) private var actionBar
 
     /// Постер и подпись проявились (`MosaicMotion.contentAppear`). Один раз на карточку:
     /// та же карточка в уточнённой выдаче (тот же id) не мигает заново.
@@ -534,7 +639,13 @@ private struct MosaicCard: View {
     }
 
     var body: some View {
-        if let route = hit.route {
+        if hit.kind == .track {
+            // Трек — сразу в плеер (макет `2479:25744`): кнопка play на обложке говорит,
+            // что это песня, а не альбом. Нажимается вся карточка, как и остальные.
+            Button { play(hit) } label: { content }
+                .buttonStyle(PressScaleButtonStyle(pressedScale: MosaicLayout.pressedScale))
+                .accessibilityHint("Включить трек")
+        } else if let route = hit.route {
             Button { open(route) } label: { content }
                 .buttonStyle(PressScaleButtonStyle(pressedScale: MosaicLayout.pressedScale))
                 // Экран сущности разворачивается из карточки и сворачивается в неё — как
@@ -543,6 +654,12 @@ private struct MosaicCard: View {
         } else {
             content
         }
+    }
+
+    /// Этот трек сейчас играет — на кнопке пауза.
+    private var isPlayingThisTrack: Bool {
+        hit.kind == .track && actionBar.mode == .music
+            && actionBar.music?.id == hit.id && actionBar.isMusicPlaying
     }
 
     private var content: some View {
@@ -577,6 +694,13 @@ private struct MosaicCard: View {
                 .overlay { artwork }
                 .clipShape(shape)
                 .overlay { shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+                .overlay(alignment: .bottomLeading) {
+                    if hit.kind == .track {
+                        MosaicPlayBadge(isPlaying: isPlayingThisTrack)
+                            .padding(MosaicLayout.playInset)
+                            .opacity(isContentShown ? 1 : 0)
+                    }
+                }
         }
     }
 
@@ -621,6 +745,26 @@ private struct MosaicCard: View {
         // карточка кончается там, где кончился текст (16, 32 или 48, как в макете).
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: isPerson ? .center : .leading)
+    }
+}
+
+/// Кнопка play на обложке трека — `button` макета `2479:25744`: серая кнопка-круг
+/// ДС (40, глиф 20, блюр и бордер серых кнопок) в масштабе 30 — глиф 15, слева снизу
+/// с отступом 4. Сама не нажимается: нажимается вся карточка, кнопка — знак, что это
+/// трек. Играет этот трек — на ней пауза.
+private struct MosaicPlayBadge: View {
+    let isPlaying: Bool
+
+    var body: some View {
+        Image(isPlaying ? "iconPause" : "iconPlay")
+            .renderingMode(.template)
+            .resizable()
+            .frame(width: MosaicLayout.playIcon, height: MosaicLayout.playIcon)
+            .foregroundStyle(Color.fillOne)
+            .frame(width: MosaicLayout.playButton, height: MosaicLayout.playButton)
+            .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

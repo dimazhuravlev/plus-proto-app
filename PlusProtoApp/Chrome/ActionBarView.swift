@@ -74,9 +74,9 @@ enum ActionBarGeometry {
     static let clearLeadingGap: CGFloat = 8
     /// Во что схлопывается крест, когда поле пустое. Не ноль: из нуля предмет появляется
     /// «из ниоткуда». Было 0.9 от правого края — на глифе 24 это 2 pt, скейла не видно,
-    /// крест читался одной прозрачностью (правка пользователя 2026-10-05). 0.7 от центра:
-    /// крест заметно «раскрывается» на месте, но не выпрыгивает.
-    static let clearCollapsedScale: CGFloat = 0.7
+    /// крест читался одной прозрачностью; затем 0.7 — и это мало (правки пользователя
+    /// 2026-10-05). 0.4 от центра: крест раскрывается на месте вместе с прозрачностью.
+    static let clearCollapsedScale: CGFloat = 0.4
     static let miniPlayerPaddingLeading: CGFloat = 6
     static let miniPlayerPaddingTrailing: CGFloat = 18
     /// Зазор тексты ↔ кнопки

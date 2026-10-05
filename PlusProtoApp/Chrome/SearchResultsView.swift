@@ -314,9 +314,7 @@ struct SearchResultsView: View {
             case .carousels: overviewList
             case .masonry: SearchMosaicView(open: open, zoom: zoom)
             }
-            if search.isEmptyResult {
-                SearchEmptyState()
-            }
+            SearchEmptyState(isShown: resultsStyle == .masonry ? search.isMosaicEmpty : search.isEmptyResult)
         }
     }
 
@@ -796,16 +794,35 @@ struct SearchResultsView: View {
 /// выдачи — внизу, и текст переезжает вместе с ним — кривой клавиатуры, потому что
 /// отступ считается от её состояния.
 struct SearchEmptyState: View {
+    /// Показан ли текст. Вью всегда в дереве: появляется и гаснет она сама — скейлом
+    /// от центра текста вместе с прозрачностью (правка пользователя 2026-10-05: «через
+    /// opacity + scale 0.6»). Вставкой с переходом скейл шёл бы от центра всего кадра,
+    /// а текст стоит выше него на половину отступа бара — он съезжал бы к центру.
+    let isShown: Bool
+
     @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Белый 35 % макета — разовый цвет, токена нет.
     private static let color = Color.white.opacity(0.35)
+
+    private enum Motion {
+        /// Из чего встаёт текст — по правке пользователя; не ноль, текст не «из ниоткуда».
+        static let hiddenScale: CGFloat = 0.6
+        /// Сильный ease-out: текст отвечает сразу и мягко встаёт.
+        static let change: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
+    }
 
     var body: some View {
         Text("Ничего такого\nне нашлось")
             .plusHeadline(.s)
             .multilineTextAlignment(.center)
             .foregroundStyle(Self.color)
+            // С «уменьшением движения» — одна прозрачность.
+            .scaleEffect(isShown || reduceMotion ? 1 : Motion.hiddenScale)
+            .opacity(isShown ? 1 : 0)
+            .animation(Motion.change, value: isShown)
+            .accessibilityHidden(!isShown)
             // Кадр слоя — безопасная зона: сверху статус-бар уже учтён, снизу
             // поджимаем до верха бара.
             .frame(maxWidth: .infinity, maxHeight: .infinity)

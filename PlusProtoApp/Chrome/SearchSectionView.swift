@@ -61,9 +61,7 @@ struct SearchSectionView: View {
             sectionList
             // Пустая выдача — тот же экран, что у обзора: по центру между верхом
             // и баром поиска.
-            if isEmpty {
-                SearchEmptyState()
-            }
+            SearchEmptyState(isShown: isEmpty)
         }
     }
 
@@ -262,7 +260,7 @@ struct SearchSectionView: View {
 /// Включить трек строки в плеере бара: обложка, название, исполнитель и альбом —
 /// из строки. Мини-плеер в поиске не виден — он встанет в бар на выходе.
 @MainActor
-private func startTrack(_ track: SearchHit, in actionBar: ActionBarState) {
+func startTrack(_ track: SearchHit, in actionBar: ActionBarState) {
     PlayerHaptics.tap()
     let album: String? = if case .album(let ref) = track.route { ref.title } else { nil }
     actionBar.startMusic(MusicNowPlaying(

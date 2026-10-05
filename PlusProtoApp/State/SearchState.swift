@@ -212,12 +212,18 @@ final class SearchState {
     /// Скелетон первого запроса — три секции в порядке по умолчанию: настоящий
     /// порядок ещё неизвестен. Пустые домены экран не показывает вовсе.
     var sections: [Section] {
-        guard let shown else {
+        guard let shown = shown ?? (isActive ? nil : leaving) else {
             guard isLoading else { return [] }
             return Section.Kind.allCases.map { Section(id: $0, domain: Domain(isLoading: true)) }
         }
         return shown.order.map { Section(id: $0, domain: Domain(hits: shown.hits($0))) }
     }
+
+    /// Выдача стёртого запроса — пока слой сменяет её на «Искали недавно». Запрос
+    /// обнуляет выдачу на кадр раньше, чем слой успевает смениться, и уходящий слой
+    /// гас пустым — а у сетки мелькал скелетон (правка пользователя 2026-10-05).
+    /// Держится, только пока запрос неактивен: новый показывает свою выдачу или скелетон.
+    private var leaving: Results?
 
     private var normalized: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -293,6 +299,8 @@ final class SearchState {
             reset()
             return
         }
+        // Новый запрос — уходящая выдача больше не нужна.
+        leaving = nil
 
         if let cached = cache[text] {
             isLoading = false
@@ -377,6 +385,7 @@ final class SearchState {
     }
 
     private func reset() {
+        leaving = shown ?? leaving
         shown = nil
         isLoading = false
         // Запрос стёрт — раскрытому разделу показывать нечего.
@@ -613,9 +622,17 @@ final class SearchState {
         return shown.mixed + (mosaicExtra[shown.text] ?? [])
     }
 
-    /// Добор ещё впереди.
+    /// Сетке нечего показать: смешанная выдача пуста — и плейлистов с создателями тоже нет.
+    /// Своя мера, а не `isEmptyResult`: тот смотрит только на три раздела каруселей.
+    var isMosaicEmpty: Bool {
+        shown.map { $0.mixed.isEmpty } ?? false
+    }
+
+    /// Добор ещё впереди. У пустой выдачи его не бывает: обзор не нашёл ничего, и полные
+    /// выдачи тех же API ничего не добавят — а скелетоны добора под «Ничего не нашлось»
+    /// висели бы, пока он едет (правка пользователя 2026-10-05).
     var canExtendMosaic: Bool {
-        guard let shown else { return false }
+        guard let shown, !shown.mixed.isEmpty else { return false }
         return !mosaicDone.contains(shown.text) && mosaicLoading != shown.text
     }
 
