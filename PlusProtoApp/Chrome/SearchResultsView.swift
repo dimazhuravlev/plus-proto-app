@@ -68,6 +68,16 @@ struct SearchResultsView: View {
         }
     }
 
+    /// Появление слоя у сетки. Сетка встаёт на весь экран, а блюр затемнения
+    /// не анимируется: он включается, только когда затемнение доехало (`SearchOverlay`).
+    /// Проявляясь той же кривой, сетка ~0.1 с лежала поверх ещё резкой витрины и читалась
+    /// появившейся раньше экрана поиска (правка пользователя 2026-10-05, замер записи).
+    /// Старт на 150 мс позже — сетка проявляется, когда фон уже размыт. Карусели так
+    /// и остались: их узкую ленту наверху опережение не выдаёт.
+    private enum LayerMotion {
+        static let mosaicAppear: Animation = SearchOverlayConfig.fade.delay(0.15)
+    }
+
     /// Габариты, которые зависят от размера карточек выдачи.
     private struct CardMetrics {
         /// Ширина колонки карусели
@@ -230,8 +240,11 @@ struct SearchResultsView: View {
                     .transition(RecentsMotion.swap)
             }
         }
-        // Кривая — у родителя (`.animation(_, value: isShown)` в `body`).
-        .transition(.opacity)
+        // Кривая — у родителя (`.animation(_, value: isShown)` в `body`). У сетки
+        // появление своё (`LayerMotion`), уход — тот же, вместе с затемнением.
+        .transition(resultsStyle == .masonry
+            ? .asymmetric(insertion: .opacity.animation(LayerMotion.mosaicAppear), removal: .opacity)
+            : .opacity)
             #if DEBUG
             // `-debugExpandSection music|movies|books` — раскрыть раздел, когда
             // выдача пришла: тапнуть по заголовку из шелла нечем. Один раз за запуск.
@@ -325,11 +338,13 @@ struct SearchResultsView: View {
     private var carouselZeroState: some View {
         ZStack {
             recentsSection
+                // Историю удалили целиком — ленты нет вовсе, заголовок вёл бы в пустоту.
+                .opacity(search.recents.isEmpty ? 0 : 1)
                 .opacity(search.isHistoryShown ? 0 : 1)
                 .animation(SectionMotion.overviewFade, value: search.isHistoryShown)
                 .offset(x: search.isHistoryShown ? -SectionMotion.overviewShift : 0)
-                .allowsHitTesting(!search.isHistoryShown)
-                .accessibilityHidden(search.isHistoryShown)
+                .allowsHitTesting(!search.isHistoryShown && !search.recents.isEmpty)
+                .accessibilityHidden(search.isHistoryShown || search.recents.isEmpty)
 
             if search.isHistoryShown {
                 SearchHistoryView(open: open, zoom: zoom)

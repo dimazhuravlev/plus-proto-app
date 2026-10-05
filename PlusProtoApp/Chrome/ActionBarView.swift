@@ -815,7 +815,9 @@ private struct SearchPill: View {
             // Видимую подсказку рисует `focusedPlaceholder`, а VoiceOver читает её здесь.
             .accessibilityLabel("Поиск по всему")
             .textFieldStyle(.plain)
-            .tint(Color.fillOne)
+            // Каретка — наш фиолетовый, тот же, что у активного чипса (правка
+            // пользователя 2026-10-05; была белой).
+            .tint(Color.moviesAccent)
             .foregroundStyle(Color.fillOne)
             // Не `plusHeadline`: у поля точная строка срезала хвосты букв снизу.
             .plusHeadlineField(.s)
@@ -902,7 +904,7 @@ private struct SearchPill: View {
     /// Бледнее бегущих фраз (`searchPlaceholder`, белый 30 %): те зовут в сервисы,
     /// а эта только подписывает пустое поле (правка пользователя 2026-10-03).
     private static let focusedPlaceholderColor = Color.white.opacity(0.2)
-    private static let focusedPlaceholderText = "Поиск по всему"
+    fileprivate static let focusedPlaceholderText = "Поиск по всему"
 
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
@@ -935,10 +937,11 @@ private enum SearchPlaceholderMotion {
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
     /// фраза погасла вместе с подъёмом, и нахлёста нет. Символы встают резко, без
     /// проявления прозрачностью и без сдвига — как печать (правки пользователя
-    /// 2026-10-03 и 2026-10-04; прежде глиф проявлялся за 240 мс). Шаг 30 мс: на 14 знаков
-    /// строка набирается за ~0.4 с — почти как прежняя волна. Волну попросили видимой,
-    /// она ничего не блокирует и гаснет мгновенно.
-    static let focusedWave = HeadlineWave(stagger: 0.03, glyph: 0)
+    /// 2026-10-03 и 2026-10-04; прежде глиф проявлялся за 240 мс). Шаг 30 мс по буквам
+    /// и пауза 120 мс перед словом — «Поиск — по — всему»: слегка ручной набор, а не
+    /// ровная лента (правка пользователя 2026-10-05). Вся строка — ~0.6 с; волну
+    /// попросили видимой, она ничего не блокирует и гаснет мгновенно.
+    static let focusedWave = HeadlineWave.typing(SearchPill.focusedPlaceholderText, stagger: 0.03, pause: 0.12)
     /// С «уменьшением движения» — без волны: строка проявляется целиком, прозрачностью
     /// за 250 мс (как было до волны).
     static let focusedReducedFade: Double = 0.25

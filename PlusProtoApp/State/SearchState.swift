@@ -108,17 +108,20 @@ final class SearchState {
     /// Найденное пользователем — во что он перешёл из выдачи, свежее первым.
     /// Живёт на диске (`SearchRecents`).
     private var found: [SearchHit] = SearchRecents.load()
+    /// Стартовый набор стёрт вместе с историей (`clearHistory`). Копия флага с диска —
+    /// чтобы экран узнал о стирании наблюдением, а не перечитывал `UserDefaults`.
+    private var isStarterCleared = SearchRecents.isStarterCleared
 
     /// Лента нулевого состояния: найденное, за ним стартовый набор, не больше 12.
-    /// Пустой не бывает — поэтому у поиска всегда есть что показать, и с пустым полем
-    /// он ведёт себя как с выдачей (просмотр без клавиатуры, возврат из карточки).
+    /// С пустым полем поиск ведёт себя как с выдачей (просмотр без клавиатуры, возврат
+    /// из карточки), даже когда лента пуста — после удаления истории целиком.
     var recents: [SearchHit] { Array(history.prefix(SearchRecents.carouselLimit)) }
 
     /// Полный список истории — переход по заголовку ленты: всё найденное и стартовый набор.
-    var history: [SearchHit] { SearchRecents.merged(found) }
+    var history: [SearchHit] { SearchRecents.merged(found, includesStarter: !isStarterCleared) }
 
-    /// Есть что удалять: стартовый набор кнопкой «Удалить историю» не стирается.
-    var hasFoundHistory: Bool { !found.isEmpty }
+    /// Есть что удалять.
+    var hasHistory: Bool { !history.isEmpty }
 
     /// Полный список истории на экране — подэкран нулевого состояния, как раскрытый
     /// раздел у выдачи: «Назад» сперва сворачивает его к ленте (`collapse`).
@@ -134,11 +137,14 @@ final class SearchState {
         isHistoryShown = false
     }
 
-    /// «Удалить историю» (с подтверждением в списке): найденное стирается, и список
-    /// уходит к ленте — в ней остаётся стартовый набор, пустой она не бывает.
+    /// «Удалить историю» (с подтверждением): история стирается целиком — и найденное,
+    /// и стартовый набор (правка пользователя 2026-10-05; прежде набор оставался).
+    /// Список уходит к ленте, а та пустая и не показывается, пока что-нибудь не найдут.
     func clearHistory() {
         found = []
         SearchRecents.save(found)
+        isStarterCleared = true
+        SearchRecents.isStarterCleared = true
         isHistoryShown = false
     }
 

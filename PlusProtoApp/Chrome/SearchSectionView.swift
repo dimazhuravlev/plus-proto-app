@@ -390,16 +390,17 @@ struct SearchHistoryView: View {
 struct PinnedChipsBackdrop: View {
     /// Насколько подложка уходит выше чипсов — под статус-бар с запасом.
     private static let above: CGFloat = 80
-    /// И насколько ниже: блюр сходит на нет уже под чипсами, а не на их кромке.
-    private static let below: CGFloat = 24
-    private static let chipsRow: CGFloat = 56
+    /// Блюр сходит на нет ровно по нижней кромке ряда чипсов: лента начинает мылиться,
+    /// когда заходит под фильтры. Прежде он тянулся на 24 ниже, и под чипсами
+    /// размывалась ещё полоса сетки (правка пользователя 2026-10-05).
+    private static let chipsRow: CGFloat = FilterChipsLayout.rowHeight
 
     var body: some View {
         VariableBlurView(
             maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
             direction: .blurredTopClearBottom
         )
-        .frame(height: Self.above + Self.chipsRow + Self.below)
+        .frame(height: Self.above + Self.chipsRow)
         .offset(y: -Self.above)
         .allowsHitTesting(false)
     }

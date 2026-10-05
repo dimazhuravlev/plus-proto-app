@@ -39,6 +39,13 @@ enum PlusChromeMetrics {
         bottomSafeArea + tabsRowHeight + actionBarToTabsGap + PlusMetrics.actionBarHeight / 2
     }
 
+    /// Блюр в поиске — по верхней кромке поля, опущенного на место таббара (правка
+    /// пользователя 2026-10-05): обычная высота считана от бара над таббаром, и в выдаче
+    /// мылила полосу в 40 pt над полем.
+    static var searchUnderlayBlurHeight: CGFloat {
+        bottomSafeArea + PlusMetrics.actionBarHeight
+    }
+
     /// Нижняя безопасная зона — блюр отмеряется от физического низа экрана,
     /// а высота home indicator зависит от устройства.
     static var bottomSafeArea: CGFloat {
@@ -245,13 +252,27 @@ struct BottomChrome: View {
 /// `VariableBlurView` размывает по нарастающей к низу, поэтому у полосы нет видимой
 /// кромки, с которой резко начинается размытие.
 struct TabBarUnderlay: View {
+    @Environment(SearchState.self) private var search
+    @Environment(ActionBarState.self) private var actionBar
+    @Environment(KeyboardObserver.self) private var keyboard
+
+    /// Поиск открыт — бар внизу без таббара, и блюр ниже (`searchUnderlayBlurHeight`).
+    /// Признак тот же, что гасит таббар (`BottomChrome.isTabBarHidden`).
+    private var isSearchMode: Bool {
+        search.isBrowsing || actionBar.isSearchFocused
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             VariableBlurView(
                 maxBlurRadius: PlusChromeMetrics.underlayBlurRadius,
                 direction: .blurredBottomClearTop
             )
-            .frame(height: PlusChromeMetrics.underlayBlurHeight)
+            .frame(height: isSearchMode
+                ? PlusChromeMetrics.searchUnderlayBlurHeight
+                : PlusChromeMetrics.underlayBlurHeight)
+            // Той же кривой, что едет бар и уходит таббар.
+            .animation(keyboard.motion ?? ActionBarMotion.morph, value: isSearchMode)
 
             PlusGradient.tabBarUnderlay
                 .frame(height: PlusMetrics.bottomUnderlayHeight)

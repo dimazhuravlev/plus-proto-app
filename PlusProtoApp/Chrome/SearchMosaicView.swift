@@ -328,28 +328,26 @@ struct SearchRecentsMosaicView: View {
                     .padding(.bottom, Layout.headerBottom)
                     .padding(.horizontal, MosaicLayout.side)
 
-                Group {
-                    MosaicGrid(
-                        columns: MosaicLayout.columns,
-                        columnSpacing: MosaicLayout.columnGap,
-                        rowSpacing: MosaicLayout.rowGap
-                    ) {
-                        ForEach(items) { hit in
-                            MosaicCard(hit: hit, zoom: zoomSources.contains(hit.id) ? zoom : nil, open: open)
-                        }
-                    }
-                    .padding(.horizontal, MosaicLayout.side)
-
-                    // Стартовый набор кнопкой не стирается — без найденного она ничего
-                    // бы не делала.
-                    if search.hasFoundHistory {
-                        clearButton
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, Layout.buttonTop)
+                MosaicGrid(
+                    columns: MosaicLayout.columns,
+                    columnSpacing: MosaicLayout.columnGap,
+                    rowSpacing: MosaicLayout.rowGap
+                ) {
+                    ForEach(items) { hit in
+                        MosaicCard(hit: hit, zoom: zoomSources.contains(hit.id) ? zoom : nil, open: open)
                     }
                 }
-                .opacity(gridOpacity)
+                .padding(.horizontal, MosaicLayout.side)
+
+                if search.hasHistory {
+                    clearButton
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, Layout.buttonTop)
+                }
             }
+            .opacity(gridOpacity)
+            // Историю удалили целиком — показывать нечего: ни заголовка, ни кнопки.
+            .opacity(items.isEmpty ? 0 : 1)
             // Как у выдачи: сетка уходит под поле и клавиатуру, низ выкручивается из-под них.
             .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + MosaicLayout.barGap)
         }
@@ -377,17 +375,20 @@ struct SearchRecentsMosaicView: View {
         .buttonStyle(PressScaleButtonStyle(pressedScale: Layout.buttonPressedScale))
     }
 
-    /// История сменяется стартовым набором так же, как сетка при смене фильтра:
-    /// старая гаснет, в паузе подменяется, новая проявляется — карточки не перелетают
-    /// на освободившиеся места.
+    /// История гаснет целиком — заголовок, сетка, кнопка — той же кривой, что сетка
+    /// на смене фильтра, и стирается, когда её уже не видно. Возвращать прозрачность
+    /// можно сразу: пустая история скрыта сама (`items.isEmpty`), а новое найденное
+    /// встанет уже видимым.
     private func clearHistory() {
         Task { @MainActor in
             withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
             try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
             var instant = Transaction()
             instant.disablesAnimations = true
-            withTransaction(instant) { search.clearHistory() }
-            withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
+            withTransaction(instant) {
+                search.clearHistory()
+                gridOpacity = 1
+            }
         }
     }
 }

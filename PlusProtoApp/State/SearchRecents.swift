@@ -8,9 +8,11 @@ import Foundation
 /// списка, — тоже, это тот же выбор из выдачи. Что выдача просто показала, сюда
 /// не попадает. Свежее — первым, повтор поднимается в начало.
 ///
-/// Карусель видна всегда: за найденным стоит стартовый набор из шести реальных
-/// айтемов, и пустой истории не бывает. Найденное хранится локально (`UserDefaults`),
-/// стартовый набор — в коде: поменяется набор — у пользователя поменяется и хвост.
+/// За найденным стоит стартовый набор из шести реальных айтемов — с первого запуска
+/// лента не пустая. Пустеет она, только когда историю удалили целиком: кнопка стирает
+/// и набор (правка пользователя 2026-10-05). Найденное хранится локально
+/// (`UserDefaults`), стартовый набор — в коде: поменяется набор — у пользователя
+/// поменяется и хвост.
 enum SearchRecents {
     /// Сколько найденного храним — весь полный список истории.
     static let limit = 20
@@ -19,13 +21,24 @@ enum SearchRecents {
     static let carouselLimit = 12
 
     private static let storageKey = "searchRecents.v1"
+    private static let starterClearedKey = "searchRecents.starterCleared"
+
+    /// Стартовый набор стёрт кнопкой «Удалить историю поиска»: она удаляет историю
+    /// целиком (правка пользователя 2026-10-05), и набор больше не подмешивается —
+    /// «Искали недавно» пустеет до первого найденного.
+    static var isStarterCleared: Bool {
+        get { UserDefaults.standard.bool(forKey: starterClearedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: starterClearedKey) }
+    }
 
     /// Найденное с диска, свежее первым. Битые данные — пустая история, а не падение.
     static func load() -> [SearchHit] {
         #if DEBUG
-        // `-debugResetSearchRecents 1` — начать с пустой истории: один стартовый набор.
+        // `-debugResetSearchRecents 1` — начать с пустой истории: один стартовый набор
+        // (и стёртый кнопкой набор возвращается).
         if UserDefaults.standard.bool(forKey: "debugResetSearchRecents") {
             UserDefaults.standard.removeObject(forKey: storageKey)
+            UserDefaults.standard.removeObject(forKey: starterClearedKey)
             return []
         }
         #endif
@@ -38,8 +51,10 @@ enum SearchRecents {
         UserDefaults.standard.set(data, forKey: storageKey)
     }
 
-    /// История целиком: найденное, за ним стартовый набор без повторов.
-    static func merged(_ found: [SearchHit]) -> [SearchHit] {
+    /// История целиком: найденное, за ним стартовый набор без повторов — пока его
+    /// не стёрли (`isStarterCleared`).
+    static func merged(_ found: [SearchHit], includesStarter: Bool) -> [SearchHit] {
+        guard includesStarter else { return found }
         let foundIDs = Set(found.map(\.id))
         return found + starter.filter { !foundIDs.contains($0.id) }
     }
