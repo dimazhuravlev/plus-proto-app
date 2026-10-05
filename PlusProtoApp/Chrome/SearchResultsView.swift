@@ -22,6 +22,8 @@ struct SearchResultsView: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.stackZoomNamespace) private var zoom
+    /// Вид выдачи — карусели или сетка; переключается в дебаг-меню профиля.
+    @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = .carousels
 
     /// Что в слое — выдача или «Искали недавно». Следует за запросом, пока поиск
     /// открыт; на закрытии замирает: «Назад» стирает запрос тем же движением, что
@@ -293,7 +295,12 @@ struct SearchResultsView: View {
 
     private var content: some View {
         ZStack {
-            overviewList
+            // Ветвление статическое: вид меняют в дебаг-меню, вне поиска, — здесь
+            // переключать и анимировать нечего.
+            switch resultsStyle {
+            case .carousels: overviewList
+            case .masonry: SearchMosaicView(open: open, zoom: zoom)
+            }
             if search.isEmptyResult {
                 SearchEmptyState()
             }

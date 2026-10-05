@@ -40,10 +40,14 @@ final class SearchState {
 
     /// Собранная выдача одного запроса.
     private struct Results {
+        let text: String
         let order: [Section.Kind]
         let music: [SearchHit]
         let movies: [SearchHit]
         let books: [SearchHit]
+        /// Все разделы одной лентой — порядок сетки (`mixed`), посчитанный вместе
+        /// с порядком секций: сетка встаёт сразу на свои места, как и карусели.
+        let mixed: [SearchHit]
 
         func hits(_ kind: Section.Kind) -> [SearchHit] {
             switch kind {
@@ -321,11 +325,15 @@ final class SearchState {
             case .writer: bookHits = Array(([hit] + bookHits).prefix(Self.perSection))
             }
         }
+        let order = Self.order(for: text, music: musicHits, movies: movieHits, books: bookHits)
+        let byKind: [Section.Kind: [SearchHit]] = [.music: musicHits, .movies: movieHits, .books: bookHits]
         let results = Results(
-            order: Self.order(for: text, music: musicHits, movies: movieHits, books: bookHits),
+            text: text,
+            order: order,
             music: musicHits,
             movies: movieHits,
-            books: bookHits
+            books: bookHits,
+            mixed: Self.mixed(order.map { ($0, byKind[$0] ?? []) }, for: text, leadsWithHeads: true)
         )
         cache[text] = results
         // Одно присваивание — один кадр: все блоки появляются разом и сразу
@@ -546,6 +554,169 @@ final class SearchState {
             .filter { !known.contains($0.id) && Self.isShowableMovie($0) }
             .map(SearchHit.init(movie:))
         return hits
+    }
+
+    // MARK: - Сетка
+
+    /// Вторая версия выдачи — сетка вперемешку (`SearchMosaicView`, задача пользователя
+    /// 2026-10-05). Начинается с той же выдачи, что карусели (`Results.mixed`), а когда
+    /// её карточки кончаются, добирает полные выдачи трёх разделов — один раз на текст.
+    /// Добор — только по просьбе сетки, когда до низа уже недалеко: Deezer и Google
+    /// Books не тратятся на запросы, до конца которых никто не долистает.
+    ///
+    /// Ключ — текст выдачи, а не поля: уточнение запроса держит прежнюю выдачу,
+    /// и добор относится к ней.
+    private var mosaicExtra: [String: [SearchHit]] = [:]
+    /// Тексты, у которых добор уже был: больше брать неоткуда. Отметка ставится
+    /// и на пустом доборе — иначе сетка у низа просила бы его снова и снова.
+    private var mosaicDone: Set<String> = []
+    /// Текст, чей добор сейчас в пути.
+    private var mosaicLoading: String?
+
+    /// Текст показанной выдачи: по нему сетка узнаёт, что пришёл новый запрос.
+    var shownText: String? { shown?.text }
+
+    /// Карточки сетки — смешанная выдача обзора и добор за ней. Дописывается только
+    /// в конец: стоящие карточки не переставляются.
+    var mosaicHits: [SearchHit] {
+        guard let shown else { return [] }
+        return shown.mixed + (mosaicExtra[shown.text] ?? [])
+    }
+
+    /// Добор ещё впереди.
+    var canExtendMosaic: Bool {
+        guard let shown else { return false }
+        return !mosaicDone.contains(shown.text) && mosaicLoading != shown.text
+    }
+
+    /// Добор в пути — сетка держит внизу скелетоны.
+    var isExtendingMosaic: Bool {
+        guard let shown else { return false }
+        return mosaicLoading == shown.text
+    }
+
+    /// Добрать сетку: полные выдачи трёх разделов параллельно, за вычетом уже показанного,
+    /// смешанные тем же порядком (`mixed`) и дописанные в конец.
+    func extendMosaic() {
+        guard let base = shown, canExtendMosaic else { return }
+        let text = base.text
+        mosaicLoading = text
+        Task { [weak self] in
+            guard let self else { return }
+            async let music = self.loadFull(.music, text)
+            async let movies = self.loadFull(.movies, text)
+            async let books = self.loadFull(.books, text)
+            let full = await [music, movies, books]
+            // Те же полные выдачи откроются и заголовком карусели — без новых запросов.
+            for result in full where !result.hits.isEmpty {
+                self.fullCache["\(result.kind)|\(text)"] = result
+            }
+
+            var known = Set(base.mixed.map(\.id))
+            var fresh: [Section.Kind: [SearchHit]] = [:]
+            for result in full {
+                // Плейлисты — вне сетки: своего экрана у них нет, карточка не нажималась бы.
+                fresh[result.kind] = result.hits.filter { $0.kind != .playlist && known.insert($0.id).inserted }
+            }
+            // Книге в сетке высоту задают пропорции обложки — снимаем их до показа,
+            // как в обзоре (`fetchBooks`): узнай их поздно, колонки переложились бы.
+            if var newBooks = fresh[.books], !newBooks.isEmpty {
+                let aspects = await Self.coverAspects(of: newBooks)
+                for index in newBooks.indices {
+                    newBooks[index].artworkAspect = aspects[newBooks[index].id]
+                }
+                fresh[.books] = newBooks
+            }
+
+            let extra = Self.mixed(
+                base.order.map { ($0, fresh[$0] ?? []) },
+                for: text,
+                leadsWithHeads: false,
+                after: base.mixed.last?.kind.domain
+            )
+            self.mosaicExtra[text, default: []] += extra
+            self.mosaicDone.insert(text)
+            if self.mosaicLoading == text { self.mosaicLoading = nil }
+        }
+    }
+
+    /// Смешивание разделов для сетки. Единого скора у трёх API нет (см. `MatchScore`),
+    /// поэтому вес карточки — тот же, что у порядка секций: ступень совпадения
+    /// с названием × (1 + доля × вес внутри домена).
+    ///
+    /// 1. **Первый ряд** — лучшее от каждого раздела, чьё название отвечает запросу
+    ///    хотя бы вхождением, по убыванию веса: наверху сетки — самое релевантное
+    ///    из разных API, а не пачка одного.
+    /// 2. **Дальше** — слияние трёх очередей: на каждом шаге берётся голова с бо́льшим
+    ///    весом, но каждая следующая подряд карточка того же раздела теряет 15 %
+    ///    (`MixScore.repeatPenalty`). Сильный раздел идёт несколько карточек подряд,
+    ///    слабые не проваливаются в самый низ, а без совпадений разделы чередуются.
+    ///
+    /// Порядок внутри раздела не трогается — это его `ranked`: точное совпадение
+    /// первым, исполнитель выше своих треков, чередование видов музыки.
+    private enum MixScore {
+        /// Порог первого ряда — вхождение запроса в название
+        static let headThreshold = MatchScore.substring
+        /// Во сколько раз легчает каждая следующая подряд карточка того же раздела
+        static let repeatPenalty = 0.85
+        /// Прибавка к весу: у карточек без совпадения он ноль, и без неё штраф
+        /// за повтор ничего бы не менял — хвост шёл бы пачкой одного раздела.
+        static let floor = 1.0
+    }
+
+    /// `after` — раздел последней уже показанной карточки: добор продолжает её серию.
+    private static func mixed(
+        _ queues: [(kind: Section.Kind, hits: [SearchHit])],
+        for text: String,
+        leadsWithHeads: Bool,
+        after previous: Section.Kind? = nil
+    ) -> [SearchHit] {
+        let needle = text.folded
+        func weight(_ hit: SearchHit) -> Double {
+            match(hit, needle) * (1 + hit.authority * MatchScore.authorityShare)
+        }
+
+        var queues = queues.map { (kind: $0.kind, hits: ArraySlice($0.hits)) }
+        var result: [SearchHit] = []
+        var last = previous
+        var run = previous == nil ? 0 : 1
+
+        func take(_ index: Int) {
+            result.append(queues[index].hits.removeFirst())
+            if queues[index].kind == last {
+                run += 1
+            } else {
+                last = queues[index].kind
+                run = 1
+            }
+        }
+
+        if leadsWithHeads {
+            // Ничья — по порядку секций: он уже отражает, о чём запрос.
+            let heads = queues.indices
+                .filter { index in
+                    queues[index].hits.first.map { match($0, needle) >= MixScore.headThreshold } ?? false
+                }
+                .sorted { left, right in
+                    let l = weight(queues[left].hits.first!), r = weight(queues[right].hits.first!)
+                    return l != r ? l > r : left < right
+                }
+            for index in heads { take(index) }
+        }
+
+        while true {
+            var best: (index: Int, value: Double)?
+            for index in queues.indices {
+                guard let head = queues[index].hits.first else { continue }
+                let repeats = queues[index].kind == last ? run : 0
+                let value = (weight(head) + MixScore.floor) * pow(MixScore.repeatPenalty, Double(repeats))
+                // Строго больше: при равенстве остаётся раздел выше по порядку секций.
+                if best.map({ value > $0.value }) ?? true { best = (index, value) }
+            }
+            guard let best else { break }
+            take(best.index)
+        }
+        return result
     }
 
     // MARK: - Ранжирование секций
@@ -848,6 +1019,17 @@ private extension String {
     var folded: String {
         folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+extension SearchHit.Kind {
+    /// Раздел выдачи, к которому относится карточка: персоны — к разделу своих работ.
+    var domain: SearchState.Section.Kind {
+        switch self {
+        case .track, .album, .artist, .playlist: .music
+        case .movie, .director: .movies
+        case .book, .writer: .books
+        }
     }
 }
 

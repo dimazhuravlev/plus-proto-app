@@ -381,8 +381,8 @@ struct SearchHistoryView: View {
 /// Подложка закреплённых чипсов — прогрессивный блюр от самого верха экрана (под
 /// статус-баром тоже едут строки) до чуть ниже чипсов. Без затемнения: тёмный
 /// градиент навбара сущностей здесь убран по правке пользователя 2026-10-03 — как
-/// прежде у навбара витрины.
-private struct PinnedChipsBackdrop: View {
+/// прежде у навбара витрины. Общая с сеткой выдачи (`SearchMosaicView`).
+struct PinnedChipsBackdrop: View {
     /// Насколько подложка уходит выше чипсов — под статус-бар с запасом.
     private static let above: CGFloat = 80
     /// И насколько ниже: блюр сходит на нет уже под чипсами, а не на их кромке.
@@ -401,8 +401,8 @@ private struct PinnedChipsBackdrop: View {
 }
 
 /// Скролл начался — клавиатура уходит мягко, как в обзоре выдачи. Общий для
-/// вертикального списка и горизонтальных лент раздела.
-private struct DismissKeyboardOnScroll: ViewModifier {
+/// вертикального списка и горизонтальных лент раздела, а также сетки выдачи.
+struct DismissKeyboardOnScroll: ViewModifier {
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(ActionBarState.self) private var actionBar
 

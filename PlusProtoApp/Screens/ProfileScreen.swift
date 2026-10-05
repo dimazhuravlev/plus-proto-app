@@ -79,8 +79,22 @@ enum ProfileLayout {
 struct ProfileScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var scrollOffset: CGFloat = 0
+    @State private var isDebugMenuShown = false
 
     var body: some View {
+        // Стек — ради дебаг-меню: оно пушится из ячейки и уходит назад к профилю.
+        // `dismiss` взят снаружи стека — крестик закрывает весь профиль.
+        NavigationStack {
+            profile
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(isPresented: $isDebugMenuShown) {
+                    DebugMenuScreen()
+                }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var profile: some View {
         ZStack(alignment: .top) {
             // Свечение — от верха экрана, уезжает вместе с лентой; при оттяге стоит.
             // Оверлеем на фоне, а не слоем стопки: кадр 600 шире экрана, и слоем
@@ -107,7 +121,6 @@ struct ProfileScreen: View {
             .trackNavBarScroll(into: $scrollOffset)
         }
         .overlay(alignment: .top) { header }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: Шапка
@@ -218,14 +231,20 @@ struct ProfileScreen: View {
 
     // MARK: Ячейки
 
-    /// Островки ячеек: «на ТВ» отдельно, ниже — настройки, поддержка, о приложении,
-    /// соглашение и выход. Переходов в прототипе нет — строки откликаются.
+    /// Островки ячеек: «на ТВ» отдельно, ниже — дебаг-меню, настройки, поддержка,
+    /// о приложении, соглашение и выход. Переход есть только у дебаг-меню, остальные
+    /// строки в прототипе просто откликаются.
     private var cells: some View {
         VStack(spacing: ProfileLayout.islandGap) {
             ProfileIsland(rows: [
                 ProfileCell(icon: "iconTvKinopoisk", title: "Смотрите и слушайте на ТВ"),
             ])
             ProfileIsland(rows: [
+                // Над «Настройками», в той же секции (задача пользователя 2026-10-05).
+                // Глиф системный: в ДС «🦄 Графика» отладочной иконки нет.
+                ProfileCell(icon: "ladybug", title: "Дебаг меню", isSymbol: true) {
+                    isDebugMenuShown = true
+                },
                 ProfileCell(icon: "iconSettings", title: "Настройки"),
                 ProfileCell(icon: "iconComment", title: "Чат с поддержкой"),
                 ProfileCell(icon: "iconInfo", title: "О приложении"),
@@ -461,6 +480,10 @@ private struct ProfilePromo: View {
 private struct ProfileCell: Identifiable {
     let icon: String
     let title: String
+    /// `icon` — имя SF Symbol, а не ассета
+    var isSymbol = false
+    /// `nil` — перехода нет, строка только откликается
+    var action: (() -> Void)? = nil
     var id: String { title }
 }
 
@@ -491,11 +514,12 @@ private struct ProfileIsland: View {
     }
 
     private func row(_ cell: ProfileCell) -> some View {
-        Button {} label: {
+        Button { cell.action?() } label: {
             HStack(spacing: ProfileLayout.cellGap) {
-                Image(cell.icon)
+                (cell.isSymbol ? Image(systemName: cell.icon) : Image(cell.icon))
                     .renderingMode(.template)
                     .resizable()
+                    .scaledToFit()
                     .frame(width: ProfileLayout.cellIcon, height: ProfileLayout.cellIcon)
                     .foregroundStyle(Color.fillOne)
                 Text(cell.title)
