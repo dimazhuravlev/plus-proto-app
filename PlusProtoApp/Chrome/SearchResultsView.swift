@@ -120,6 +120,9 @@ struct SearchResultsView: View {
         /// самого заголовка (16/12) макетные у обоих размеров.
         static var sectionVertical: CGFloat { size.sectionVertical }
         static let headerTop: CGFloat = 16
+        /// Заголовки каруселей выдачи — на 8 плотнее макетных 16: и между каруселями,
+        /// и над верхней (правки пользователя 2026-10-05). «Искали недавно» — с 16.
+        static let resultsHeaderTop: CGFloat = 8
         static let headerBottom: CGFloat = 12
         /// Строка заголовка — 28, как в `header / static` обоих макетов (56 = 16 + 28
         /// + 12). Стиль UI kit — 24 при интерлиньяже 100 %, поэтому строку держит рамка,
@@ -430,7 +433,7 @@ struct SearchResultsView: View {
         if domain.isLoading || !domain.hits.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 if domain.isLoading {
-                    skeletonHeader
+                    skeletonHeader(top: Layout.resultsHeaderTop)
                 } else {
                     // Заголовок с шевроном — переход в полную выдачу раздела (задача
                     // пользователя 2026-10-03).
@@ -440,7 +443,7 @@ struct SearchResultsView: View {
                         // 2026-10-03): тем же мягким уходом, выдача — в просмотр.
                         if actionBar.isSearchFocused { keyboard.dismissSmoothly() }
                     } label: {
-                        header(section.title)
+                        header(section.title, top: Layout.resultsHeaderTop)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
@@ -471,7 +474,7 @@ struct SearchResultsView: View {
 
     /// Заголовок секции с шевроном — `header / static` из макета: 24/28 и глиф 20
     /// сразу за текстом, а не у правого края.
-    private func header(_ title: String) -> some View {
+    private func header(_ title: String, top: CGFloat = Layout.headerTop) -> some View {
         HStack(spacing: Layout.headerGap) {
             Text(title)
                 .plusHeadline(.m)
@@ -488,7 +491,7 @@ struct SearchResultsView: View {
                 .offset(y: PlusMetrics.headerChevronDrop)
         }
         .frame(height: Layout.headerLine)
-        .padding(.top, Layout.headerTop)
+        .padding(.top, top)
         .padding(.bottom, Layout.headerBottom)
         .padding(.horizontal, Layout.side)
     }
@@ -497,12 +500,12 @@ struct SearchResultsView: View {
     /// о порядке: он известен, только когда ответили все домены, и до этого
     /// секции стоят в порядке по умолчанию (правка пользователя 2026-10-03).
     /// Габарит — как у настоящего заголовка: строка той же высоты и те же поля.
-    private var skeletonHeader: some View {
+    private func skeletonHeader(top: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
             .fill(PlusSkeleton.fill)
             .frame(width: Layout.skeletonHeaderWidth, height: Layout.skeletonHeaderBar)
             .frame(height: Layout.headerLine)
-            .padding(.top, Layout.headerTop)
+            .padding(.top, top)
             .padding(.bottom, Layout.headerBottom)
             .padding(.horizontal, Layout.side)
             .accessibilityHidden(true)
