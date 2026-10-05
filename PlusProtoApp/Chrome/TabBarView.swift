@@ -59,6 +59,36 @@ private enum TabBarGeometry {
     static let sparkRise: CGFloat = 3
 }
 
+/// Хит-зоны табов (правка пользователя 2026-10-05): между кнопками 60×62 — пустые
+/// зазоры, и тап мимо кнопки простреливал таббар в ленту под ним. Таб ловит палец
+/// до середины зазора к соседям, крайние — до кромки экрана; по высоте — от низа бара
+/// до низа экрана (зона home indicator — тоже таббар). Раскладка не едет: зона —
+/// `contentShape` под отрицательным отступом, кадр кнопки остаётся 60×62.
+private enum TabBarHitArea {
+    /// Зазор между кнопками при space-between — от ширины экрана, а не замером ряда.
+    static var gap: CGFloat {
+        let count = CGFloat(AppTab.allCases.count)
+        let free = PlusChromeMetrics.screenWidth - 2 * PlusMetrics.screenMargin - count * PlusMetrics.tabItemWidth
+        return max(0, free / (count - 1))
+    }
+
+    static func insets(for tab: AppTab) -> EdgeInsets {
+        EdgeInsets(
+            // padding-top ряда и зазор до бара: зона доходит до низа бара
+            top: PlusChromeMetrics.tabsRowTopPadding + PlusChromeMetrics.actionBarToTabsGap,
+            leading: tab == AppTab.allCases.first ? PlusMetrics.screenMargin : gap / 2,
+            bottom: PlusChromeMetrics.bottomSafeArea,
+            trailing: tab == AppTab.allCases.last ? PlusMetrics.screenMargin : gap / 2
+        )
+    }
+}
+
+private extension EdgeInsets {
+    var negated: EdgeInsets {
+        EdgeInsets(top: -top, leading: -leading, bottom: -bottom, trailing: -trailing)
+    }
+}
+
 /// Ряд табов: 5 кнопок 60×62, поля 24, padding-top 4, распределение space-between
 /// (figma-tabbar §2).
 struct TabBarView: View {
@@ -71,9 +101,12 @@ struct TabBarView: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(AppTab.allCases) { tab in
+                let hit = TabBarHitArea.insets(for: tab)
                 Button { select(tab) } label: {
                     TabBarItem(tab: tab, isActive: navigation.activeTab == tab)
+                        .padding(hit)
                         .contentShape(.rect)
+                        .padding(hit.negated)
                 }
                 .buttonStyle(PressScaleButtonStyle())
                 .scaleEffect(debugPressed == tab ? GlassIconButtonConfig.pressedScale : 1)
@@ -86,6 +119,15 @@ struct TabBarView: View {
         .padding(.horizontal, PlusMetrics.screenMargin)
         .padding(.top, PlusChromeMetrics.tabsRowTopPadding)
         .frame(height: PlusChromeMetrics.tabsRowHeight)
+        // Страховка под зонами табов: тап в щель, которую они не накрыли, гасится здесь,
+        // а не уходит в ленту под таббаром. Та же площадь — от низа бара до низа экрана.
+        .background {
+            Color.clear
+                .contentShape(.rect)
+                .onTapGesture {}
+                .padding(.top, -PlusChromeMetrics.actionBarToTabsGap)
+                .padding(.bottom, -PlusChromeMetrics.bottomSafeArea)
+        }
         .task { await debugTapCycle() }
         #if DEBUG
         // `-debugRetapTab <сек>` — через столько секунд тап по уже активному табу:
