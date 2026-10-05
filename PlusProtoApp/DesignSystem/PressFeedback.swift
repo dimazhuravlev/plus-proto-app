@@ -23,7 +23,8 @@ enum PressMotion {
     /// Сдвиг пальца, после которого касание — уже скролл, а не тап.
     static let slop: CGFloat = 10
     /// Просадка — быстрый сильный ease-out: движение видно с первого кадра.
-    static let pressIn: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
+    /// 150 мс — правка пользователя 2026-10-05 (было 120).
+    static let pressIn: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
     /// Возврат мягче и дольше просадки: нажатие — отклик, отпускание — без спешки.
     static let release: Animation = .smooth(duration: 0.24)
 }
