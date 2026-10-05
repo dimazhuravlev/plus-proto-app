@@ -290,7 +290,7 @@ struct MovieScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .task { await store.load(entity) }
-            .task(id: details.backdrop) { await loadCleanStill() }
+            .task(id: coverImageURL) { await loadCleanStill() }
             .scrollIndicators(.hidden)
             // Экран показан слоем поверх хрома и перекрывает его собой, поэтому
             // поджиматься под него не надо. Инсет приходит по environment из
@@ -512,20 +512,31 @@ struct MovieScreen: View {
         .scaleEffect(y: -1)
     }
 
-    /// Загрузка чистого кадра для кавера и зеркала. Кэшированный встаёт сразу,
-    /// приехавший по сети проявляется за `cleanFade` — в обеих точках одновременно,
-    /// потому что состояние одно.
+    /// Картинка кавера: чистый кадр, а у тайтла совсем без кадров — постер (правка
+    /// пользователя 2026-10-05: «хоть что-то, а не серый плейсхолдер»). Постер — только
+    /// когда детали доехали и кадра в них нет: стоя первым кадром до чистого, он им
+    /// подменялся, и шапка дёргалась (правка 2026-08-25). Название на постере при этом
+    /// повторит логотип — меньшее из зол против пустой шапки.
+    private var coverImageURL: URL? {
+        if let backdrop = details.backdrop { return backdrop }
+        guard store.details != nil else { return nil }
+        return details.coverPoster ?? details.poster
+    }
+
+    /// Загрузка картинки кавера (`coverImageURL`) для кавера и зеркала. Кэшированная
+    /// встаёт сразу, приехавшая по сети проявляется за `cleanFade` — в обеих точках
+    /// одновременно, потому что состояние одно.
     private func loadCleanStill() async {
-        guard let backdrop = details.backdrop else {
+        guard let url = coverImageURL else {
             cleanStill = nil
             return
         }
-        if let hit = ArtworkLoader.shared.cached(backdrop) {
+        if let hit = ArtworkLoader.shared.cached(url) {
             cleanStill = Image(uiImage: hit)
             return
         }
         cleanStill = nil
-        guard let loaded = await ArtworkLoader.shared.image(for: backdrop) else { return }
+        guard let loaded = await ArtworkLoader.shared.image(for: url) else { return }
         withAnimation(reduceMotion ? nil : .easeInOut(duration: MovieCoverMotion.cleanFade)) {
             cleanStill = Image(uiImage: loaded)
         }
