@@ -51,9 +51,15 @@ enum MosaicMotion {
     static let fadeOutDuration: Duration = .milliseconds(300)
     static let fadeOut: Animation = .easeInOut(duration: 0.3)
     static let fadeIn: Animation = .easeInOut(duration: 0.3)
+    /// Карточка проявляет содержимое — постер и подпись — за 400 мс (правка пользователя
+    /// 2026-10-05: «более плавная загрузка карточек»; прежде постер шёл общими 150 мс
+    /// скелетонов, а подпись вставала сразу). Заливка обложки стоит с первого кадра:
+    /// она та же, что у скелетона, и карточка встаёт на его место без смены цвета.
+    /// Постер, приехавший из сети позже, проявляется той же кривой.
+    static let contentAppear: Animation = .easeOut(duration: 0.4)
     /// Дописанная порция проявляется: обычно это за краем экрана, но если низ уже
-    /// на виду, карточки встают мягко, а не щелчком.
-    static let reveal: Animation = .easeOut(duration: 0.25)
+    /// на виду, карточки встают мягко, а не щелчком, — в такт своему содержимому.
+    static let reveal: Animation = .easeOut(duration: 0.4)
 }
 
 /// Вторая версия выдачи — сетка вперемешку (masonry, макет `2479:24822`, задача
@@ -500,6 +506,10 @@ private struct MosaicCard: View {
     let zoom: Namespace.ID?
     let open: (EntityRoute) -> Void
 
+    /// Постер и подпись проявились (`MosaicMotion.contentAppear`). Один раз на карточку:
+    /// та же карточка в уточнённой выдаче (тот же id) не мигает заново.
+    @State private var isContentShown = false
+
     /// Люди — кругом, с подписью по центру: исполнитель по макету, режиссёр и писатель —
     /// так же (в каруселях они постерами, в ряд с работами; в сетке рядов нет, и круг
     /// сразу отличает человека от фильма и книги).
@@ -537,9 +547,14 @@ private struct MosaicCard: View {
         VStack(alignment: isPerson ? .center : .leading, spacing: MosaicLayout.coverGap) {
             cover
             label
+                .opacity(isContentShown ? 1 : 0)
         }
         .frame(maxWidth: .infinity, alignment: isPerson ? .center : .leading)
         .contentShape(.rect)
+        .onAppear {
+            guard !isContentShown else { return }
+            withAnimation(MosaicMotion.contentAppear) { isContentShown = true }
+        }
     }
 
     @ViewBuilder
@@ -563,14 +578,17 @@ private struct MosaicCard: View {
         }
     }
 
+    /// Постер: картинка из памяти — в такт подписи, приехавшая из сети позже — своим
+    /// проявлением той же кривой.
     @ViewBuilder
     private var artwork: some View {
         if let source = hit.artwork {
-            ResolvedArtwork(source: source, appear: PlusSkeleton.appear) { image in
+            ResolvedArtwork(source: source, appear: MosaicMotion.contentAppear) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.clear
             }
+            .opacity(isContentShown ? 1 : 0)
         }
     }
 
