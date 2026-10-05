@@ -117,6 +117,9 @@ final class SearchState {
     /// Полный список истории — переход по заголовку ленты: всё найденное и стартовый набор.
     var history: [SearchHit] { SearchRecents.merged(found) }
 
+    /// Есть что удалять: стартовый набор кнопкой «Удалить историю» не стирается.
+    var hasFoundHistory: Bool { !found.isEmpty }
+
     /// Полный список истории на экране — подэкран нулевого состояния, как раскрытый
     /// раздел у выдачи: «Назад» сперва сворачивает его к ленте (`collapse`).
     private(set) var isHistoryShown = false

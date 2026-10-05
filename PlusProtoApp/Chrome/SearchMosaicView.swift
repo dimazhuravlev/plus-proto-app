@@ -274,6 +274,118 @@ struct SearchMosaicView: View {
     }
 }
 
+// MARK: - Искали недавно
+
+/// «Искали недавно» сеткой — нулевое состояние поиска в режиме сетки (задача
+/// пользователя 2026-10-05; включается тем же пунктом дебаг-меню, что сетка выдачи).
+/// Перехода в полный список нет: вся история — найденное и стартовый набор — сразу
+/// в сетке, а в её конце «Удалить историю поиска».
+///
+/// Тапы отсюда историю не переставляют, как и из ленты каруселей: сетка сдвинулась бы
+/// под зумом открытой карточки, и на возврате он сворачивался бы не в ту карточку.
+struct SearchRecentsMosaicView: View {
+    let open: (EntityRoute) -> Void
+    let zoom: Namespace.ID?
+
+    @Environment(SearchState.self) private var search
+    @Environment(KeyboardObserver.self) private var keyboard
+    @State private var isConfirmingClear = false
+    @State private var gridOpacity: Double = 1
+
+    private enum Layout {
+        /// Заголовок — как у ленты каруселей: 16 сверху, строка 28, 12 снизу; шеврона
+        /// нет, переходить некуда.
+        static let headerTop: CGFloat = 16
+        static let headerLine: CGFloat = 28
+        static let headerBottom: CGFloat = 12
+        /// Кнопка — на 24 ниже сетки, как под полным списком истории.
+        static let buttonTop: CGFloat = 24
+        static let buttonHeight: CGFloat = 48
+        /// Капсула по тексту (правка пользователя 2026-10-05: «сжимается по контенту»):
+        /// поля 24 по бокам, ширина — сколько займёт надпись.
+        static let buttonSide: CGFloat = 24
+        static let buttonPressedScale: CGFloat = 0.97
+    }
+
+    var body: some View {
+        let items = search.history
+        let zoomSources = items.firstPerRouteIDs
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Искали недавно")
+                    .plusHeadline(.m)
+                    .foregroundStyle(Color.fillOne)
+                    // Строку держит рамка, текст — по её центру: так же, как у заголовка
+                    // карусели, на той же базовой линии, что в Фигме.
+                    .frame(height: Layout.headerLine)
+                    .padding(.top, Layout.headerTop)
+                    .padding(.bottom, Layout.headerBottom)
+                    .padding(.horizontal, MosaicLayout.side)
+
+                Group {
+                    MosaicGrid(
+                        columns: MosaicLayout.columns,
+                        columnSpacing: MosaicLayout.columnGap,
+                        rowSpacing: MosaicLayout.rowGap
+                    ) {
+                        ForEach(items) { hit in
+                            MosaicCard(hit: hit, zoom: zoomSources.contains(hit.id) ? zoom : nil, open: open)
+                        }
+                    }
+                    .padding(.horizontal, MosaicLayout.side)
+
+                    // Стартовый набор кнопкой не стирается — без найденного она ничего
+                    // бы не делала.
+                    if search.hasFoundHistory {
+                        clearButton
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, Layout.buttonTop)
+                    }
+                }
+                .opacity(gridOpacity)
+            }
+            // Как у выдачи: сетка уходит под поле и клавиатуру, низ выкручивается из-под них.
+            .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + MosaicLayout.barGap)
+        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.never)
+        .modifier(DismissKeyboardOnScroll())
+        .alert("Точно удалить историю?", isPresented: $isConfirmingClear) {
+            Button("Да, удалить", role: .destructive) { clearHistory() }
+            Button("Назад", role: .cancel) {}
+        }
+    }
+
+    /// Вторичная кнопка — стеклянная капсула, как «Удалить историю» под полным списком:
+    /// удаление — побочное действие, акцентная кнопка в проекте за главным.
+    private var clearButton: some View {
+        Button { isConfirmingClear = true } label: {
+            Text("Удалить историю поиска")
+                .plusText(.textM, .semibold)
+                .foregroundStyle(Color.fillOne)
+                .padding(.horizontal, Layout.buttonSide)
+                .frame(height: Layout.buttonHeight)
+                .secondaryButtonSurface(Capsule(style: .continuous))
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(PressScaleButtonStyle(pressedScale: Layout.buttonPressedScale))
+    }
+
+    /// История сменяется стартовым набором так же, как сетка при смене фильтра:
+    /// старая гаснет, в паузе подменяется, новая проявляется — карточки не перелетают
+    /// на освободившиеся места.
+    private func clearHistory() {
+        Task { @MainActor in
+            withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
+            try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { search.clearHistory() }
+            withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
+        }
+    }
+}
+
 /// Сколько осталось до низа ленты. Меняется и с высотой содержимого: дописанная
 /// порция заново проверяет, не пора ли следующая, — короткая выдача добирается
 /// до заполнения экрана сама.

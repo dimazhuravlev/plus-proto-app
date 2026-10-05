@@ -309,10 +309,20 @@ struct SearchResultsView: View {
 
     // MARK: Искали недавно
 
-    /// Нулевое состояние: лента «Искали недавно» и полный список истории над ней —
-    /// тем же переходом, что раскрытый раздел у выдачи: список въезжает справа,
-    /// лента отъезжает влево и гаснет, оставаясь в дереве.
+    /// Нулевое состояние — в виде выдачи: у сетки и история сеткой (переключаются
+    /// вместе, одним пунктом дебаг-меню). Ветвление статическое, как у выдачи.
+    @ViewBuilder
     private var zeroState: some View {
+        switch resultsStyle {
+        case .carousels: carouselZeroState
+        case .masonry: SearchRecentsMosaicView(open: open, zoom: zoom)
+        }
+    }
+
+    /// Лента «Искали недавно» и полный список истории над ней — тем же переходом, что
+    /// раскрытый раздел у выдачи: список въезжает справа, лента отъезжает влево
+    /// и гаснет, оставаясь в дереве.
+    private var carouselZeroState: some View {
         ZStack {
             recentsSection
                 .opacity(search.isHistoryShown ? 0 : 1)
