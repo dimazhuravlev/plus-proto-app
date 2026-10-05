@@ -1296,13 +1296,22 @@ private extension SearchHit {
     /// про него.
     /// Плейлист — только в полной выдаче: экрана нет, строка не нажимается.
     init(playlist: DeezerPlaylistBrief) {
+        let owner = playlist.user?.name ?? ""
+        let cover = (playlist.pictureXl ?? playlist.pictureBig)?.deezerUpscaled.map { ArtworkSource.remote($0) }
         self.init(
             id: "playlist-\(playlist.id)",
             kind: .playlist,
             title: playlist.title,
-            subtitle: playlist.user?.name ?? "",
-            artwork: (playlist.pictureXl ?? playlist.pictureBig)?.deezerUpscaled.map { .remote($0) },
-            route: nil
+            subtitle: owner,
+            artwork: cover,
+            // Экран плейлиста — по конструкции альбома (2026-10-05); прежде строка
+            // не нажималась, своего экрана не было.
+            route: .playlist(EntityRef(
+                id: "dz-\(playlist.id)",
+                title: playlist.title,
+                subtitle: owner,
+                artwork: cover ?? .asset("")
+            ))
         )
     }
 

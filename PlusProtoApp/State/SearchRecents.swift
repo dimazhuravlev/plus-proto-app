@@ -43,7 +43,32 @@ enum SearchRecents {
         }
         #endif
         guard let data = UserDefaults.standard.data(forKey: storageKey) else { return [] }
-        return (try? JSONDecoder().decode([SearchHit].self, from: data)) ?? []
+        let saved = (try? JSONDecoder().decode([SearchHit].self, from: data)) ?? []
+        return saved.map(repairingPlaylist)
+    }
+
+    /// Плейлист, найденный до экрана плейлиста (2026-10-05), — с переходом на него:
+    /// иначе в истории он так и остался бы ненажимаемым.
+    private static func repairingPlaylist(_ hit: SearchHit) -> SearchHit {
+        guard hit.kind == .playlist, hit.route == nil,
+              hit.id.hasPrefix("playlist-"), let id = Int(hit.id.dropFirst("playlist-".count))
+        else { return hit }
+        return SearchHit(
+            id: hit.id,
+            kind: hit.kind,
+            title: hit.title,
+            subtitle: hit.subtitle,
+            artwork: hit.artwork,
+            route: .playlist(EntityRef(
+                id: "dz-\(id)",
+                title: hit.title,
+                subtitle: hit.subtitle,
+                artwork: hit.artwork ?? .asset("")
+            )),
+            authority: hit.authority,
+            artworkAspect: hit.artworkAspect,
+            altTitle: hit.altTitle
+        )
     }
 
     static func save(_ hits: [SearchHit]) {

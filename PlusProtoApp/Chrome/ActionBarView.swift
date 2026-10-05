@@ -72,9 +72,11 @@ enum ActionBarGeometry {
     static let searchIconBox: CGFloat = 24
     /// Зазор между полем ввода и крестом очистки.
     static let clearLeadingGap: CGFloat = 8
-    /// Во что схлопывается крест в расфокусе. Не ноль: из нуля предмет появляется
-    /// «из ниоткуда», а с 0.9 остаётся ощущение, что он просто был сложен.
-    static let clearCollapsedScale: CGFloat = 0.9
+    /// Во что схлопывается крест, когда поле пустое. Не ноль: из нуля предмет появляется
+    /// «из ниоткуда». Было 0.9 от правого края — на глифе 24 это 2 pt, скейла не видно,
+    /// крест читался одной прозрачностью (правка пользователя 2026-10-05). 0.7 от центра:
+    /// крест заметно «раскрывается» на месте, но не выпрыгивает.
+    static let clearCollapsedScale: CGFloat = 0.7
     static let miniPlayerPaddingLeading: CGFloat = 6
     static let miniPlayerPaddingTrailing: CGFloat = 18
     /// Зазор тексты ↔ кнопки
@@ -600,7 +602,7 @@ private struct SearchPill: View {
             clearButton
                 .scaleEffect(
                     isClearVisible ? 1 : ActionBarGeometry.clearCollapsedScale,
-                    anchor: .trailing
+                    anchor: .center
                 )
                 .opacity(isClearVisible ? 1 : 0)
                 // Появляется с первой буквой и уходит со стёртой — за 250 мс (правка
