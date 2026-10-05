@@ -77,7 +77,7 @@ struct TabBarView: View {
                 }
                 .buttonStyle(PressScaleButtonStyle())
                 .scaleEffect(debugPressed == tab ? GlassIconButtonConfig.pressedScale : 1)
-                .animation(.smooth(duration: GlassIconButtonConfig.pressDuration), value: debugPressed)
+                .animation(debugPressed == tab ? PressMotion.pressIn : PressMotion.release, value: debugPressed)
                 if tab != AppTab.allCases.last {
                     Spacer(minLength: 0)
                 }
@@ -104,8 +104,9 @@ struct TabBarView: View {
 
     /// ВРЕМЕННОЕ: шелл симулятор не тапает, поэтому тап воспроизводится синтетически —
     /// нажатие держится 110ms, отпускание и `select` уходят одним апдейтом, как у `Button`
-    /// в `onEnded`. Пара «scaleEffect + animation(value:)» выше повторяет тело
-    /// `PressScaleButtonStyle`, но снаружи кнопки — это заведомо более жёсткий случай.
+    /// в `onEnded`. Пара «scaleEffect + animation(value:)» выше повторяет просадку
+    /// `PressScaleButtonStyle` (те же кривые `PressMotion`), но снаружи кнопки — это заведомо
+    /// более жёсткий случай: анимация не ограничена масштабом.
     private func debugTapCycle() async {
         guard UserDefaults.standard.bool(forKey: "debugTapCycle"), chromeLayer == nil else { return }
         // Два круга и стоп: цикл существует для записи анимаций, а не вечной жизни.
@@ -168,9 +169,10 @@ private struct TabBarItem: View {
         // Свечение — фоном, чтобы его 155pt не раздували кнопку до своей высоты.
         // Заодно оно попадает под scale пресс-стейта вместе с тайлом и лейблом.
         .background { pulse }
-        // Кроссфейд живёт на кнопке, а не на ряде: `PressScaleButtonStyle` несёт свою
-        // `.animation(value: isPressed)`, и снаружи она на отпускании перебивала бы
-        // транзакцию нажатого таба — он загорался бы за 0,15s, пока предыдущий гаснет 0,26s.
+        // Кроссфейд живёт на кнопке, а не на ряде: снаружи на кнопке висит
+        // `.animation(value: debugPressed)` синтетического тапа, и на отпускании она
+        // перебивала бы транзакцию нажатого таба — он загорался бы кривой нажатия, пока
+        // предыдущий гаснет 0,26s. Анимация самого `PressScaleButtonStyle` — только у масштаба.
         .animation(TabBarMotion.activation, value: isActive)
     }
 

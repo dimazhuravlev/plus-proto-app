@@ -477,7 +477,9 @@ struct MusicPlayerView: View {
             PlayerHaptics.tap()
             actionBar.toggleMusicPlayback()
         } label: {
-            swapIcon(off: "iconPlay", on: "iconPause", isOn: isPlaying, box: MusicPlayerLayout.controlIconLarge)
+            // Общая смена play/pause — та же, что у мини-плеера, киноплеера и карточек.
+            PlayPauseGlyph(isPlaying: isPlaying, box: MusicPlayerLayout.controlIconLarge)
+                .foregroundStyle(Color.fillOne)
                 .frame(width: MusicPlayerLayout.control, height: MusicPlayerLayout.control)
                 .secondaryButtonSurface(Circle())
         }
@@ -499,20 +501,6 @@ struct MusicPlayerView: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isLiked ? "Убрать из любимых" : "Нравится")
-    }
-
-    /// Кросс-поп двух глифов — тот же, что у play/pause мини-плеера и киноплеера:
-    /// оба в дереве, уходящий утапливается, приходящий выныривает.
-    private func swapIcon(off: String, on: String, isOn: Bool, box: CGFloat) -> some View {
-        ZStack {
-            MovieIcon(name: off, box: box)
-                .opacity(isOn ? 0 : 1)
-                .scaleEffect(isOn ? ActionBarMotion.iconSwapScale : 1)
-            MovieIcon(name: on, box: box)
-                .opacity(isOn ? 1 : 0)
-                .scaleEffect(isOn ? 1 : ActionBarMotion.iconSwapScale)
-        }
-        .animation(ActionBarMotion.iconSwap, value: isOn)
     }
 
     // MARK: Очередь
@@ -829,7 +817,7 @@ private struct QueueRow: View {
             .padding(.vertical, MusicPlayerLayout.rowVertical)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.rowScale))
         .accessibilityLabel("\(item.title), \(item.artist)")
     }
 

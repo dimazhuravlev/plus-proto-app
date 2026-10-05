@@ -133,11 +133,7 @@ struct PersonScreen: View {
             ) {
                 EmptyView()
             } primary: {
-                EntityPrimaryButton(
-                    icon: isPlayingArtist ? "iconPause" : "iconPlay",
-                    title: isPlayingArtist ? "Пауза" : "Слушать",
-                    action: playTop
-                )
+                EntityPrimaryButton(isPlaying: isPlayingArtist, action: playTop)
             }
         }
         // Черта под шапкой — у исполнителя, перед секциями. У писателя и режиссёра
@@ -293,7 +289,7 @@ struct PersonScreen: View {
                                         isExplicit: store.explicitAlbums.contains(album.id)
                                     )
                                 }
-                                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+                                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                             }
                         }
                     }
@@ -320,7 +316,7 @@ struct PersonScreen: View {
                                 Button { open(artist.route) } label: {
                                     EntityPersonCard(photo: artist.artwork, name: artist.title)
                                 }
-                                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+                                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                             }
                         }
                     }
@@ -383,7 +379,7 @@ struct PersonScreen: View {
                                 onLike: { toggleLike(hit) }
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BareButtonStyle())
                     }
                 }
                 .transition(.opacity)

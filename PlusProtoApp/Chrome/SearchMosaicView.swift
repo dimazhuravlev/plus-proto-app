@@ -15,9 +15,6 @@ enum MosaicLayout {
     /// Постер кино и персон — 2:3, 118 × 177
     static let posterAspect: CGFloat = 2.0 / 3.0
     static let coverRadius = PlusRadius.movieChip
-    /// Карточка крупная — пресс мягче кнопочного (0.92): сильный скейл на большой
-    /// площади читается прыжком.
-    static let pressedScale: CGFloat = 0.97
     /// Кнопка play на обложке трека: серая кнопка ДС в натуральный размер — круг 40,
     /// глиф 20, — с отступом 6 от кромок (правка пользователя 2026-10-05; в макете
     /// `2479:25744` — 30 и 4).
@@ -645,11 +642,11 @@ private struct MosaicCard: View {
             // Трек — сразу в плеер (макет `2479:25744`): кнопка play на обложке говорит,
             // что это песня, а не альбом. Нажимается вся карточка, как и остальные.
             Button { play(hit) } label: { content }
-                .buttonStyle(PressScaleButtonStyle(pressedScale: MosaicLayout.pressedScale))
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {
             Button { open(route) } label: { content }
-                .buttonStyle(PressScaleButtonStyle(pressedScale: MosaicLayout.pressedScale))
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 // Экран сущности разворачивается из карточки и сворачивается в неё — как
                 // из каруселей.
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
@@ -753,15 +750,12 @@ private struct MosaicCard: View {
 /// Кнопка play на обложке трека — `button` макета `2479:25744`: серая кнопка-круг
 /// ДС (40, глиф 20, блюр и бордер серых кнопок), слева снизу (размеры —
 /// `MosaicLayout.play…`). Сама не нажимается: нажимается вся карточка, кнопка — знак,
-/// что это трек. Играет этот трек — на ней пауза.
+/// что это трек. Играет этот трек — на ней пауза, сменой как в плеере.
 private struct MosaicPlayBadge: View {
     let isPlaying: Bool
 
     var body: some View {
-        Image(isPlaying ? "iconPause" : "iconPlay")
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: MosaicLayout.playIcon, height: MosaicLayout.playIcon)
+        PlayPauseGlyph(isPlaying: isPlaying, box: MosaicLayout.playIcon)
             .foregroundStyle(Color.fillOne)
             .frame(width: MosaicLayout.playButton, height: MosaicLayout.playButton)
             .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)

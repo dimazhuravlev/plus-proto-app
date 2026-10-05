@@ -227,6 +227,8 @@ private struct CinemaPromoSlide: View {
         }
         .frame(height: CinemaPromoLayout.height)
         .contentShape(.rect)
+        // Палец на «Смотреть» и «Позже» достаётся им — карточка под ними не проседает.
+        .pressScale(PressMotion.cardScale)
         .onTapGesture { navigation.open(promo.route) }
         .accessibilityElement(children: .contain)
     }

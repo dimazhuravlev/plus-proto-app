@@ -358,6 +358,7 @@ private struct MovieVideoCard: View {
             // Карточка целиком — кнопка. `contentShape` обязателен: и кадр, и подписи
             // сняты с хит-теста, а без формы тап ловят только непрозрачные пиксели.
             .contentShape(shape)
+            .pressScale(PressMotion.cardScale)
             .onTapGesture { onTap() }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)

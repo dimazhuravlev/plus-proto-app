@@ -217,21 +217,22 @@ struct SearchSectionView: View {
             hit: hit,
             isFirst: isFirst,
             isLiked: isLiked(hit),
-            onLike: { toggleLike(hit) }
+            onLike: { toggleLike(hit) },
+            isPressable: hit.kind == .track || hit.route != nil
         )
         if hit.kind == .track {
             // Трек из полного списка играет сразу, без перехода в альбом (правка
             // пользователя 2026-10-03). В карусели обзора трек по-прежнему открывает
             // альбом. Мини-плеер в поиске не виден — он встанет в бар на выходе.
             Button { play(hit) } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {
             Button {
                 search.remember(hit)
                 open(route)
             } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
         } else {
             content
@@ -338,15 +339,16 @@ struct SearchHistoryView: View {
             hit: hit,
             isFirst: isFirst,
             isLiked: isLiked(hit),
-            onLike: { toggleLike(hit) }
+            onLike: { toggleLike(hit) },
+            isPressable: hit.kind == .track || hit.route != nil
         )
         if hit.kind == .track {
             Button { startTrack(hit, in: actionBar) } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {
             Button { open(route) } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zooms ? zoom : nil))
         } else {
             content
@@ -473,6 +475,8 @@ struct SearchListRow: View {
     let isFirst: Bool
     let isLiked: Bool
     let onLike: () -> Void
+    /// Строка внутри кнопки — проседает под пальцем; без маршрута — стоит.
+    var isPressable = true
 
     var body: some View {
         HStack(spacing: 0) {
@@ -504,9 +508,12 @@ struct SearchListRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .frame(height: SearchRowThumbnail.height(hit.kind) + 16)
+        .contentShape(.rect)
+        // Отклик рисует строка, а не кнопка вокруг (`BareButtonStyle`): проседает
+        // содержимое, черты стоят. Палец на сердце достаётся сердцу.
+        .pressScale(PressMotion.rowScale, isEnabled: isPressable)
         .overlay(alignment: .bottom) { divider }
         .overlay(alignment: .top) { if isFirst { divider } }
-        .contentShape(.rect)
     }
 
     private var divider: some View {
@@ -705,7 +712,7 @@ private struct MusicWizardCard: View {
                 }
                 .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.rowScale))
             .modifier(SearchResultsView.SearchZoomSource(route: artistRoute, zoom: zoom))
 
             Button {
@@ -722,10 +729,7 @@ private struct MusicWizardCard: View {
             .padding(.trailing, 6)
 
             Button(action: togglePlay) {
-                Image(isPlayingThis ? "iconPause" : "iconPlay")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
+                PlayPauseGlyph(isPlaying: isPlayingThis, box: 20)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: Layout.playSize, height: Layout.playSize)
                     .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
@@ -777,7 +781,7 @@ private struct MusicWizardCard: View {
                 remember(album)
                 open(route)
             } label: { card }
-                .buttonStyle(PressScaleButtonStyle())
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
         } else {
             card

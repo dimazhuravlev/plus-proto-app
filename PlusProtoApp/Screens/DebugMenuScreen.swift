@@ -118,16 +118,7 @@ struct DebugMenuScreen: View {
             .padding(.vertical, ProfileLayout.cellVertical)
             .contentShape(.rect)
         }
-        .buttonStyle(DebugRowButtonStyle())
+        .buttonStyle(CellHighlightButtonStyle())
         .accessibilityAddTraits(style == searchStyle ? .isSelected : [])
-    }
-}
-
-/// Нажатая строка подсвечивается, как ячейка профиля, — без сжатия.
-private struct DebugRowButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(Color.white.opacity(configuration.isPressed ? 0.06 : 0))
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }

@@ -194,7 +194,7 @@ struct BookScreen: View {
                     )
                     .contentShape(.rect)
                 }
-                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 .disabled(author == nil)
             }
         } primary: {
@@ -412,7 +412,7 @@ struct BookScreen: View {
             .frame(width: geometry.frameSize(coverWidth: coverWidth).width, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
     }
 
     /// Скелетон секции — того же габарита: полоса заголовка в строке 28 и книги

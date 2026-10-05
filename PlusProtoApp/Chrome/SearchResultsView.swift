@@ -565,7 +565,7 @@ struct SearchResultsView: View {
                     cardBody(hit, coverBox: coverBox)
                 }
             }
-            .buttonStyle(PressScaleButtonStyle())
+            .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
             // Источник зума экрана сущности — как миниатюра на витрине: экран
             // разворачивается из карточки и на возврате сворачивается обратно в неё.
             // Без источника зум шёл из центра экрана и сворачивался в никуда.

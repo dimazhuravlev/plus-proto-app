@@ -111,10 +111,7 @@ private struct MyVibeHero: View {
                 .offset(y: titleCenter - PlusHeadline.xxxl.size / 2)
 
             Button(action: play) {
-                Image(isPlaying ? "iconPause" : "iconPlay")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: MyVibeLayout.playIcon, height: MyVibeLayout.playIcon)
+                PlayPauseGlyph(isPlaying: isPlaying, box: MyVibeLayout.playIcon)
                     .foregroundStyle(MyVibeLayout.playGradient)
                     .frame(width: MyVibeLayout.playSize, height: MyVibeLayout.playSize)
                     .background(Color.white, in: Circle())

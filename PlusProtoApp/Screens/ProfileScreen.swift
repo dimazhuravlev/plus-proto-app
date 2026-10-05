@@ -536,16 +536,7 @@ private struct ProfileIsland: View {
             .padding(.vertical, ProfileLayout.cellVertical)
             .contentShape(.rect)
         }
-        .buttonStyle(ProfileCellButtonStyle())
-    }
-}
-
-/// Нажатая ячейка подсвечивается, как строка системной таблицы, — без сжатия.
-private struct ProfileCellButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(Color.white.opacity(configuration.isPressed ? 0.06 : 0))
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+        .buttonStyle(CellHighlightButtonStyle())
     }
 }
 

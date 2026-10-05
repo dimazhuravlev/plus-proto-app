@@ -1479,22 +1479,15 @@ struct MiniPlayerPill: View {
             spin.set(spinning: !isPlaying)
             onTogglePlay()
         } label: {
-            ZStack {
-                actionIcon("iconPlay")
-                    .opacity(isPlaying ? 0 : 1)
-                    .scaleEffect(isPlaying ? ActionBarMotion.iconSwapScale : 1)
-                actionIcon("iconPause")
-                    .opacity(isPlaying ? 1 : 0)
-                    .scaleEffect(isPlaying ? 1 : ActionBarMotion.iconSwapScale)
-            }
-            .animation(ActionBarMotion.iconSwap, value: isPlaying)
-            // Хит-зона крупнее глифа, но раскладка не едет: отрицательный отступ
-            // возвращает кадру исходные 24×24, увеличенной остаётся только contentShape.
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-            .contentShape(.rect)
-            .padding(.horizontal, -8)
-            .padding(.vertical, -10)
+            PlayPauseGlyph(isPlaying: isPlaying, box: ActionBarGeometry.searchIconBox)
+                .foregroundStyle(Color.fillOne)
+                // Хит-зона крупнее глифа, но раскладка не едет: отрицательный отступ
+                // возвращает кадру исходные 24×24, увеличенной остаётся только contentShape.
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .contentShape(.rect)
+                .padding(.horizontal, -8)
+                .padding(.vertical, -10)
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
@@ -1519,14 +1512,6 @@ struct MiniPlayerPill: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isLiked ? "Убрать из любимых" : "Нравится")
-    }
-
-    private func actionIcon(_ name: String) -> some View {
-        Image(name)
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-            .foregroundStyle(Color.fillOne)
     }
 }
 

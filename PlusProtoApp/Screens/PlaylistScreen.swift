@@ -81,11 +81,7 @@ struct PlaylistScreen: View {
         } person: {
             EmptyView()
         } primary: {
-            EntityPrimaryButton(
-                icon: isPlayingThisPlaylist ? "iconPause" : "iconPlay",
-                title: isPlayingThisPlaylist ? "Пауза" : "Слушать",
-                action: togglePlayback
-            )
+            EntityPrimaryButton(isPlaying: isPlayingThisPlaylist, action: togglePlayback)
         }
         .overlay(alignment: .bottom) {
             Rectangle()

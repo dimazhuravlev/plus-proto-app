@@ -264,7 +264,7 @@ private struct BooksPromoCarousel: View {
             }
             .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .frame(height: BooksPromoLayout.carouselHeight)
         .accessibilityLabel(book.title)
     }
@@ -390,7 +390,7 @@ private struct BooksCard: View {
             .frame(width: width, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
     }
 }
 

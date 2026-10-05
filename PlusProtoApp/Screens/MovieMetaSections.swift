@@ -87,7 +87,7 @@ struct MoviePersonSection: View {
         if person.role == Self.directorRole {
             let route = Self.directorRoute(person)
             let button = Button { navigation.open(route) } label: { cardBody(person) }
-                .buttonStyle(PressScaleButtonStyle())
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
             if let zoomNamespace {
                 button.matchedTransitionSource(id: route, in: zoomNamespace)
             } else {
@@ -276,7 +276,7 @@ struct MovieSimilarSection: View {
     private func card(_ title: MovieSimilarTitle) -> some View {
         if let route = title.route {
             let button = Button { navigation.open(route) } label: { cardBody(title) }
-                .buttonStyle(PressScaleButtonStyle())
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
             // Источник зума вложенного слоя. Namespace приходит от `CoveredEntityScreen`;
             // его может не быть только вне слоя, где секции не бывает, — но падать
             // из-за этого инварианта вёрстке не положено.
