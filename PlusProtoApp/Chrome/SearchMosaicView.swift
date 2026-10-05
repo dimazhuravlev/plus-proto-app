@@ -167,11 +167,9 @@ struct SearchMosaicView: View {
                 // Первый вызов — на появлении (старое значение равно новому).
                 syncResults(isAppearing: old == new)
             }
+            // Сетка погашена сменой — к началу: новая начинается сверху. Скролл — до
+            // подмены карточек (`scrollToTopBeforeSwap`), а не после.
             .onChange(of: scrollResets) {
-                proxy.scrollTo(Self.topAnchor, anchor: .top)
-            }
-            .onChange(of: shownFilter) {
-                // Сетка невидима — к началу: новая начинается сверху.
                 proxy.scrollTo(Self.topAnchor, anchor: .top)
             }
             .onChange(of: filter) { _, selected in swapGrid(to: selected) }
@@ -327,6 +325,8 @@ struct SearchMosaicView: View {
             withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
             try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
             guard !Task.isCancelled else { return }
+            await scrollToTopBeforeSwap()
+            guard !Task.isCancelled else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
@@ -335,7 +335,6 @@ struct SearchMosaicView: View {
                 filter = .all
                 shownFilter = .all
                 revealed = MosaicLayout.chunk
-                scrollResets += 1
             }
             try? await Task.sleep(for: MosaicMotion.swapCommit)
             guard !Task.isCancelled else { return }
@@ -355,6 +354,8 @@ struct SearchMosaicView: View {
             withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
             try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
             guard !Task.isCancelled else { return }
+            await scrollToTopBeforeSwap()
+            guard !Task.isCancelled else { return }
             // Подмена — пока сетки не видно, без анимации: карточки не перелетают
             // и не проявляются по одной под прозрачностью.
             var instant = Transaction()
@@ -367,6 +368,20 @@ struct SearchMosaicView: View {
             guard !Task.isCancelled else { return }
             withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
         }
+    }
+
+    /// К началу ленты — до подмены, пока лента прежней длины. Лента, долистанная до конца
+    /// (полный раздел кончается, «Всё» — дописывается), держит скролл за низ: короткая
+    /// подмена вставала прижатой к низу экрана, и следом чипсы с сеткой прыгали наверх
+    /// через весь экран (правка пользователя 2026-10-05). Сетка в этот момент погашена,
+    /// а закреплённые чипсы в начале ленты стоят там же, где на глубине, — глазу нечего
+    /// заметить.
+    private func scrollToTopBeforeSwap() async {
+        guard scrolled > 0 else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { scrollResets += 1 }
+        try? await Task.sleep(for: MosaicMotion.swapCommit)
     }
 }
 
