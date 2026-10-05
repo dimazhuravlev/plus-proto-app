@@ -640,6 +640,12 @@ private struct SearchPill: View {
             if focused, pull != 0 {
                 withAnimation(ActionBarMotion.morph) { pull = 0 }
             }
+            // Поиск открыли с запросом — открытие не пустое, и печати в этом фокусе
+            // не будет: когда запрос сотрут, «Поиск по всему» встанет сразу (правка
+            // пользователя 2026-10-05: печать — только на открытии пустого поиска).
+            if focused, !query.isEmpty {
+                didPlayFocusedPlaceholderWave = true
+            }
             if !focused {
                 isFocusedPlaceholderArmed = false
                 didPlayFocusedPlaceholderWave = false
@@ -853,6 +859,10 @@ private struct SearchPill: View {
     /// края поля — на месте общего внутреннего отступа пилюли.
     private var clearButton: some View {
         Button {
+            // Стёрли заполненное поле — «Поиск по всему» встаёт сразу, без печати:
+            // печатается он только на открытии пустого поиска (правка пользователя
+            // 2026-10-05).
+            didPlayFocusedPlaceholderWave = true
             query = ""
             if !searchFocused { searchFocused = true }
         } label: {
