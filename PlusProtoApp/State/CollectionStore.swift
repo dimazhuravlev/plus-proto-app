@@ -136,8 +136,29 @@ extension CollectionItem {
             title: title,
             subtitle: owner,
             artwork: cover,
+            route: playlistRoute(id: id, title: title, owner: owner, cover: cover),
             playable: MusicNowPlaying(id: id, cover: cover ?? .asset("mockAlbumCover"), title: title, artist: owner)
         )
+    }
+
+    /// Экран плейлиста (2026-10-05) по id выдачи `playlist-<id Deezer>`: тап по плейлисту
+    /// коллекции открывает его, как альбом, а не включает музыку сразу.
+    static func playlistRoute(id: String, title: String, owner: String, cover: ArtworkSource?) -> EntityRoute? {
+        guard id.hasPrefix("playlist-"), let deezerID = Int(id.dropFirst("playlist-".count)) else { return nil }
+        return .playlist(EntityRef(id: "dz-\(deezerID)", title: title, subtitle: owner, artwork: cover ?? .asset("")))
+    }
+
+    /// Плейлист, сохранённый до экрана плейлиста, — с переходом на него.
+    func repairingPlaylistRoute() -> CollectionItem {
+        guard kind == .playlist, route == nil else { return self }
+        var item = self
+        item.route = Self.playlistRoute(
+            id: String(id.dropFirst("playlist:".count)),
+            title: title,
+            owner: subtitle,
+            cover: artwork
+        )
+        return item
     }
 
     /// Постер с Яндекс-CDN — пресетом 300x450: карточке 86 на ×3 его хватает, а голый
@@ -258,7 +279,7 @@ final class CollectionStore {
         #endif
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let saved = try? JSONDecoder().decode([CollectionItem].self, from: data) {
-            items = saved.map { $0.repairingPoster() }
+            items = saved.map { $0.repairingPoster().repairingPlaylistRoute() }
         } else {
             items = CollectionSeeds.items(now: .now)
             // Наблюдатель свойства в инициализаторе молчит — пишем сами: даты стартового

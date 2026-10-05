@@ -39,14 +39,30 @@ enum PlusChromeMetrics {
         bottomSafeArea + tabsRowHeight + actionBarToTabsGap + PlusMetrics.actionBarHeight / 2
     }
 
+    /// Блюр в поиске — по верхней кромке поля, опущенного на место таббара (правка
+    /// пользователя 2026-10-05): обычная высота считана от бара над таббаром, и в выдаче
+    /// мылила полосу в 40 pt над полем.
+    static var searchUnderlayBlurHeight: CGFloat {
+        bottomSafeArea + PlusMetrics.actionBarHeight
+    }
+
     /// Нижняя безопасная зона — блюр отмеряется от физического низа экрана,
     /// а высота home indicator зависит от устройства.
     static var bottomSafeArea: CGFloat {
+        keyWindow?.safeAreaInsets.bottom ?? 0
+    }
+
+    /// Ширина экрана — от неё зазоры между табами (`TabBarHitArea`): ряд разложен
+    /// space-between, и зазор зависит от устройства.
+    static var screenWidth: CGFloat {
+        keyWindow?.bounds.width ?? PlusMetrics.designWidth
+    }
+
+    private static var keyWindow: UIWindow? {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets.bottom ?? 0
+            .first { $0.isKeyWindow }
     }
 
     // MARK: - Верхний скрим
@@ -75,9 +91,16 @@ enum PlusChromeMetrics {
 enum KeyboardDismissMotion {
     /// Длительность ухода: вдвое дольше системного, но всё ещё в пределах UI-перехода.
     static let duration: TimeInterval = 0.4
+    /// Бар идёт на 15 % короче клавиатуры. Ехать ему меньше — до места таббара или
+    /// своей обычной высоты, а не до низа экрана, — и с той же длительностью он был
+    /// медленнее: щель между ним и уходящей клавиатурой росла на глазах, да ещё
+    /// бар трогается на кадр-два позже неё (правка пользователя 2026-10-05). Так его
+    /// скорость сравнялась с клавиатурной; запаса щели 12 хватает, чтобы на обгоне
+    /// в несколько пунктов он не нырнул под неё (расчёт по кривой: до 8 pt).
+    static let barDuration: TimeInterval = duration * 0.85
     /// Кривая бара — `UIView.AnimationOptions.curveEaseInOut` в кубических
-    /// коэффициентах UIKit: бар едет ровно так же, как клавиатура под ним.
-    static let bar: Animation = .timingCurve(0.42, 0, 0.58, 1, duration: duration)
+    /// коэффициентах UIKit: бар едет той же кривой, что клавиатура под ним.
+    static let bar: Animation = .timingCurve(0.42, 0, 0.58, 1, duration: barDuration)
 }
 
 enum BottomChromeMotion {
@@ -238,13 +261,27 @@ struct BottomChrome: View {
 /// `VariableBlurView` размывает по нарастающей к низу, поэтому у полосы нет видимой
 /// кромки, с которой резко начинается размытие.
 struct TabBarUnderlay: View {
+    @Environment(SearchState.self) private var search
+    @Environment(ActionBarState.self) private var actionBar
+    @Environment(KeyboardObserver.self) private var keyboard
+
+    /// Поиск открыт — бар внизу без таббара, и блюр ниже (`searchUnderlayBlurHeight`).
+    /// Признак тот же, что гасит таббар (`BottomChrome.isTabBarHidden`).
+    private var isSearchMode: Bool {
+        search.isBrowsing || actionBar.isSearchFocused
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             VariableBlurView(
                 maxBlurRadius: PlusChromeMetrics.underlayBlurRadius,
                 direction: .blurredBottomClearTop
             )
-            .frame(height: PlusChromeMetrics.underlayBlurHeight)
+            .frame(height: isSearchMode
+                ? PlusChromeMetrics.searchUnderlayBlurHeight
+                : PlusChromeMetrics.underlayBlurHeight)
+            // Той же кривой, что едет бар и уходит таббар.
+            .animation(keyboard.motion ?? ActionBarMotion.morph, value: isSearchMode)
 
             PlusGradient.tabBarUnderlay
                 .frame(height: PlusMetrics.bottomUnderlayHeight)

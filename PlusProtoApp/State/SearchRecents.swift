@@ -8,9 +8,11 @@ import Foundation
 /// списка, — тоже, это тот же выбор из выдачи. Что выдача просто показала, сюда
 /// не попадает. Свежее — первым, повтор поднимается в начало.
 ///
-/// Карусель видна всегда: за найденным стоит стартовый набор из шести реальных
-/// айтемов, и пустой истории не бывает. Найденное хранится локально (`UserDefaults`),
-/// стартовый набор — в коде: поменяется набор — у пользователя поменяется и хвост.
+/// За найденным стоит стартовый набор из шести реальных айтемов — с первого запуска
+/// лента не пустая. Пустеет она, только когда историю удалили целиком: кнопка стирает
+/// и набор (правка пользователя 2026-10-05). Найденное хранится локально
+/// (`UserDefaults`), стартовый набор — в коде: поменяется набор — у пользователя
+/// поменяется и хвост.
 enum SearchRecents {
     /// Сколько найденного храним — весь полный список истории.
     static let limit = 20
@@ -19,18 +21,54 @@ enum SearchRecents {
     static let carouselLimit = 12
 
     private static let storageKey = "searchRecents.v1"
+    private static let starterClearedKey = "searchRecents.starterCleared"
+
+    /// Стартовый набор стёрт кнопкой «Удалить историю поиска»: она удаляет историю
+    /// целиком (правка пользователя 2026-10-05), и набор больше не подмешивается —
+    /// «Искали недавно» пустеет до первого найденного.
+    static var isStarterCleared: Bool {
+        get { UserDefaults.standard.bool(forKey: starterClearedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: starterClearedKey) }
+    }
 
     /// Найденное с диска, свежее первым. Битые данные — пустая история, а не падение.
     static func load() -> [SearchHit] {
         #if DEBUG
-        // `-debugResetSearchRecents 1` — начать с пустой истории: один стартовый набор.
+        // `-debugResetSearchRecents 1` — начать с пустой истории: один стартовый набор
+        // (и стёртый кнопкой набор возвращается).
         if UserDefaults.standard.bool(forKey: "debugResetSearchRecents") {
             UserDefaults.standard.removeObject(forKey: storageKey)
+            UserDefaults.standard.removeObject(forKey: starterClearedKey)
             return []
         }
         #endif
         guard let data = UserDefaults.standard.data(forKey: storageKey) else { return [] }
-        return (try? JSONDecoder().decode([SearchHit].self, from: data)) ?? []
+        let saved = (try? JSONDecoder().decode([SearchHit].self, from: data)) ?? []
+        return saved.map(repairingPlaylist)
+    }
+
+    /// Плейлист, найденный до экрана плейлиста (2026-10-05), — с переходом на него:
+    /// иначе в истории он так и остался бы ненажимаемым.
+    private static func repairingPlaylist(_ hit: SearchHit) -> SearchHit {
+        guard hit.kind == .playlist, hit.route == nil,
+              hit.id.hasPrefix("playlist-"), let id = Int(hit.id.dropFirst("playlist-".count))
+        else { return hit }
+        return SearchHit(
+            id: hit.id,
+            kind: hit.kind,
+            title: hit.title,
+            subtitle: hit.subtitle,
+            artwork: hit.artwork,
+            route: .playlist(EntityRef(
+                id: "dz-\(id)",
+                title: hit.title,
+                subtitle: hit.subtitle,
+                artwork: hit.artwork ?? .asset("")
+            )),
+            authority: hit.authority,
+            artworkAspect: hit.artworkAspect,
+            altTitle: hit.altTitle
+        )
     }
 
     static func save(_ hits: [SearchHit]) {
@@ -38,8 +76,10 @@ enum SearchRecents {
         UserDefaults.standard.set(data, forKey: storageKey)
     }
 
-    /// История целиком: найденное, за ним стартовый набор без повторов.
-    static func merged(_ found: [SearchHit]) -> [SearchHit] {
+    /// История целиком: найденное, за ним стартовый набор без повторов — пока его
+    /// не стёрли (`isStarterCleared`).
+    static func merged(_ found: [SearchHit], includesStarter: Bool) -> [SearchHit] {
+        guard includesStarter else { return found }
         let foundIDs = Set(found.map(\.id))
         return found + starter.filter { !foundIDs.contains($0.id) }
     }

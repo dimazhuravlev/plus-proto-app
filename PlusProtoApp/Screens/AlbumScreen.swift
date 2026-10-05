@@ -166,15 +166,11 @@ struct AlbumScreen: View {
                     )
                     .contentShape(.rect)
                 }
-                .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 .disabled(details.artistID == nil)
             }
         } primary: {
-            EntityPrimaryButton(
-                icon: isPlayingThisAlbum ? "iconPause" : "iconPlay",
-                title: isPlayingThisAlbum ? "Пауза" : "Слушать",
-                action: togglePlayback
-            )
+            EntityPrimaryButton(isPlaying: isPlayingThisAlbum, action: togglePlayback)
         }
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -350,6 +346,10 @@ struct AlbumScreen: View {
         }
         .frame(height: AlbumLayout.rowHeight)
         .padding(.horizontal, AlbumLayout.side)
+        .contentShape(Rectangle())
+        // Проседает строка, а черты стоят: просевшая черта короче соседних и съезжает.
+        // Палец на «ещё» достаётся кнопке — строка под ней не проседает.
+        .pressScale(PressMotion.rowScale)
         .overlay(alignment: .bottom) { rowDivider }
         .overlay(alignment: .top) {
             if isFirst { rowDivider }
@@ -357,7 +357,6 @@ struct AlbumScreen: View {
         // Тап по строке включает этот трек (правка пользователя 2026-08-29).
         // Жестом, а не кнопкой: внутри строки уже живёт своя кнопка «ещё»,
         // и вложенная пара кнопок делит нажатие непредсказуемо.
-        .contentShape(Rectangle())
         .onTapGesture { play(nowPlaying(track)) }
     }
 
@@ -434,6 +433,6 @@ struct AlbumScreen: View {
                 isExplicit: album.isExplicit
             )
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
     }
 }

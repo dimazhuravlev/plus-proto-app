@@ -226,7 +226,7 @@ private struct CinemaHistoryCard: View {
             .frame(width: CinemaLayout.historyWidth, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
     }
 
     /// Тот же вход в плеер, что у «Смотреть», — позиция приезжает с записью истории.
@@ -334,7 +334,7 @@ private struct CinemaPosterCard: View {
             .frame(width: CinemaLayout.posterWidth, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
     }
 
     @ViewBuilder

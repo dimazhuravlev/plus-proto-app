@@ -241,10 +241,26 @@ struct HeadlineWave: Equatable {
     /// Проявление одного глифа, секунды. Ноль — глиф встаёт сразу, шагом, без
     /// проявления прозрачностью (печать).
     var glyph: Double
+    /// Пауза на границе слов, секунды, — после глифов с номерами из `pauseAfter`
+    /// (пробелы). Рукой печатают не ровным шагом: слово набирается подряд, а перед
+    /// следующим рука замирает (правка пользователя 2026-10-05).
+    var pause: Double = 0
+    var pauseAfter: Set<Int> = []
+
+    /// Старт глифа с этим номером.
+    func start(_ index: Int) -> Double {
+        stagger * Double(index) + pause * Double(pauseAfter.filter { $0 < index }.count)
+    }
 
     /// Вся волна для строки из `glyphs` знаков.
     func total(glyphs: Int) -> Double {
-        stagger * Double(max(glyphs - 1, 0)) + glyph
+        start(max(glyphs - 1, 0)) + glyph
+    }
+
+    /// Печать по словам: глифы встают шагом, перед каждым словом, кроме первого, — пауза.
+    static func typing(_ text: String, stagger: Double, pause: Double) -> HeadlineWave {
+        let spaces = Set(text.enumerated().filter { $0.element == " " }.map(\.offset))
+        return HeadlineWave(stagger: stagger, glyph: 0, pause: pause, pauseAfter: spaces)
     }
 }
 
@@ -288,7 +304,7 @@ private struct HeadlineWaveRenderer: TextRenderer, Animatable {
             lineContext.translateBy(x: 0, y: target - baseline)
             for run in line {
                 for slice in run {
-                    let start = wave.stagger * Double(index)
+                    let start = wave.start(index)
                     let raw: Double
                     if reduceMotion {
                         raw = progress

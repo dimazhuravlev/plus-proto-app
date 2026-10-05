@@ -243,6 +243,8 @@ private struct CollectionListRow: View {
                         .foregroundStyle(CollectionLayout.more)
                         .padding(10)
                         .contentShape(.rect)
+                        // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
+                        .pressScale(GlassIconButtonConfig.pressedScale)
                 }
                 .padding(-10)
                 .accessibilityLabel("Ещё")
@@ -251,9 +253,11 @@ private struct CollectionListRow: View {
         .padding(.horizontal, CollectionListLayout.side)
         .padding(.vertical, CollectionListLayout.rowPadding)
         .frame(minHeight: CollectionListLayout.cover + 2 * CollectionListLayout.rowPadding)
+        .contentShape(.rect)
+        // Проседает строка, а черты стоят: просевшая черта короче соседних и съезжает.
+        .pressScale(PressMotion.rowScale)
         .overlay(alignment: .bottom) { divider }
         .overlay(alignment: .top) { if isFirst { divider } }
-        .contentShape(.rect)
         .onTapGesture(perform: open)
         .contextMenu { CollectionItemMenu(item: item) }
     }

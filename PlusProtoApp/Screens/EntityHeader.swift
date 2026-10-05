@@ -283,17 +283,33 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
 /// Пилюля главного действия — «Слушать», «Читать»: глиф 20 и Text M Semibold
 /// в общем акцентном стиле ДС (`accentButtonSurface`, `2103:15149`).
 struct EntityPrimaryButton: View {
-    let icon: String
+    private let glyph: Glyph
     let title: String
     let action: () -> Void
+
+    private enum Glyph {
+        case asset(String)
+        case playPause(isPlaying: Bool)
+    }
+
+    init(icon: String, title: String, action: @escaping () -> Void) {
+        glyph = .asset(icon)
+        self.title = title
+        self.action = action
+    }
+
+    /// «Слушать» ↔ «Пауза» альбома, плейлиста и исполнителя: глиф меняется общей
+    /// сменой play/pause, как в плеере.
+    init(isPlaying: Bool, action: @escaping () -> Void) {
+        glyph = .playPause(isPlaying: isPlaying)
+        title = isPlaying ? "Пауза" : "Слушать"
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: EntityTitleLayout.primaryGap) {
-                Image(icon)
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: EntityTitleLayout.primaryIconBox, height: EntityTitleLayout.primaryIconBox)
+                icon
                     .foregroundStyle(Color.fillOne)
 
                 Text(title)
@@ -306,6 +322,19 @@ struct EntityPrimaryButton: View {
             .accentButtonSurface()
         }
         .buttonStyle(PressScaleButtonStyle())
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        switch glyph {
+        case .asset(let name):
+            Image(name)
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: EntityTitleLayout.primaryIconBox, height: EntityTitleLayout.primaryIconBox)
+        case .playPause(let isPlaying):
+            PlayPauseGlyph(isPlaying: isPlaying, box: EntityTitleLayout.primaryIconBox)
+        }
     }
 }
 

@@ -650,19 +650,11 @@ private struct PlayPauseButton: View {
             PlayerHaptics.tap()
             action()
         } label: {
-            // Кросс-поп глифов — тот же, что у play/pause мини-плеера: обе иконки
-            // в дереве, уходящая утапливается, приходящая выныривает.
-            ZStack {
-                MovieIcon(name: "iconPlay", box: MoviePlayerLayout.transportIcon)
-                    .opacity(isPlaying ? 0 : 1)
-                    .scaleEffect(isPlaying ? ActionBarMotion.iconSwapScale : 1)
-                MovieIcon(name: "iconPause", box: MoviePlayerLayout.transportIcon)
-                    .opacity(isPlaying ? 1 : 0)
-                    .scaleEffect(isPlaying ? 1 : ActionBarMotion.iconSwapScale)
-            }
-            .animation(ActionBarMotion.iconSwap, value: isPlaying)
-            .frame(width: MoviePlayerLayout.transportSize, height: MoviePlayerLayout.transportSize)
-            .glassCircle()
+            // Общая смена play/pause — та же, что у мини-плеера и карточек.
+            PlayPauseGlyph(isPlaying: isPlaying, box: MoviePlayerLayout.transportIcon)
+                .foregroundStyle(Color.fillOne)
+                .frame(width: MoviePlayerLayout.transportSize, height: MoviePlayerLayout.transportSize)
+                .glassCircle()
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isPlaying ? "Пауза" : "Смотреть")

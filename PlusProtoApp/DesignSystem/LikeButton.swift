@@ -32,6 +32,33 @@ struct LikeGlyph: View {
     }
 }
 
+/// play ↔ pause — одно движение везде, где глиф меняется на месте (правка пользователя
+/// 2026-10-05: в карточке трека сетки он подменялся без анимации): плееры, бар, кнопки
+/// экранов, карточки. Цвет задаёт место — `foregroundStyle` снаружи.
+struct PlayPauseGlyph: View {
+    let isPlaying: Bool
+    let box: CGFloat
+
+    var body: some View {
+        ZStack {
+            glyph("iconPlay")
+                .opacity(isPlaying ? 0 : 1)
+                .scaleEffect(isPlaying ? ActionBarMotion.iconSwapScale : 1)
+            glyph("iconPause")
+                .opacity(isPlaying ? 1 : 0)
+                .scaleEffect(isPlaying ? 1 : ActionBarMotion.iconSwapScale)
+        }
+        .animation(ActionBarMotion.iconSwap, value: isPlaying)
+    }
+
+    private func glyph(_ name: String) -> some View {
+        Image(name)
+            .renderingMode(.template)
+            .resizable()
+            .frame(width: box, height: box)
+    }
+}
+
 /// Круглая стеклянная «нравится» 40 — ряд действий экранов альбома, книги и персоны.
 /// Отмечает сущность в «Любимом» коллекции «Моё» (2026-10-04). Без записи коллекции
 /// (сущность ей неизвестна) — отметка на время экрана, как было прежде.

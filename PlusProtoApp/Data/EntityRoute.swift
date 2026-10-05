@@ -19,6 +19,9 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     case movie(EntityRef)
     case book(EntityRef)
     case album(EntityRef)
+    /// Плейлист Deezer — экран по конструкции альбома (`PlaylistScreen`, 2026-10-05).
+    /// id — `dz-<id плейлиста>`; `title` — название, `subtitle` — владелец.
+    case playlist(EntityRef)
     /// Экраны персон — один экран на три роли (`PersonScreen`, задача 2026-10-04).
     /// id: исполнитель — `dz-<id Deezer>`; режиссёр — `kp-<id персоны Кинопоиска>`
     /// (из съёмочной группы фильма) или `wp-<страница Википедии>` (из выдачи поиска —
@@ -33,6 +36,7 @@ enum EntityRoute: Hashable, Identifiable, Codable {
         case .movie(let ref): "movie-" + ref.id
         case .book(let ref): "book-" + ref.id
         case .album(let ref): "album-" + ref.id
+        case .playlist(let ref): "playlist-" + ref.id
         case .artist(let ref): "artist-" + ref.id
         case .director(let ref): "director-" + ref.id
         case .writer(let ref): "writer-" + ref.id
@@ -41,7 +45,7 @@ enum EntityRoute: Hashable, Identifiable, Codable {
 
     var ref: EntityRef {
         switch self {
-        case .movie(let ref), .book(let ref), .album(let ref),
+        case .movie(let ref), .book(let ref), .album(let ref), .playlist(let ref),
              .artist(let ref), .director(let ref), .writer(let ref): ref
         }
     }
@@ -61,7 +65,7 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     /// фото персоны — круг.
     var hasRoundArtwork: Bool {
         switch self {
-        case .album, .artist, .director, .writer: true
+        case .album, .playlist, .artist, .director, .writer: true
         case .movie, .book: false
         }
     }

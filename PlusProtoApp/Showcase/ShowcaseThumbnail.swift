@@ -66,12 +66,12 @@ private struct ShowcaseThumbnailModifier: ViewModifier {
             } label: {
                 content
             }
-            .buttonStyle(ShowcaseThumbnailButtonStyle())
+            .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
             .matchedTransitionSource(id: route, in: context.zoom)
             .accessibilityLabel(context.title)
         } else if let context, let route = context.route {
             NavigationLink(value: route) { content }
-                .buttonStyle(ShowcaseThumbnailButtonStyle())
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 .simultaneousGesture(TapGesture().onEnded { context.onTap() })
                 // Источник зума — ровно эта миниатюра, тот же `EntityRoute`, что лежит
                 // в пути навигации: стороны перехода адресуются одним значением
@@ -87,21 +87,10 @@ private struct ShowcaseThumbnailModifier: ViewModifier {
             // Карточка без своей сущности: миниатюра всё равно нажимается, но только
             // включает плеер — переходить некуда.
             Button { context.onTap() } label: { content }
-                .buttonStyle(ShowcaseThumbnailButtonStyle())
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 .accessibilityLabel(context.title)
         } else {
             content
         }
-    }
-}
-
-/// Нажатие на миниатюру. Отдельный стиль, а не `PressScaleButtonStyle` хрома: у обложки
-/// площадь на порядок больше кнопки, и просадка 0.92 читалась бы прыжком. `.plain` внутри
-/// не нужен — стиль сам не красит содержимое в акцентный цвет и не подсвечивает подложкой.
-struct ShowcaseThumbnailButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? ShowcaseMotion.pressedScale : 1)
-            .animation(.smooth(duration: ShowcaseMotion.pressDuration), value: configuration.isPressed)
     }
 }

@@ -7,9 +7,9 @@ enum GlassIconButtonConfig {
     /// Бокс глифа: padding 10 внутри круга 40. Ассет рисуется ровно в этот бокс —
     /// собственные поля глифа уже внутри его единого холста 16×16.
     static let iconBox: CGFloat = 20
-    /// Насколько кнопка проседает под пальцем — как в MusicPlayer (BottomBarV2)
+    /// Насколько кнопка проседает под пальцем — как в MusicPlayer (BottomBarV2).
+    /// Кривые и тайминги нажатия — `PressMotion`.
     static let pressedScale: CGFloat = 0.92
-    static let pressDuration: Double = 0.15
 }
 
 /// Круглая стеклянная кнопка 40×40: ассет заполняет бокс 20×20.
@@ -35,15 +35,4 @@ struct GlassIconButton: View {
 }
 
 // Пара под карточками витрины — `ShowcaseFeedbackPair` (✕/✓, с логикой).
-
-/// Общий пресс-стейт для стеклянных кнопок: `ButtonStyle` сам снимает нажатие при скролле,
-/// в отличие от `DragGesture(minimumDistance: 0)`.
-struct PressScaleButtonStyle: ButtonStyle {
-    var pressedScale: CGFloat = GlassIconButtonConfig.pressedScale
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? pressedScale : 1)
-            .animation(.smooth(duration: GlassIconButtonConfig.pressDuration), value: configuration.isPressed)
-    }
-}
+// Пресс-стейт кнопок — `PressScaleButtonStyle` (PressFeedback.swift).

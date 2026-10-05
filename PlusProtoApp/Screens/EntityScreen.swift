@@ -10,6 +10,7 @@ struct EntityScreen: View {
         case .movie(let ref): MovieScreen(entity: ref)
         case .book(let ref): BookScreen(entity: ref)
         case .album(let ref): AlbumScreen(entity: ref)
+        case .playlist(let ref): PlaylistScreen(entity: ref)
         case .artist(let ref): PersonScreen(role: .artist, entity: ref)
         case .director(let ref): PersonScreen(role: .director, entity: ref)
         case .writer(let ref): PersonScreen(role: .writer, entity: ref)

@@ -268,7 +268,7 @@ private struct CollectionPosterCard: View {
             .frame(width: CollectionLayout.cardWidth, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .contextMenu { CollectionItemMenu(item: item) }
     }
 
@@ -303,7 +303,7 @@ private struct CollectionBookCard: View {
             .frame(width: width, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .contextMenu { CollectionItemMenu(item: item) }
     }
 
@@ -339,7 +339,7 @@ private struct CollectionSquareCard: View {
             .frame(width: CollectionLayout.cardWidth, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .contextMenu { CollectionItemMenu(item: item) }
     }
 
@@ -377,7 +377,7 @@ private struct CollectionArtistCard: View {
             .frame(width: CollectionLayout.cardWidth)
             .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: 0.97))
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .contextMenu { CollectionItemMenu(item: item) }
     }
 
@@ -499,10 +499,7 @@ private struct CollectionTracksBlock: View {
     private var header: some View {
         HStack(spacing: CollectionLayout.tracksHeaderGap) {
             Button(action: togglePlayback) {
-                Image(isPlayingShelf ? "iconPause" : "iconPlay")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: CollectionLayout.playIcon, height: CollectionLayout.playIcon)
+                PlayPauseGlyph(isPlaying: isPlayingShelf, box: CollectionLayout.playIcon)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: CollectionLayout.playButton, height: CollectionLayout.playButton)
                     .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
@@ -598,6 +595,8 @@ private struct CollectionTrackRow: View {
                             .foregroundStyle(CollectionLayout.more)
                             .padding(10)
                             .contentShape(.rect)
+                            // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
+                            .pressScale(GlassIconButtonConfig.pressedScale)
                     }
                     .padding(-10)
                     .accessibilityLabel("Ещё")
@@ -608,6 +607,9 @@ private struct CollectionTrackRow: View {
         .padding(.horizontal, CollectionLayout.side)
         .padding(.top, isFirst ? 0 : CollectionLayout.trackRowGap)
         .padding(.bottom, isLast ? 0 : CollectionLayout.trackRowGap)
+        .contentShape(.rect)
+        // Проседает строка, а черта стоит: просевшая черта короче соседних и съезжает.
+        .pressScale(PressMotion.rowScale)
         .overlay(alignment: .bottom) {
             if !isLast {
                 Rectangle()
@@ -616,7 +618,6 @@ private struct CollectionTrackRow: View {
                     .padding(.horizontal, CollectionLayout.side)
             }
         }
-        .contentShape(.rect)
         .onTapGesture(perform: play)
         .contextMenu { CollectionItemMenu(item: item) }
     }

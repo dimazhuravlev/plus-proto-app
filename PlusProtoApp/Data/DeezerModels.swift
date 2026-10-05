@@ -120,6 +120,9 @@ struct DeezerTrack: Decodable, Identifiable {
     let preview: String?
     let artist: DeezerArtistBrief?
     let album: DeezerPlaylistTrackAlbum?
+    /// Название без версии — строка треклиста экрана плейлиста, как у альбома
+    let titleShort: String?
+    let explicitLyrics: Bool?
 }
 
 struct DeezerPlaylist: Decodable, Identifiable {
@@ -128,6 +131,12 @@ struct DeezerPlaylist: Decodable, Identifiable {
     let pictureBig: String?
     let pictureXl: String?
     let tracks: DeezerListResponse<DeezerTrack>?
+    /// Владелец — подпись плейлиста в коллекции.
+    let creator: Creator?
+
+    struct Creator: Decodable {
+        let name: String?
+    }
 }
 
 // MARK: - Апскейл обложек

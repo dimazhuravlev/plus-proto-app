@@ -61,9 +61,7 @@ struct SearchSectionView: View {
             sectionList
             // Пустая выдача — тот же экран, что у обзора: по центру между верхом
             // и баром поиска.
-            if isEmpty {
-                SearchEmptyState()
-            }
+            SearchEmptyState(isShown: isEmpty)
         }
     }
 
@@ -88,28 +86,33 @@ struct SearchSectionView: View {
 
     private var sectionScroll: some View {
         ScrollView {
-            Color.clear.frame(height: 0).id(Self.topAnchor)
-            // Чипсы музыки закреплены — заголовком секции, который липнет к верху
-            // при скролле (правка пользователя 2026-10-03). У кино и книг фильтров нет.
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: kind == .music ? [.sectionHeaders] : []) {
-                Section {
-                    list
-                } header: {
-                    if kind == .music {
-                        chips
-                            .background(alignment: .top) {
-                                PinnedChipsBackdrop()
-                                    .opacity(NavBarRamp.progress(scrolled, start: 0, length: Layout.backdropRamp))
-                            }
-                            // Оттяг ленты — как у навигации витрин: ряд едет за ним вчетверо
-                            // медленнее и упирается в мягкий потолок (правка пользователя
-                            // 2026-10-04). Заголовок секции при оттяге едет вместе с лентой —
-                            // сдвиг возвращает разницу.
-                            .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
+            // Стопка без зазоров: в стопке скролла по умолчанию якорь и лента разделены
+            // 8 pt — над чипсами стояла лишняя полоса, и на старте скролла ряд сперва
+            // съезжал на неё (правка пользователя 2026-10-05, поймано на сетке).
+            VStack(spacing: 0) {
+                Color.clear.frame(height: 0).id(Self.topAnchor)
+                // Чипсы музыки закреплены — заголовком секции, который липнет к верху
+                // при скролле (правка пользователя 2026-10-03). У кино и книг фильтров нет.
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: kind == .music ? [.sectionHeaders] : []) {
+                    Section {
+                        list
+                    } header: {
+                        if kind == .music {
+                            chips
+                                .background(alignment: .top) {
+                                    PinnedChipsBackdrop()
+                                        .opacity(NavBarRamp.progress(scrolled, start: 0, length: Layout.backdropRamp))
+                                }
+                                // Оттяг ленты — как у навигации витрин: ряд едет за ним вчетверо
+                                // медленнее и упирается в мягкий потолок (правка пользователя
+                                // 2026-10-04). Заголовок секции при оттяге едет вместе с лентой —
+                                // сдвиг возвращает разницу.
+                                .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
+                        }
                     }
                 }
+                .padding(.top, kind == .music ? 0 : Layout.listTop)
             }
-            .padding(.top, kind == .music ? 0 : Layout.listTop)
             // Как у обзора: список уходит под поле и клавиатуру, последняя строка
             // выкручивается из-под них.
             .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)
@@ -214,21 +217,22 @@ struct SearchSectionView: View {
             hit: hit,
             isFirst: isFirst,
             isLiked: isLiked(hit),
-            onLike: { toggleLike(hit) }
+            onLike: { toggleLike(hit) },
+            isPressable: hit.kind == .track || hit.route != nil
         )
         if hit.kind == .track {
             // Трек из полного списка играет сразу, без перехода в альбом (правка
             // пользователя 2026-10-03). В карусели обзора трек по-прежнему открывает
             // альбом. Мини-плеер в поиске не виден — он встанет в бар на выходе.
             Button { play(hit) } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {
             Button {
                 search.remember(hit)
                 open(route)
             } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
         } else {
             content
@@ -257,7 +261,7 @@ struct SearchSectionView: View {
 /// Включить трек строки в плеере бара: обложка, название, исполнитель и альбом —
 /// из строки. Мини-плеер в поиске не виден — он встанет в бар на выходе.
 @MainActor
-private func startTrack(_ track: SearchHit, in actionBar: ActionBarState) {
+func startTrack(_ track: SearchHit, in actionBar: ActionBarState) {
     PlayerHaptics.tap()
     let album: String? = if case .album(let ref) = track.route { ref.title } else { nil }
     actionBar.startMusic(MusicNowPlaying(
@@ -335,15 +339,16 @@ struct SearchHistoryView: View {
             hit: hit,
             isFirst: isFirst,
             isLiked: isLiked(hit),
-            onLike: { toggleLike(hit) }
+            onLike: { toggleLike(hit) },
+            isPressable: hit.kind == .track || hit.route != nil
         )
         if hit.kind == .track {
             Button { startTrack(hit, in: actionBar) } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {
             Button { open(route) } label: { content }
-                .buttonStyle(.plain)
+                .buttonStyle(BareButtonStyle())
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zooms ? zoom : nil))
         } else {
             content
@@ -381,28 +386,29 @@ struct SearchHistoryView: View {
 /// Подложка закреплённых чипсов — прогрессивный блюр от самого верха экрана (под
 /// статус-баром тоже едут строки) до чуть ниже чипсов. Без затемнения: тёмный
 /// градиент навбара сущностей здесь убран по правке пользователя 2026-10-03 — как
-/// прежде у навбара витрины.
-private struct PinnedChipsBackdrop: View {
+/// прежде у навбара витрины. Общая с сеткой выдачи (`SearchMosaicView`).
+struct PinnedChipsBackdrop: View {
     /// Насколько подложка уходит выше чипсов — под статус-бар с запасом.
     private static let above: CGFloat = 80
-    /// И насколько ниже: блюр сходит на нет уже под чипсами, а не на их кромке.
-    private static let below: CGFloat = 24
-    private static let chipsRow: CGFloat = 56
+    /// Блюр сходит на нет ровно по нижней кромке ряда чипсов: лента начинает мылиться,
+    /// когда заходит под фильтры. Прежде он тянулся на 24 ниже, и под чипсами
+    /// размывалась ещё полоса сетки (правка пользователя 2026-10-05).
+    private static let chipsRow: CGFloat = FilterChipsLayout.rowHeight
 
     var body: some View {
         VariableBlurView(
             maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
             direction: .blurredTopClearBottom
         )
-        .frame(height: Self.above + Self.chipsRow + Self.below)
+        .frame(height: Self.above + Self.chipsRow)
         .offset(y: -Self.above)
         .allowsHitTesting(false)
     }
 }
 
 /// Скролл начался — клавиатура уходит мягко, как в обзоре выдачи. Общий для
-/// вертикального списка и горизонтальных лент раздела.
-private struct DismissKeyboardOnScroll: ViewModifier {
+/// вертикального списка и горизонтальных лент раздела, а также сетки выдачи.
+struct DismissKeyboardOnScroll: ViewModifier {
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(ActionBarState.self) private var actionBar
 
@@ -469,6 +475,8 @@ struct SearchListRow: View {
     let isFirst: Bool
     let isLiked: Bool
     let onLike: () -> Void
+    /// Строка внутри кнопки — проседает под пальцем; без маршрута — стоит.
+    var isPressable = true
 
     var body: some View {
         HStack(spacing: 0) {
@@ -500,9 +508,12 @@ struct SearchListRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .frame(height: SearchRowThumbnail.height(hit.kind) + 16)
+        .contentShape(.rect)
+        // Отклик рисует строка, а не кнопка вокруг (`BareButtonStyle`): проседает
+        // содержимое, черты стоят. Палец на сердце достаётся сердцу.
+        .pressScale(PressMotion.rowScale, isEnabled: isPressable)
         .overlay(alignment: .bottom) { divider }
         .overlay(alignment: .top) { if isFirst { divider } }
-        .contentShape(.rect)
     }
 
     private var divider: some View {
@@ -701,7 +712,7 @@ private struct MusicWizardCard: View {
                 }
                 .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.rowScale))
             .modifier(SearchResultsView.SearchZoomSource(route: artistRoute, zoom: zoom))
 
             Button {
@@ -718,10 +729,7 @@ private struct MusicWizardCard: View {
             .padding(.trailing, 6)
 
             Button(action: togglePlay) {
-                Image(isPlayingThis ? "iconPause" : "iconPlay")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
+                PlayPauseGlyph(isPlaying: isPlayingThis, box: 20)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: Layout.playSize, height: Layout.playSize)
                     .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
@@ -773,7 +781,7 @@ private struct MusicWizardCard: View {
                 remember(album)
                 open(route)
             } label: { card }
-                .buttonStyle(PressScaleButtonStyle())
+                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zoom))
         } else {
             card

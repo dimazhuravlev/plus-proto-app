@@ -256,8 +256,11 @@ struct EntityTrackRow: View {
             .buttonStyle(PressScaleButtonStyle())
         }
         .frame(height: Self.height)
-        .overlay(alignment: .bottom) { if showsDivider { divider } }
         .contentShape(.rect)
+        // Тап по строке включает трек — жест вешает экран; проседает строка сама,
+        // мимо черты, как в треклисте альбома.
+        .pressScale(PressMotion.rowScale)
+        .overlay(alignment: .bottom) { if showsDivider { divider } }
     }
 
     private var divider: some View {

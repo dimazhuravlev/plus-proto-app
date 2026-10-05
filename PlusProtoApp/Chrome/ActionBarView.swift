@@ -72,9 +72,11 @@ enum ActionBarGeometry {
     static let searchIconBox: CGFloat = 24
     /// Зазор между полем ввода и крестом очистки.
     static let clearLeadingGap: CGFloat = 8
-    /// Во что схлопывается крест в расфокусе. Не ноль: из нуля предмет появляется
-    /// «из ниоткуда», а с 0.9 остаётся ощущение, что он просто был сложен.
-    static let clearCollapsedScale: CGFloat = 0.9
+    /// Во что схлопывается крест, когда поле пустое. Не ноль: из нуля предмет появляется
+    /// «из ниоткуда». Было 0.9 от правого края — на глифе 24 это 2 pt, скейла не видно,
+    /// крест читался одной прозрачностью; затем 0.7 — и это мало (правки пользователя
+    /// 2026-10-05). 0.4 от центра: крест раскрывается на месте вместе с прозрачностью.
+    static let clearCollapsedScale: CGFloat = 0.4
     static let miniPlayerPaddingLeading: CGFloat = 6
     static let miniPlayerPaddingTrailing: CGFloat = 18
     /// Зазор тексты ↔ кнопки
@@ -527,6 +529,8 @@ private struct SearchPill: View {
     /// Волна в этом фокусе уже сыграна: второй показ (стёрли запрос) — без неё.
     @State private var didPlayFocusedPlaceholderWave = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Мягкий уход клавиатуры по «Найти» (`dismissSmoothly`).
+    @Environment(KeyboardObserver.self) private var keyboard
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
     /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
@@ -598,7 +602,7 @@ private struct SearchPill: View {
             clearButton
                 .scaleEffect(
                     isClearVisible ? 1 : ActionBarGeometry.clearCollapsedScale,
-                    anchor: .trailing
+                    anchor: .center
                 )
                 .opacity(isClearVisible ? 1 : 0)
                 // Появляется с первой буквой и уходит со стёртой — за 250 мс (правка
@@ -637,6 +641,12 @@ private struct SearchPill: View {
         .onChange(of: searchFocused) { _, focused in
             if focused, pull != 0 {
                 withAnimation(ActionBarMotion.morph) { pull = 0 }
+            }
+            // Поиск открыли с запросом — открытие не пустое, и печати в этом фокусе
+            // не будет: когда запрос сотрут, «Поиск по всему» встанет сразу (правка
+            // пользователя 2026-10-05: печать — только на открытии пустого поиска).
+            if focused, !query.isEmpty {
+                didPlayFocusedPlaceholderWave = true
             }
             if !focused {
                 isFocusedPlaceholderArmed = false
@@ -813,11 +823,18 @@ private struct SearchPill: View {
             // Видимую подсказку рисует `focusedPlaceholder`, а VoiceOver читает её здесь.
             .accessibilityLabel("Поиск по всему")
             .textFieldStyle(.plain)
-            .tint(Color.fillOne)
+            // Каретка — наш фиолетовый, тот же, что у активного чипса (правка
+            // пользователя 2026-10-05; была белой).
+            .tint(Color.moviesAccent)
             .foregroundStyle(Color.fillOne)
             // Не `plusHeadline`: у поля точная строка срезала хвосты букв снизу.
             .plusHeadlineField(.s)
             .submitLabel(.search)
+            // «Найти» — тем же мягким уходом клавиатуры, что скролл выдачи: системный
+            // уход перегружен в начало, и бар, едущий своей кривой, за ним отставал
+            // (правка пользователя 2026-10-05). Дальше — как при любом снятом фокусе:
+            // выдача в просмотре без клавиатуры.
+            .onSubmit { keyboard.dismissSmoothly() }
             // Без автокоррекции — и, как следствие, без строки автоподсказок
             // (QuickType): она стояла плашкой прямо под полем и отбирала у выдачи
             // полсотни пунктов (правка пользователя 2026-08-25).
@@ -844,6 +861,10 @@ private struct SearchPill: View {
     /// края поля — на месте общего внутреннего отступа пилюли.
     private var clearButton: some View {
         Button {
+            // Стёрли заполненное поле — «Поиск по всему» встаёт сразу, без печати:
+            // печатается он только на открытии пустого поиска (правка пользователя
+            // 2026-10-05).
+            didPlayFocusedPlaceholderWave = true
             query = ""
             if !searchFocused { searchFocused = true }
         } label: {
@@ -895,7 +916,7 @@ private struct SearchPill: View {
     /// Бледнее бегущих фраз (`searchPlaceholder`, белый 30 %): те зовут в сервисы,
     /// а эта только подписывает пустое поле (правка пользователя 2026-10-03).
     private static let focusedPlaceholderColor = Color.white.opacity(0.2)
-    private static let focusedPlaceholderText = "Поиск по всему"
+    fileprivate static let focusedPlaceholderText = "Поиск по всему"
 
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
@@ -928,10 +949,12 @@ private enum SearchPlaceholderMotion {
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
     /// фраза погасла вместе с подъёмом, и нахлёста нет. Символы встают резко, без
     /// проявления прозрачностью и без сдвига — как печать (правки пользователя
-    /// 2026-10-03 и 2026-10-04; прежде глиф проявлялся за 240 мс). Шаг 30 мс: на 14 знаков
-    /// строка набирается за ~0.4 с — почти как прежняя волна. Волну попросили видимой,
+    /// 2026-10-03 и 2026-10-04; прежде глиф проявлялся за 240 мс). Шаг 45 мс по буквам
+    /// и пауза 160 мс перед словом — «Поиск — по — всему»: слегка ручной набор, а не
+    /// ровная лента (правки пользователя 2026-10-05: паузы между словами, затем «чуть
+    /// медленнее» — было 30 и 120). Вся строка — ~0.9 с; волну попросили видимой,
     /// она ничего не блокирует и гаснет мгновенно.
-    static let focusedWave = HeadlineWave(stagger: 0.03, glyph: 0)
+    static let focusedWave = HeadlineWave.typing(SearchPill.focusedPlaceholderText, stagger: 0.045, pause: 0.16)
     /// С «уменьшением движения» — без волны: строка проявляется целиком, прозрачностью
     /// за 250 мс (как было до волны).
     static let focusedReducedFade: Double = 0.25
@@ -1456,22 +1479,15 @@ struct MiniPlayerPill: View {
             spin.set(spinning: !isPlaying)
             onTogglePlay()
         } label: {
-            ZStack {
-                actionIcon("iconPlay")
-                    .opacity(isPlaying ? 0 : 1)
-                    .scaleEffect(isPlaying ? ActionBarMotion.iconSwapScale : 1)
-                actionIcon("iconPause")
-                    .opacity(isPlaying ? 1 : 0)
-                    .scaleEffect(isPlaying ? 1 : ActionBarMotion.iconSwapScale)
-            }
-            .animation(ActionBarMotion.iconSwap, value: isPlaying)
-            // Хит-зона крупнее глифа, но раскладка не едет: отрицательный отступ
-            // возвращает кадру исходные 24×24, увеличенной остаётся только contentShape.
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-            .contentShape(.rect)
-            .padding(.horizontal, -8)
-            .padding(.vertical, -10)
+            PlayPauseGlyph(isPlaying: isPlaying, box: ActionBarGeometry.searchIconBox)
+                .foregroundStyle(Color.fillOne)
+                // Хит-зона крупнее глифа, но раскладка не едет: отрицательный отступ
+                // возвращает кадру исходные 24×24, увеличенной остаётся только contentShape.
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .contentShape(.rect)
+                .padding(.horizontal, -8)
+                .padding(.vertical, -10)
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
@@ -1496,14 +1512,6 @@ struct MiniPlayerPill: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isLiked ? "Убрать из любимых" : "Нравится")
-    }
-
-    private func actionIcon(_ name: String) -> some View {
-        Image(name)
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-            .foregroundStyle(Color.fillOne)
     }
 }
 

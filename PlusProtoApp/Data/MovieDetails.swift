@@ -45,6 +45,10 @@ struct MovieDetails {
     /// Постер 2:3 и год — тайтл в коллекции «Моё» стоит постером с годом под ним.
     var poster: URL? = nil
     var year: String? = nil
+    /// Постер во весь кавер — у тайтла без кадров (`MovieScreen.coverImageURL`, правка
+    /// пользователя 2026-10-05). 600×900: карточный 300 растянулся бы на ширину экрана
+    /// мылом.
+    var coverPoster: URL? = nil
 }
 
 /// Карточка персоны в карусели: имя и серая строка под ним.
@@ -155,6 +159,8 @@ extension MovieDetails {
         // на заблокированный хост.
         let rawPoster = movie.poster?.url(size: .small)
         poster = rawPoster.flatMap { TMDBImageProxy.rewrite($0, width: 300) } ?? rawPoster
+        let rawCoverPoster = movie.poster?.url(size: .medium)
+        coverPoster = rawCoverPoster.flatMap { TMDBImageProxy.rewrite($0, width: 600) } ?? rawCoverPoster
         year = movie.year.map { "\($0)" }
     }
 

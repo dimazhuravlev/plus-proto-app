@@ -22,6 +22,8 @@ struct SearchResultsView: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.stackZoomNamespace) private var zoom
+    /// Вид выдачи — карусели или сетка; переключается в дебаг-меню профиля.
+    @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = .carousels
 
     /// Что в слое — выдача или «Искали недавно». Следует за запросом, пока поиск
     /// открыт; на закрытии замирает: «Назад» стирает запрос тем же движением, что
@@ -64,6 +66,16 @@ struct SearchResultsView: View {
                 removal: .opacity.animation(disappear)
             )
         }
+    }
+
+    /// Появление слоя у сетки. Сетка встаёт на весь экран, а блюр затемнения
+    /// не анимируется: он включается, только когда затемнение доехало (`SearchOverlay`).
+    /// Проявляясь той же кривой, сетка ~0.1 с лежала поверх ещё резкой витрины и читалась
+    /// появившейся раньше экрана поиска (правка пользователя 2026-10-05, замер записи).
+    /// Старт на 150 мс позже — сетка проявляется, когда фон уже размыт. Карусели так
+    /// и остались: их узкую ленту наверху опережение не выдаёт.
+    private enum LayerMotion {
+        static let mosaicAppear: Animation = SearchOverlayConfig.fade.delay(0.15)
     }
 
     /// Габариты, которые зависят от размера карточек выдачи.
@@ -120,6 +132,9 @@ struct SearchResultsView: View {
         /// самого заголовка (16/12) макетные у обоих размеров.
         static var sectionVertical: CGFloat { size.sectionVertical }
         static let headerTop: CGFloat = 16
+        /// Заголовки каруселей выдачи — на 8 плотнее макетных 16: и между каруселями,
+        /// и над верхней (правки пользователя 2026-10-05). «Искали недавно» — с 16.
+        static let resultsHeaderTop: CGFloat = 8
         static let headerBottom: CGFloat = 12
         /// Строка заголовка — 28, как в `header / static` обоих макетов (56 = 16 + 28
         /// + 12). Стиль UI kit — 24 при интерлиньяже 100 %, поэтому строку держит рамка,
@@ -225,8 +240,11 @@ struct SearchResultsView: View {
                     .transition(RecentsMotion.swap)
             }
         }
-        // Кривая — у родителя (`.animation(_, value: isShown)` в `body`).
-        .transition(.opacity)
+        // Кривая — у родителя (`.animation(_, value: isShown)` в `body`). У сетки
+        // появление своё (`LayerMotion`), уход — тот же, вместе с затемнением.
+        .transition(resultsStyle == .masonry
+            ? .asymmetric(insertion: .opacity.animation(LayerMotion.mosaicAppear), removal: .opacity)
+            : .opacity)
             #if DEBUG
             // `-debugExpandSection music|movies|books` — раскрыть раздел, когда
             // выдача пришла: тапнуть по заголовку из шелла нечем. Один раз за запуск.
@@ -290,26 +308,41 @@ struct SearchResultsView: View {
 
     private var content: some View {
         ZStack {
-            overviewList
-            if search.isEmptyResult {
-                SearchEmptyState()
+            // Ветвление статическое: вид меняют в дебаг-меню, вне поиска, — здесь
+            // переключать и анимировать нечего.
+            switch resultsStyle {
+            case .carousels: overviewList
+            case .masonry: SearchMosaicView(open: open, zoom: zoom)
             }
+            SearchEmptyState(isShown: resultsStyle == .masonry ? search.isMosaicEmpty : search.isEmptyResult)
         }
     }
 
     // MARK: Искали недавно
 
-    /// Нулевое состояние: лента «Искали недавно» и полный список истории над ней —
-    /// тем же переходом, что раскрытый раздел у выдачи: список въезжает справа,
-    /// лента отъезжает влево и гаснет, оставаясь в дереве.
+    /// Нулевое состояние — в виде выдачи: у сетки и история сеткой (переключаются
+    /// вместе, одним пунктом дебаг-меню). Ветвление статическое, как у выдачи.
+    @ViewBuilder
     private var zeroState: some View {
+        switch resultsStyle {
+        case .carousels: carouselZeroState
+        case .masonry: SearchRecentsMosaicView(open: open, zoom: zoom)
+        }
+    }
+
+    /// Лента «Искали недавно» и полный список истории над ней — тем же переходом, что
+    /// раскрытый раздел у выдачи: список въезжает справа, лента отъезжает влево
+    /// и гаснет, оставаясь в дереве.
+    private var carouselZeroState: some View {
         ZStack {
             recentsSection
+                // Историю удалили целиком — ленты нет вовсе, заголовок вёл бы в пустоту.
+                .opacity(search.recents.isEmpty ? 0 : 1)
                 .opacity(search.isHistoryShown ? 0 : 1)
                 .animation(SectionMotion.overviewFade, value: search.isHistoryShown)
                 .offset(x: search.isHistoryShown ? -SectionMotion.overviewShift : 0)
-                .allowsHitTesting(!search.isHistoryShown)
-                .accessibilityHidden(search.isHistoryShown)
+                .allowsHitTesting(!search.isHistoryShown && !search.recents.isEmpty)
+                .accessibilityHidden(search.isHistoryShown || search.recents.isEmpty)
 
             if search.isHistoryShown {
                 SearchHistoryView(open: open, zoom: zoom)
@@ -430,7 +463,7 @@ struct SearchResultsView: View {
         if domain.isLoading || !domain.hits.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 if domain.isLoading {
-                    skeletonHeader
+                    skeletonHeader(top: Layout.resultsHeaderTop)
                 } else {
                     // Заголовок с шевроном — переход в полную выдачу раздела (задача
                     // пользователя 2026-10-03).
@@ -440,7 +473,7 @@ struct SearchResultsView: View {
                         // 2026-10-03): тем же мягким уходом, выдача — в просмотр.
                         if actionBar.isSearchFocused { keyboard.dismissSmoothly() }
                     } label: {
-                        header(section.title)
+                        header(section.title, top: Layout.resultsHeaderTop)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
@@ -471,7 +504,7 @@ struct SearchResultsView: View {
 
     /// Заголовок секции с шевроном — `header / static` из макета: 24/28 и глиф 20
     /// сразу за текстом, а не у правого края.
-    private func header(_ title: String) -> some View {
+    private func header(_ title: String, top: CGFloat = Layout.headerTop) -> some View {
         HStack(spacing: Layout.headerGap) {
             Text(title)
                 .plusHeadline(.m)
@@ -488,7 +521,7 @@ struct SearchResultsView: View {
                 .offset(y: PlusMetrics.headerChevronDrop)
         }
         .frame(height: Layout.headerLine)
-        .padding(.top, Layout.headerTop)
+        .padding(.top, top)
         .padding(.bottom, Layout.headerBottom)
         .padding(.horizontal, Layout.side)
     }
@@ -497,12 +530,12 @@ struct SearchResultsView: View {
     /// о порядке: он известен, только когда ответили все домены, и до этого
     /// секции стоят в порядке по умолчанию (правка пользователя 2026-10-03).
     /// Габарит — как у настоящего заголовка: строка той же высоты и те же поля.
-    private var skeletonHeader: some View {
+    private func skeletonHeader(top: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
             .fill(PlusSkeleton.fill)
             .frame(width: Layout.skeletonHeaderWidth, height: Layout.skeletonHeaderBar)
             .frame(height: Layout.headerLine)
-            .padding(.top, Layout.headerTop)
+            .padding(.top, top)
             .padding(.bottom, Layout.headerBottom)
             .padding(.horizontal, Layout.side)
             .accessibilityHidden(true)
@@ -532,7 +565,7 @@ struct SearchResultsView: View {
                     cardBody(hit, coverBox: coverBox)
                 }
             }
-            .buttonStyle(PressScaleButtonStyle())
+            .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
             // Источник зума экрана сущности — как миниатюра на витрине: экран
             // разворачивается из карточки и на возврате сворачивается обратно в неё.
             // Без источника зум шёл из центра экрана и сворачивался в никуда.
@@ -761,16 +794,35 @@ struct SearchResultsView: View {
 /// выдачи — внизу, и текст переезжает вместе с ним — кривой клавиатуры, потому что
 /// отступ считается от её состояния.
 struct SearchEmptyState: View {
+    /// Показан ли текст. Вью всегда в дереве: появляется и гаснет она сама — скейлом
+    /// от центра текста вместе с прозрачностью (правка пользователя 2026-10-05: «через
+    /// opacity + scale 0.6»). Вставкой с переходом скейл шёл бы от центра всего кадра,
+    /// а текст стоит выше него на половину отступа бара — он съезжал бы к центру.
+    let isShown: Bool
+
     @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Белый 35 % макета — разовый цвет, токена нет.
     private static let color = Color.white.opacity(0.35)
+
+    private enum Motion {
+        /// Из чего встаёт текст — по правке пользователя; не ноль, текст не «из ниоткуда».
+        static let hiddenScale: CGFloat = 0.6
+        /// Сильный ease-out: текст отвечает сразу и мягко встаёт.
+        static let change: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
+    }
 
     var body: some View {
         Text("Ничего такого\nне нашлось")
             .plusHeadline(.s)
             .multilineTextAlignment(.center)
             .foregroundStyle(Self.color)
+            // С «уменьшением движения» — одна прозрачность.
+            .scaleEffect(isShown || reduceMotion ? 1 : Motion.hiddenScale)
+            .opacity(isShown ? 1 : 0)
+            .animation(Motion.change, value: isShown)
+            .accessibilityHidden(!isShown)
             // Кадр слоя — безопасная зона: сверху статус-бар уже учтён, снизу
             // поджимаем до верха бара.
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -11,10 +11,6 @@ enum ShowcaseMotion {
     /// Доля карточки в кадре, с которой она считается показанной.
     static let appearThreshold: Double = 0.05
 
-    /// Нажатие на миниатюру: подсаживаем её слабее, чем кнопки хрома —
-    /// у обложки большая площадь, и скейл 0.92 читался бы как прыжок.
-    static let pressedScale: CGFloat = 0.97
-    static let pressDuration: Double = 0.15
     /// Хаптика тапа — та же карта, что у табов (nav-chrome §11).
     static let tapHapticIntensity: CGFloat = 0.7
 

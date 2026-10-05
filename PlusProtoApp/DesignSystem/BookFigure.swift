@@ -49,6 +49,17 @@ struct BookFigureGeometry {
     func frameSize(coverWidth: CGFloat) -> CGSize {
         CGSize(width: coverWidth + pagesInset, height: coverHeight + pagesTop)
     }
+
+    /// Книга по ширине кадра — для сетки выдачи, где задана колонка, а высота свободна
+    /// (макет `2479:24822`). Обратная задача к карусели: там высота обложки дана,
+    /// а ширина идёт от пропорций. Кадр = обложка × пропорции + выступ 2 × масштаб,
+    /// отсюда высота; ширина обложки — остаток колонки за выступом, кадр ровно `width`.
+    static func fitting(width: CGFloat, aspect: CGFloat?) -> (geometry: BookFigureGeometry, coverWidth: CGFloat) {
+        let clamped = min(max(aspect ?? defaultAspect, aspectRange.lowerBound), aspectRange.upperBound)
+        let height = (width / (clamped + 2 / referenceHeight)).rounded()
+        let geometry = BookFigureGeometry(coverHeight: height)
+        return (geometry, width - geometry.pagesInset)
+    }
 }
 
 /// Книга целиком. Обложку подставляет вызывающий — у скелетона на её месте только

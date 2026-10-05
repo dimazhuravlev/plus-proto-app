@@ -17,6 +17,7 @@ struct ShowcaseScreen: View {
     #if DEBUG
     @Environment(AppNavigationState.self) private var navigation
     @MainActor private static var didDebugPerson = false
+    @MainActor private static var didDebugPlaylist = false
     #endif
 
     var body: some View {
@@ -48,6 +49,20 @@ struct ShowcaseScreen: View {
             default:
                 break
             }
+        }
+        // `-debugPlaylist 1` — открыть экран плейлиста «Indie Rock Essentials» (Deezer, тот же,
+        // что в стартовой коллекции): тапнуть по плейлисту выдачи из шелла нечем. Раз за запуск.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugPlaylist"), !Self.didDebugPlaylist else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, !Self.didDebugPlaylist else { return }
+            Self.didDebugPlaylist = true
+            navigation.open(.playlist(EntityRef(
+                id: "dz-8716319082",
+                title: "Indie Rock Essentials",
+                subtitle: "Deezer Alternative",
+                artwork: .remote(URL(string: "https://cdn-images.dzcdn.net/images/playlist/f9704a71bc3a51dd8ac519f8fbd5ad63/1000x1000-000000-80-0-0.jpg")!)
+            )))
         }
         #endif
         // Куда ведут карточки — экраны сущностей и слой фильма — объявлено на корне
