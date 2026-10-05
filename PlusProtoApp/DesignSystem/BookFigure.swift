@@ -100,9 +100,11 @@ struct BookFigure<Cover: View>: View {
                 .frame(width: coverWidth, height: geometry.coverHeight)
                 .clipShape(coverShape)
                 .overlay {
-                    // Бордер только сверху, справа и снизу: слева корешок.
+                    // Бордер обложки (`CoverBorder`) — только сверху, справа и снизу:
+                    // слева корешок. Контур сам отступает внутрь на полтолщины.
                     BookCoverEdge(radius: geometry.coverRadius)
-                        .stroke(PlusSkeleton.fill.opacity(layerOpacity), lineWidth: PlusMetrics.hairline)
+                        .stroke(CoverBorder.color.opacity(layerOpacity), lineWidth: CoverBorder.width)
+                        .allowsHitTesting(false)
                 }
                 .overlay(alignment: .leading) {
                     BookHingeShade.gradient
@@ -147,7 +149,7 @@ private struct BookPagesShape: Shape {
 /// и кромки там нет (макет `2311:25096`). Линия внутри кадра, как `border` макета.
 private struct BookCoverEdge: Shape {
     let radius: CGFloat
-    var lineWidth: CGFloat = PlusMetrics.hairline
+    var lineWidth: CGFloat = CoverBorder.width
 
     func path(in rect: CGRect) -> Path {
         let inset = lineWidth / 2

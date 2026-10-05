@@ -329,7 +329,7 @@ struct MusicPlayerView: View {
             .frame(width: MusicPlayerLayout.avatar, height: MusicPlayerLayout.avatar)
             .overlay { ArtworkImage(source: source).scaledToFill() }
             .clipShape(Circle())
-            .overlay { Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(Circle())
     }
 
     /// Кнопка 40 на подложке Buttons/Secondary — со стеклом и бордером серых кнопок
@@ -621,7 +621,7 @@ private struct CoverCarousel: View {
             .frame(width: size, height: size)
             .overlay { ArtworkImage(source: source).scaledToFill() }
             .clipShape(shape)
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
             .shadow(
                 color: .black.opacity(MusicPlayerLayout.coverShadowOpacity),
                 radius: MusicPlayerLayout.coverShadowRadius,
@@ -827,7 +827,7 @@ private struct QueueRow: View {
             .frame(width: MusicPlayerLayout.rowCover, height: MusicPlayerLayout.rowCover)
             .overlay { ArtworkImage(source: item.cover).scaledToFill() }
             .clipShape(shape)
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 
     private var titles: some View {

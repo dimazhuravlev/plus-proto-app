@@ -723,7 +723,7 @@ private struct MosaicCard: View {
                 .frame(width: MosaicLayout.card, height: coverHeight)
                 .overlay { artwork }
                 .clipShape(shape)
-                .overlay { shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+                .coverBorder(shape)
                 .overlay(alignment: .bottomLeading) {
                     if hit.kind == .track {
                         MosaicPlayBadge(isPlaying: isPlayingThisTrack)
@@ -827,13 +827,13 @@ private struct MosaicSkeletonCard: View {
         case .round:
             Circle()
                 .fill(PlusSkeleton.fill)
-                .overlay { Circle().stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+                .coverBorder(Circle())
                 .frame(width: MosaicLayout.card, height: MosaicLayout.card)
         case .poster, .square:
             let rect = RoundedRectangle(cornerRadius: MosaicLayout.coverRadius, style: .continuous)
             rect
                 .fill(PlusSkeleton.fill)
-                .overlay { rect.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+                .coverBorder(rect)
                 .frame(
                     width: MosaicLayout.card,
                     height: shape == .poster ? MosaicLayout.card / MosaicLayout.posterAspect : MosaicLayout.card

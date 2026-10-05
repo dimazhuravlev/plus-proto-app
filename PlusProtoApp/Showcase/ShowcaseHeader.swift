@@ -55,10 +55,7 @@ struct ShowcaseHeader: View {
             ArtworkImage(source: chip.artwork)
                 .scaledToFill()
                 .clipShape(RoundedRectangle(cornerRadius: HeaderChip.posterRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: HeaderChip.posterRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                }
+                .coverBorder(RoundedRectangle(cornerRadius: HeaderChip.posterRadius, style: .continuous))
 
         case .book:
             // Корешок рисуем сами: в Figma он отдельным слоем, но экспорт даёт мусорный

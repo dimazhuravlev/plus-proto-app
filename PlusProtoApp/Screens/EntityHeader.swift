@@ -408,7 +408,7 @@ struct EntityPersonRow: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .overlay { Circle().stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+        .coverBorder(Circle())
     }
 
     /// Полоса скелетона по центру строки Text M — того же габарита, что текст.

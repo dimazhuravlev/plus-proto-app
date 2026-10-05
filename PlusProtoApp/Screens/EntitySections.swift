@@ -110,7 +110,7 @@ struct EntityAlbumCard: View {
                     }
                 }
                 .clipShape(shape)
-                .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+                .coverBorder(shape)
 
             HStack(alignment: .top, spacing: EntitySectionLayout.badgeGap) {
                 VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
@@ -170,6 +170,7 @@ struct EntityPersonCard: View {
                     }
                 }
                 .clipShape(Circle())
+                .coverBorder(Circle())
 
             Text(name)
                 .plusText(.textS, .medium)
@@ -225,7 +226,7 @@ struct EntityTrackRow: View {
                     }
                 }
                 .clipShape(shape)
-                .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+                .coverBorder(shape)
 
             VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
                 HStack(spacing: EntitySectionLayout.badgeGap) {

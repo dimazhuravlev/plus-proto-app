@@ -350,8 +350,6 @@ private struct CinemaPromoSlide: View {
 /// и кнопки не заходит. ~~Кромка сверху и по бокам поверх затемнения~~ — прежняя
 /// версия правки того же дня, линии по бокам доходили до самого низа.
 private enum PromoCoverEdge {
-    static let width: CGFloat = 0.67
-
     static var border: some View {
         UnevenRoundedRectangle(
             topLeadingRadius: CinemaPromoLayout.coverRadius,
@@ -360,7 +358,8 @@ private enum PromoCoverEdge {
             topTrailingRadius: CinemaPromoLayout.coverRadius,
             style: .continuous
         )
-        .strokeBorder(Color.fillNine, lineWidth: width)
+        // Краска и толщина — общие у всех обложек (`CoverBorder`), форма и место — свои.
+        .strokeBorder(CoverBorder.color, lineWidth: CoverBorder.width)
         .allowsHitTesting(false)
     }
 }

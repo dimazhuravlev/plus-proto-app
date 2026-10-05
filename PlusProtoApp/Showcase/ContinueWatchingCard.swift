@@ -161,8 +161,7 @@ struct ContinueWatchingCard: View {
             source: block.still,
             size: WatchingGeometry.videoSize,
             rotation: WatchingGeometry.videoRotation,
-            glowOpacity: WatchingGeometry.ambilightOpacity,
-            borderWidth: PlusMetrics.hairline
+            glowOpacity: WatchingGeometry.ambilightOpacity
         ) {
             ClipLayerView(player: playback.queue) { isVideoReady = true }
                 .frame(width: WatchingGeometry.videoSize.width, height: WatchingGeometry.videoSize.height)

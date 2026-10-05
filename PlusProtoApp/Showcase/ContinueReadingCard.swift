@@ -168,6 +168,7 @@ struct ContinueReadingCard: View {
             .aspectRatio(contentMode: .fill)
             .frame(width: ReadingCardLayout.miniBookSize.width, height: ReadingCardLayout.miniBookSize.height)
             .clipped()
+            .coverBorder(Rectangle())
     }
 
     /// Тот же приём, что в `AmbilightArtwork`: ореол запекается в один растр, иначе блюр

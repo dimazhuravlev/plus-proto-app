@@ -868,11 +868,13 @@ private struct SearchPill: View {
             query = ""
             if !searchFocused { searchFocused = true }
         } label: {
+            // Белый 100 %, как «Назад» (правка пользователя 2026-10-05): кнопки — белые,
+            // приглушена только лупа — она знак поля, а не действие.
             Image("iconCross")
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.searchIcon)
+                .foregroundStyle(Color.fillOne)
                 .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle())
@@ -1083,11 +1085,12 @@ private struct SearchBackButton: View {
     var body: some View {
         Button(action: action) {
             // Тот же глиф, что у шевронов, — без отзеркаливания он и есть «назад».
+            // Белый 100 % (правка пользователя 2026-10-05).
             Image("iconDropleft")
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.searchIcon)
+                .foregroundStyle(Color.fillOne)
                 .frame(width: ActionBarGeometry.backButtonSize, height: ActionBarGeometry.backButtonSize)
                 .glassPill()
                 .contentShape(Circle())
@@ -1434,9 +1437,7 @@ struct MiniPlayerPill: View {
         }
         .frame(width: PlusMetrics.miniPlayerCover, height: PlusMetrics.miniPlayerCover)
         .clipShape(Circle())
-        .overlay {
-            Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
-        }
+        .coverBorder(Circle())
     }
 
     private var coverImage: some View {
@@ -1565,6 +1566,7 @@ private struct BookChip: View {
                 .scaledToFill()
                 .frame(width: ActionBarGeometry.bookCoverSize.width, height: ActionBarGeometry.bookCoverSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+                .coverBorder(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
         }
         .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
         .secondaryButtonSurface(
@@ -1585,6 +1587,7 @@ private struct MovieChip: View {
                 .scaledToFill()
                 .frame(width: ActionBarGeometry.movieFrameSize.width, height: ActionBarGeometry.movieFrameSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+                .coverBorder(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
                 .padding(ActionBarGeometry.movieChipPadding)
         }
         .frame(width: ActionBarGeometry.movieChipSize.width, height: ActionBarGeometry.movieChipSize.height)

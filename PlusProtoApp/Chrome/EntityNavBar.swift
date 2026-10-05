@@ -172,7 +172,7 @@ struct EntityNavBar<Trailing: View>: View {
             .scaledToFill()
             .frame(width: EntityNavBarGeometry.controlSize, height: EntityNavBarGeometry.controlSize)
             .clipShape(shape)
-            .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 
     private var backdrop: some View {

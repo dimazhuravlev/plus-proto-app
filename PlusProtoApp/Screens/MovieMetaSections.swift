@@ -164,7 +164,7 @@ struct MoviePersonSection: View {
             .clipShape(shape)
             // Волосяная обводка (решение пользователя 2026-08-29): у обесцвеченных
             // портретов светлый фон, и без неё карточка растворялась в чёрном экране.
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 }
 
@@ -304,7 +304,7 @@ struct MovieSimilarSection: View {
                 }
                 .clipShape(shape)
                 // Та же волосяная обводка, что у карточек персон
-                .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+                .coverBorder(shape)
 
             // Подпись набрана как у карточек персон: один стиль на обе строки,
             // зазор между ними нулевой (решение пользователя 2026-08-29).

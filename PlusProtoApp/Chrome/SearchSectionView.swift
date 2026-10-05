@@ -599,12 +599,9 @@ private struct SearchRowThumbnail: View {
                 }
             }
             .clipShape(shape)
-            .overlay {
-                // У круга исполнителя обводки в макете нет.
-                if hit.kind != .artist {
-                    shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
-                }
-            }
+            // Бордер — у всех обложек, и у круга исполнителя тоже: в макете его там нет,
+            // но правка пользователя 2026-10-05 — один бордер на все карточки-айтемы.
+            .coverBorder(shape)
     }
 
     private var shape: AnyShape {
@@ -762,10 +759,7 @@ private struct MusicWizardCard: View {
                 .frame(width: Layout.albumWidth, height: Layout.albumWidth)
                 .overlay { artwork(album.artwork) }
                 .clipShape(RoundedRectangle(cornerRadius: Layout.albumRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Layout.albumRadius, style: .continuous)
-                        .stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline)
-                }
+                .coverBorder(RoundedRectangle(cornerRadius: Layout.albumRadius, style: .continuous))
             Text(album.title)
                 .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)

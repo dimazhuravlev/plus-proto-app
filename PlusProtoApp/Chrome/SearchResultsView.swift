@@ -648,7 +648,7 @@ struct SearchResultsView: View {
                 }
             }
             .clipShape(shape)
-            .overlay { shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 
     // MARK: Карточка книги
@@ -764,7 +764,7 @@ struct SearchResultsView: View {
             VStack(alignment: .leading, spacing: Layout.coverGap) {
                 shape
                     .fill(PlusSkeleton.fill)
-                    .overlay { shape.stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+                    .coverBorder(shape)
                     .frame(width: Layout.card)
                     .frame(height: kind == .movies ? Layout.card / Layout.posterAspect : Layout.card)
                 skeletonLabel

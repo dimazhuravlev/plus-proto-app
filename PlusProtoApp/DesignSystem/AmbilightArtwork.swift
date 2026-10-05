@@ -21,7 +21,6 @@ struct AmbilightArtwork<Overlay: View>: View {
     let corner: CGFloat
     let rotation: Angle
     let glowOpacity: Double
-    let borderWidth: CGFloat
     /// Слои поверх обложки, внутри её кадра: видео и подпись у «продолжить смотреть».
     /// Едут параметром внутрь компонента, а не навешиваются на него снаружи, потому что
     /// источником зума обязана быть обложка **вместе с ними**: иначе на возврате
@@ -34,7 +33,6 @@ struct AmbilightArtwork<Overlay: View>: View {
         corner: CGFloat = PlusRadius.card,
         rotation: Angle = .zero,
         glowOpacity: Double,
-        borderWidth: CGFloat = 1,
         @ViewBuilder overlay: @escaping () -> Overlay
     ) {
         self.source = source
@@ -42,7 +40,6 @@ struct AmbilightArtwork<Overlay: View>: View {
         self.corner = corner
         self.rotation = rotation
         self.glowOpacity = glowOpacity
-        self.borderWidth = borderWidth
         self.overlay = overlay
     }
 
@@ -113,7 +110,7 @@ struct AmbilightArtwork<Overlay: View>: View {
             overlay()
         }
         .frame(width: size.width, height: size.height)
-        .overlay { shape.strokeBorder(Color.fillNine, lineWidth: borderWidth) }
+        .coverBorder(shape)
         // Внутри кадра лежат слои шире его самого; без явной формы хит-зона
         // раздувалась до их габарита (замер дампом доступности: 359×156
         // против видимых 277×156 у видеокадра).
@@ -144,16 +141,14 @@ extension AmbilightArtwork where Overlay == EmptyView {
         size: CGSize,
         corner: CGFloat = PlusRadius.card,
         rotation: Angle = .zero,
-        glowOpacity: Double,
-        borderWidth: CGFloat = 1
+        glowOpacity: Double
     ) {
         self.init(
             source: source,
             size: size,
             corner: corner,
             rotation: rotation,
-            glowOpacity: glowOpacity,
-            borderWidth: borderWidth
+            glowOpacity: glowOpacity
         ) { EmptyView() }
     }
 
@@ -162,16 +157,14 @@ extension AmbilightArtwork where Overlay == EmptyView {
         size: CGSize,
         corner: CGFloat = PlusRadius.card,
         rotation: Angle = .zero,
-        glowOpacity: Double,
-        borderWidth: CGFloat = 1
+        glowOpacity: Double
     ) {
         self.init(
             source: .asset(name),
             size: size,
             corner: corner,
             rotation: rotation,
-            glowOpacity: glowOpacity,
-            borderWidth: borderWidth
+            glowOpacity: glowOpacity
         )
     }
 }

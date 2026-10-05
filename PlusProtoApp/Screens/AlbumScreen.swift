@@ -195,7 +195,7 @@ struct AlbumScreen: View {
             .scaledToFill()
             .frame(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize)
             .clipShape(shape)
-            .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 
     /// Аватар исполнителя: пока детали едут — скелетон круга (моковое фото здесь было

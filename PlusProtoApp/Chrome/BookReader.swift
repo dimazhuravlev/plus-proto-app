@@ -172,6 +172,7 @@ struct BookReaderView: View {
             .frame(width: BookReaderLayout.coverSize.width, height: BookReaderLayout.coverSize.height)
             .overlay { ArtworkImage(source: book.cover).scaledToFill() }
             .clipShape(shape)
+            .coverBorder(shape)
     }
 
     /// Подписи прижаты к верху бокса обложки, а не центрированы по ней: автор может
