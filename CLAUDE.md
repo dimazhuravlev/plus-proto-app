@@ -33,6 +33,8 @@ xcodebuild -project PlusProtoApp.xcodeproj -scheme PlusProtoApp -destination 'pl
 
 CI ([.github/workflows/build.yml](.github/workflows/build.yml)) — только компиляция на ключах-заглушках.
 
+**TestFlight.** Выгрузка — из Xcode: устройство «Any iOS Device» → Product → Archive → Distribute App → «TestFlight Internal Only» (без ревью; тестеры — участники команды в App Store Connect, до 100) или «App Store Connect» (внешние тестеры и публичная ссылка; первая сборка версии проходит Beta App Review). Таргет — только iPhone (`TARGETED_DEVICE_FAMILY = 1`): вёрстка от 402 pt, на iPad приложение идёт в окне айфона. Новое API «с обязательной причиной» (даты файлов, аптайм, место на диске) — в `PlusProtoApp/PrivacyInfo.xcprivacy`, иначе выгрузку отклонят. Ключи API вшиты в сборку и общие на всех тестеров: квота Кинопоиска кончается быстрее, витрины уходят в моки и дисковый запас.
+
 ## Конвенции
 
 - Общение, коммиты, UI-копия — на русском. Conventional Commits. Ветки, pull request'ы, условие мержа, код-стайл — [CONTRIBUTING.md](CONTRIBUTING.md). В `main` напрямую не пушим: ветка → PR → зелёная сборка → squash merge.

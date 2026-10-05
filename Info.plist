@@ -18,5 +18,10 @@
 	     375×812pt с полями фона по краям). `scaleAspectFill` есть только здесь. -->
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+	<!-- Шифрование только системное (HTTPS) — оно освобождено от экспортного контроля.
+	     Без этого ключа каждая сборка в TestFlight стоит в «Missing Compliance»,
+	     пока на вопрос о шифровании не ответят вручную. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
