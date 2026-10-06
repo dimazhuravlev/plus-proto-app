@@ -41,6 +41,21 @@ enum ArtworkSource: Hashable, Codable {
 /// Что играет: круглая обложка 48×48 + две строки подписи (figma-actionbar §4.2).
 /// Опциональные поля — для полноэкранного плеера; их знает только экран альбома,
 /// и снимок бара, записанный до них, по-прежнему читается.
+/// Прогресс трека как функция времени: опора плюс ход от неё. Вью читают его
+/// на кадрах `TimelineView` — полоса едет плавно и линейно, а стейт пишется
+/// только на тиках и событиях транспорта.
+struct MusicClock: Equatable {
+    let anchor: Double
+    let date: Date
+    let isAdvancing: Bool
+
+    func progress(at now: Date) -> Double {
+        guard isAdvancing else { return anchor }
+        let advanced = anchor + max(0, now.timeIntervalSince(date)) / ActionBarState.musicDuration
+        return advanced.truncatingRemainder(dividingBy: 1)
+    }
+}
+
 struct MusicNowPlaying: Equatable, Codable {
     var id: String
     var cover: ArtworkSource
@@ -141,8 +156,28 @@ final class ActionBarState {
     /// Прогресс наблюдателя не имеет намеренно: он меняется дважды в секунду, и запись
     /// на диск на каждый тик была бы дорогой. На диск он уезжает вместе с ближайшим
     /// событием — паузой, сменой трека, запуском другого контента.
-    var musicProgress: Double = 0
+    var musicProgress: Double = 0 { didSet { musicProgressDate = .now } }
     var isMusicPlaying: Bool = false { didSet { persist() } }
+    /// Когда поставили `musicProgress` — опора плавного хода (`musicClock`).
+    private(set) var musicProgressDate = Date.now
+    /// Прогресс идёт: трек играет, и звук не в пути (или его нет вовсе). Ставит тикер.
+    private(set) var isMusicAdvancing = false
+
+    /// Прогресс как функция времени — полоса плееров едет по нему плавно и линейно
+    /// (правка пользователя 2026-10-06: прежде шагала на каждом тике). Вью считают
+    /// позицию на кадре сами (`MusicProgressReader`), в стейт пишутся только тики.
+    var musicClock: MusicClock {
+        MusicClock(
+            anchor: musicProgress,
+            date: musicProgressDate,
+            isAdvancing: isMusicAdvancing && isMusicPlaying && !isMusicScrubbing
+        )
+    }
+
+    /// Позиция прямо сейчас, между тиками.
+    private var liveMusicProgress: Double {
+        musicClock.progress(at: .now)
+    }
 
     /// Сердце мини-плеера и плеера музыки — играющий трек в «Любимом» коллекции «Моё»
     /// (2026-10-04). Прежде это был флаг бара, забывавший отметку на смене трека.
@@ -157,7 +192,14 @@ final class ActionBarState {
 
     /// Палец на таймлайне плеера музыки: тикер прогресса молчит, иначе он тянул бы
     /// заливку вперёд из-под пальца дважды в секунду.
-    var isMusicScrubbing = false
+    var isMusicScrubbing = false {
+        // Отпустили — ход идёт от точки отпускания, а не от последнего сдвига пальца.
+        didSet {
+            guard oldValue, !isMusicScrubbing else { return }
+            let released = musicProgress
+            musicProgress = released
+        }
+    }
 
     /// Поиск в фокусе: поле расширяется, плеер сжимается в круг 60×60, бар поднимается
     /// над клавиатурой. Не локальный стейт бара, потому что таббар уезжает под клавиатуру
@@ -204,6 +246,7 @@ final class ActionBarState {
     func startMusic(_ item: MusicNowPlaying) {
         music = item
         musicProgress = 0
+        isMusicAdvancing = false
         isMusicPlaying = true
         mode = .music
         startProgressTicking()
@@ -238,6 +281,8 @@ final class ActionBarState {
     /// ни поиск. `music` тут тоже не сбрасывается: payload остаётся, чтобы к треку
     /// можно было вернуться.
     private func stopMusic() {
+        if isMusicPlaying { musicProgress = liveMusicProgress }
+        isMusicAdvancing = false
         isMusicPlaying = false
         progressTicker?.cancel()
         progressTicker = nil
@@ -313,7 +358,12 @@ final class ActionBarState {
     /// Переключить воспроизведение. Прогресс тикает редко (2 раза в секунду) —
     /// промежуточные кадры дорисовывает анимация заливки, `body` на них не пересчитывается.
     func toggleMusicPlayback() {
+        // Опора — на «сейчас» и в обе стороны: пауза замирает там, где звучал звук,
+        // продолжение идёт от той же точки (со старой опорой ход насчитался бы и за
+        // паузу) и сразу, если звук уже загружен, — без полусекунды до первого тика.
+        musicProgress = audioFractionNow() ?? liveMusicProgress
         isMusicPlaying.toggle()
+        isMusicAdvancing = isMusicPlaying && audioFractionNow() != nil
         if isMusicPlaying {
             startProgressTicking()
         } else {
@@ -334,6 +384,12 @@ final class ActionBarState {
         audio { $0.play(music, from: progress, isPlaying: true) }
     }
 
+    /// Доля трека по звуку, если превью играет и вызов пришёл с главного потока.
+    private func audioFractionNow() -> Double? {
+        guard Thread.isMainThread else { return nil }
+        return MainActor.assumeIsolated { MusicAudio.shared.tickerFraction }
+    }
+
     /// Звук живёт на главном потоке. Транспорт трогают кнопки и экраны — с него же,
     /// но на всякий случай с другого потока вызов доезжает задачей.
     private func audio(_ body: @escaping @MainActor (MusicAudio) -> Void) {
@@ -344,8 +400,9 @@ final class ActionBarState {
         }
     }
 
-    /// Играет превью — прогресс за звуком; превью в пути — стоит (без отскока назад,
-    /// когда звук начнётся); звука нет — шагом от длительности трека, по кругу.
+    /// Играет превью — опора за звуком; превью в пути — стоит (без отскока назад,
+    /// когда звук начнётся); звука нет — идёт сама от длительности трека, по кругу.
+    /// Между тиками полосу ведут вью по `musicClock`, тик только поправляет опору.
     private func startProgressTicking() {
         progressTicker?.cancel()
         progressTicker = Task { [weak self] in
@@ -359,12 +416,20 @@ final class ActionBarState {
                 }
                 if let fraction {
                     self.musicProgress = fraction
-                } else if !isAwaiting {
-                    let step = Self.progressTick / Self.musicDuration
-                    self.musicProgress = (self.musicProgress + step).truncatingRemainder(dividingBy: 1)
+                    self.setMusicAdvancing(true)
+                } else if isAwaiting {
+                    self.setMusicAdvancing(false)
+                } else {
+                    self.musicProgress = self.liveMusicProgress
+                    self.setMusicAdvancing(true)
                 }
             }
         }
+    }
+
+    /// Без лишней записи: флаг наблюдаемый, а тик — дважды в секунду.
+    private func setMusicAdvancing(_ value: Bool) {
+        if isMusicAdvancing != value { isMusicAdvancing = value }
     }
 
     /// Открыть плеер сущности. Повторный тап по той же карточке в музыке работает

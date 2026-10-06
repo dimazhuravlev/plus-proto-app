@@ -212,7 +212,7 @@ private struct ReaderMusicPlayer: View {
                 item: music,
                 trackInfoOpacity: isExpanded ? 1 : 0,
                 progressOpacity: isExpanded ? 1 : 0,
-                progress: actionBar.musicProgress,
+                progress: actionBar.musicClock,
                 isPlaying: actionBar.isMusicPlaying,
                 isLiked: actionBar.isMusicLiked,
                 onTogglePlay: { actionBar.toggleMusicPlayback() },

@@ -1185,7 +1185,7 @@ private struct TrailingSlot: View {
                     item: music,
                     trackInfoOpacity: layout.trackInfoOpacity,
                     progressOpacity: layout.progressOpacity,
-                    progress: actionBar.musicProgress,
+                    progress: actionBar.musicClock,
                     isPlaying: actionBar.isMusicPlaying,
                     isLiked: actionBar.isMusicLiked,
                     onTogglePlay: { actionBar.toggleMusicPlayback() },
@@ -1365,7 +1365,7 @@ struct MiniPlayerPill: View {
     let item: MusicNowPlaying
     let trackInfoOpacity: Double
     let progressOpacity: Double
-    let progress: Double
+    let progress: MusicClock
     let isPlaying: Bool
     let isLiked: Bool
     let onTogglePlay: () -> Void
@@ -1395,7 +1395,7 @@ struct MiniPlayerPill: View {
             .frame(height: PlusMetrics.actionBarHeight)
             .glassPill()
             .overlay(alignment: .leading) {
-                MiniPlayerProgressFill(progress: progress, opacity: progressOpacity)
+                MiniPlayerProgressFill(clock: progress, opacity: progressOpacity)
                     // Заливка гаснет и приходит вместе с остальными внутренностями:
                     // на сужении она иначе доживает до круга полосой в полкруга.
                     .animation(ActionBarMotion.miniContentFade, value: progressOpacity)
@@ -1551,16 +1551,36 @@ struct MiniPlayerPill: View {
 /// Ширина задаётся масштабом, а не измерением: пилюль сам по себе анимирует ширину,
 /// и любое чтение его размера замкнуло бы цикл раскладки. Форму даёт клип родителя.
 private struct MiniPlayerProgressFill: View {
-    let progress: Double
+    let clock: MusicClock
     let opacity: Double
 
     var body: some View {
-        Rectangle()
-            .fill(Color.fillTen)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
-            .opacity(opacity)
-            .animation(.easeOut(duration: 0.12), value: progress)
+        MusicProgressReader(clock: clock) { progress in
+            Rectangle()
+                .fill(Color.fillTen)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
+        }
+        .opacity(opacity)
+    }
+}
+
+/// Прогресс трека на кадре: пока он идёт — по `TimelineView`, плавно и линейно
+/// (правка пользователя 2026-10-06: прежде полоса шагала на каждом тике), в покое —
+/// опорой, и `TimelineView` уходит из дерева, как у вращения обложки. Внутрь — только
+/// то, что рисует позицию: жесты снаружи, иначе смена ветки сбросила бы их на хвате.
+struct MusicProgressReader<Content: View>: View {
+    let clock: MusicClock
+    @ViewBuilder let content: (Double) -> Content
+
+    var body: some View {
+        if clock.isAdvancing {
+            TimelineView(.animation) { context in
+                content(clock.progress(at: context.date))
+            }
+        } else {
+            content(clock.anchor)
+        }
     }
 }
 
