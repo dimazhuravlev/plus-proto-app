@@ -117,6 +117,7 @@ CI ([.github/workflows/build.yml](.github/workflows/build.yml)) — только
 - `scrollPosition(id:anchor:)`: `.center` промахивается на ~3 pt, `.leading` при симметричных `contentMargins` центрирует точно. Стартовый `scrollTo` на появлении срабатывает до раскладки — `.task` с задержкой ~50 мс и транзакцией без анимации.
 - Скролл-зависимый слой — `.transaction { $0.animation = nil }`, иначе его подхватит анимация выбора; внутренний `.animation(nil, value:)` перекрывает внешний.
 - Подменить список без морфа строк — `.id(значение)` на поддереве.
+- Скрытый навбар (`.toolbar(.hidden, for: .navigationBar)`) выключает свайп назад от края — он включён обратно делегатом жеста в `App/SwipeBack.swift`.
 - Новый imageset инкрементальная сборка не подхватывает — `xcodebuild clean`; проверка: `xcrun --sdk iphonesimulator assetutil --info <app>/Assets.car | grep <имя>`.
 - Эмодзи текстом в симуляторе iOS 26.3 — квадраты с «?»: рисовать картинками (`emojiRate*`).
 - Worktree-гард отклоняет составные команды с git (heredoc, `cd … && git`, имена файлов с «git») — разбивать на простые отдельные; длинные правки — скриптом из файла.
