@@ -14,6 +14,7 @@ enum HitAreaProbe {
     private static let delay: Duration = .seconds(5)
 
     static func dumpIfRequested() async {
+        await sweepIfRequested()
         guard UserDefaults.standard.bool(forKey: "debugHitProbe") else { return }
         try? await Task.sleep(for: delay)
         guard !Task.isCancelled else { return }
@@ -25,6 +26,39 @@ enum HitAreaProbe {
         print("PROBE-START окно \(window.bounds.size)")
         walk(window, depth: 0)
         print("PROBE-END")
+    }
+
+    /// `-debugHitSweep <x>` — какой UIKit-вью достаётся касание в точках вертикали
+    /// `x`, сверху вниз шагом 8 pt: дерево доступности не видит UIKit-слоёв, которые
+    /// перехватывают касания поверх SwiftUI (блюры, представления). Печатает только смены.
+    private static func sweepIfRequested() async {
+        let x = UserDefaults.standard.double(forKey: "debugHitSweep")
+        guard x > 0 else { return }
+        try? await Task.sleep(for: delay)
+        guard !Task.isCancelled, let window = keyWindow else { return }
+        print("SWEEP-START x=\(x)")
+        var previous = ""
+        for y in stride(from: 0.0, through: window.bounds.height, by: 8) {
+            let point = CGPoint(x: x, y: y)
+            let hit = window.hitTest(point, with: nil)
+            let chain = sequence(first: hit, next: { $0?.superview })
+                .prefix(4)
+                .compactMap { view -> String? in
+                    guard let view else { return nil }
+                    let frame = view.convert(view.bounds, to: window)
+                    var text = String(format: "%@(y %.0f h %.0f)", String(describing: type(of: view)), frame.minY, frame.height)
+                    if let scroll = view as? UIScrollView {
+                        text += String(format: "[content %.0f×%.0f]", scroll.contentSize.width, scroll.contentSize.height)
+                    }
+                    return text
+                }
+                .joined(separator: " < ")
+            if chain != previous {
+                print(String(format: "SWEEP y=%.0f %@", y, chain))
+                previous = chain
+            }
+        }
+        print("SWEEP-END")
     }
 
     private static var keyWindow: UIWindow? {

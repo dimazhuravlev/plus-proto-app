@@ -90,7 +90,9 @@ extension ShowcaseBlock {
         case .movie(let b):
             .movie(EntityRef(id: b.id, title: b.title, subtitle: "", artwork: b.poster))
         case .album(let b):
-            .album(EntityRef(id: b.id, title: b.title, subtitle: b.subtitle, artwork: b.cover))
+            // У блока витрины сверху исполнитель, ниже альбом (`AlbumBlock`), а ссылка
+            // на альбом везде одна: `title` — альбом, `subtitle` — исполнитель.
+            .album(EntityRef(id: b.id, title: b.subtitle, subtitle: b.title, artwork: b.cover))
         case .book(let b):
             .book(EntityRef(id: b.id, title: b.title, subtitle: "", artwork: b.cover))
         case .reading(let b):

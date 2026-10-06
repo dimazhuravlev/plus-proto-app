@@ -88,27 +88,33 @@ struct CollectionListScreen: View {
             Color.black.ignoresSafeArea()
 
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(items) { item in
-                        CollectionListRow(item: item, isFirst: item.id == items.first?.id)
+                // Чипсы — закреплённым заголовком внутри ленты, как у полной выдачи
+                // музыки и сетки поиска, а не в оверлее экрана: там UIKit раздувал скролл
+                // ряда до кромок соседей, и его прозрачный низ забирал касания первой
+                // строки (жалоба пользователя 2026-10-06, замер `-debugHitSweep`).
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        LazyVStack(spacing: 0) {
+                            ForEach(items) { item in
+                                CollectionListRow(item: item, isFirst: item.id == items.first?.id)
+                            }
+                        }
+                        .padding(.top, CollectionListLayout.listTop)
+                        // Строки съезжают плавно, только когда отметку сняли в этом же списке.
+                        .animation(CollectionMotion.itemsChange, value: items.map(\.id))
+                        // Список другого фильтра — новый целиком, а не те же строки с другим
+                        // содержимым: иначе на смене фильтра строки переезжали и морфились
+                        // под проявлением (правка пользователя 2026-10-04 — «не нужно это»).
+                        // Смена — одной прозрачностью: старый гаснет, новый проявляется.
+                        .id(shownKind)
+                        .opacity(listOpacity)
+                    } header: {
+                        chips
                     }
                 }
-                .padding(.top, CollectionListLayout.listTop)
-                // Строки съезжают плавно, только когда отметку сняли в этом же списке.
-                .animation(CollectionMotion.itemsChange, value: items.map(\.id))
-                // Список другого фильтра — новый целиком, а не те же строки с другим
-                // содержимым: иначе на смене фильтра строки переезжали и морфились
-                // под проявлением (правка пользователя 2026-10-04 — «не нужно это»).
-                // Смена — одной прозрачностью: старый гаснет, новый проявляется.
-                .id(shownKind)
-                .opacity(listOpacity)
             }
             .scrollIndicators(.hidden)
-            .contentMargins(
-                .top,
-                EntityNavBarGeometry.barHeight + FilterChipsLayout.rowHeight,
-                for: .scrollContent
-            )
+            .contentMargins(.top, EntityNavBarGeometry.barHeight, for: .scrollContent)
             .scrollPosition($scrollPosition)
             .trackNavBarScroll(into: $scrollOffset)
 
@@ -120,33 +126,34 @@ struct CollectionListScreen: View {
                     .opacity(listOpacity)
             }
         }
-        .overlay(alignment: .top) { header }
+        .overlay(alignment: .top) {
+            EntityNavBar(title: route.shelf.title, scrollOffset: scrollOffset, thresholds: Self.navThresholds)
+        }
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: kind) { _, selected in swapList(to: selected) }
     }
 
-    /// Шапка — наш навбар и чипсы под ним. Подложка одна на обоих: прогрессивный блюр
-    /// без затемнения от верха экрана до чуть ниже чипсов, проявляется по скроллу.
-    /// Чипсы при оттяге едут за лентой вчетверо медленнее — как навигация витрин.
-    private var header: some View {
-        VStack(spacing: 0) {
-            EntityNavBar(title: route.shelf.title, scrollOffset: scrollOffset, thresholds: Self.navThresholds)
-            FilterChipsRow(options: options, selection: $kind, title: \.title)
-                .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
-        }
-        .background(alignment: .top) {
-            VariableBlurView(
-                maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
-                direction: .blurredTopClearBottom
-            )
-            .frame(
-                height: ServiceTopNavLayout.topSafeArea + EntityNavBarGeometry.barHeight
-                    + FilterChipsLayout.rowHeight + CollectionListLayout.backdropTail
-            )
-            .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: CollectionListLayout.backdropRamp))
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-        }
+    /// Чипсы под навбаром. Подложка одна на навбар и чипсы: прогрессивный блюр без
+    /// затемнения от верха экрана до чуть ниже чипсов, проявляется по скроллу. Висит
+    /// фоном закреплённого ряда и уходит от него вверх, под навбар. При оттяге ряд
+    /// едет за лентой вчетверо медленнее — как навигация витрин; заголовок секции на
+    /// оттяге едет вместе с лентой, сдвиг возвращает разницу.
+    private var chips: some View {
+        FilterChipsRow(options: options, selection: $kind, title: \.title)
+            .background(alignment: .top) { headerBackdrop }
+            .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset) - max(0, -scrollOffset))
+    }
+
+    private var headerBackdrop: some View {
+        let above = ServiceTopNavLayout.topSafeArea + EntityNavBarGeometry.barHeight
+        return VariableBlurView(
+            maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
+            direction: .blurredTopClearBottom
+        )
+        .frame(height: above + FilterChipsLayout.rowHeight + CollectionListLayout.backdropTail)
+        .offset(y: -above)
+        .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: CollectionListLayout.backdropRamp))
+        .allowsHitTesting(false)
     }
 
     /// Название полки в баре — всегда, и при оттяге тоже: это свой тип навбара, а не

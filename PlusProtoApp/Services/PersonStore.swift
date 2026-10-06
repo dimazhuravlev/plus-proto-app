@@ -110,7 +110,7 @@ final class PersonStore {
                 // моковый чужой альбом (жалоба пользователя 2026-10-04).
                 let cover = (album.coverXl ?? album.coverBig ?? album.coverMedium)?.deezerUpscaled
                     .map { ArtworkSource.remote($0) }
-                // Семантика `EntityRef` альбома — витринная: `title` — исполнитель.
+                // Ссылка на альбом: `title` — альбом, `subtitle` — исполнитель.
                 return SearchHit(
                     id: "album-\(album.id)",
                     kind: .album,
@@ -119,8 +119,8 @@ final class PersonStore {
                     artwork: cover,
                     route: .album(EntityRef(
                         id: "dz-\(album.id)",
-                        title: entity.title,
-                        subtitle: album.title,
+                        title: album.title,
+                        subtitle: entity.title,
                         artwork: cover ?? .asset("")
                     ))
                 )

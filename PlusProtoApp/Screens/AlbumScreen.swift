@@ -418,11 +418,11 @@ struct AlbumScreen: View {
     /// `NavigationLink`: альбом бывает и в слое фильма (поиском из бара его экранов),
     /// а у слоя стека нет — там переход встаёт в его стопку (`AppNavigationState.open`).
     private func otherCard(_ album: AlbumDetails.OtherAlbum) -> some View {
-        // Семантика `EntityRef` альбома повторяет витринную: `title` — артист.
+        // Ссылка на альбом: `title` — альбом, `subtitle` — исполнитель.
         let route = EntityRoute.album(EntityRef(
             id: "dz-\(album.id)",
-            title: details.artist,
-            subtitle: album.title,
+            title: album.title,
+            subtitle: details.artist,
             artwork: album.cover
         ))
         return Button { navigation.open(route) } label: {

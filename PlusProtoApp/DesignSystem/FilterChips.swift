@@ -43,6 +43,12 @@ struct FilterChipsRow<Option: Hashable>: View {
                 .padding(.horizontal, FilterChipsLayout.side)
                 .padding(.vertical, FilterChipsLayout.vertical)
             }
+            // Высота — явно: горизонтальная лента сама тянется по вертикали на всё
+            // предложенное (замер `-debugHitSweep` 2026-10-06: 186 при содержимом 56).
+            // Ряд — внутри вертикальной ленты (закреплённым заголовком): в оверлее экрана
+            // UIKit раздувает его скролл до кромок соседей, и прозрачный низ забирал
+            // касания первой строки списка.
+            .frame(height: FilterChipsLayout.rowHeight)
             .scrollIndicators(.hidden)
             // Выбранный чипс — в центр экрана; у краёв лента упирается в свои поля.
             .onChange(of: selection) { _, active in
