@@ -89,6 +89,14 @@ final class CinemaCatalog {
 
         guard Self.isLive else {
             promos = CinemaMocks.promos
+            #if DEBUG
+            promos = DebugMockPromos.padded(promos) { promo, index in
+                Promo(
+                    id: "\(promo.id)-\(index)", title: promo.title, lead: promo.lead,
+                    cover: promo.cover, logo: promo.logo, route: promo.route, movie: promo.movie
+                )
+            }
+            #endif
             rows = CinemaMocks.rows
             isLoaded = true
             return
@@ -248,6 +256,22 @@ final class CinemaCatalog {
 }
 
 // MARK: - Моки
+
+#if DEBUG
+/// `-debugMockPromos <n>` — промо на моках (Кинопоиск, Книги) добирается повторами
+/// до n слайдов: моков два-три, живых — до шести, а круг из трёх копий перескакивает
+/// на длину набора — проверять его и на живом размере, без сети и квоты.
+/// Повтор — с новым id, остальное то же.
+enum DebugMockPromos {
+    static func padded<Item>(_ items: [Item], copy: (Item, Int) -> Item) -> [Item] {
+        let target = UserDefaults.standard.integer(forKey: "debugMockPromos")
+        guard !items.isEmpty, target > items.count else { return items }
+        return (0..<target).map { index in
+            index < items.count ? items[index] : copy(items[index % items.count], index)
+        }
+    }
+}
+#endif
 
 /// Лента без сети — свежий клон без ключей и `-debugMockFeed`.
 enum CinemaMocks {

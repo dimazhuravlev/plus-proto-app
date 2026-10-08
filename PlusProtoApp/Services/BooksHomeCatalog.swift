@@ -233,6 +233,11 @@ final class BooksHomeCatalog {
             mockBook("bullshit", "Бредовая работа", "Дэвид Гребер", 1),
             mockBook("homo", "Homo bonus", "Рутгер Брегман", 2),
         ]
+        #if DEBUG
+        promos = DebugMockPromos.padded(promos) { book, index in
+            Book(id: "\(book.id)-\(index)", title: book.title, author: book.author, cover: book.cover, aspect: book.aspect, blurb: book.blurb)
+        }
+        #endif
         rows = Self.rowSpecs.enumerated().map { rowIndex, spec in
             Row(
                 id: spec.id,
