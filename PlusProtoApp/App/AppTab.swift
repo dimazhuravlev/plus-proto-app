@@ -10,7 +10,8 @@ enum AppTab: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .plus: "Плюс"
+        // «Главная», а не «Плюс» (правка пользователя 2026-10-08).
+        case .plus: "Главная"
         case .music: "Музыка"
         case .kinopoisk: "Кинопоиск"
         case .books: "Книги"
@@ -49,9 +50,10 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .books:
             (CGSize(width: 28.75, height: 32.5), CGPoint(x: 0, y: 7.5))
         case .collection:
-            // Сердце в боксе 32 со сдвигом 6 вправо, бокс растянут в тайл ×1.25 —
-            // правый край сердца срезается тайлом, как в макете.
-            (CGSize(width: 40, height: 40), CGPoint(x: 7.5, y: 0))
+            // Сердце — иконка 32 по центру тайла (макеты `2463:79197` / `2463:79223`,
+            // правка пользователя 2026-10-08; прежде бокс был растянут ×1.25 и сдвинут
+            // вправо, и тайл срезал сердцу правый край).
+            (CGSize(width: 32, height: 32), CGPoint(x: 4, y: 4))
         }
     }
 }
