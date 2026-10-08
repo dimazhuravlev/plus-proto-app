@@ -114,6 +114,9 @@ struct AlbumBlock {
     let cover: ArtworkSource
     let title: String
     let subtitle: String
+    /// Фото исполнителя — аватар в подписи альбома промо «Главной» (макет `2537:27595`).
+    /// У альбома ленты его нет: карточке оно не нужно.
+    var artistPicture: ArtworkSource? = nil
 }
 
 struct BookBlock {
@@ -191,9 +194,10 @@ enum ShowcaseLayout {
     static var promoTop: CGFloat {
         ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight
     }
-    /// Первая карточка ленты — под промо, с тем же зазором, что была под заголовком
-    /// с врезками (220.48 − 184.93): в макете промо карточек ниже нет.
-    static let promoToFirstBlock: CGFloat = 35.55
+    /// Первая карточка ленты — под промо: зазор, что был под заголовком с врезками
+    /// (220.48 − 184.93), и ещё 40 (правка пользователя 2026-10-08). В макете промо
+    /// карточек ниже нет.
+    static let promoToFirstBlock: CGFloat = 35.55 + 40
 
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
     static let contentBottom: CGFloat = Slot.watching.top + Slot.watching.height
@@ -244,7 +248,10 @@ extension ShowcaseFeed {
                 id: "akvarium",
                 cover: .asset("mockAlbumCover"),
                 title: "Аквариум",
-                subtitle: "Равноденствие"
+                subtitle: "Равноденствие",
+                // Фото группы у Deezer (id 4179081): без сети — серый круг скелетона.
+                artistPicture: URL(string: "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg")
+                    .map { ArtworkSource.remote($0) }
             )),
             .book(BookBlock(
                 id: "technofeudalism",
@@ -334,7 +341,7 @@ extension ShowcaseBlock {
         // Кадр — не декорация карточки, а картинка чипа киноплеера: без прогрева
         // он въезжает дырой ровно в момент тапа.
         case .movie(let b): [b.poster, b.still]
-        case .album(let b): [b.cover]
+        case .album(let b): [b.cover] + [b.artistPicture].compactMap { $0 }
         case .book(let b): [b.render, b.cover]
         case .vibe(let b): [b.cover]
         case .reading(let b): [b.cover]

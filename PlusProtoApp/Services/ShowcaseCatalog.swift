@@ -373,11 +373,14 @@ final class ShowcaseCatalog {
         // Круг выбора — сид и его соседи. Похожие не доехали — круг из одного сида:
         // витрина всё равно покажет альбом, просто без разнообразия этого запуска.
         var circle = [seed]
+        // Карточки «похожих» — с фото: оно аватаром в подписи альбома промо.
+        var briefs: [Int: DeezerArtistBrief] = [:]
         if let related = try? await DeezerService.shared.relatedArtists(
             id: seed.id,
             limit: ShowcaseSeeds.relatedArtistsLimit
         ) {
             circle += related.map { (name: $0.name, id: $0.id) }
+            for artist in related { briefs[artist.id] = artist }
         }
         circle.shuffle(using: &rng)
 
@@ -420,13 +423,17 @@ final class ShowcaseCatalog {
             cover: .remote(vibeCover ?? picked.cover, fallback: "mockPlayerCover")
         )))
 
-        // Промо — альбомы других исполнителей того же круга, по одному на исполнителя.
+        // Промо — альбомы других исполнителей того же круга, по одному на исполнителя,
+        // и только тех, у кого есть фото: в подписи альбома промо оно аватаром
+        // (макет `2537:27595`).
         var promo: [AlbumBlock] = []
         var attempts = 0
         for candidate in circle where candidate.id != picked.artistID {
             guard promo.count < ShowcaseSeeds.promoPerKind, attempts < ShowcaseSeeds.promoArtistAttempts else { break }
             attempts += 1
-            guard let albums = try? await DeezerService.shared.artistAlbums(id: candidate.id) else { continue }
+            guard let photo = await Self.artistPhoto(id: candidate.id, known: briefs),
+                  let albums = try? await DeezerService.shared.artistAlbums(id: candidate.id)
+            else { continue }
             let fitting = albums.filter { Self.isShowcaseAlbum($0) && $0.id != picked.album.id }
             if let album = fitting.randomElement(using: &rng),
                let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
@@ -434,12 +441,23 @@ final class ShowcaseCatalog {
                     id: "dz-\(album.id)",
                     cover: .remote(cover, fallback: "mockAlbumCover"),
                     title: candidate.name,
-                    subtitle: album.title
+                    subtitle: album.title,
+                    artistPicture: .remote(photo)
                 ))
             }
         }
         promoAlbums = promo
         publishPromo()
+    }
+
+    /// Фото исполнителя для подписи альбома промо: у «похожих» оно пришло с кругом,
+    /// за остальными — один запрос. Без своего фото (серый силуэт Deezer) — `nil`.
+    /// Аватар 40 — хватает 250 px.
+    private static func artistPhoto(id: Int, known: [Int: DeezerArtistBrief] = [:]) async -> URL? {
+        var artist = known[id]
+        if artist == nil { artist = try? await DeezerService.shared.artist(id: id) }
+        guard let artist, artist.hasPhoto, let picture = artist.pictureMedium ?? artist.pictureBig else { return nil }
+        return URL(string: picture)
     }
 
     /// Студийный альбом с обложкой: синглы, EP, концертники и сборники витрине не годятся.
@@ -610,7 +628,7 @@ final class ShowcaseCatalog {
     private func makePromoReplacement(for block: ShowcaseBlock) async -> Replacement? {
         let replacement: Replacement? = switch block {
         case .movie(let current): await nextMovie(after: current, forPromo: true)
-        case .album(let current): await nextAlbum(after: current)
+        case .album(let current): await nextAlbum(after: current, forPromo: true)
         case .book(let current): await nextBook(after: current, forPromo: true)
         case .vibe, .reading, .watching: nil
         }
@@ -714,7 +732,7 @@ final class ShowcaseCatalog {
     }
 
     /// Альбом — студийный, с обложкой, из дискографии случайного сида; не тот же.
-    private func nextAlbum(after current: AlbumBlock) async -> Replacement? {
+    private func nextAlbum(after current: AlbumBlock, forPromo: Bool = false) async -> Replacement? {
         var rng = SystemRandomNumberGenerator()
         for seed in ShowcaseSeeds.musicArtists.shuffled(using: &rng).prefix(ShowcaseSeeds.artistAttempts) {
             guard let albums = try? await DeezerService.shared.artistAlbums(id: seed.id) else { continue }
@@ -723,11 +741,14 @@ final class ShowcaseCatalog {
             }
             if let album = fitting.randomElement(using: &rng),
                let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
+                // Промо подписывает альбом аватаром исполнителя; нет фото — подпись без него.
+                let photo = forPromo ? await Self.artistPhoto(id: seed.id) : nil
                 return Replacement(block: .album(AlbumBlock(
                     id: "dz-\(album.id)",
                     cover: .remote(cover, fallback: "mockAlbumCover"),
                     title: seed.name,
-                    subtitle: album.title
+                    subtitle: album.title,
+                    artistPicture: photo.map { ArtworkSource.remote($0) }
                 )))
             }
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Числа промо-слайдера «Главной» — макет `2532:26618`. Холст макета 440, раскладка
 /// перенесена на 402 от центра экрана: размеры карточек и отступы от центра — как есть.
@@ -8,8 +9,9 @@ enum ShowcasePromoLayout {
     static let step: CGFloat = 188
     /// Соседи меньше центральной: книга сбоку 161.56 против постера в центре 210.16.
     static let sideScale: CGFloat = 0.769
-    /// Центр центральной карточки — от верха блока (низа навигации)
-    static let cardCenterY: CGFloat = 185
+    /// Центр центральной карточки — от верха блока (низа навигации). В макете 185;
+    /// на 10 выше — «отступ до навбара немного меньше» (правка пользователя 2026-10-08).
+    static let cardCenterY: CGFloat = 175
     static var carouselHeight: CGFloat { cardCenterY * 2 }
 
     /// Наклон у каждой карточки свой, случайный, знак — тоже (в макете −3° у центральной,
@@ -27,23 +29,36 @@ enum ShowcasePromoLayout {
     static let albumRadius: CGFloat = 23.4
     static let bookWidth: CGFloat = 210.155
 
-    /// Пара ✕/✓ — у нижней кромки центральной карточки: левый край на 24.6 от её
+    /// Пара ✕/✓ у фильма и книги — у нижней кромки карточки: левый край на 24.6 от её
     /// левой кромки, низ пары — на 27.6 ниже низа карточки (заходит на неё на 12).
     static let pairLeading: CGFloat = 24.6
     static let pairBelow: CGFloat = 27.6
+    /// У альбома — у верхней кромки справа (макет `2537:27595`): правый край на 14.5
+    /// от правой кромки обложки, верх — на 22.5 выше её верха. Замер — в системе
+    /// координат повёрнутой обложки.
+    static let albumPairTrailing: CGFloat = 14.5
+    static let albumPairAbove: CGFloat = 22.5
 
-    /// Описание под карточкой — Text S в четыре строки шириной 244; левый край на 97
-    /// левее центра экрана, то есть центр строки на 25 правее. Сверху — на 39.4 ниже
-    /// низа своей карточки (у постера макета: 382 − 342.6): под квадратом альбома
-    /// оно не висит на высоте постера.
+    /// Описание фильма и книги — под карточкой: Text S в четыре строки шириной 244;
+    /// левый край на 97 левее центра экрана, то есть центр строки на 25 правее.
+    /// Сверху — на 39.4 ниже низа своей карточки (у постера макета: 382 − 342.6).
     static let descriptionGap: CGFloat = 39.4
     static let descriptionWidth: CGFloat = 244
     static let descriptionShift: CGFloat = 25
     static let descriptionLines = 4
     static var descriptionHeight: CGFloat { CGFloat(descriptionLines) * PlusTextSize.textS.lineHeight }
-    /// Описание гаснет вдвое быстрее, чем карточка уходит с центра: к середине свайпа
-    /// его уже нет, и два описания не лежат друг на друге.
-    static let descriptionFade: CGFloat = 2
+
+    /// Подпись альбома (макет `2537:27595`) — аватар исполнителя 40, справа название
+    /// альбома и исполнитель Text M. Наклонена вместе с обложкой: левый край на 3.3
+    /// правее её левой кромки, верх — на 7.2 ниже низа (замер в системе обложки).
+    /// Ширина 227 с полем справа 8; строки заходят друг на друга на 2.
+    static let albumCaptionLeading: CGFloat = 3.3
+    static let albumCaptionGap: CGFloat = 7.2
+    static let albumCaptionWidth: CGFloat = 227
+    static let albumCaptionTrailing: CGFloat = 8
+    static let albumCaptionSpacing: CGFloat = 8
+    static let albumCaptionLineOverlap: CGFloat = 2
+    static let albumAvatar: CGFloat = 40
 
     /// Высота блока — до низа описания под самой высокой карточкой, постером: место
     /// держится всегда, и лента ниже не прыгает от айтема к айтему.
@@ -73,6 +88,9 @@ enum ShowcasePromoLayout {
     /// Сколько фон уходит выше блока — до физического верха экрана.
     static var backdropAbove: CGFloat { ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight }
     static var backdropHeight: CGFloat { backdropAbove + height + backdropTail }
+    /// Фон — на 70 %, на 10 % прозрачнее фона промо сервисов (правка пользователя
+    /// 2026-10-08).
+    static let backdropOpacity: Double = 0.7
 
     /// Где слот относительно центра видимой ленты: 0 — по центру, ±1 — на месте соседа.
     /// Считается от рамки скролла, а не экрана: ширина устройства не важна.
@@ -81,10 +99,10 @@ enum ShowcasePromoLayout {
         return (proxy.size.width / 2 - viewport.midX) / step
     }
 
-    /// Прозрачность фона слота: соседи по центру лежат слоями — правый над левым.
-    /// Левый (уходящий или приходящий) стоит в полную силу, правый проявляется над ним
-    /// по мере сдвига: смена идёт без провала в чёрный посередине свайпа.
-    static func backdropOpacity(_ t: CGFloat) -> Double {
+    /// Прозрачность слоя фона: слои непрозрачные и лежат правый над левым. Левый
+    /// (уходящий или приходящий) стоит в полную силу, правый проявляется над ним
+    /// по мере сдвига — кроссфейд без провала и без просвета третьего слоя.
+    static func backdropReveal(_ t: CGFloat) -> Double {
         if t <= 0 { return t >= -1 ? 1 : 0 }
         return Double(1 - ease(t))
     }
@@ -99,15 +117,18 @@ enum ShowcasePromoLayout {
 }
 
 enum ShowcasePromoMotion {
-    /// Пара ✕/✓ проявляется не сразу, а когда карточка встала в центр (задача
-    /// пользователя): пауза, затем короткий сильный ease-out.
-    static let pairDelay: Duration = .milliseconds(250)
-    static let pairIn: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
-    /// Свайп начался — пара уходит быстро: она отвечает только за центральную карточку.
-    static let pairOut: Animation = .easeOut(duration: 0.15)
+    /// Пара ✕/✓ и описание проявляются вместе (правка пользователя 2026-10-08) и не
+    /// сразу, а когда карточка встала в центр: пауза, затем короткий сильный ease-out.
+    static let revealDelay: Duration = .milliseconds(250)
+    static let revealIn: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
+    /// Свайп начался — уходят быстро: они отвечают только за центральную карточку.
+    static let revealOut: Animation = .easeOut(duration: 0.15)
     static let pairHiddenScale: CGFloat = 0.9
     /// Тап по соседу — он доезжает в центр
     static let step: Animation = .smooth(duration: 0.4)
+    /// Смена картинки фона в слое (✕) — как у фона промо сервисов, вместе с проявлением
+    /// нового айтема (`ShowcaseFeedbackMotion.swapIn`, те же 400 мс).
+    static let backdropSwap: Animation = ShowcasePromoBackdropStyle.fade
 }
 
 /// Промо-слайдер «Главной» (макет `2532:26618`, задача пользователя 2026-10-08):
@@ -115,9 +136,8 @@ enum ShowcasePromoMotion {
 ///
 /// Центральная крупнее соседей, у каждой карточки свой случайный наклон; масштаб, наклон
 /// и опускание соседей идут за сдвигом ленты кадр в кадр (`visualEffect`, без стейта).
-/// Под центральной — её описание и пара ✕/✓: описание проявляется вслед за сдвигом,
-/// пара — с паузой, когда карточка встала. Фон — размытая картинка центральной,
-/// меняется тоже вслед за сдвигом.
+/// Описание и пара ✕/✓ — только у центральной и вместе: с паузой, когда карточка
+/// встала. Фон — размытая картинка центральной, меняется вслед за сдвигом.
 ///
 /// Круг — три копии набора, как у промо Книг и Кинопоиска: работает средняя, а когда
 /// свайп остановился в крайней, лента перескакивает на ту же карточку средней.
@@ -138,7 +158,7 @@ struct ShowcasePromo: View {
 
     /// Карточка ленты копий в центре.
     @State private var page: Int?
-    /// Айтем, у которого показана пара ✕/✓, — центральный, вставший на место.
+    /// Айтем, у которого показаны описание и пара ✕/✓, — центральный, вставший на место.
     @State private var revealed: Int?
     @State private var revealTask: Task<Void, Never>?
     /// Состояние пары — на айтем, а не на копию: после перескока на среднюю копию
@@ -173,12 +193,17 @@ struct ShowcasePromo: View {
             ZStack(alignment: .topLeading) {
                 // Фон — своим слоем под всеми карточками: в общем ряду фон правого
                 // соседа лёг бы поверх левой карточки.
-                LazyHStack(spacing: 0) {
+                //
+                // Ряды — не ленивые: в ленивом перескок на среднюю копию кадр рисовал
+                // позицию на шаг левее, по оценке, — мелькала прежняя карточка (кадр
+                // 2026-10-08), а ушедшие за экран слоты держали прежний айтем. Слотов
+                // не больше 18, фон — готовый маленький растр, держать их все дёшево.
+                HStack(spacing: 0) {
                     ForEach(0..<(count * Self.copies), id: \.self) { index in
                         backdrop(index)
                     }
                 }
-                LazyHStack(spacing: 0) {
+                HStack(spacing: 0) {
                     ForEach(0..<(count * Self.copies), id: \.self) { index in
                         slot(index)
                     }
@@ -207,7 +232,7 @@ struct ShowcasePromo: View {
                 settle()
                 scheduleReveal()
             } else {
-                hidePair()
+                hideReveal()
             }
         }
         .onAppear { scheduleReveal() }
@@ -219,16 +244,41 @@ struct ShowcasePromo: View {
             page = count
             scheduleReveal()
         }
+        // Размытые фоны — заранее, на весь набор: слой, смонтированный на перескоке
+        // копий или подъехавший соседом, берёт готовый растр с первого кадра.
+        .task(id: items.map(\.promoArtwork)) {
+            for item in items {
+                _ = await PromoBackdropRaster.render(item.promoArtwork)
+            }
+        }
         #if DEBUG
-        // `-debugHomePromoStep <back|next|n>` — через 3с пролистать слайдер: свайпнуть
-        // из шелла нечем. Словами, а не «-1»: минус аргументы запуска читают как ключ.
+        // `-debugHomePromoStep <back|next|n|cycle>` — через 3с пролистать слайдер:
+        // свайпнуть из шелла нечем. `cycle` — вперёд по карточке раз в 1.6 с, 14 шагов:
+        // круг проходит перескок копий, его снимают на видео. Словами, а не «-1»: минус
+        // аргументы запуска читают как ключ.
         .task {
             let value = UserDefaults.standard.string(forKey: "debugHomePromoStep") ?? ""
-            let step = value == "back" ? -1 : (value == "next" ? 1 : Int(value) ?? 0)
+            let cycleSteps = 14
+            let cycleInterval: Duration = .seconds(1.6)
+            let step = value == "back" ? -1 : (value == "next" || value == "cycle" ? 1 : Int(value) ?? 0)
             guard step != 0 else { return }
             try? await Task.sleep(for: .seconds(3))
+            for _ in 0..<(value == "cycle" ? cycleSteps : 1) {
+                guard !Task.isCancelled else { return }
+                withAnimation(ShowcasePromoMotion.step) { page = (page ?? count) + step }
+                try? await Task.sleep(for: cycleInterval)
+            }
+        }
+        // `-debugHomePromoDismiss 1` — ✕ у центральной карточки через 6 с: смена айтема
+        // и кроссфейд фона на видео. Тот же `dismiss()` пары, что у тапа.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugHomePromoDismiss") else { return }
+            try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
-            withAnimation(ShowcasePromoMotion.step) { page = (page ?? count) + step }
+            // Число айтемов — из стейта: `items` в замыкании `.task` — с первого монтирования.
+            let total = max(feedback.count, 1)
+            let index = ((page ?? total) % total + total) % total
+            feedbackState(index).debugDismisses += 1
         }
         #endif
     }
@@ -239,8 +289,9 @@ struct ShowcasePromo: View {
         let itemIndex = index % max(count, 1)
         let item = items[itemIndex]
         let look = PromoCardLook(id: item.id)
+        let isShown = index == page && revealed == itemIndex
         return ZStack(alignment: .top) {
-            card(item, itemIndex: itemIndex, slotIndex: index)
+            card(item, itemIndex: itemIndex, slotIndex: index, isShown: isShown)
                 .frame(height: Layout.carouselHeight)
                 .visualEffect { content, proxy in
                     let distance = Layout.ease(abs(Layout.position(of: proxy)))
@@ -250,15 +301,19 @@ struct ShowcasePromo: View {
                         .offset(y: look.drop * distance)
                 }
 
-            description(item)
-                .offset(x: Layout.descriptionShift, y: Layout.descriptionTop(cardHeight: Layout.cardHeight(item)))
-                .visualEffect { content, proxy in
-                    let distance = abs(Layout.position(of: proxy))
-                    return content.opacity(Double(1 - Layout.ease(distance * Layout.descriptionFade)))
-                }
-                .allowsHitTesting(false)
+            // У альбома подпись своя — на обложке, наклонена вместе с ней (`card`).
+            if !item.isAlbum {
+                description(item)
+                    .offset(x: Layout.descriptionShift, y: Layout.descriptionTop(cardHeight: Layout.cardHeight(item)))
+                    .modifier(PromoReveal(isShown: isShown))
+                    .allowsHitTesting(false)
+            }
         }
         .frame(width: Layout.step, height: Layout.height, alignment: .top)
+        // Центральная — поверх соседей, как в макете: в ряду правый сосед ложился
+        // на её кромку. Смена — на середине свайпа, когда карточки равны и почти
+        // не касаются.
+        .zIndex(index == page ? 1 : 0)
         .environment(feedbackState(itemIndex))
         .environment(\.showcaseRefresh, ShowcaseRefresh { await prepareReplacement(itemIndex) })
     }
@@ -267,22 +322,61 @@ struct ShowcasePromo: View {
         feedback.indices.contains(itemIndex) ? feedback[itemIndex] : ShowcaseFeedbackState()
     }
 
-    /// Карточка и пара ✕/✓ у её нижней кромки — пара оверлеем на карточке, а не внутри
-    /// кнопки: так у неё свои нажатия, а наклон и масштаб — общие с карточкой.
-    private func card(_ item: ShowcaseBlock, itemIndex: Int, slotIndex: Int) -> some View {
+    /// Карточка и пара ✕/✓ на её кромке — пара оверлеем на карточке, а не внутри кнопки:
+    /// так у неё свои нажатия, а наклон и масштаб — общие с карточкой. У альбома там же
+    /// его подпись.
+    private func card(_ item: ShowcaseBlock, itemIndex: Int, slotIndex: Int, isShown: Bool) -> some View {
         let isCurrent = slotIndex == page
+        let isAlbum = item.isAlbum
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
+            // `id` — по айтему: ленивая лента держит слоты, ушедшие за экран, и если их
+            // айтем сменился там (догрузка набора, ✕ у другой копии), на возврате обложка
+            // кадр-другой показывала прежний — «чужая карточка мелькнула». Новое вью
+            // берёт картинку из кэша с первого кадра.
             PromoCardFace(item: item)
+                .id(item.id)
                 .showcaseSwappable()
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
-        .modifier(PromoZoomSource(route: isCurrent ? item.entityRoute : nil, zoom: zoom))
+        // Источник зума — у каждой копии, но адрес экрана — только у центральной:
+        // повторы того же айтема источником не становятся. Без `if`: смена ветки
+        // пересоздавала карточку посреди свайпа, и она моргала.
+        .matchedTransitionSource(id: zoomID(item, slotIndex: slotIndex, isCurrent: isCurrent), in: zoom)
         .accessibilityLabel(item.title)
-        .overlay(alignment: .bottomLeading) {
-            ShowcaseFeedbackPair()
-                .modifier(PromoPairReveal(isShown: isCurrent && revealed == itemIndex))
-                .offset(x: Layout.pairLeading, y: Layout.pairBelow)
+        .overlay(alignment: isAlbum ? .topTrailing : .bottomLeading) {
+            // Пара — у центральной и соседей: стеклянных кнопок у всех 18 слотов не
+            // держим. Сосед в окне — чтобы пара ушедшей с центра догасла, а не пропала.
+            if abs(slotIndex - (page ?? slotIndex)) <= 1 {
+                ShowcaseFeedbackPair()
+                    .modifier(PromoReveal(
+                        isShown: isShown,
+                        hiddenScale: ShowcasePromoMotion.pairHiddenScale,
+                        anchor: isAlbum ? .trailing : .leading
+                    ))
+                    .offset(
+                        x: isAlbum ? -Layout.albumPairTrailing : Layout.pairLeading,
+                        y: isAlbum ? -Layout.albumPairAbove : Layout.pairBelow
+                    )
+            }
         }
+        .overlay(alignment: .bottomLeading) {
+            if case .album(let album) = item {
+                // Высота подписи — ровно аватар: от низа обложки она сдвинута на зазор
+                // и свою высоту. `alignmentGuide` в оверлее не сработал (кадр 2026-10-08:
+                // подпись легла на обложку).
+                PromoAlbumCaption(album: album)
+                    .id(album.id)
+                    .showcaseSwappable()
+                    .modifier(PromoReveal(isShown: isShown))
+                    .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func zoomID(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) -> AnyHashable {
+        if isCurrent, let route = item.entityRoute { return AnyHashable(route) }
+        return AnyHashable("showcase-promo-copy-\(slotIndex)")
     }
 
     /// Тап по центральной — её экран; по соседу — сосед доезжает в центр.
@@ -312,7 +406,7 @@ struct ShowcasePromo: View {
         return Color.clear
             .frame(width: Layout.step, height: Layout.backdropHeight)
             .overlay(alignment: .top) {
-                PromoBackdrop(source: item.promoArtwork, height: Layout.backdropHeight)
+                PromoBackdrop(source: item.promoArtwork)
             }
             .visualEffect { content, proxy in
                 let t = Layout.position(of: proxy)
@@ -320,13 +414,13 @@ struct ShowcasePromo: View {
                 // только прозрачность.
                 return content
                     .offset(x: -t * Layout.step)
-                    .opacity(Layout.backdropOpacity(t))
+                    .opacity(Layout.backdropReveal(t))
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 
-    // MARK: Круг и пара
+    // MARK: Круг и проявление
 
     /// Свайп остановился: запомнить айтем и, если это крайняя копия, перескочить на ту же
     /// карточку средней — без анимации, картинка та же.
@@ -345,16 +439,16 @@ struct ShowcasePromo: View {
         revealTask?.cancel()
         let index = currentItem
         revealTask = Task { @MainActor in
-            try? await Task.sleep(for: ShowcasePromoMotion.pairDelay)
+            try? await Task.sleep(for: ShowcasePromoMotion.revealDelay)
             guard !Task.isCancelled else { return }
-            withAnimation(ShowcasePromoMotion.pairIn) { revealed = index }
+            withAnimation(ShowcasePromoMotion.revealIn) { revealed = index }
         }
     }
 
-    private func hidePair() {
+    private func hideReveal() {
         revealTask?.cancel()
         guard revealed != nil else { return }
-        withAnimation(ShowcasePromoMotion.pairOut) { revealed = nil }
+        withAnimation(ShowcasePromoMotion.revealOut) { revealed = nil }
     }
 }
 
@@ -413,77 +507,222 @@ private struct PromoCardFace: View {
     }
 }
 
-/// Источник зума экрана сущности — только у центральной копии: повторы того же айтема
-/// в ленте копий источником не становятся.
-private struct PromoZoomSource: ViewModifier {
-    let route: EntityRoute?
-    let zoom: Namespace.ID
+/// Подпись альбома (макет `2537:27595`): аватар исполнителя, название альбома
+/// и исполнитель. Без фото исполнителя — без аватара: выдумывать его нельзя.
+private struct PromoAlbumCaption: View {
+    let album: AlbumBlock
 
-    func body(content: Content) -> some View {
-        if let route {
-            content.matchedTransitionSource(id: route, in: zoom)
-        } else {
-            content
+    private typealias Layout = ShowcasePromoLayout
+
+    var body: some View {
+        HStack(spacing: Layout.albumCaptionSpacing) {
+            if let picture = album.artistPicture {
+                PlusSkeleton.fill
+                    .overlay { SkeletonArtwork(source: picture) }
+                    .frame(width: Layout.albumAvatar, height: Layout.albumAvatar)
+                    .clipShape(Circle())
+                    .coverBorder(Circle())
+            }
+            // У альбома витрины `title` — исполнитель, `subtitle` — название.
+            VStack(alignment: .leading, spacing: -Layout.albumCaptionLineOverlap) {
+                Text(album.subtitle)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillOne)
+                Text(album.title)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillSubtitle)
+            }
+            .lineLimit(1)
         }
+        .padding(.trailing, Layout.albumCaptionTrailing)
+        .frame(width: Layout.albumCaptionWidth, height: Layout.albumAvatar, alignment: .leading)
     }
 }
 
-/// Пара появляется прозрачностью и масштабом от левого края; с «уменьшением движения» —
-/// одной прозрачностью.
-private struct PromoPairReveal: ViewModifier {
+/// Описание и пара появляются прозрачностью; пара — ещё и масштабом от своего края.
+/// С «уменьшением движения» — одной прозрачностью.
+private struct PromoReveal: ViewModifier {
     let isShown: Bool
+    var hiddenScale: CGFloat = 1
+    var anchor: UnitPoint = .center
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(isShown || reduceMotion ? 1 : ShowcasePromoMotion.pairHiddenScale, anchor: .leading)
+            .scaleEffect(isShown || reduceMotion ? 1 : hiddenScale, anchor: anchor)
             .opacity(isShown ? 1 : 0)
             .allowsHitTesting(isShown)
             .accessibilityHidden(!isShown)
     }
 }
 
-/// Размытая копия картинки центральной карточки — фон под слайдером, уходит в чёрный
-/// к низу. Растр вместо живого блюра: пересчитывать его нужно только на смене айтема,
-/// а не на каждом кадре свайпа.
+// MARK: - Фон
+
+/// Слой фона под слайдером — размытая картинка айтема, затемнённая и уходящая в чёрный
+/// к низу. Слой непрозрачный: затемнение и уход в чёрный запечены в него, а не
+/// наложены прозрачностью — иначе под центральным просвечивал соседний, и когда тот
+/// гас за краем, фон моргал (жалоба пользователя 2026-10-08).
+///
+/// Картинка сменилась на экране (✕) — новая проявляется поверх старой, старая стоит
+/// под ней в полную силу до конца смены. Сменилась, пока слой был за экраном (ленивая
+/// лента держит ушедшие слоты), — на возврате сразу новая: иначе фон вспыхивал прежней
+/// картинкой и перетекал обратно (кадр 2026-10-08, перескок копий).
 private struct PromoBackdrop: View {
     let source: ArtworkSource
-    let height: CGFloat
+
+    @State private var shown: UIImage?
+    /// Чей растр в `shown` — понять, что айтем сменился, пока слоя не было на экране.
+    @State private var shownSource: ArtworkSource?
+    @State private var previous: UIImage?
+    @State private var swaps = 0
+    @State private var isOnScreen = false
+
+    private typealias Layout = ShowcasePromoLayout
+
+    init(source: ArtworkSource) {
+        self.source = source
+        let cached = PromoBackdropRaster.cached(source)
+        _shown = State(initialValue: cached)
+        _shownSource = State(initialValue: cached == nil ? nil : source)
+    }
+
+    /// Что рисовать сверху. Пока слой не на экране, а растр в `shown` чужой — сразу
+    /// растр текущего айтема: первый кадр возврата уже верный.
+    private var current: UIImage? {
+        if isOnScreen || shownSource == source { return shown }
+        return PromoBackdropRaster.cached(source) ?? shown
+    }
 
     var body: some View {
-        ArtworkImage(source: source)
-            .scaledToFill()
-            .frame(width: ShowcasePromoLayout.backdropWidth, height: height)
-            .clipped()
-            .blur(radius: ShowcasePromoBackdropStyle.blur, opaque: true)
-            .overlay { Color.black.opacity(ShowcasePromoBackdropStyle.dim) }
-            .drawingGroup()
-            .mask {
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: ShowcasePromoBackdropStyle.solidShare),
-                        .init(color: .clear, location: 1),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+        ZStack {
+            Color.black
+            if let previous {
+                raster(previous)
+                    .transition(.identity)
             }
-            .opacity(ShowcasePromoBackdropStyle.opacity)
+            if let current {
+                raster(current)
+                    .id(swaps)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
+            }
+        }
+        .frame(width: Layout.backdropWidth, height: Layout.backdropHeight)
+        .overlay { Color.black.opacity(ShowcasePromoBackdropStyle.dim) }
+        .overlay {
+            // Прежняя маска «сверху в полную силу, к низу в прозрачность» поверх чёрного
+            // экрана — то же, что чёрный поверх картинки: 1 − 0.7 · маска.
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(1 - Layout.backdropOpacity), location: 0),
+                    .init(color: .black.opacity(1 - Layout.backdropOpacity), location: ShowcasePromoBackdropStyle.solidShare),
+                    .init(color: .black, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .onAppear {
+            isOnScreen = true
+            guard shownSource != source, let cached = PromoBackdropRaster.cached(source) else { return }
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                shown = cached
+                shownSource = source
+                previous = nil
+            }
+        }
+        .onDisappear { isOnScreen = false }
+        .task(id: source) {
+            guard let raster = await PromoBackdropRaster.render(source), shownSource != source else { return }
+            let swap = swaps + 1
+            withAnimation(ShowcasePromoMotion.backdropSwap) {
+                previous = shown
+                shown = raster
+                shownSource = source
+                swaps = swap
+            } completion: {
+                if swaps == swap { previous = nil }
+            }
+        }
+    }
+
+    private func raster(_ image: UIImage) -> some View {
+        Image(uiImage: image)
+            .resizable()
+            .frame(width: Layout.backdropWidth, height: Layout.backdropHeight)
+    }
+}
+
+/// Размытые фоны слайдера — маленький растр на айтем, посчитанный один раз. Блюр 60
+/// стирает детали мельче ~20 pt, и растр в четверть размера, растянутый на слой,
+/// неотличим от полного. Живой блюр на слое считался заново на каждом монтировании —
+/// на перескоке копий и у каждого подъехавшего соседа, — а растр берётся с первого
+/// кадра и в покое не стоит ничего.
+@MainActor
+private enum PromoBackdropRaster {
+    static let scale: CGFloat = 0.25
+
+    private static var cache: [ArtworkSource: UIImage] = [:]
+    private static var inFlight: [ArtworkSource: Task<UIImage?, Never>] = [:]
+
+    static func cached(_ source: ArtworkSource) -> UIImage? {
+        cache[source]
+    }
+
+    static func render(_ source: ArtworkSource) async -> UIImage? {
+        if let hit = cache[source] { return hit }
+        if let task = inFlight[source] { return await task.value }
+        let task = Task { @MainActor in await make(source) }
+        inFlight[source] = task
+        let raster = await task.value
+        inFlight[source] = nil
+        if let raster { cache[source] = raster }
+        return raster
+    }
+
+    /// Та же картинка тем же блюром SwiftUI, что был на слое, только в масштабе:
+    /// рамка и радиус уменьшены вместе — вид совпадает.
+    private static func make(_ source: ArtworkSource) async -> UIImage? {
+        guard let image = await sourceImage(source) else { return nil }
+        let width = ShowcasePromoLayout.backdropWidth * scale
+        let height = ShowcasePromoLayout.backdropHeight * scale
+        let renderer = ImageRenderer(content:
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: height)
+                .clipped()
+                .blur(radius: ShowcasePromoBackdropStyle.blur * scale, opaque: true)
+        )
+        renderer.scale = 1
+        renderer.isOpaque = true
+        return renderer.uiImage
+    }
+
+    /// Живая картинка — без бандленного фолбэка: моковая обложка под фоном — чужой
+    /// айтем. Моковый айтем (лента без сети) — его ассет.
+    private static func sourceImage(_ source: ArtworkSource) async -> UIImage? {
+        if let url = source.remoteURL { return await ArtworkLoader.shared.image(for: url) }
+        guard let name = source.fallbackAsset, !name.isEmpty else { return nil }
+        return UIImage(named: name)
     }
 }
 
 // MARK: - Тексты и картинки айтема
 
 extension ShowcaseBlock {
-    /// Описание под слайдером: у фильма и книги — их подпись, у альбома — исполнитель
-    /// и название: описаний альбомов Deezer не отдаёт, а выдумывать их нельзя.
+    var isAlbum: Bool {
+        if case .album = self { true } else { false }
+    }
+
+    /// Описание под слайдером — у фильма и книги их подпись. У альбома подпись своя
+    /// (`PromoAlbumCaption`): описаний альбомов Deezer не отдаёт, а выдумывать их нельзя.
     var promoDescription: String {
         switch self {
         case .movie(let movie): movie.caption
         case .book(let book): book.caption
-        case .album(let album): "\(album.title) · альбом «\(album.subtitle)»"
-        case .vibe, .reading, .watching: ""
+        case .album, .vibe, .reading, .watching: ""
         }
     }
 
