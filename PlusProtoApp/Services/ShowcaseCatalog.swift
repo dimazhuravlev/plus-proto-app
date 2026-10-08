@@ -614,35 +614,23 @@ final class ShowcaseCatalog {
 
     /// Подменяет блок того же типа на месте. Порядок слотов зафиксирован макетом,
     /// поэтому лента не пересобирается — меняется ровно один элемент.
-    /// `refreshesFeedArt: false` — фон и врезки заголовка остаются прежними (замена по ✕).
+    /// `refreshesFeedArt: false` — фон остаётся прежним (замена по ✕).
     private func apply(_ block: ShowcaseBlock, preload: Bool = true, refreshesFeedArt: Bool = true) {
         var blocks = feed.blocks
         guard let index = blocks.firstIndex(where: { $0.slot.top == block.slot.top }) else { return }
         blocks[index] = block
 
         guard refreshesFeedArt else {
-            feed = ShowcaseFeed(headline: feed.headline, blocks: blocks, backdrop: feed.backdrop)
+            feed = ShowcaseFeed(blocks: blocks, backdrop: feed.backdrop)
             return
         }
 
         // Фон витрины — обложка первого блока (figma-screen1 §0), поэтому он едет
-        // вместе с ним. Врезки заголовка тоже: текст пока моковый, но картинки в нём
-        // обязаны совпадать с тем, что показано ниже.
+        // вместе с ним.
         var backdrop = feed.backdrop
-        var headline = feed.headline
-        switch block {
-        case .movie(let movie):
-            backdrop = movie.poster
-            headline = headline.replacing(.poster, with: movie.poster)
-        case .album(let album):
-            headline = headline.replacing(.avatar, with: album.cover)
-        case .book(let book):
-            headline = headline.replacing(.book, with: book.cover)
-        default:
-            break
-        }
+        if case .movie(let movie) = block { backdrop = movie.poster }
 
-        feed = ShowcaseFeed(headline: headline, blocks: blocks, backdrop: backdrop)
+        feed = ShowcaseFeed(blocks: blocks, backdrop: backdrop)
         // Замена по ✕ — сразу от живого блока, а не после всей ленты: книги приходят
         // последними, и ✕ у кино или альбома, нажатый до них, ждал бы пустым слотом.
         if hasLoaded, block.isReplaceable {
@@ -690,24 +678,3 @@ extension String {
         return String(clipped[..<space]) + "…"
     }
 }
-
-private extension ShowcaseHeadline {
-    /// Меняет картинку врезки нужного типа, не трогая её позицию и поворот:
-    /// координаты в макете подобраны под конкретную разбивку текста.
-    func replacing(_ kind: ShowcaseHeadlineChip.Kind, with artwork: ArtworkSource) -> ShowcaseHeadline {
-        ShowcaseHeadline(
-            text: text,
-            chips: chips.map { chip in
-                guard chip.kind == kind else { return chip }
-                return ShowcaseHeadlineChip(
-                    kind: chip.kind,
-                    artwork: artwork,
-                    size: chip.size,
-                    origin: chip.origin,
-                    rotation: chip.rotation
-                )
-            }
-        )
-    }
-}
-

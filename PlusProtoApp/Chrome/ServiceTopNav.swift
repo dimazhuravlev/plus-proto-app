@@ -99,36 +99,14 @@ struct ServiceTopNav: View {
     var avatar: ArtworkSource = .asset(ProfileMock.avatar)
 
     @Namespace private var pill
-    @Environment(AppNavigationState.self) private var navigation
 
     var body: some View {
         HStack(spacing: 0) {
             tabs
-            avatarView
+            ProfileAvatarButton(avatar: avatar)
                 .padding(.trailing, ServiceTopNavLayout.side)
         }
-        .frame(height: ServiceTopNavLayout.rowHeight)
-        // Сдвиг — только у ряда: подложка стоит на месте, а она в покое прозрачна.
-        .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
-        .frame(maxWidth: .infinity)
-        .background(alignment: .top) {
-            // Только прогрессивный блюр, без затемнения: тёмный градиент подложки
-            // навбаров сущностей проявлялся на начале скролла и был лишним (правка
-            // пользователя 2026-10-04) — как у скрима витрины «Плюс».
-            VariableBlurView(
-                maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
-                direction: .blurredTopClearBottom
-            )
-            .frame(height: EntityNavBarGeometry.backdropHeight)
-            .allowsHitTesting(false)
-            .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp))
-            // Подложка — чистая функция скролла: анимация выбора таба её не касается.
-            // Иначе смена таба уносила её прозрачность в пружину 0.3 с — фон проявлялся
-            // и гас на глазах, пока лента нового таба докладывала свой сдвиг (жалоба
-            // пользователя 2026-10-04: «моргает при переключении Любимое — Скачанное»).
-            .transaction { $0.animation = nil }
-            .ignoresSafeArea(edges: .top)
-        }
+        .modifier(TopNavRow(scrollOffset: scrollOffset))
     }
 
     // MARK: Табы
@@ -276,10 +254,51 @@ struct ServiceTopNav: View {
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
-    // MARK: Аватар
+}
 
-    /// Аватар — вход в профиль: экран выезжает снизу поверх всего (макет `2463:78551`).
-    private var avatarView: some View {
+// MARK: - Общее у навигаций витрин
+
+/// Ряд навигации витрины под статус-баром: высота 56, оттяг ленты тянет ряд вчетверо
+/// медленнее, под ним — прогрессивный блюр, проявляется по скроллу. Один у сервисных
+/// табов и «Главной» — аватар у всех встаёт в одну точку.
+struct TopNavRow: ViewModifier {
+    let scrollOffset: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(height: ServiceTopNavLayout.rowHeight)
+            // Сдвиг — только у ряда: подложка стоит на месте, а она в покое прозрачна.
+            .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
+            .frame(maxWidth: .infinity)
+            .background(alignment: .top) {
+                // Только прогрессивный блюр, без затемнения: тёмный градиент подложки
+                // навбаров сущностей проявлялся на начале скролла и был лишним (правка
+                // пользователя 2026-10-04).
+                VariableBlurView(
+                    maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
+                    direction: .blurredTopClearBottom
+                )
+                .frame(height: EntityNavBarGeometry.backdropHeight)
+                .allowsHitTesting(false)
+                .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp))
+                // Подложка — чистая функция скролла: анимация выбора таба её не касается.
+                // Иначе смена таба уносила её прозрачность в пружину 0.3 с — фон проявлялся
+                // и гас на глазах, пока лента нового таба докладывала свой сдвиг (жалоба
+                // пользователя 2026-10-04: «моргает при переключении Любимое — Скачанное»).
+                .transaction { $0.animation = nil }
+                .ignoresSafeArea(edges: .top)
+            }
+    }
+}
+
+/// Аватар — вход в профиль: экран выезжает снизу поверх всего (макет `2463:78551`).
+/// Кольцо-ореол 2pt и фото 40 в кадре 48.
+struct ProfileAvatarButton: View {
+    var avatar: ArtworkSource = .asset(ProfileMock.avatar)
+
+    @Environment(AppNavigationState.self) private var navigation
+
+    var body: some View {
         Button { navigation.isProfileShown = true } label: {
             ZStack {
                 Circle()
@@ -295,6 +314,43 @@ struct ServiceTopNav: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel("Профиль")
+    }
+}
+
+/// Навигация «Главной» — мультивитрины (макет `2532:26495`, задача пользователя
+/// 2026-10-08): логотип «Яндекс Плюс» слева, справа голова Люмена и аватар. Ряд —
+/// тот же, что у сервисных табов (`TopNavRow`): аватар стоит ровно там же.
+struct HomeTopNav: View {
+    var scrollOffset: CGFloat = 0
+
+    private enum Layout {
+        /// Логотип — 161.52 × 24 (`.header-logo`)
+        static let logo = CGSize(width: 161.52, height: 24)
+        static let lumen: CGFloat = 40
+        /// Люмен ↔ аватар
+        static let gap: CGFloat = 16
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Image("logoYandexPlus")
+                .resizable()
+                .frame(width: Layout.logo.width, height: Layout.logo.height)
+                .accessibilityLabel("Яндекс Плюс")
+                .padding(.leading, ServiceTopNavLayout.side)
+            Spacer(minLength: 0)
+            HStack(spacing: Layout.gap) {
+                // Люмен — маскот в макете без действия: картинка, а не кнопка.
+                Image("lumenHead")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: Layout.lumen, height: Layout.lumen)
+                    .accessibilityHidden(true)
+                ProfileAvatarButton()
+            }
+            .padding(.trailing, ServiceTopNavLayout.side)
+        }
+        .modifier(TopNavRow(scrollOffset: scrollOffset))
     }
 }
 

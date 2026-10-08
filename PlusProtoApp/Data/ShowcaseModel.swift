@@ -2,48 +2,17 @@ import SwiftUI
 
 // MARK: - Модель витрины
 
-/// Витрина «Плюс» задумана динамической: под событие и контекст меняются заголовок,
-/// набор блоков, их содержание и фон (решение 2026-08-22). Поэтому экран собирается
+/// Витрина «Главная» задумана динамической: под событие и контекст меняются набор
+/// блоков, их содержание и фон (решение 2026-08-22). Поэтому экран собирается
 /// из модели, а не из зашитой вёрстки — два экрана в Figma это одна витрина
 /// в двух состояниях.
 ///
-/// Порядок блоков и динамику заголовка пока не проектируем: `.personal` повторяет
-/// экран `2004:10701` один в один.
+/// Порядок блоков пока не проектируем: `.personal` повторяет экран `2004:10701`
+/// (заголовка с врезками нет с 2026-10-08 — сверху навигация `HomeTopNav`).
 struct ShowcaseFeed {
-    let headline: ShowcaseHeadline
     let blocks: [ShowcaseBlock]
     /// Обложка, из которой строится фон экрана. По решению — кавер первого блока витрины.
     let backdrop: ArtworkSource
-}
-
-/// Заголовок с врезками: между словами стоят повёрнутые миниатюры сущностей,
-/// о которых идёт речь (`2004:10773`).
-struct ShowcaseHeadline {
-    let text: String
-    /// Врезки позиционируются абсолютно поверх текста — в макете они повёрнуты,
-    /// а повернуть вложение внутри `Text` нельзя.
-    let chips: [ShowcaseHeadlineChip]
-}
-
-struct ShowcaseHeadlineChip: Identifiable {
-    enum Kind: Hashable {
-        /// Круглый аватар исполнителя
-        case avatar
-        /// Постер фильма со скруглением и рамкой
-        case poster
-        /// Обложка книги с корешком
-        case book
-    }
-
-    /// Врезка на тип ровно одна, поэтому id — сам тип: при подмене картинки
-    /// на живую вью не должна пересоздаваться.
-    var id: Kind { kind }
-    let kind: Kind
-    let artwork: ArtworkSource
-    let size: CGSize
-    /// Левый верхний угол в координатах кадра витрины (ширина 402)
-    let origin: CGPoint
-    let rotation: Angle
 }
 
 /// Блок ленты. Каждый несёт свой payload и знает свою геометрию в макете.
@@ -202,7 +171,6 @@ enum ShowcaseLayout {
         let top: CGFloat
         let height: CGFloat
 
-        static let header = Slot(top: 70.79, height: 114.14)
         static let movie = Slot(top: 220.48, height: 298.51)
         static let album = Slot(top: 562, height: 206)
         static let book = Slot(top: 787.96, height: 283.31)
@@ -212,6 +180,14 @@ enum ShowcaseLayout {
         static let reading = Slot(top: 1308.99, height: 272.01)
         /// Вместе с блоком оценки, который тянется до 1960.
         static let watching = Slot(top: 1647, height: 313)
+    }
+
+    /// Первая карточка — под навигацией «Главной» (`HomeTopNav`, задача пользователя
+    /// 2026-10-08: заголовка с врезками больше нет). Зазор от низа навигации — тот же,
+    /// что был от низа заголовка (220.48 − 184.93): в макете навигации карточек нет.
+    static let navToFirstBlock: CGFloat = 35.55
+    static var firstBlockTop: CGFloat {
+        ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + navToFirstBlock
     }
 
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
@@ -249,36 +225,6 @@ enum ShowcaseLayout {
 extension ShowcaseFeed {
     /// Персональная лента — экран `2004:10701` один в один. До Этапа 7 данные моковые.
     static let personal = ShowcaseFeed(
-        headline: ShowcaseHeadline(
-            // Переносы и зазоры как в макете: `\n` фиксирует разбиение (автоперенос
-            // его не повторит), а пробелы держат место под врезки. Ширина подобрана
-            // замером: U+2007 (figure space) на кегле 32 даёт ~18pt, U+2009 — ~6.4pt.
-            // Под аватар 36pt — два широких, под постер и книгу — широкий плюс тонкий.
-            text: "Тебе нравится \u{2007}\u{2007} Joy\nDivision, \u{2007}\u{2009}\u{2009} Балабанов\nи \u{2007}\u{2009}\u{2009} Дэвид Гребер",
-            chips: [
-                ShowcaseHeadlineChip(
-                    kind: .avatar,
-                    artwork: .asset("mockAvatar"),
-                    size: CGSize(width: 36, height: 36),
-                    origin: CGPoint(x: 244.79, y: 73.30),
-                    rotation: .degrees(-4)
-                ),
-                ShowcaseHeadlineChip(
-                    kind: .poster,
-                    artwork: .asset("mockChipPoster"),
-                    size: CGSize(width: 29, height: 40),
-                    origin: CGPoint(x: 152.80, y: 103.86),
-                    rotation: .degrees(5)
-                ),
-                ShowcaseHeadlineChip(
-                    kind: .book,
-                    artwork: .asset("mockChipBook"),
-                    size: CGSize(width: 28, height: 41),
-                    origin: CGPoint(x: 47.60, y: 144.03),
-                    rotation: .degrees(-4)
-                ),
-            ]
-        ),
         blocks: [
             .movie(MovieBlock(
                 id: "perfect-days",
@@ -368,10 +314,10 @@ extension ShowcaseBlock {
 }
 
 extension ShowcaseFeed {
-    /// Все картинки первого экрана: блоки, врезки заголовка и фон. По этому списку
+    /// Все картинки первого экрана: блоки и фон. По этому списку
     /// сплэш понимает, что витрину можно показывать, — карточка без обложки
     /// и есть то мигание, ради которого заставку заводили.
     var artworks: [ArtworkSource] {
-        blocks.flatMap(\.artworks) + headline.chips.map(\.artwork) + [backdrop]
+        blocks.flatMap(\.artworks) + [backdrop]
     }
 }

@@ -46,6 +46,8 @@ struct ShowcaseFeedView: View {
     let zoom: Namespace.ID
     /// Новый контент для блока по ✕ (`ShowcaseCatalog.prepareReplacement`).
     var prepareReplacement: @MainActor (ShowcaseBlock) async -> (@MainActor () -> Void)? = { _ in nil }
+    /// Сколько ленты ушло под навигацию — от этого её подложка (`HomeTopNav`).
+    @Binding var scrollOffset: CGFloat
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
     @State private var scrollPosition = ScrollPosition()
@@ -53,11 +55,6 @@ struct ShowcaseFeedView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ShowcaseHeader(headline: feed.headline)
-                    .frame(height: ShowcaseLayout.Slot.header.height)
-                    .padding(.top, ShowcaseLayout.Slot.header.top)
-                    .showcaseAppear()
-
                 // Карточка — на слот, а не на контент: ✕ меняет блок в слоте, и карточка
                 // обязана пережить смену — с ней живёт пара ✕/✓, которая стоит на месте
                 // (`ShowcaseFeedbackHost`). Слоты фиксированы макетом и не повторяются.
@@ -76,14 +73,14 @@ struct ShowcaseFeedView: View {
         }
         .scrollIndicators(.hidden)
         .scrollPosition($scrollPosition)
+        .trackNavBarScroll(into: $scrollOffset)
         // Повторный тап по табу «Плюс» на корне — к началу ленты, как в системных
         // таббарах (правка пользователя 2026-10-03).
         .onChange(of: navigation.scrollToTopRequests[.plus]) {
             withAnimation(ShowcaseScrollMotion.toTop) { scrollPosition.scrollTo(edge: .top) }
         }
         // Координаты макета отсчитываются от физического верха экрана, а не от safe area:
-        // заголовок на 70.79 должен лечь сразу под статус-бар. Иначе лента съезжает вниз
-        // на всю высоту выреза.
+        // карточки ложатся в свои слоты, а лента уходит под статус-бар и навигацию.
         .ignoresSafeArea(edges: .top)
         // Первый показ отыграл — следующие появления витрины без проявления.
         .onDisappear { ShowcaseAppearMemory.hasShown = true }
@@ -171,10 +168,11 @@ struct ShowcaseFeedView: View {
         actionBar.open(block.player)
     }
 
-    /// Зазор над блоком: для первого — от заголовка, дальше — от низа предыдущего.
+    /// Зазор над блоком: для первого — от верха экрана под навигацию, дальше — от низа
+    /// предыдущего.
     private func gap(before index: Int) -> CGFloat {
-        let previous = index == 0 ? ShowcaseLayout.Slot.header : feed.blocks[index - 1].slot
-        return ShowcaseLayout.gap(above: feed.blocks[index].slot, after: previous)
+        guard index > 0 else { return ShowcaseLayout.firstBlockTop }
+        return ShowcaseLayout.gap(above: feed.blocks[index].slot, after: feed.blocks[index - 1].slot)
     }
 
     @ViewBuilder
