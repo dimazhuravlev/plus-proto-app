@@ -42,6 +42,34 @@ enum ActionBarMotion {
     static let iconSwapScale: CGFloat = 0.4
     /// Хаптика транспорта — impact light, как на play/pause в MusicPlayer.
     static let transportHapticIntensity: CGFloat = 1.0
+    /// Смена трека в подписях плееров — нативный `.blurReplace` (правка пользователя
+    /// 2026-10-05): старое название уходит в блюр, новое из него проявляется. Смена
+    /// текста на месте — ~300–400 мс, как у списков.
+    static let trackSwap: Animation = .smooth(duration: 0.4)
+}
+
+extension View {
+    /// Подписи трека меняются блюром при смене трека — в мини-плеере и в большом.
+    /// Уходящая и приходящая копии лежат друг на друге (`ZStack`), а не стопкой.
+    /// Reduce Motion — только прозрачность: в `.blurReplace` есть и масштаб.
+    func trackSwap(id: String, alignment: Alignment = .leading) -> some View {
+        modifier(TrackSwap(id: id, alignment: alignment))
+    }
+}
+
+private struct TrackSwap: ViewModifier {
+    let id: String
+    let alignment: Alignment
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        ZStack(alignment: alignment) {
+            content
+                .id(id)
+                .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+        }
+        .animation(ActionBarMotion.trackSwap, value: id)
+    }
 }
 
 /// Состояние «бар поднят над клавиатурой». Обе величины считаются в BottomChrome
@@ -868,11 +896,13 @@ private struct SearchPill: View {
             query = ""
             if !searchFocused { searchFocused = true }
         } label: {
+            // Белый 100 %, как «Назад» (правка пользователя 2026-10-05): кнопки — белые,
+            // приглушена только лупа — она знак поля, а не действие.
             Image("iconCross")
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.searchIcon)
+                .foregroundStyle(Color.fillOne)
                 .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle())
@@ -1083,11 +1113,12 @@ private struct SearchBackButton: View {
     var body: some View {
         Button(action: action) {
             // Тот же глиф, что у шевронов, — без отзеркаливания он и есть «назад».
+            // Белый 100 % (правка пользователя 2026-10-05).
             Image("iconDropleft")
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.searchIcon)
+                .foregroundStyle(Color.fillOne)
                 .frame(width: ActionBarGeometry.backButtonSize, height: ActionBarGeometry.backButtonSize)
                 .glassPill()
                 .contentShape(Circle())
@@ -1154,7 +1185,7 @@ private struct TrailingSlot: View {
                     item: music,
                     trackInfoOpacity: layout.trackInfoOpacity,
                     progressOpacity: layout.progressOpacity,
-                    progress: actionBar.musicProgress,
+                    progress: actionBar.musicClock,
                     isPlaying: actionBar.isMusicPlaying,
                     isLiked: actionBar.isMusicLiked,
                     onTogglePlay: { actionBar.toggleMusicPlayback() },
@@ -1334,7 +1365,7 @@ struct MiniPlayerPill: View {
     let item: MusicNowPlaying
     let trackInfoOpacity: Double
     let progressOpacity: Double
-    let progress: Double
+    let progress: MusicClock
     let isPlaying: Bool
     let isLiked: Bool
     let onTogglePlay: () -> Void
@@ -1364,7 +1395,7 @@ struct MiniPlayerPill: View {
             .frame(height: PlusMetrics.actionBarHeight)
             .glassPill()
             .overlay(alignment: .leading) {
-                MiniPlayerProgressFill(progress: progress, opacity: progressOpacity)
+                MiniPlayerProgressFill(clock: progress, opacity: progressOpacity)
                     // Заливка гаснет и приходит вместе с остальными внутренностями:
                     // на сужении она иначе доживает до круга полосой в полкруга.
                     .animation(ActionBarMotion.miniContentFade, value: progressOpacity)
@@ -1434,9 +1465,7 @@ struct MiniPlayerPill: View {
         }
         .frame(width: PlusMetrics.miniPlayerCover, height: PlusMetrics.miniPlayerCover)
         .clipShape(Circle())
-        .overlay {
-            Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
-        }
+        .coverBorder(Circle())
     }
 
     private var coverImage: some View {
@@ -1458,6 +1487,7 @@ struct MiniPlayerPill: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .trackSwap(id: item.id)
     }
 
     private var actions: some View {
@@ -1521,16 +1551,36 @@ struct MiniPlayerPill: View {
 /// Ширина задаётся масштабом, а не измерением: пилюль сам по себе анимирует ширину,
 /// и любое чтение его размера замкнуло бы цикл раскладки. Форму даёт клип родителя.
 private struct MiniPlayerProgressFill: View {
-    let progress: Double
+    let clock: MusicClock
     let opacity: Double
 
     var body: some View {
-        Rectangle()
-            .fill(Color.fillTen)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
-            .opacity(opacity)
-            .animation(.easeOut(duration: 0.12), value: progress)
+        MusicProgressReader(clock: clock) { progress in
+            Rectangle()
+                .fill(Color.fillTen)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
+        }
+        .opacity(opacity)
+    }
+}
+
+/// Прогресс трека на кадре: пока он идёт — по `TimelineView`, плавно и линейно
+/// (правка пользователя 2026-10-06: прежде полоса шагала на каждом тике), в покое —
+/// опорой, и `TimelineView` уходит из дерева, как у вращения обложки. Внутрь — только
+/// то, что рисует позицию: жесты снаружи, иначе смена ветки сбросила бы их на хвате.
+struct MusicProgressReader<Content: View>: View {
+    let clock: MusicClock
+    @ViewBuilder let content: (Double) -> Content
+
+    var body: some View {
+        if clock.isAdvancing {
+            TimelineView(.animation) { context in
+                content(clock.progress(at: context.date))
+            }
+        } else {
+            content(clock.anchor)
+        }
     }
 }
 
@@ -1565,6 +1615,7 @@ private struct BookChip: View {
                 .scaledToFill()
                 .frame(width: ActionBarGeometry.bookCoverSize.width, height: ActionBarGeometry.bookCoverSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+                .coverBorder(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
         }
         .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
         .secondaryButtonSurface(
@@ -1585,6 +1636,7 @@ private struct MovieChip: View {
                 .scaledToFill()
                 .frame(width: ActionBarGeometry.movieFrameSize.width, height: ActionBarGeometry.movieFrameSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+                .coverBorder(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
                 .padding(ActionBarGeometry.movieChipPadding)
         }
         .frame(width: ActionBarGeometry.movieChipSize.width, height: ActionBarGeometry.movieChipSize.height)

@@ -35,6 +35,19 @@ final class ShowcaseCatalog {
     /// ухода старого (`ShowcaseFeedbackPair`).
     private var upcoming: [CGFloat: Task<Replacement?, Never>] = [:]
 
+    /// Промо-слайдер — свой набор по видам, на экране вперемешку (`publishPromo`):
+    /// не те фильмы, альбомы и книги, что в карточках ленты (задача пользователя
+    /// 2026-10-08). Пустой вид — фолбэк моковой ленты.
+    private var promoMovies: [MovieBlock] = []
+    private var promoAlbums: [AlbumBlock] = []
+    private var promoBooks: [BookBlock] = []
+    /// Заготовленные новые айтемы промо на ✕ — по id айтема, который уберут.
+    private var upcomingPromo: [String: Task<Replacement?, Never>] = [:]
+    /// Убранные из промо по ✕ — новые айтемы их не возвращают.
+    private var dismissedPromoIDs: Set<String> = []
+    /// Айтем промо на месте — помнится на сессию, как у промо Кинопоиска и Книг.
+    var promoIndex = 0
+
     /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
     /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после
     /// установки, когда запас ещё пуст, — и тут же сменяется живыми данными.
@@ -67,6 +80,18 @@ final class ShowcaseCatalog {
         watchingStill = pickedWatching.flatMap { snapshot.stills[String($0.id)] }?.first
 
         applyMovieBlocks(featuredTint: nil, rng: &rng, preload: false)
+
+        // Промо — ещё фильмы из того же запаса, не те, что в ленте.
+        let promoPool = featurable.filter { $0.id != pickedFeatured?.id && $0.id != pickedWatching?.id }
+        var promoPicked = Array(withStill(promoPool).shuffled(using: &rng).prefix(ShowcaseSeeds.promoPerKind))
+        for movie in promoPool.shuffled(using: &rng)
+        where promoPicked.count < ShowcaseSeeds.promoPerKind && !promoPicked.contains(where: { $0.id == movie.id }) {
+            promoPicked.append(movie)
+        }
+        promoMovies = promoPicked.compactMap { movie in
+            Self.promoMovieBlock(movie, still: snapshot.stills[String(movie.id)]?.first)
+        }
+        publishPromo(preload: false)
     }
 
     /// Один заход за сессию. Повторный сбор — `reload()`.
@@ -131,6 +156,7 @@ final class ShowcaseCatalog {
             if let id = pickedWatching?.id {
                 watchingStill = await MoviePool.shared.stills(for: id).first
             }
+            promoMovies = await pickPromoMovies(using: &rng)
         } else {
             // Запас кадров тратится по фильму за запуск — доливаем его заранее,
             // на будущие запуски. Выбор на экране при этом не трогаем: фильм уже
@@ -153,8 +179,10 @@ final class ShowcaseCatalog {
             tint = await ArtworkLoader.shared.accent(for: poster)
         }
         applyMovieBlocks(featuredTint: tint, rng: &rng)
+        publishPromo()
 
-        await MoviePool.shared.markShown([featured.id, pickedWatching?.id].compactMap { $0 })
+        let promoIDs = promoMovies.compactMap { Int($0.id.dropFirst("kp-".count)) }
+        await MoviePool.shared.markShown([featured.id, pickedWatching?.id].compactMap { $0 } + promoIDs)
 
         // Греем кэш под будущие запуски: фильм каждый раз новый, и без прогрева его
         // постер каждый раз качается с нуля на глазах у пользователя.
@@ -214,6 +242,40 @@ final class ShowcaseCatalog {
                 remaining: ShowcaseSeeds.watchingRemaining.randomElement(using: &rng) ?? ""
             )), preload: preload)
         }
+    }
+
+    /// Фильмы промо из запаса: сперва с кадром, не те, что в ленте.
+    private func pickPromoMovies(using rng: inout SeededGenerator) async -> [MovieBlock] {
+        let excluded = Set([pickedFeatured?.id, pickedWatching?.id].compactMap { $0 })
+        let withStill = await MoviePool.shared.unseenWithStill(where: Self.isFeaturable)
+            .filter { !excluded.contains($0.id) }
+        let any = await MoviePool.shared.unseen(where: Self.isFeaturable)
+            .filter { !excluded.contains($0.id) }
+        var picked = Array(withStill.shuffled(using: &rng).prefix(ShowcaseSeeds.promoPerKind))
+        for movie in any.shuffled(using: &rng)
+        where picked.count < ShowcaseSeeds.promoPerKind && !picked.contains(where: { $0.id == movie.id }) {
+            picked.append(movie)
+        }
+        var blocks: [MovieBlock] = []
+        for movie in picked {
+            let still = await MoviePool.shared.stills(for: movie.id).first
+            if let block = Self.promoMovieBlock(movie, still: still) { blocks.append(block) }
+        }
+        return blocks
+    }
+
+    /// Фильм промо — как блок ленты, но с описанием длиннее: под слайдером на него
+    /// четыре строки шириной 244, а не три по 182.
+    private static func promoMovieBlock(_ movie: KinopoiskMovie, still: KinopoiskStill?) -> MovieBlock? {
+        guard let poster = movie.poster?.url(size: .medium) else { return nil }
+        return MovieBlock(
+            id: "kp-\(movie.id)",
+            title: movie.displayTitle,
+            poster: .remote(poster),
+            still: .remote(still?.url(size: .wide) ?? movie.backdrop?.url(size: .frame) ?? poster),
+            caption: (movie.shortDescription ?? "").showcaseCaption(maxCharacters: ShowcaseSeeds.promoCaptionLimit),
+            captionTint: mockMovieTint
+        )
     }
 
     /// Прогрев картинок для следующих запусков. Берём немного: смысл в том, чтобы
@@ -313,11 +375,14 @@ final class ShowcaseCatalog {
         // Круг выбора — сид и его соседи. Похожие не доехали — круг из одного сида:
         // витрина всё равно покажет альбом, просто без разнообразия этого запуска.
         var circle = [seed]
+        // Карточки «похожих» — с фото: оно аватаром в подписи альбома промо.
+        var briefs: [Int: DeezerArtistBrief] = [:]
         if let related = try? await DeezerService.shared.relatedArtists(
             id: seed.id,
             limit: ShowcaseSeeds.relatedArtistsLimit
         ) {
             circle += related.map { (name: $0.name, id: $0.id) }
+            for artist in related { briefs[artist.id] = artist }
         }
         circle.shuffle(using: &rng)
 
@@ -359,6 +424,42 @@ final class ShowcaseCatalog {
             subtitle: ShowcaseSeeds.vibeSubtitles.randomElement(using: &rng) ?? "",
             cover: .remote(vibeCover ?? picked.cover, fallback: "mockPlayerCover")
         )))
+
+        // Промо — альбомы других исполнителей того же круга, по одному на исполнителя,
+        // и только тех, у кого есть фото: в подписи альбома промо оно аватаром
+        // (макет `2537:27595`).
+        var promo: [AlbumBlock] = []
+        var attempts = 0
+        for candidate in circle where candidate.id != picked.artistID {
+            guard promo.count < ShowcaseSeeds.promoPerKind, attempts < ShowcaseSeeds.promoArtistAttempts else { break }
+            attempts += 1
+            guard let photo = await Self.artistPhoto(id: candidate.id, known: briefs),
+                  let albums = try? await DeezerService.shared.artistAlbums(id: candidate.id)
+            else { continue }
+            let fitting = albums.filter { Self.isShowcaseAlbum($0) && $0.id != picked.album.id }
+            if let album = fitting.randomElement(using: &rng),
+               let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
+                promo.append(AlbumBlock(
+                    id: "dz-\(album.id)",
+                    cover: .remote(cover, fallback: "mockAlbumCover"),
+                    title: candidate.name,
+                    subtitle: album.title,
+                    artistPicture: .remote(photo)
+                ))
+            }
+        }
+        promoAlbums = promo
+        publishPromo()
+    }
+
+    /// Фото исполнителя для подписи альбома промо: у «похожих» оно пришло с кругом,
+    /// за остальными — один запрос. Без своего фото (серый силуэт Deezer) — `nil`.
+    /// Аватар 40 — хватает 250 px.
+    private static func artistPhoto(id: Int, known: [Int: DeezerArtistBrief] = [:]) async -> URL? {
+        var artist = known[id]
+        if artist == nil { artist = try? await DeezerService.shared.artist(id: id) }
+        guard let artist, artist.hasPhoto, let picture = artist.pictureMedium ?? artist.pictureBig else { return nil }
+        return URL(string: picture)
     }
 
     /// Студийный альбом с обложкой: синглы, EP, концертники и сборники витрине не годятся.
@@ -380,14 +481,24 @@ final class ShowcaseCatalog {
         // иноязычные издания при `langRestrict=ru`. Отбираем тома, которые написал сам
         // автор, по-русски, с описанием, — и идём по сидам, пока не наберём две книги.
         var found: [GoogleBook] = []
-        for seed in seeds where found.count < 2 {
+        // Годные тома тех же запросов — запас под промо: книги слайдера без лишних
+        // запросов (каждый — секунда троттла под заставкой).
+        var spare: [GoogleBook] = []
+        for seed in seeds where found.count < 2 || spare.count < ShowcaseSeeds.promoPerKind {
             guard let volumes = try? await BooksService.shared.search(seed.query, limit: 20) else { continue }
-            let fitting = volumes.filter { Self.isShowcaseBook($0, by: seed.author) }
-            guard let book = fitting.randomElement(using: &rng),
-                  !found.contains(where: { $0.id == book.id })
-            else { continue }
-            found.append(book)
+            var fitting = volumes.filter { Self.isShowcaseBook($0, by: seed.author) }.shuffled(using: &rng)
+            if found.count < 2, let book = fitting.first, !found.contains(where: { $0.id == book.id }) {
+                found.append(book)
+                fitting.removeFirst()
+            }
+            spare += fitting.filter { book in !spare.contains(where: { $0.id == book.id }) }
         }
+        promoBooks = spare
+            .filter { book in !found.contains(where: { $0.id == book.id }) && book.coverURL != nil }
+            .prefix(ShowcaseSeeds.promoPerKind)
+            .compactMap(Self.promoBookBlock)
+        publishPromo()
+
         guard found.count == 2 else {
             failures.append("книги: за \(seeds.count) запросов нашлось \(found.count) томов")
             return
@@ -435,6 +546,20 @@ final class ShowcaseCatalog {
         return !ShowcaseSeeds.bookSummaryMarkers.contains { title.contains($0) }
     }
 
+    /// Книга промо — описание длиннее, чем у карточки ленты (`promoCaptionLimit`).
+    private static func promoBookBlock(_ book: GoogleBook) -> BookBlock? {
+        guard let cover = book.coverURL else { return nil }
+        return BookBlock(
+            id: "gb-\(book.id)",
+            title: book.title,
+            render: .remote(cover, fallback: "mockBookTechno"),
+            cover: .remote(cover, fallback: "mockBookTechno"),
+            caption: (book.volumeInfo.description ?? book.volumeInfo.subtitle ?? "")
+                .showcaseCaption(maxCharacters: ShowcaseSeeds.promoCaptionLimit),
+            captionTint: mockBookTint
+        )
+    }
+
     /// Описание короче — подпись карточки книги вышла бы в одну строку.
     private static let bookDescriptionMinimum = 100
 
@@ -479,6 +604,98 @@ final class ShowcaseCatalog {
         for block in feed.blocks where block.isReplaceable && upcoming[block.slot.top] == nil {
             upcoming[block.slot.top] = Task { await self.makeReplacement(for: block) }
         }
+        prefetchPromoAdditions()
+    }
+
+    private func prefetchPromoAdditions() {
+        for block in feed.promo where block.isReplaceable && upcomingPromo[block.id] == nil {
+            upcomingPromo[block.id] = Task { await self.makePromoReplacement(for: block) }
+        }
+    }
+
+    /// Новый айтем промо взамен убранного по ✕ (задача пользователя 2026-10-08):
+    /// убранный уходит из круга, а чтобы набор не кончился, в круг встаёт новый того
+    /// же вида — заготовленный заранее или собранный сейчас, с картинками в кэше; не
+    /// из набора и не из убранных раньше. `nil` — пополнить нечем: моковая лента без
+    /// сети или сеть не ответила вовремя.
+    func preparePromoAddition(for removed: ShowcaseBlock) async -> ShowcasePromoAddition? {
+        guard hasLoaded, removed.isReplaceable else { return nil }
+        let task = upcomingPromo.removeValue(forKey: removed.id)
+            ?? Task { await self.makePromoReplacement(for: removed) }
+        var replacement = await Self.value(of: task, within: Self.replacementTimeout)
+        // Заготовка устарела: тот же айтем успел встать в круг по другому ✕.
+        if let taken = replacement, isPromoTaken(taken.block.id) {
+            let fresh = Task { await self.makePromoReplacement(for: removed) }
+            replacement = await Self.value(of: fresh, within: Self.replacementTimeout)
+        }
+        guard let replacement, !isPromoTaken(replacement.block.id) else { return nil }
+        return ShowcasePromoAddition(block: replacement.block, commit: replacement.commit)
+    }
+
+    private func isPromoTaken(_ id: String) -> Bool {
+        dismissedPromoIDs.contains(id) || feed.promo.contains { $0.id == id }
+    }
+
+    /// Новый айтем — в круг сразу за айтемом `id`. И в набор своего вида, чтобы поздняя
+    /// сборка (`publishPromo`) его не потеряла.
+    func insertPromo(_ addition: ShowcasePromoAddition, after id: String) {
+        var promo = feed.promo
+        let index = promo.firstIndex { $0.id == id }.map { $0 + 1 } ?? promo.count
+        promo.insert(addition.block, at: index)
+        switch addition.block {
+        case .movie(let movie): promoMovies.append(movie)
+        case .album(let album): promoAlbums.append(album)
+        case .book(let book): promoBooks.append(book)
+        case .vibe, .reading, .watching: break
+        }
+        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks, backdrop: feed.backdrop)
+        addition.commit()
+        prefetchPromoAdditions()
+    }
+
+    /// Айтем уходит из круга насовсем: новые его не вернут.
+    func removePromo(id: String) {
+        dismissedPromoIDs.insert(id)
+        upcomingPromo.removeValue(forKey: id)?.cancel()
+        promoMovies.removeAll { $0.id == id }
+        promoAlbums.removeAll { $0.id == id }
+        promoBooks.removeAll { $0.id == id }
+        feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks, backdrop: feed.backdrop)
+    }
+
+    private func makePromoReplacement(for block: ShowcaseBlock) async -> Replacement? {
+        let replacement: Replacement? = switch block {
+        case .movie(let current): await nextMovie(after: current, forPromo: true)
+        case .album(let current): await nextAlbum(after: current, forPromo: true)
+        case .book(let current): await nextBook(after: current, forPromo: true)
+        case .vibe, .reading, .watching: nil
+        }
+        if let replacement { await ArtworkLoader.shared.prewarm(replacement.block.artworks) }
+        return replacement
+    }
+
+    /// Промо на экран — вперемешку: фильм, альбом, книга, и снова. Вид, живых айтемов
+    /// которого нет, — из моковой ленты: слайдер не пустеет и не теряет вид.
+    private func publishPromo(preload: Bool = true) {
+        let fallback = ShowcaseFeed.personal.promo
+        let movies: [ShowcaseBlock] = promoMovies.isEmpty
+            ? fallback.filter { if case .movie = $0 { true } else { false } }
+            : promoMovies.map { .movie($0) }
+        let albums: [ShowcaseBlock] = promoAlbums.isEmpty
+            ? fallback.filter { if case .album = $0 { true } else { false } }
+            : promoAlbums.map { .album($0) }
+        let books: [ShowcaseBlock] = promoBooks.isEmpty
+            ? fallback.filter { if case .book = $0 { true } else { false } }
+            : promoBooks.map { .book($0) }
+        var promo: [ShowcaseBlock] = []
+        for index in 0..<max(movies.count, albums.count, books.count) {
+            for kind in [movies, albums, books] where index < kind.count {
+                promo.append(kind[index])
+            }
+        }
+        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks, backdrop: feed.backdrop)
+        // Прогрев — общий эффект, из `init` его звать нельзя: см. комментарий там.
+        if preload { ArtworkLoader.shared.preload(promo.flatMap(\.artworks)) }
     }
 
     private func makeReplacement(for block: ShowcaseBlock) async -> Replacement? {
@@ -496,9 +713,13 @@ final class ShowcaseCatalog {
 
     /// Фильм — из запаса на диске, как и при сборке: непоказанный, с постером
     /// и описанием, не тот, что в соседнем блоке «продолжить смотреть».
-    private func nextMovie(after current: MovieBlock) async -> Replacement? {
+    private func nextMovie(after current: MovieBlock, forPromo: Bool = false) async -> Replacement? {
         var rng = SystemRandomNumberGenerator()
-        let excluded = Set([Int(current.id.dropFirst("kp-".count)), pickedWatching?.id].compactMap { $0 })
+        // Не тот же, не «продолжить смотреть» и ни один фильм ленты или промо.
+        var excluded = Set([Int(current.id.dropFirst("kp-".count)), pickedWatching?.id].compactMap { $0 })
+        for case .movie(let shown) in feed.blocks + feed.promo {
+            if let id = Int(shown.id.dropFirst("kp-".count)) { excluded.insert(id) }
+        }
         let withStill = await MoviePool.shared.unseenWithStill(where: Self.isFeaturable)
             .filter { !excluded.contains($0.id) }
         let any = await MoviePool.shared.unseen(where: Self.isFeaturable)
@@ -507,6 +728,12 @@ final class ShowcaseCatalog {
               let poster = movie.poster?.url(size: .medium)
         else { return nil }
         let still = await MoviePool.shared.stills(for: movie.id).first
+        if forPromo, let block = Self.promoMovieBlock(movie, still: still) {
+            // Чип плеера и «текущий фильм» — у карточки ленты, промо их не трогает.
+            return Replacement(block: .movie(block)) {
+                Task { await MoviePool.shared.markShown([movie.id]) }
+            }
+        }
         let tint = await ArtworkLoader.shared.accent(for: poster)
         let block = MovieBlock(
             id: "kp-\(movie.id)",
@@ -524,35 +751,57 @@ final class ShowcaseCatalog {
     }
 
     /// Альбом — студийный, с обложкой, из дискографии случайного сида; не тот же.
-    private func nextAlbum(after current: AlbumBlock) async -> Replacement? {
+    private func nextAlbum(after current: AlbumBlock, forPromo: Bool = false) async -> Replacement? {
         var rng = SystemRandomNumberGenerator()
         for seed in ShowcaseSeeds.musicArtists.shuffled(using: &rng).prefix(ShowcaseSeeds.artistAttempts) {
             guard let albums = try? await DeezerService.shared.artistAlbums(id: seed.id) else { continue }
-            let fitting = albums.filter { Self.isShowcaseAlbum($0) && "dz-\($0.id)" != current.id }
+            let fitting = albums.filter {
+                Self.isShowcaseAlbum($0) && "dz-\($0.id)" != current.id && !shownAlbumIDs.contains("dz-\($0.id)")
+            }
             if let album = fitting.randomElement(using: &rng),
                let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
+                // Промо подписывает альбом аватаром исполнителя; нет фото — подпись без него.
+                let photo = forPromo ? await Self.artistPhoto(id: seed.id) : nil
                 return Replacement(block: .album(AlbumBlock(
                     id: "dz-\(album.id)",
                     cover: .remote(cover, fallback: "mockAlbumCover"),
                     title: seed.name,
-                    subtitle: album.title
+                    subtitle: album.title,
+                    artistPicture: photo.map { ArtworkSource.remote($0) }
                 )))
             }
         }
         return nil
     }
 
-    /// Книга — тем же отбором, что при сборке; не та же и не та, что в «продолжить читать».
-    private func nextBook(after current: BookBlock) async -> Replacement? {
+    /// Альбомы на экране — в ленте и в промо — и убранные из промо: замена их не повторяет.
+    private var shownAlbumIDs: Set<String> {
+        var ids = dismissedPromoIDs
+        for case .album(let album) in feed.blocks + feed.promo { ids.insert(album.id) }
+        return ids
+    }
+
+    /// Книга — тем же отбором, что при сборке; не та же, не та, что в «продолжить читать»,
+    /// и ни одна книга промо.
+    private func nextBook(after current: BookBlock, forPromo: Bool = false) async -> Replacement? {
         var rng = SystemRandomNumberGenerator()
         var excluded: Set<String> = [String(current.id.dropFirst("gb-".count))]
         for case .reading(let reading) in feed.blocks {
             excluded.insert(String(reading.id.dropFirst("gb-r-".count)))
         }
+        for case .book(let book) in feed.blocks + feed.promo {
+            excluded.insert(String(book.id.dropFirst("gb-".count)))
+        }
+        for id in dismissedPromoIDs where id.hasPrefix("gb-") {
+            excluded.insert(String(id.dropFirst("gb-".count)))
+        }
         for seed in ShowcaseSeeds.bookSeeds.shuffled(using: &rng).prefix(ShowcaseSeeds.bookAttempts) {
             guard let volumes = try? await BooksService.shared.search(seed.query, limit: 20) else { continue }
             let fitting = volumes.filter { Self.isShowcaseBook($0, by: seed.author) && !excluded.contains($0.id) }
             guard let book = fitting.randomElement(using: &rng), let cover = book.coverURL else { continue }
+            if forPromo, let block = Self.promoBookBlock(book) {
+                return Replacement(block: .book(block))
+            }
             let tint = await ArtworkLoader.shared.accent(for: cover)
             return Replacement(block: .book(BookBlock(
                 id: "gb-\(book.id)",
@@ -614,35 +863,23 @@ final class ShowcaseCatalog {
 
     /// Подменяет блок того же типа на месте. Порядок слотов зафиксирован макетом,
     /// поэтому лента не пересобирается — меняется ровно один элемент.
-    /// `refreshesFeedArt: false` — фон и врезки заголовка остаются прежними (замена по ✕).
+    /// `refreshesFeedArt: false` — фон остаётся прежним (замена по ✕).
     private func apply(_ block: ShowcaseBlock, preload: Bool = true, refreshesFeedArt: Bool = true) {
         var blocks = feed.blocks
         guard let index = blocks.firstIndex(where: { $0.slot.top == block.slot.top }) else { return }
         blocks[index] = block
 
         guard refreshesFeedArt else {
-            feed = ShowcaseFeed(headline: feed.headline, blocks: blocks, backdrop: feed.backdrop)
+            feed = ShowcaseFeed(promo: feed.promo, blocks: blocks, backdrop: feed.backdrop)
             return
         }
 
         // Фон витрины — обложка первого блока (figma-screen1 §0), поэтому он едет
-        // вместе с ним. Врезки заголовка тоже: текст пока моковый, но картинки в нём
-        // обязаны совпадать с тем, что показано ниже.
+        // вместе с ним.
         var backdrop = feed.backdrop
-        var headline = feed.headline
-        switch block {
-        case .movie(let movie):
-            backdrop = movie.poster
-            headline = headline.replacing(.poster, with: movie.poster)
-        case .album(let album):
-            headline = headline.replacing(.avatar, with: album.cover)
-        case .book(let book):
-            headline = headline.replacing(.book, with: book.cover)
-        default:
-            break
-        }
+        if case .movie(let movie) = block { backdrop = movie.poster }
 
-        feed = ShowcaseFeed(headline: headline, blocks: blocks, backdrop: backdrop)
+        feed = ShowcaseFeed(promo: feed.promo, blocks: blocks, backdrop: backdrop)
         // Замена по ✕ — сразу от живого блока, а не после всей ленты: книги приходят
         // последними, и ✕ у кино или альбома, нажатый до них, ждал бы пустым слотом.
         if hasLoaded, block.isReplaceable {
@@ -691,23 +928,9 @@ extension String {
     }
 }
 
-private extension ShowcaseHeadline {
-    /// Меняет картинку врезки нужного типа, не трогая её позицию и поворот:
-    /// координаты в макете подобраны под конкретную разбивку текста.
-    func replacing(_ kind: ShowcaseHeadlineChip.Kind, with artwork: ArtworkSource) -> ShowcaseHeadline {
-        ShowcaseHeadline(
-            text: text,
-            chips: chips.map { chip in
-                guard chip.kind == kind else { return chip }
-                return ShowcaseHeadlineChip(
-                    kind: chip.kind,
-                    artwork: artwork,
-                    size: chip.size,
-                    origin: chip.origin,
-                    rotation: chip.rotation
-                )
-            }
-        )
-    }
+/// Новый айтем промо «Главной» на ✕ и что сделать, когда он встал в круг
+/// (фильм — отметить показанным).
+struct ShowcasePromoAddition {
+    let block: ShowcaseBlock
+    let commit: @MainActor () -> Void
 }
-

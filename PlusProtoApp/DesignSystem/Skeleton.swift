@@ -29,11 +29,42 @@ struct SkeletonBar: View {
 }
 
 extension Shape {
-    /// Скелетон этой формы: бледная заливка с хайрлайном той же краски по кромке —
-    /// кромка видна и у пустого скелетона, и у загруженной картинки.
+    /// Скелетон этой формы: бледная заливка с той же кромкой, что у обложки
+    /// (`coverBorder`), — карточка встаёт на его место без смены рисунка.
     func plusSkeleton() -> some View {
         fill(PlusSkeleton.fill)
-            .overlay { stroke(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(self)
+    }
+}
+
+/// Бордер обложки — один у всех карточек-айтемов, всех видов: белый 8 % толщиной
+/// 0.67 внутрь кадра (правка пользователя 2026-10-05; прежде было то 0.66, то 1,
+/// то обводка по центру кромки, а у части обложек бордера не было вовсе).
+/// Кромка видна и у пустого скелетона, и у загруженной картинки.
+enum CoverBorder {
+    static let color = Color.fillNine
+    static let width: CGFloat = 0.67
+}
+
+extension View {
+    /// Бордер обложки по её форме — внутрь кадра, как у стекла.
+    func coverBorder<S: InsettableShape>(_ shape: S) -> some View {
+        overlay {
+            shape
+                .strokeBorder(CoverBorder.color, lineWidth: CoverBorder.width)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// То же для формы без вставки (`AnyShape`, свой контур): обводка вдвое толще
+    /// по центру кромки, обрезанная самой формой, — та же полоса внутрь кадра.
+    func coverBorder<S: Shape>(_ shape: S) -> some View {
+        overlay {
+            shape
+                .stroke(CoverBorder.color, lineWidth: 2 * CoverBorder.width)
+                .clipShape(shape)
+                .allowsHitTesting(false)
+        }
     }
 }
 

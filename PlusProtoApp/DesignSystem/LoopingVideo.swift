@@ -25,7 +25,7 @@ final class LoopingVideoPlayback {
     func prepare(url: URL) {
         guard source != url else { return }
         source = url
-        AmbientAudio.configureOnce()
+        AppAudioSession.useAmbientForSilentVideo()
         queue.isMuted = true
         queue.preventsDisplaySleepDuringVideoPlayback = false
         looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(url: url))
@@ -47,18 +47,6 @@ final class LoopingVideoPlayback {
 
     static func bundled(_ name: String) -> URL? {
         Bundle.main.url(forResource: name, withExtension: "mp4")
-    }
-}
-
-/// Клип беззвучный, но без категории `.ambient` его старт всё равно оборвёт музыку
-/// у пользователя — категорию ставим один раз на приложение.
-enum AmbientAudio {
-    private static var isConfigured = false
-
-    static func configureOnce() {
-        guard !isConfigured else { return }
-        isConfigured = true
-        try? AVAudioSession.sharedInstance().setCategory(.ambient)
     }
 }
 

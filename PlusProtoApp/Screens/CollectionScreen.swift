@@ -404,7 +404,7 @@ struct CollectionArtwork<S: InsettableShape>: View {
             }
             .frame(width: width, height: height)
             .clipShape(shape)
-            .overlay { shape.strokeBorder(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 }
 

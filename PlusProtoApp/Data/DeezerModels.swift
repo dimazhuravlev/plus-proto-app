@@ -92,6 +92,8 @@ struct DeezerTrackHit: Decodable, Identifiable {
     let rank: Int?
     /// Флаг explicit — приходит у `/artist/{id}/top` (бейдж в «Популярных треках»).
     let explicitLyrics: Bool?
+    /// 30-секундное превью — звук плеера (`MusicAudio`), когда трека нет в id.
+    let preview: String?
 }
 
 struct DeezerAlbum: Decodable, Identifiable {

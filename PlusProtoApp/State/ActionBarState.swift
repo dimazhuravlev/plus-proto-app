@@ -41,6 +41,21 @@ enum ArtworkSource: Hashable, Codable {
 /// Что играет: круглая обложка 48×48 + две строки подписи (figma-actionbar §4.2).
 /// Опциональные поля — для полноэкранного плеера; их знает только экран альбома,
 /// и снимок бара, записанный до них, по-прежнему читается.
+/// Прогресс трека как функция времени: опора плюс ход от неё. Вью читают его
+/// на кадрах `TimelineView` — полоса едет плавно и линейно, а стейт пишется
+/// только на тиках и событиях транспорта.
+struct MusicClock: Equatable {
+    let anchor: Double
+    let date: Date
+    let isAdvancing: Bool
+
+    func progress(at now: Date) -> Double {
+        guard isAdvancing else { return anchor }
+        let advanced = anchor + max(0, now.timeIntervalSince(date)) / ActionBarState.musicDuration
+        return advanced.truncatingRemainder(dividingBy: 1)
+    }
+}
+
 struct MusicNowPlaying: Equatable, Codable {
     var id: String
     var cover: ArtworkSource
@@ -141,8 +156,28 @@ final class ActionBarState {
     /// Прогресс наблюдателя не имеет намеренно: он меняется дважды в секунду, и запись
     /// на диск на каждый тик была бы дорогой. На диск он уезжает вместе с ближайшим
     /// событием — паузой, сменой трека, запуском другого контента.
-    var musicProgress: Double = 0
+    var musicProgress: Double = 0 { didSet { musicProgressDate = .now } }
     var isMusicPlaying: Bool = false { didSet { persist() } }
+    /// Когда поставили `musicProgress` — опора плавного хода (`musicClock`).
+    private(set) var musicProgressDate = Date.now
+    /// Прогресс идёт: трек играет, и звук не в пути (или его нет вовсе). Ставит тикер.
+    private(set) var isMusicAdvancing = false
+
+    /// Прогресс как функция времени — полоса плееров едет по нему плавно и линейно
+    /// (правка пользователя 2026-10-06: прежде шагала на каждом тике). Вью считают
+    /// позицию на кадре сами (`MusicProgressReader`), в стейт пишутся только тики.
+    var musicClock: MusicClock {
+        MusicClock(
+            anchor: musicProgress,
+            date: musicProgressDate,
+            isAdvancing: isMusicAdvancing && isMusicPlaying && !isMusicScrubbing
+        )
+    }
+
+    /// Позиция прямо сейчас, между тиками.
+    private var liveMusicProgress: Double {
+        musicClock.progress(at: .now)
+    }
 
     /// Сердце мини-плеера и плеера музыки — играющий трек в «Любимом» коллекции «Моё»
     /// (2026-10-04). Прежде это был флаг бара, забывавший отметку на смене трека.
@@ -157,7 +192,14 @@ final class ActionBarState {
 
     /// Палец на таймлайне плеера музыки: тикер прогресса молчит, иначе он тянул бы
     /// заливку вперёд из-под пальца дважды в секунду.
-    var isMusicScrubbing = false
+    var isMusicScrubbing = false {
+        // Отпустили — ход идёт от точки отпускания, а не от последнего сдвига пальца.
+        didSet {
+            guard oldValue, !isMusicScrubbing else { return }
+            let released = musicProgress
+            musicProgress = released
+        }
+    }
 
     /// Поиск в фокусе: поле расширяется, плеер сжимается в круг 60×60, бар поднимается
     /// над клавиатурой. Не локальный стейт бара, потому что таббар уезжает под клавиатуру
@@ -192,9 +234,11 @@ final class ActionBarState {
         mode = .search
     }
 
-    /// Мок-длительность трека: живого аудио нет, от неё считается шаг прогресса.
+    /// Длительность трека — 30 с, как у превью Deezer, которые играет `MusicAudio`:
+    /// плеер не врёт о длине того, что звучит. Пока превью играет, прогресс идёт
+    /// за звуком; без звука (сеть, трек не нашёлся) — шагом от этой длительности.
     /// Не приватная: от неё полноэкранный плеер считает таймкоды.
-    static let musicDuration: TimeInterval = 210
+    static let musicDuration: TimeInterval = 30
     /// Шаг тика — дважды в секунду. Чаще не нужно: заливка между тиками анимируется.
     private static let progressTick: TimeInterval = 0.5
     private var progressTicker: Task<Void, Never>?
@@ -202,9 +246,15 @@ final class ActionBarState {
     func startMusic(_ item: MusicNowPlaying) {
         music = item
         musicProgress = 0
+        isMusicAdvancing = false
         isMusicPlaying = true
         mode = .music
         startProgressTicking()
+        // Тот же трек ещё раз — тоже с начала.
+        audio { audio in
+            audio.play(item, from: 0, isPlaying: true)
+            audio.seek(to: 0)
+        }
     }
 
     func resumeMovie(_ item: MovieInProgress) {
@@ -231,9 +281,12 @@ final class ActionBarState {
     /// ни поиск. `music` тут тоже не сбрасывается: payload остаётся, чтобы к треку
     /// можно было вернуться.
     private func stopMusic() {
+        if isMusicPlaying { musicProgress = liveMusicProgress }
+        isMusicAdvancing = false
         isMusicPlaying = false
         progressTicker?.cancel()
         progressTicker = nil
+        audio { $0.setPlaying(false) }
     }
 
     /// Контента нет (холодный старт, всё сброшено) — бар в поиске.
@@ -296,25 +349,60 @@ final class ActionBarState {
         movie = snapshot.movie
         book = snapshot.book
         musicProgress = snapshot.musicProgress
-        isMusicPlaying = snapshot.isMusicPlaying
-        // Играющий трек обязан и тикать: иначе плеер вернулся бы с крутящимся диском
-        // и стоящим прогрессом.
-        if isMusicPlaying { startProgressTicking() }
+        // Плеер возвращается на паузе, как у любого музыкального приложения: с тех пор
+        // как у музыки есть звук (2026-10-05), сам он на холодном старте не включается.
+        // Трек и позиция — на месте, play продолжит с них.
+        isMusicPlaying = false
     }
 
     /// Переключить воспроизведение. Прогресс тикает редко (2 раза в секунду) —
     /// промежуточные кадры дорисовывает анимация заливки, `body` на них не пересчитывается.
     func toggleMusicPlayback() {
+        // Опора — на «сейчас» и в обе стороны: пауза замирает там, где звучал звук,
+        // продолжение идёт от той же точки (со старой опорой ход насчитался бы и за
+        // паузу) и сразу, если звук уже загружен, — без полусекунды до первого тика.
+        musicProgress = audioFractionNow() ?? liveMusicProgress
         isMusicPlaying.toggle()
+        isMusicAdvancing = isMusicPlaying && audioFractionNow() != nil
         if isMusicPlaying {
             startProgressTicking()
         } else {
             progressTicker?.cancel()
             progressTicker = nil
         }
+        syncAudio()
     }
 
-    /// Живого аудио в прототипе нет — прогресс идёт от мок-длительности трека.
+    /// Звук догоняет транспорт: пауза — стоять; play — тот же трек играет дальше,
+    /// ещё не загруженный (после холодного старта) грузится с позиции прогресса.
+    private func syncAudio() {
+        guard isMusicPlaying, let music else {
+            audio { $0.setPlaying(false) }
+            return
+        }
+        let progress = musicProgress
+        audio { $0.play(music, from: progress, isPlaying: true) }
+    }
+
+    /// Доля трека по звуку, если превью играет и вызов пришёл с главного потока.
+    private func audioFractionNow() -> Double? {
+        guard Thread.isMainThread else { return nil }
+        return MainActor.assumeIsolated { MusicAudio.shared.tickerFraction }
+    }
+
+    /// Звук живёт на главном потоке. Транспорт трогают кнопки и экраны — с него же,
+    /// но на всякий случай с другого потока вызов доезжает задачей.
+    private func audio(_ body: @escaping @MainActor (MusicAudio) -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { body(MusicAudio.shared) }
+        } else {
+            Task { @MainActor in body(MusicAudio.shared) }
+        }
+    }
+
+    /// Играет превью — опора за звуком; превью в пути — стоит (без отскока назад,
+    /// когда звук начнётся); звука нет — идёт сама от длительности трека, по кругу.
+    /// Между тиками полосу ведут вью по `musicClock`, тик только поправляет опору.
     private func startProgressTicking() {
         progressTicker?.cancel()
         progressTicker = Task { [weak self] in
@@ -323,10 +411,25 @@ final class ActionBarState {
                 guard let self, self.isMusicPlaying else { return }
                 // Палец на таймлайне — позиция за ним, тикер не вмешивается.
                 guard !self.isMusicScrubbing else { continue }
-                let step = Self.progressTick / Self.musicDuration
-                self.musicProgress = (self.musicProgress + step).truncatingRemainder(dividingBy: 1)
+                let (fraction, isAwaiting) = await MainActor.run {
+                    (MusicAudio.shared.tickerFraction, MusicAudio.shared.isAwaitingAudio)
+                }
+                if let fraction {
+                    self.musicProgress = fraction
+                    self.setMusicAdvancing(true)
+                } else if isAwaiting {
+                    self.setMusicAdvancing(false)
+                } else {
+                    self.musicProgress = self.liveMusicProgress
+                    self.setMusicAdvancing(true)
+                }
             }
         }
+    }
+
+    /// Без лишней записи: флаг наблюдаемый, а тик — дважды в секунду.
+    private func setMusicAdvancing(_ value: Bool) {
+        if isMusicAdvancing != value { isMusicAdvancing = value }
     }
 
     /// Открыть плеер сущности. Повторный тап по той же карточке в музыке работает
@@ -361,11 +464,14 @@ final class ActionBarState {
     /// Перемотка таймлайном плеера: позиция трека долей, 0…1.
     func seekMusic(to fraction: Double) {
         musicProgress = min(max(0, fraction), 1)
+        let progress = musicProgress
+        audio { $0.seek(to: progress) }
     }
 
     /// «Назад»: трек с начала. Предыдущего трека у мока нет — история не хранится.
     func restartTrack() {
         musicProgress = 0
+        audio { $0.seek(to: 0) }
     }
 
     /// «Дальше» и дизлайк: следующий трек из очереди «Что дальше».
@@ -535,6 +641,8 @@ extension ActionBarState {
             startMusic(Self.debugMusic)
             musicProgress = 0.42
             isMusicPlaying = false
+            syncAudio()
+            audio { $0.seek(to: 0.42) }
         case "movie":
             resumeMovie(Self.debugMovie)
         case "book":

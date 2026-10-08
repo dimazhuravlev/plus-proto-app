@@ -109,10 +109,12 @@ struct AlbumDetails {
     /// (`mock: true`) — треклист и дискография из макета `2079:11226`, чтобы
     /// `-debugMockFeed` давал экран для сверки вёрстки без сети.
     static func placeholder(for entity: EntityRef, mock: Bool) -> AlbumDetails {
-        // Семантика `EntityRef` альбома перевёрнута витриной: `title` — артист,
-        // `subtitle` — название альбома (см. `ShowcaseCatalog`).
-        let albumTitle = entity.subtitle.isEmpty ? entity.title : entity.subtitle
-        let artistName = entity.subtitle.isEmpty ? "" : entity.title
+        // Ссылка на альбом одна во всех входах: `title` — альбом, `subtitle` — исполнитель.
+        // Прежде витрина клала их наоборот, а поиск — так, и заглушка, рассчитанная
+        // на витрину, до прихода деталей показывала на месте названия имя артиста
+        // (жалоба пользователя 2026-10-06).
+        let albumTitle = entity.title
+        let artistName = entity.subtitle
 
         guard mock else {
             // Фото исполнителя ещё едет — пока его нет: экран держит на его месте

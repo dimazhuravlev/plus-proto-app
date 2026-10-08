@@ -2,48 +2,21 @@ import SwiftUI
 
 // MARK: - Модель витрины
 
-/// Витрина «Плюс» задумана динамической: под событие и контекст меняются заголовок,
-/// набор блоков, их содержание и фон (решение 2026-08-22). Поэтому экран собирается
+/// Витрина «Главная» задумана динамической: под событие и контекст меняются набор
+/// блоков, их содержание и фон (решение 2026-08-22). Поэтому экран собирается
 /// из модели, а не из зашитой вёрстки — два экрана в Figma это одна витрина
 /// в двух состояниях.
 ///
-/// Порядок блоков и динамику заголовка пока не проектируем: `.personal` повторяет
-/// экран `2004:10701` один в один.
+/// Порядок блоков пока не проектируем: `.personal` повторяет экран `2004:10701`
+/// (заголовка с врезками нет с 2026-10-08 — сверху навигация `HomeTopNav`).
 struct ShowcaseFeed {
-    let headline: ShowcaseHeadline
+    /// Промо-слайдер над лентой (`ShowcasePromo`, макет `2532:26618`, задача пользователя
+    /// 2026-10-08): фильмы, альбомы и книги вперемешку — свой набор, не тот, что
+    /// в карточках ленты, и новый на каждый холодный запуск.
+    var promo: [ShowcaseBlock] = []
     let blocks: [ShowcaseBlock]
     /// Обложка, из которой строится фон экрана. По решению — кавер первого блока витрины.
     let backdrop: ArtworkSource
-}
-
-/// Заголовок с врезками: между словами стоят повёрнутые миниатюры сущностей,
-/// о которых идёт речь (`2004:10773`).
-struct ShowcaseHeadline {
-    let text: String
-    /// Врезки позиционируются абсолютно поверх текста — в макете они повёрнуты,
-    /// а повернуть вложение внутри `Text` нельзя.
-    let chips: [ShowcaseHeadlineChip]
-}
-
-struct ShowcaseHeadlineChip: Identifiable {
-    enum Kind: Hashable {
-        /// Круглый аватар исполнителя
-        case avatar
-        /// Постер фильма со скруглением и рамкой
-        case poster
-        /// Обложка книги с корешком
-        case book
-    }
-
-    /// Врезка на тип ровно одна, поэтому id — сам тип: при подмене картинки
-    /// на живую вью не должна пересоздаваться.
-    var id: Kind { kind }
-    let kind: Kind
-    let artwork: ArtworkSource
-    let size: CGSize
-    /// Левый верхний угол в координатах кадра витрины (ширина 402)
-    let origin: CGPoint
-    let rotation: Angle
 }
 
 /// Блок ленты. Каждый несёт свой payload и знает свою геометрию в макете.
@@ -141,6 +114,9 @@ struct AlbumBlock {
     let cover: ArtworkSource
     let title: String
     let subtitle: String
+    /// Фото исполнителя — аватар в подписи альбома промо «Главной» (макет `2537:27595`).
+    /// У альбома ленты его нет: карточке оно не нужно.
+    var artistPicture: ArtworkSource? = nil
 }
 
 struct BookBlock {
@@ -202,7 +178,6 @@ enum ShowcaseLayout {
         let top: CGFloat
         let height: CGFloat
 
-        static let header = Slot(top: 70.79, height: 114.14)
         static let movie = Slot(top: 220.48, height: 298.51)
         static let album = Slot(top: 562, height: 206)
         static let book = Slot(top: 787.96, height: 283.31)
@@ -213,6 +188,16 @@ enum ShowcaseLayout {
         /// Вместе с блоком оценки, который тянется до 1960.
         static let watching = Slot(top: 1647, height: 313)
     }
+
+    /// Промо-слайдер — сразу под навигацией «Главной» (`HomeTopNav`): в макете
+    /// `2532:26618` его отсчёт идёт от низа навигации.
+    static var promoTop: CGFloat {
+        ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight
+    }
+    /// Первая карточка ленты — под промо: зазор, что был под заголовком с врезками
+    /// (220.48 − 184.93), и ещё 40 (правка пользователя 2026-10-08). В макете промо
+    /// карточек ниже нет.
+    static let promoToFirstBlock: CGFloat = 35.55 + 40
 
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
     static let contentBottom: CGFloat = Slot.watching.top + Slot.watching.height
@@ -249,36 +234,34 @@ enum ShowcaseLayout {
 extension ShowcaseFeed {
     /// Персональная лента — экран `2004:10701` один в один. До Этапа 7 данные моковые.
     static let personal = ShowcaseFeed(
-        headline: ShowcaseHeadline(
-            // Переносы и зазоры как в макете: `\n` фиксирует разбиение (автоперенос
-            // его не повторит), а пробелы держат место под врезки. Ширина подобрана
-            // замером: U+2007 (figure space) на кегле 32 даёт ~18pt, U+2009 — ~6.4pt.
-            // Под аватар 36pt — два широких, под постер и книгу — широкий плюс тонкий.
-            text: "Тебе нравится \u{2007}\u{2007} Joy\nDivision, \u{2007}\u{2009}\u{2009} Балабанов\nи \u{2007}\u{2009}\u{2009} Дэвид Гребер",
-            chips: [
-                ShowcaseHeadlineChip(
-                    kind: .avatar,
-                    artwork: .asset("mockAvatar"),
-                    size: CGSize(width: 36, height: 36),
-                    origin: CGPoint(x: 244.79, y: 73.30),
-                    rotation: .degrees(-4)
-                ),
-                ShowcaseHeadlineChip(
-                    kind: .poster,
-                    artwork: .asset("mockChipPoster"),
-                    size: CGSize(width: 29, height: 40),
-                    origin: CGPoint(x: 152.80, y: 103.86),
-                    rotation: .degrees(5)
-                ),
-                ShowcaseHeadlineChip(
-                    kind: .book,
-                    artwork: .asset("mockChipBook"),
-                    size: CGSize(width: 28, height: 41),
-                    origin: CGPoint(x: 47.60, y: 144.03),
-                    rotation: .degrees(-4)
-                ),
-            ]
-        ),
+        // Фолбэк промо — текстом макета: фильм в центре, альбом и книга по бокам.
+        promo: [
+            .movie(MovieBlock(
+                id: "perfect-days",
+                title: "Идеальные дни",
+                poster: .asset("mockMoviePoster"),
+                still: .asset("mockChipMovieStill"),
+                caption: "Одинокий уборщик ищет красоту в каждом мгновении. Шедевр Вима Вендерса о магии жизни — и номинант на «Оскар»",
+                captionTint: Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
+            )),
+            .album(AlbumBlock(
+                id: "akvarium",
+                cover: .asset("mockAlbumCover"),
+                title: "Аквариум",
+                subtitle: "Равноденствие",
+                // Фото группы у Deezer (id 4179081): без сети — серый круг скелетона.
+                artistPicture: URL(string: "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg")
+                    .map { ArtworkSource.remote($0) }
+            )),
+            .book(BookBlock(
+                id: "technofeudalism",
+                title: "Технофеодализм",
+                render: .asset("mockBookTechno"),
+                cover: .asset("mockBookTechno"),
+                caption: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
+                captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
+            )),
+        ],
         blocks: [
             .movie(MovieBlock(
                 id: "perfect-days",
@@ -358,7 +341,7 @@ extension ShowcaseBlock {
         // Кадр — не декорация карточки, а картинка чипа киноплеера: без прогрева
         // он въезжает дырой ровно в момент тапа.
         case .movie(let b): [b.poster, b.still]
-        case .album(let b): [b.cover]
+        case .album(let b): [b.cover] + [b.artistPicture].compactMap { $0 }
         case .book(let b): [b.render, b.cover]
         case .vibe(let b): [b.cover]
         case .reading(let b): [b.cover]
@@ -368,10 +351,10 @@ extension ShowcaseBlock {
 }
 
 extension ShowcaseFeed {
-    /// Все картинки первого экрана: блоки, врезки заголовка и фон. По этому списку
+    /// Все картинки первого экрана: промо, блоки и фон. По этому списку
     /// сплэш понимает, что витрину можно показывать, — карточка без обложки
     /// и есть то мигание, ради которого заставку заводили.
     var artworks: [ArtworkSource] {
-        blocks.flatMap(\.artworks) + headline.chips.map(\.artwork) + [backdrop]
+        promo.flatMap(\.artworks) + blocks.flatMap(\.artworks) + [backdrop]
     }
 }

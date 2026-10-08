@@ -353,8 +353,9 @@ private struct MovieVideoCard: View {
             .overlay { frame }
             .overlay(alignment: .bottom) { caption }
             .clipShape(shape)
-            // Рамка поверх клипа, иначе её съедает скругление.
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: Self.border) }
+            // Рамка поверх клипа, иначе её съедает скругление. Общая у всех обложек
+            // (в макете `2052:10643` — 1 pt; правка пользователя 2026-10-05 — 0.67).
+            .coverBorder(shape)
             // Карточка целиком — кнопка. `contentShape` обязателен: и кадр, и подписи
             // сняты с хит-теста, а без формы тап ловят только непрозрачные пиксели.
             .contentShape(shape)
@@ -420,7 +421,6 @@ private struct MovieVideoCard: View {
     }
 
     // Числа из `2052:10643`
-    private static let border: CGFloat = 1
     private static let captionGap: CGFloat = 4
     private static let captionPadding: CGFloat = 24
     private static let captionHeight: CGFloat = 256

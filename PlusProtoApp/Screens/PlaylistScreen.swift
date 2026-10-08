@@ -108,7 +108,7 @@ struct PlaylistScreen: View {
             .scaledToFill()
             .frame(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize)
             .clipShape(shape)
-            .overlay { shape.stroke(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 
     // MARK: Воспроизведение

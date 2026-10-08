@@ -99,6 +99,7 @@ struct BookRender: View {
                     .frame(width: BookHinge.width)
                     .allowsHitTesting(false)
             }
+            .coverBorder(Rectangle())
     }
 
     /// Ореол макета — `ambilight bg`: обложка в блюре 28.

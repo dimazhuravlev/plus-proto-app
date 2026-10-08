@@ -172,6 +172,7 @@ struct BookReaderView: View {
             .frame(width: BookReaderLayout.coverSize.width, height: BookReaderLayout.coverSize.height)
             .overlay { ArtworkImage(source: book.cover).scaledToFill() }
             .clipShape(shape)
+            .coverBorder(shape)
     }
 
     /// Подписи прижаты к верху бокса обложки, а не центрированы по ней: автор может
@@ -211,7 +212,7 @@ private struct ReaderMusicPlayer: View {
                 item: music,
                 trackInfoOpacity: isExpanded ? 1 : 0,
                 progressOpacity: isExpanded ? 1 : 0,
-                progress: actionBar.musicProgress,
+                progress: actionBar.musicClock,
                 isPlaying: actionBar.isMusicPlaying,
                 isLiked: actionBar.isMusicLiked,
                 onTogglePlay: { actionBar.toggleMusicPlayback() },

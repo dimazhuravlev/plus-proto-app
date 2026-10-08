@@ -119,8 +119,9 @@ struct BookmarkGlyph: View {
 }
 
 /// Значок «скачать» — одно поведение для круглых кнопок экранов (альбом, книга,
-/// фильм): скачанное — фиолетовым цветом отметки «скачано» строк треков коллекции
-/// (`#A332FF`, макет `2351:17327`), смена — тем же кросс-попом, что у сердца.
+/// фильм): скачанное — фиолетовая галочка (`#A332FF`, макет `2455:32137`, правка
+/// пользователя 2026-10-06; прежде — та же стрелка фиолетовым), смена — тем же
+/// кросс-попом, что у сердца.
 struct DownloadGlyph: View {
     let isDownloaded: Bool
     let box: CGFloat
@@ -128,18 +129,18 @@ struct DownloadGlyph: View {
 
     var body: some View {
         ZStack {
-            glyph(offColor)
+            glyph("iconDownload", color: offColor)
                 .opacity(isDownloaded ? 0 : 1)
                 .scaleEffect(isDownloaded ? ActionBarMotion.iconSwapScale : 1)
-            glyph(Color.moviesAccent)
+            glyph("iconDone", color: Color.moviesAccent)
                 .opacity(isDownloaded ? 1 : 0)
                 .scaleEffect(isDownloaded ? 1 : ActionBarMotion.iconSwapScale)
         }
         .animation(ActionBarMotion.iconSwap, value: isDownloaded)
     }
 
-    private func glyph(_ color: Color) -> some View {
-        Image("iconDownload")
+    private func glyph(_ name: String, color: Color) -> some View {
+        Image(name)
             .renderingMode(.template)
             .resizable()
             .frame(width: box, height: box)

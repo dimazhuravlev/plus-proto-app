@@ -64,20 +64,6 @@ enum PlusChromeMetrics {
             .flatMap(\.windows)
             .first { $0.isKeyWindow }
     }
-
-    // MARK: - Верхний скрим
-
-    /// Затемнения у скрима нет — только блюр. В макете под навбаром витрины градиент
-    /// `overlay bg` (`2004:10781`, figma-screen1 §4: 72pt, чёрный 50 % → прозрачный),
-    /// пользователь сперва ослабил его до 25 %, затем убрал совсем (2026-10-03).
-    ///
-    /// Два слоя блюра разной высоты и радиуса — приём `TopNavBarBackground` из MusicPlayer:
-    /// слабый и высокий даёт мягкий заход, сильный и низкий — плотность у самого верха.
-    /// Выше 72pt не поднимаемся: в MusicPlayer блюр перекрывал градиент, но там под ним
-    /// был только скролл, а здесь на 72pt начинается заголовок витрины — более высокий
-    /// слой мылил бы его в покое.
-    static let topScrimBlurSoft: (radius: CGFloat, height: CGFloat) = (4, 72)
-    static let topScrimBlurStrong: (radius: CGFloat, height: CGFloat) = (14, 54)
 }
 
 /// Мягкий уход клавиатуры, который запускаем мы сами (`KeyboardObserver.dismissSmoothly`).
@@ -107,35 +93,6 @@ enum BottomChromeMotion {
     /// Таббар, уходя, ещё и проседает: бар опускается на его место, и встречное
     /// движение читается как «уступил место», а не как два слоя друг в друге.
     static let tabBarHideOffset: CGFloat = 16
-}
-
-enum TopScrimMotion {
-    /// Скрим уходит и возвращается вместе с пушем экрана со своим навбаром —
-    /// коротким фейдом под зум-переход, а не щелчком на первом кадре.
-    static let fade: Animation = .easeInOut(duration: 0.25)
-}
-
-/// Верхний скрим: лента уезжает под статус-бар, поэтому его надо размыть.
-/// Отдельный слой поверх контента, вне `NavigationStack` — как и нижний хром.
-/// Виден только на витрине: у экранов со своим навбаром блюр — его подложка.
-struct TopScrim: View {
-    var body: some View {
-        ZStack(alignment: .top) {
-            VariableBlurView(
-                maxBlurRadius: PlusChromeMetrics.topScrimBlurSoft.radius,
-                direction: .blurredTopClearBottom
-            )
-            .frame(height: PlusChromeMetrics.topScrimBlurSoft.height)
-
-            VariableBlurView(
-                maxBlurRadius: PlusChromeMetrics.topScrimBlurStrong.radius,
-                direction: .blurredTopClearBottom
-            )
-            .frame(height: PlusChromeMetrics.topScrimBlurStrong.height)
-        }
-        .allowsHitTesting(false)
-        .ignoresSafeArea(edges: .top)
-    }
 }
 
 /// Фиксированный нижний хром. Живёт в ZStack корня, **вне** `NavigationStack` — внутри

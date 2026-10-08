@@ -243,7 +243,7 @@ private struct CinemaHistoryCard: View {
             .overlay(alignment: .bottom) { progressBlock }
             .frame(width: CinemaLayout.historyWidth, height: CinemaLayout.historyHeight)
             .clipShape(shape)
-            .overlay { shape.strokeBorder(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 
     /// Низ кадра: затемнение под временем, время до конца и полоса прогресса.
@@ -356,7 +356,7 @@ private struct CinemaPosterCard: View {
             }
             .frame(width: CinemaLayout.posterWidth, height: CinemaLayout.posterHeight)
             .clipShape(shape)
-            .overlay { shape.strokeBorder(PlusSkeleton.fill, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 }
 

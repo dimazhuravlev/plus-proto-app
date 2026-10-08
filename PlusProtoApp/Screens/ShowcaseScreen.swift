@@ -13,6 +13,7 @@ struct ShowcaseScreen: View {
     @Environment(\.stackZoomNamespace) private var stackZoom
     @Namespace private var ownZoom
     private var zoom: Namespace.ID { stackZoom ?? ownZoom }
+    @State private var scrollOffset: CGFloat = 0
 
     #if DEBUG
     @Environment(AppNavigationState.self) private var navigation
@@ -21,9 +22,20 @@ struct ShowcaseScreen: View {
     #endif
 
     var body: some View {
+        @Bindable var catalog = catalog
         ZStack {
             Color.black.ignoresSafeArea()
-            ShowcaseFeedView(feed: catalog.feed, zoom: zoom, prepareReplacement: catalog.prepareReplacement)
+            ShowcaseFeedView(
+                feed: catalog.feed,
+                zoom: zoom,
+                prepareReplacement: catalog.prepareReplacement,
+                promoIndex: $catalog.promoIndex,
+                scrollOffset: $scrollOffset
+            )
+        }
+        // Навигация «Главной» — как у сервисных табов: поверх ленты, со своей подложкой.
+        .overlay(alignment: .top) {
+            HomeTopNav(scrollOffset: scrollOffset)
         }
         #if DEBUG
         // `-debugPerson <artist|director|writer>` — открыть экран персоны: The Weeknd,

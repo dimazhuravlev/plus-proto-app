@@ -161,8 +161,7 @@ struct ContinueWatchingCard: View {
             source: block.still,
             size: WatchingGeometry.videoSize,
             rotation: WatchingGeometry.videoRotation,
-            glowOpacity: WatchingGeometry.ambilightOpacity,
-            borderWidth: PlusMetrics.hairline
+            glowOpacity: WatchingGeometry.ambilightOpacity
         ) {
             ClipLayerView(player: playback.queue) { isVideoReady = true }
                 .frame(width: WatchingGeometry.videoSize.width, height: WatchingGeometry.videoSize.height)
@@ -304,7 +303,7 @@ private final class ClipPlayback {
     func start(clip: String) {
         if looper == nil {
             guard let url = Bundle.main.url(forResource: clip, withExtension: "mp4") else { return }
-            AmbientAudioSession.configureOnce()
+            AppAudioSession.useAmbientForSilentVideo()
             queue.isMuted = true
             queue.preventsDisplaySleepDuringVideoPlayback = false
             looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(url: url))
@@ -314,18 +313,6 @@ private final class ClipPlayback {
 
     func pause() {
         queue.pause()
-    }
-}
-
-/// Клип в ленте беззвучный, но без категории `.ambient` его старт всё равно оборвёт
-/// музыку у пользователя — категорию ставим один раз на приложение.
-private enum AmbientAudioSession {
-    private static var isConfigured = false
-
-    static func configureOnce() {
-        guard !isConfigured else { return }
-        isConfigured = true
-        try? AVAudioSession.sharedInstance().setCategory(.ambient)
     }
 }
 

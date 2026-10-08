@@ -56,6 +56,10 @@ final class ShowcaseFeedbackState {
 /// проявляется прежним.
 struct ShowcaseRefresh {
     var prepare: @MainActor () async -> (@MainActor () -> Void)?
+    /// Своя смена по ✕ вместо стандартной: промо «Главной» не подменяет айтем, а убирает
+    /// его из круга (`ShowcasePromo`). Пара только помечает смену начатой и зовёт её —
+    /// гасит контент и снимает `isSwapping` уже вызванный.
+    var custom: (@MainActor () -> Void)? = nil
 
     static let none = ShowcaseRefresh { nil }
 }
@@ -189,6 +193,10 @@ struct ShowcaseFeedbackPair: View {
         guard let state, !state.isSwapping, !state.isDone else { return }
         state.isSwapping = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if let custom = refresh.custom {
+            custom()
+            return
+        }
         withAnimation(ShowcaseFeedbackMotion.swapOut) { state.isContentHidden = true }
         let prepare = refresh.prepare
         Task { @MainActor in

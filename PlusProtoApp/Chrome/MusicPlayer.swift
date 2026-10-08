@@ -107,8 +107,6 @@ enum MusicPlayerMotion {
     /// как у киноплеера, только сдвиги меньше).
     static let trackGrow: CGFloat = 4
     static let trackGrab: Animation = .smooth(duration: 0.25)
-    /// Заливка между тиками прогресса — та же, что у мини-плеера в баре.
-    static let progressStep: Animation = .easeOut(duration: 0.12)
     /// Трещотка перемотки: дорожка короче, чем у киноплеера, — шаг мельче.
     static let scrubTickStep: CGFloat = 4
     static let scrubTickInterval: TimeInterval = 1.0 / 30
@@ -258,6 +256,8 @@ struct MusicPlayerView: View {
                 column: column,
                 screenWidth: width
             )
+            // Новый трек — блюром, как в мини-плеере; бегущая строка стартует заново.
+            .trackSwap(id: music.id)
             .padding(.top, MusicPlayerLayout.coverToTitle)
 
             artistRow(music)
@@ -314,6 +314,7 @@ struct MusicPlayerView: View {
                         .foregroundStyle(Color.fillSubtitle)
                         .lineLimit(1)
                 }
+                .trackSwap(id: music.id)
             }
             Spacer(minLength: MusicPlayerLayout.rowButtonGap)
             HStack(spacing: MusicPlayerLayout.rowButtonGap) {
@@ -329,7 +330,7 @@ struct MusicPlayerView: View {
             .frame(width: MusicPlayerLayout.avatar, height: MusicPlayerLayout.avatar)
             .overlay { ArtworkImage(source: source).scaledToFill() }
             .clipShape(Circle())
-            .overlay { Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(Circle())
     }
 
     /// Кнопка 40 на подложке Buttons/Secondary — со стеклом и бордером серых кнопок
@@ -349,13 +350,17 @@ struct MusicPlayerView: View {
 
     private func timeline(width: CGFloat) -> some View {
         let duration = ActionBarState.musicDuration
-        let elapsed = actionBar.musicProgress * duration
+        let clock = actionBar.musicClock
         let trackWidth = width - 2 * (MusicPlayerLayout.timeLabelWidth + MusicPlayerLayout.timeLabelGap)
         return HStack(spacing: MusicPlayerLayout.timeLabelGap) {
-            timecode(elapsed, alignment: .leading)
+            MusicProgressReader(clock: clock) { progress in
+                timecode(progress * duration, alignment: .leading)
+            }
             track(width: trackWidth)
             // Справа — сколько осталось, без минуса, как в макете.
-            timecode(duration - elapsed, alignment: .trailing)
+            MusicProgressReader(clock: clock) { progress in
+                timecode(duration * (1 - progress), alignment: .trailing)
+            }
         }
         .frame(width: width, height: MusicPlayerLayout.timelineHeight)
     }
@@ -376,6 +381,7 @@ struct MusicPlayerView: View {
         let fullWidth = width + grow
         let shape = Capsule(style: .continuous)
         let progress = actionBar.musicProgress
+        let clock = actionBar.musicClock
         // Слот раскладки — исходные 6pt: подписи времени по бокам не двигаются,
         // дорожка растёт поверх зазоров.
         return Color.clear
@@ -385,14 +391,13 @@ struct MusicPlayerView: View {
                 // (правка пользователя 2026-10-03): живого потока нет, и она только шумела.
                 ZStack(alignment: .leading) {
                     shape.fill(Color.fillTen)
-                    shape.fill(Color.fillOne)
-                        .frame(width: max(height, fullWidth * progress))
-                        .opacity(progress > 0 ? 1 : 0)
-                        // Между тиками тикера заливку дотягивает анимация, как в мини-плеере.
-                        // Под пальцем — без неё: позиция обязана стоять ровно под пальцем.
-                        // Своя анимация только у заливки: повешенная на всю дорожку, она
-                        // на хвате гасила бы и рост — хват и прыжок позиции в одном апдейте.
-                        .animation(grabbed ? nil : MusicPlayerMotion.progressStep, value: progress)
+                    // Позиция едет по часам трека, плавно и линейно, как в мини-плеере.
+                    // Под пальцем часы стоят — заливка ровно там, куда её поставил палец.
+                    MusicProgressReader(clock: clock) { progress in
+                        shape.fill(Color.fillOne)
+                            .frame(width: max(height, fullWidth * progress))
+                            .opacity(progress > 0 ? 1 : 0)
+                    }
                 }
                 .frame(width: fullWidth, height: height)
                 .clipShape(shape)
@@ -621,7 +626,7 @@ private struct CoverCarousel: View {
             .frame(width: size, height: size)
             .overlay { ArtworkImage(source: source).scaledToFill() }
             .clipShape(shape)
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
             .shadow(
                 color: .black.opacity(MusicPlayerLayout.coverShadowOpacity),
                 radius: MusicPlayerLayout.coverShadowRadius,
@@ -827,7 +832,7 @@ private struct QueueRow: View {
             .frame(width: MusicPlayerLayout.rowCover, height: MusicPlayerLayout.rowCover)
             .overlay { ArtworkImage(source: item.cover).scaledToFill() }
             .clipShape(shape)
-            .overlay { shape.strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline) }
+            .coverBorder(shape)
     }
 
     private var titles: some View {
