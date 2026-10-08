@@ -22,12 +22,15 @@ struct ShowcaseScreen: View {
     #endif
 
     var body: some View {
+        @Bindable var catalog = catalog
         ZStack {
             Color.black.ignoresSafeArea()
             ShowcaseFeedView(
                 feed: catalog.feed,
                 zoom: zoom,
                 prepareReplacement: catalog.prepareReplacement,
+                preparePromoReplacement: catalog.preparePromoReplacement,
+                promoIndex: $catalog.promoIndex,
                 scrollOffset: $scrollOffset
             )
         }

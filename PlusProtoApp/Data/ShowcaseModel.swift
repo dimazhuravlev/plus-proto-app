@@ -10,6 +10,10 @@ import SwiftUI
 /// Порядок блоков пока не проектируем: `.personal` повторяет экран `2004:10701`
 /// (заголовка с врезками нет с 2026-10-08 — сверху навигация `HomeTopNav`).
 struct ShowcaseFeed {
+    /// Промо-слайдер над лентой (`ShowcasePromo`, макет `2532:26618`, задача пользователя
+    /// 2026-10-08): фильмы, альбомы и книги вперемешку — свой набор, не тот, что
+    /// в карточках ленты, и новый на каждый холодный запуск.
+    var promo: [ShowcaseBlock] = []
     let blocks: [ShowcaseBlock]
     /// Обложка, из которой строится фон экрана. По решению — кавер первого блока витрины.
     let backdrop: ArtworkSource
@@ -182,13 +186,14 @@ enum ShowcaseLayout {
         static let watching = Slot(top: 1647, height: 313)
     }
 
-    /// Первая карточка — под навигацией «Главной» (`HomeTopNav`, задача пользователя
-    /// 2026-10-08: заголовка с врезками больше нет). Зазор от низа навигации — тот же,
-    /// что был от низа заголовка (220.48 − 184.93): в макете навигации карточек нет.
-    static let navToFirstBlock: CGFloat = 35.55
-    static var firstBlockTop: CGFloat {
-        ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + navToFirstBlock
+    /// Промо-слайдер — сразу под навигацией «Главной» (`HomeTopNav`): в макете
+    /// `2532:26618` его отсчёт идёт от низа навигации.
+    static var promoTop: CGFloat {
+        ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight
     }
+    /// Первая карточка ленты — под промо, с тем же зазором, что была под заголовком
+    /// с врезками (220.48 − 184.93): в макете промо карточек ниже нет.
+    static let promoToFirstBlock: CGFloat = 35.55
 
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
     static let contentBottom: CGFloat = Slot.watching.top + Slot.watching.height
@@ -225,6 +230,31 @@ enum ShowcaseLayout {
 extension ShowcaseFeed {
     /// Персональная лента — экран `2004:10701` один в один. До Этапа 7 данные моковые.
     static let personal = ShowcaseFeed(
+        // Фолбэк промо — текстом макета: фильм в центре, альбом и книга по бокам.
+        promo: [
+            .movie(MovieBlock(
+                id: "perfect-days",
+                title: "Идеальные дни",
+                poster: .asset("mockMoviePoster"),
+                still: .asset("mockChipMovieStill"),
+                caption: "Одинокий уборщик ищет красоту в каждом мгновении. Шедевр Вима Вендерса о магии жизни — и номинант на «Оскар»",
+                captionTint: Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
+            )),
+            .album(AlbumBlock(
+                id: "akvarium",
+                cover: .asset("mockAlbumCover"),
+                title: "Аквариум",
+                subtitle: "Равноденствие"
+            )),
+            .book(BookBlock(
+                id: "technofeudalism",
+                title: "Технофеодализм",
+                render: .asset("mockBookTechno"),
+                cover: .asset("mockBookTechno"),
+                caption: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
+                captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
+            )),
+        ],
         blocks: [
             .movie(MovieBlock(
                 id: "perfect-days",
@@ -314,10 +344,10 @@ extension ShowcaseBlock {
 }
 
 extension ShowcaseFeed {
-    /// Все картинки первого экрана: блоки и фон. По этому списку
+    /// Все картинки первого экрана: промо, блоки и фон. По этому списку
     /// сплэш понимает, что витрину можно показывать, — карточка без обложки
     /// и есть то мигание, ради которого заставку заводили.
     var artworks: [ArtworkSource] {
-        blocks.flatMap(\.artworks) + [backdrop]
+        promo.flatMap(\.artworks) + blocks.flatMap(\.artworks) + [backdrop]
     }
 }

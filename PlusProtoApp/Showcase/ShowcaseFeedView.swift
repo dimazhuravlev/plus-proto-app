@@ -46,6 +46,10 @@ struct ShowcaseFeedView: View {
     let zoom: Namespace.ID
     /// Новый контент для блока по ✕ (`ShowcaseCatalog.prepareReplacement`).
     var prepareReplacement: @MainActor (ShowcaseBlock) async -> (@MainActor () -> Void)? = { _ in nil }
+    /// Новый айтем промо по ✕ (`ShowcaseCatalog.preparePromoReplacement`).
+    var preparePromoReplacement: @MainActor (Int) async -> (@MainActor () -> Void)? = { _ in nil }
+    /// Айтем промо на месте — на сессию (`ShowcaseCatalog.promoIndex`).
+    @Binding var promoIndex: Int
     /// Сколько ленты ушло под навигацию — от этого её подложка (`HomeTopNav`).
     @Binding var scrollOffset: CGFloat
     @Environment(ActionBarState.self) private var actionBar
@@ -55,6 +59,18 @@ struct ShowcaseFeedView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
+                // Промо-слайдер — над лентой, свой набор (задача пользователя 2026-10-08).
+                if !feed.promo.isEmpty {
+                    ShowcasePromo(
+                        items: feed.promo,
+                        zoom: zoom,
+                        prepareReplacement: preparePromoReplacement,
+                        savedIndex: $promoIndex
+                    )
+                    .padding(.top, ShowcaseLayout.promoTop)
+                    .showcaseAppear()
+                }
+
                 // Карточка — на слот, а не на контент: ✕ меняет блок в слоте, и карточка
                 // обязана пережить смену — с ней живёт пара ✕/✓, которая стоит на месте
                 // (`ShowcaseFeedbackHost`). Слоты фиксированы макетом и не повторяются.
@@ -168,10 +184,13 @@ struct ShowcaseFeedView: View {
         actionBar.open(block.player)
     }
 
-    /// Зазор над блоком: для первого — от верха экрана под навигацию, дальше — от низа
-    /// предыдущего.
+    /// Зазор над блоком: для первого — от низа промо, дальше — от низа предыдущего.
     private func gap(before index: Int) -> CGFloat {
-        guard index > 0 else { return ShowcaseLayout.firstBlockTop }
+        guard index > 0 else {
+            return feed.promo.isEmpty
+                ? ShowcaseLayout.promoTop + ShowcaseLayout.promoToFirstBlock
+                : ShowcaseLayout.promoToFirstBlock
+        }
         return ShowcaseLayout.gap(above: feed.blocks[index].slot, after: feed.blocks[index - 1].slot)
     }
 
