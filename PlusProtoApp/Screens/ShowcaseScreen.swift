@@ -29,7 +29,6 @@ struct ShowcaseScreen: View {
                 feed: catalog.feed,
                 zoom: zoom,
                 prepareReplacement: catalog.prepareReplacement,
-                preparePromoReplacement: catalog.preparePromoReplacement,
                 promoIndex: $catalog.promoIndex,
                 scrollOffset: $scrollOffset
             )

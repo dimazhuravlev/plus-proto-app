@@ -41,8 +41,10 @@ final class ShowcaseCatalog {
     private var promoMovies: [MovieBlock] = []
     private var promoAlbums: [AlbumBlock] = []
     private var promoBooks: [BookBlock] = []
-    /// Заготовленные замены айтемов промо по ✕ — по месту в слайдере.
-    private var upcomingPromo: [Int: Task<Replacement?, Never>] = [:]
+    /// Заготовленные новые айтемы промо на ✕ — по id айтема, который уберут.
+    private var upcomingPromo: [String: Task<Replacement?, Never>] = [:]
+    /// Убранные из промо по ✕ — новые айтемы их не возвращают.
+    private var dismissedPromoIDs: Set<String> = []
     /// Айтем промо на месте — помнится на сессию, как у промо Кинопоиска и Книг.
     var promoIndex = 0
 
@@ -602,27 +604,63 @@ final class ShowcaseCatalog {
         for block in feed.blocks where block.isReplaceable && upcoming[block.slot.top] == nil {
             upcoming[block.slot.top] = Task { await self.makeReplacement(for: block) }
         }
-        for (index, block) in feed.promo.enumerated() where block.isReplaceable && upcomingPromo[index] == nil {
-            upcomingPromo[index] = Task { await self.makePromoReplacement(for: block) }
+        prefetchPromoAdditions()
+    }
+
+    private func prefetchPromoAdditions() {
+        for block in feed.promo where block.isReplaceable && upcomingPromo[block.id] == nil {
+            upcomingPromo[block.id] = Task { await self.makePromoReplacement(for: block) }
         }
     }
 
-    /// Новый айтем того же вида на место айтема промо по ✕ — так же, как у карточек
-    /// ленты (`prepareReplacement`): заготовленный или собранный сейчас, с картинками.
-    func preparePromoReplacement(at index: Int) async -> (@MainActor () -> Void)? {
-        guard hasLoaded, feed.promo.indices.contains(index) else { return nil }
-        let block = feed.promo[index]
-        guard block.isReplaceable else { return nil }
-        let task = upcomingPromo.removeValue(forKey: index) ?? Task { await self.makePromoReplacement(for: block) }
-        guard let replacement = await Self.value(of: task, within: Self.replacementTimeout),
-              replacement.block.id != block.id
-        else { return nil }
-        return { [weak self] in
-            guard let self else { return }
-            self.replacePromo(at: index, with: replacement.block)
-            replacement.commit()
-            self.upcomingPromo[index] = Task { await self.makePromoReplacement(for: replacement.block) }
+    /// Новый айтем промо взамен убранного по ✕ (задача пользователя 2026-10-08):
+    /// убранный уходит из круга, а чтобы набор не кончился, в круг встаёт новый того
+    /// же вида — заготовленный заранее или собранный сейчас, с картинками в кэше; не
+    /// из набора и не из убранных раньше. `nil` — пополнить нечем: моковая лента без
+    /// сети или сеть не ответила вовремя.
+    func preparePromoAddition(for removed: ShowcaseBlock) async -> ShowcasePromoAddition? {
+        guard hasLoaded, removed.isReplaceable else { return nil }
+        let task = upcomingPromo.removeValue(forKey: removed.id)
+            ?? Task { await self.makePromoReplacement(for: removed) }
+        var replacement = await Self.value(of: task, within: Self.replacementTimeout)
+        // Заготовка устарела: тот же айтем успел встать в круг по другому ✕.
+        if let taken = replacement, isPromoTaken(taken.block.id) {
+            let fresh = Task { await self.makePromoReplacement(for: removed) }
+            replacement = await Self.value(of: fresh, within: Self.replacementTimeout)
         }
+        guard let replacement, !isPromoTaken(replacement.block.id) else { return nil }
+        return ShowcasePromoAddition(block: replacement.block, commit: replacement.commit)
+    }
+
+    private func isPromoTaken(_ id: String) -> Bool {
+        dismissedPromoIDs.contains(id) || feed.promo.contains { $0.id == id }
+    }
+
+    /// Новый айтем — в круг сразу за айтемом `id`. И в набор своего вида, чтобы поздняя
+    /// сборка (`publishPromo`) его не потеряла.
+    func insertPromo(_ addition: ShowcasePromoAddition, after id: String) {
+        var promo = feed.promo
+        let index = promo.firstIndex { $0.id == id }.map { $0 + 1 } ?? promo.count
+        promo.insert(addition.block, at: index)
+        switch addition.block {
+        case .movie(let movie): promoMovies.append(movie)
+        case .album(let album): promoAlbums.append(album)
+        case .book(let book): promoBooks.append(book)
+        case .vibe, .reading, .watching: break
+        }
+        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks, backdrop: feed.backdrop)
+        addition.commit()
+        prefetchPromoAdditions()
+    }
+
+    /// Айтем уходит из круга насовсем: новые его не вернут.
+    func removePromo(id: String) {
+        dismissedPromoIDs.insert(id)
+        upcomingPromo.removeValue(forKey: id)?.cancel()
+        promoMovies.removeAll { $0.id == id }
+        promoAlbums.removeAll { $0.id == id }
+        promoBooks.removeAll { $0.id == id }
+        feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks, backdrop: feed.backdrop)
     }
 
     private func makePromoReplacement(for block: ShowcaseBlock) async -> Replacement? {
@@ -634,25 +672,6 @@ final class ShowcaseCatalog {
         }
         if let replacement { await ArtworkLoader.shared.prewarm(replacement.block.artworks) }
         return replacement
-    }
-
-    /// Подменяет айтем промо на месте — и в наборе своего вида, чтобы поздняя сборка
-    /// (`publishPromo`) его не вернула.
-    private func replacePromo(at index: Int, with block: ShowcaseBlock) {
-        guard feed.promo.indices.contains(index) else { return }
-        switch (feed.promo[index], block) {
-        case (.movie(let old), .movie(let new)):
-            if let i = promoMovies.firstIndex(where: { $0.id == old.id }) { promoMovies[i] = new }
-        case (.album(let old), .album(let new)):
-            if let i = promoAlbums.firstIndex(where: { $0.id == old.id }) { promoAlbums[i] = new }
-        case (.book(let old), .book(let new)):
-            if let i = promoBooks.firstIndex(where: { $0.id == old.id }) { promoBooks[i] = new }
-        default:
-            break
-        }
-        var promo = feed.promo
-        promo[index] = block
-        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks, backdrop: feed.backdrop)
     }
 
     /// Промо на экран — вперемешку: фильм, альбом, книга, и снова. Вид, живых айтемов
@@ -755,9 +774,9 @@ final class ShowcaseCatalog {
         return nil
     }
 
-    /// Альбомы на экране — в ленте и в промо: замена их не повторяет.
+    /// Альбомы на экране — в ленте и в промо — и убранные из промо: замена их не повторяет.
     private var shownAlbumIDs: Set<String> {
-        var ids: Set<String> = []
+        var ids = dismissedPromoIDs
         for case .album(let album) in feed.blocks + feed.promo { ids.insert(album.id) }
         return ids
     }
@@ -772,6 +791,9 @@ final class ShowcaseCatalog {
         }
         for case .book(let book) in feed.blocks + feed.promo {
             excluded.insert(String(book.id.dropFirst("gb-".count)))
+        }
+        for id in dismissedPromoIDs where id.hasPrefix("gb-") {
+            excluded.insert(String(id.dropFirst("gb-".count)))
         }
         for seed in ShowcaseSeeds.bookSeeds.shuffled(using: &rng).prefix(ShowcaseSeeds.bookAttempts) {
             guard let volumes = try? await BooksService.shared.search(seed.query, limit: 20) else { continue }
@@ -904,4 +926,11 @@ extension String {
         guard let space = clipped.lastIndex(of: " ") else { return clipped }
         return String(clipped[..<space]) + "…"
     }
+}
+
+/// Новый айтем промо «Главной» на ✕ и что сделать, когда он встал в круг
+/// (фильм — отметить показанным).
+struct ShowcasePromoAddition {
+    let block: ShowcaseBlock
+    let commit: @MainActor () -> Void
 }

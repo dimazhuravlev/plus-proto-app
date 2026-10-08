@@ -46,8 +46,6 @@ struct ShowcaseFeedView: View {
     let zoom: Namespace.ID
     /// Новый контент для блока по ✕ (`ShowcaseCatalog.prepareReplacement`).
     var prepareReplacement: @MainActor (ShowcaseBlock) async -> (@MainActor () -> Void)? = { _ in nil }
-    /// Новый айтем промо по ✕ (`ShowcaseCatalog.preparePromoReplacement`).
-    var preparePromoReplacement: @MainActor (Int) async -> (@MainActor () -> Void)? = { _ in nil }
     /// Айтем промо на месте — на сессию (`ShowcaseCatalog.promoIndex`).
     @Binding var promoIndex: Int
     /// Сколько ленты ушло под навигацию — от этого её подложка (`HomeTopNav`).
@@ -64,7 +62,6 @@ struct ShowcaseFeedView: View {
                     ShowcasePromo(
                         items: feed.promo,
                         zoom: zoom,
-                        prepareReplacement: preparePromoReplacement,
                         savedIndex: $promoIndex
                     )
                     .padding(.top, ShowcaseLayout.promoTop)
