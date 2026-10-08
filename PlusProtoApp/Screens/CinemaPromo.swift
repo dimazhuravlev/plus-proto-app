@@ -149,17 +149,24 @@ struct CinemaPromoCarousel: View {
             page = startPage
         }
         #if DEBUG
-        // `-debugPromoStep <back|next|n>` — через 3с пролистать промо: круг иначе
+        // `-debugPromoStep <back|next|n|cycle>` — через 3с пролистать промо: круг иначе
         // не проверить, свайпнуть из шелла нечем. Назад с первого слайда — последний
-        // набора: значит, лента открыта на середине, а не у края. Словами, а не «-1»:
-        // значение с минусом аргументы запуска читают как следующий ключ.
+        // набора: значит, лента открыта на середине, а не у края. `cycle` — вперёд
+        // по слайду раз в 1.6 с, 14 шагов: круг проходит перескок копий, его снимают
+        // на видео. Словами, а не «-1»: значение с минусом аргументы запуска читают
+        // как следующий ключ.
         .task {
             let value = UserDefaults.standard.string(forKey: "debugPromoStep") ?? ""
-            let step = value == "back" ? -1 : (value == "next" ? 1 : Int(value) ?? 0)
+            let cycleSteps = 14
+            let cycleInterval: Duration = .seconds(1.6)
+            let step = value == "back" ? -1 : (value == "next" || value == "cycle" ? 1 : Int(value) ?? 0)
             guard step != 0 else { return }
             try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled else { return }
-            withAnimation(.smooth) { page = (page ?? startPage) + step }
+            for _ in 0..<(value == "cycle" ? cycleSteps : 1) {
+                guard !Task.isCancelled else { return }
+                withAnimation(.smooth) { page = (page ?? startPage) + step }
+                try? await Task.sleep(for: cycleInterval)
+            }
         }
         #endif
     }

@@ -245,6 +245,25 @@ private struct BooksPromoCarousel: View {
         .scrollDisabled(count < 2)
         .scrollClipDisabled()
         .frame(height: BooksPromoLayout.carouselHeight)
+        #if DEBUG
+        // `-debugBooksPromoStep <back|next|n|cycle>` — то же, что `-debugPromoStep`
+        // у промо Кинопоиска: через 3с пролистать, `cycle` — вперёд по книге раз
+        // в 1.6 с, 14 шагов, с перескоком копий, для записи на видео.
+        .task {
+            let value = UserDefaults.standard.string(forKey: "debugBooksPromoStep") ?? ""
+            let cycleSteps = 14
+            let cycleInterval: Duration = .seconds(1.6)
+            let step = value == "back" ? -1 : (value == "next" || value == "cycle" ? 1 : Int(value) ?? 0)
+            guard step != 0 else { return }
+            try? await Task.sleep(for: .seconds(3))
+            for _ in 0..<(value == "cycle" ? cycleSteps : 1) {
+                guard !Task.isCancelled else { return }
+                // Стартовая — из стейта: `books` в замыкании `.task` — с первого монтирования.
+                withAnimation(.smooth) { page = (page ?? 0) + step }
+                try? await Task.sleep(for: cycleInterval)
+            }
+        }
+        #endif
     }
 
     @ViewBuilder
