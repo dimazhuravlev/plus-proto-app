@@ -101,9 +101,6 @@ enum PlusMetrics {
     static let buttonBlur: CGFloat = 20
     /// Блюр ambilight-ореола за обложкой
     static let ambilightBlur: CGFloat = 28
-    /// Блюр фона витрины
-    static let backdropBlur: CGFloat = 100
-    static let backdropOpacity: CGFloat = 0.4
 }
 
 // MARK: - Градиенты

@@ -590,9 +590,8 @@ final class ShowcaseCatalog {
         else { return nil }
         return { [weak self] in
             guard let self else { return }
-            // Фон витрины и врезки заголовка не трогаем: ✕ обновляет ровно блок,
-            // а смена фона под всей лентой читалась бы обновлением экрана.
-            self.apply(replacement.block, refreshesFeedArt: false)
+            // ✕ обновляет ровно блок.
+            self.apply(replacement.block, isDismissal: true)
             replacement.commit()
             // Следующая замена — заранее, от нового айтема.
             self.upcoming[key] = Task { await self.makeReplacement(for: replacement.block) }
@@ -648,7 +647,7 @@ final class ShowcaseCatalog {
         case .book(let book): promoBooks.append(book)
         case .vibe, .reading, .watching: break
         }
-        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks, backdrop: feed.backdrop)
+        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks)
         addition.commit()
         prefetchPromoAdditions()
     }
@@ -660,7 +659,7 @@ final class ShowcaseCatalog {
         promoMovies.removeAll { $0.id == id }
         promoAlbums.removeAll { $0.id == id }
         promoBooks.removeAll { $0.id == id }
-        feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks, backdrop: feed.backdrop)
+        feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks)
     }
 
     private func makePromoReplacement(for block: ShowcaseBlock) async -> Replacement? {
@@ -693,7 +692,7 @@ final class ShowcaseCatalog {
                 promo.append(kind[index])
             }
         }
-        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks, backdrop: feed.backdrop)
+        feed = ShowcaseFeed(promo: promo, blocks: feed.blocks)
         // Прогрев — общий эффект, из `init` его звать нельзя: см. комментарий там.
         if preload { ArtworkLoader.shared.preload(promo.flatMap(\.artworks)) }
     }
@@ -863,23 +862,14 @@ final class ShowcaseCatalog {
 
     /// Подменяет блок того же типа на месте. Порядок слотов зафиксирован макетом,
     /// поэтому лента не пересобирается — меняется ровно один элемент.
-    /// `refreshesFeedArt: false` — фон остаётся прежним (замена по ✕).
-    private func apply(_ block: ShowcaseBlock, preload: Bool = true, refreshesFeedArt: Bool = true) {
+    /// `isDismissal: true` — замена по ✕: следующую заготовку ставит сам ✕, прогрев не нужен.
+    private func apply(_ block: ShowcaseBlock, preload: Bool = true, isDismissal: Bool = false) {
         var blocks = feed.blocks
         guard let index = blocks.firstIndex(where: { $0.slot.top == block.slot.top }) else { return }
         blocks[index] = block
 
-        guard refreshesFeedArt else {
-            feed = ShowcaseFeed(promo: feed.promo, blocks: blocks, backdrop: feed.backdrop)
-            return
-        }
-
-        // Фон витрины — обложка первого блока (figma-screen1 §0), поэтому он едет
-        // вместе с ним.
-        var backdrop = feed.backdrop
-        if case .movie(let movie) = block { backdrop = movie.poster }
-
-        feed = ShowcaseFeed(promo: feed.promo, blocks: blocks, backdrop: backdrop)
+        feed = ShowcaseFeed(promo: feed.promo, blocks: blocks)
+        guard !isDismissal else { return }
         // Замена по ✕ — сразу от живого блока, а не после всей ленты: книги приходят
         // последними, и ✕ у кино или альбома, нажатый до них, ждал бы пустым слотом.
         if hasLoaded, block.isReplaceable {
