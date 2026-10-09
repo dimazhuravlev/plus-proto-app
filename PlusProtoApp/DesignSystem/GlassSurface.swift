@@ -17,12 +17,16 @@ struct GlassSurface<S: InsettableShape>: ViewModifier {
     let fill: Color
     let border: Color
     let borderWidth: CGFloat
+    /// Затемнение размытого фона — чёрный слой между блюром и заливкой. Ноль у всех,
+    /// кроме хрома (`ChromeGlass`).
+    var dim: Double = 0
 
     func body(content: Content) -> some View {
         content
             .background {
                 ZStack {
                     BackdropBlurView(radius: blur)
+                    Color.black.opacity(dim)
                     fill
                 }
                 .clipShape(shape)
@@ -30,6 +34,55 @@ struct GlassSurface<S: InsettableShape>: ViewModifier {
             .overlay {
                 shape.strokeBorder(border, lineWidth: borderWidth)
             }
+            .contentShape(shape)
+    }
+}
+
+/// Стекло нижнего хрома — пилюли action bar (поиск, «назад», мини-плееры, чипы книги
+/// и кино) и тайлы табов. Макетный рецепт (блюр + белый 10 %) над светлыми обложками
+/// светлел, и белые текст и иконки в нём тонули (правка пользователя 2026-10-10).
+/// Под заливку лёг чёрный слой: чёрный фон он не меняет, светлый приглушает.
+/// Сила — слайдером в дебаг-меню профиля, хранится в `UserDefaults`.
+enum ChromeGlass {
+    static let dimKey = "chromeGlassDim"
+    static let defaultDim: Double = 0.4
+}
+
+/// Стекло хрома: общий рецепт серых кнопок с затемнением фона из дебаг-меню.
+private struct ChromeGlassSurface<S: InsettableShape>: ViewModifier {
+    @AppStorage(ChromeGlass.dimKey) private var dim = ChromeGlass.defaultDim
+    let shape: S
+    let blur: CGFloat
+
+    func body(content: Content) -> some View {
+        content.modifier(GlassSurface(
+            shape: shape,
+            blur: blur,
+            fill: .buttonsPrimary,
+            border: SecondaryButtonBorder.color,
+            borderWidth: SecondaryButtonBorder.width,
+            dim: dim
+        ))
+    }
+}
+
+/// Тайл таба: плоская заливка без блюра, как в макете, над тем же затемнением, что у
+/// стекла хрома.
+private struct ChromeIconTile: ViewModifier {
+    @AppStorage(ChromeGlass.dimKey) private var dim = ChromeGlass.defaultDim
+    let border: Color
+    let borderWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: PlusRadius.iconTile, style: .continuous)
+        content
+            .background {
+                ZStack {
+                    shape.fill(Color.black.opacity(dim))
+                    shape.fill(Color.buttonsPrimary)
+                }
+            }
+            .overlay { shape.strokeBorder(border, lineWidth: borderWidth) }
             .contentShape(shape)
     }
 }
@@ -73,7 +126,12 @@ extension View {
 
     /// Пилюли action bar (r32 при высоте 60 схлопывается в капсулу) — figma-actionbar §3.
     func glassPill() -> some View {
-        secondaryButtonSurface(Capsule(style: .continuous), blur: PlusMetrics.glassBlur)
+        chromeGlass(Capsule(style: .continuous))
+    }
+
+    /// Стекло хрома произвольной формы — пилюля, чипы книги и кино в action bar.
+    func chromeGlass<S: InsettableShape>(_ shape: S, blur: CGFloat = PlusMetrics.glassBlur) -> some View {
+        modifier(ChromeGlassSurface(shape: shape, blur: blur))
     }
 
     /// Круглые кнопки 40pt — общий бордер серых кнопок. ~~Бордер white 6 % по figma-screen1
@@ -85,14 +143,12 @@ extension View {
     /// Тайл иконки таба 40×40 r14 — figma-tabbar §5. Стекла у него нет: замер обоих вариантов
     /// компонента (`2004:9375` / `2004:9387`) не даёт ни `backdrop-filter`, ни `filter: blur()` —
     /// это плоская заливка white 10% с хайрлайном white 4% (неактивный) / 6% × 0.733pt (активный).
+    /// Под заливкой — затемнение стекла хрома (`ChromeGlass`).
     func glassIconTile(
         border: Color = .white.opacity(0.04),
         borderWidth: CGFloat = PlusMetrics.hairline
     ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.iconTile, style: .continuous)
-        return background { shape.fill(Color.buttonsPrimary) }
-            .overlay { shape.strokeBorder(border, lineWidth: borderWidth) }
-            .contentShape(shape)
+        modifier(ChromeIconTile(border: border, borderWidth: borderWidth))
     }
 }
 

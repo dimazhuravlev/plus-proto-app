@@ -19,6 +19,14 @@ enum KinopoiskError: Error, LocalizedError {
         case .http(let code): return "HTTP-ошибка \(code)"
         }
     }
+
+    /// Ключ больше не отвечает: квота кончилась или ключа нет — помогает только другой API.
+    var isKeyExhausted: Bool {
+        switch self {
+        case .quotaExceeded, .unauthorized: true
+        case .rateLimited, .invalidResponse, .http: false
+        }
+    }
 }
 
 // MARK: - Service
@@ -55,6 +63,9 @@ actor KinopoiskService {
     /// суточная, и вчерашний мёртвый ключ сегодня жив. Троттлинг общий, не по ключу:
     /// проще, а в 5 запросов/сек наш профиль нагрузки не упирается.
     private var activeKeyIndex = 0
+    /// Поиск — в запасном API (`KinopoiskUnofficialService`): ключи здесь кончились.
+    /// `-debugSearchFallback 1` включает его сразу — проверить запас, не сжигая квоту.
+    private var searchUsesFallback = UserDefaults.standard.bool(forKey: "debugSearchFallback")
     private let maxRequestsPerWindow = 5
     private let windowDuration: TimeInterval = 1
 
@@ -74,15 +85,25 @@ actor KinopoiskService {
     // MARK: - Public API
 
     func searchMovies(query: String, limit: Int = 10) async throws -> [KinopoiskMovie] {
-        let response: KinopoiskListResponse<KinopoiskMovie> = try await fetch(
-            path: "/v1.4/movie/search",
-            query: [
-                URLQueryItem(name: "query", value: query),
-                URLQueryItem(name: "page", value: "1"),
-                URLQueryItem(name: "limit", value: "\(limit)")
-            ]
-        )
-        return response.docs
+        if searchUsesFallback, KinopoiskUnofficialService.isConfigured {
+            return try await KinopoiskUnofficialService.shared.searchMovies(query: query, limit: limit)
+        }
+        do {
+            let response: KinopoiskListResponse<KinopoiskMovie> = try await fetch(
+                path: "/v1.4/movie/search",
+                query: [
+                    URLQueryItem(name: "query", value: query),
+                    URLQueryItem(name: "page", value: "1"),
+                    URLQueryItem(name: "limit", value: "\(limit)")
+                ]
+            )
+            return response.docs
+        } catch let error as KinopoiskError where error.isKeyExhausted && KinopoiskUnofficialService.isConfigured {
+            // Ключи kinopoisk.dev кончились — поиск уходит в запасной API до конца
+            // процесса: биться в мёртвый ключ на каждом запросе незачем.
+            searchUsesFallback = true
+            return try await KinopoiskUnofficialService.shared.searchMovies(query: query, limit: limit)
+        }
     }
 
     func movie(id: Int) async throws -> KinopoiskMovie {

@@ -1618,10 +1618,7 @@ private struct BookChip: View {
                 .coverBorder(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
         }
         .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
-        .secondaryButtonSurface(
-            RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous),
-            blur: PlusMetrics.glassBlur
-        )
+        .chromeGlass(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
         .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
         .frame(width: ActionBarGeometry.bookChipAABBWidth, height: PlusMetrics.actionBarHeight)
     }
@@ -1640,10 +1637,7 @@ private struct MovieChip: View {
                 .padding(ActionBarGeometry.movieChipPadding)
         }
         .frame(width: ActionBarGeometry.movieChipSize.width, height: ActionBarGeometry.movieChipSize.height)
-        .secondaryButtonSurface(
-            RoundedRectangle(cornerRadius: PlusRadius.movieChip, style: .continuous),
-            blur: PlusMetrics.glassBlur
-        )
+        .chromeGlass(RoundedRectangle(cornerRadius: PlusRadius.movieChip, style: .continuous))
         .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
         .frame(width: ActionBarGeometry.movieChipAABBWidth, height: PlusMetrics.actionBarHeight)
     }

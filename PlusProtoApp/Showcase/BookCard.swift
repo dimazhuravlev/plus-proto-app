@@ -18,8 +18,9 @@ private enum BookCardLayout {
         y: faceCenter.y + BookRender.bounds.minY
     )
 
-    /// Ambilight в экспорт не запечён (§7): дубль рендера в блюре 28, у книги opacity 0.30.
-    static let glowOpacity = 0.30
+    /// Ambilight в экспорт не запечён (§7): дубль рендера в блюре 28, у книги в макете
+    /// opacity 0.30 — на «Главной» вдвое слабее (правка пользователя 2026-10-09).
+    static let glowOpacity = 0.15
 
     /// Подпись `2004:10753`: (15, 886) шириной 192, выключка вправо.
     static let captionOrigin = CGPoint(x: 15, y: 886 - slot.top)

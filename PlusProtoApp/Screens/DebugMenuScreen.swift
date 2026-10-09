@@ -16,7 +16,7 @@ enum SearchResultsStyle: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .carousels: "Карусели по разделам"
-        case .masonry: "Сетка вперемешку"
+        case .masonry: "Единая лента выдачи"
         }
     }
 }
@@ -27,6 +27,8 @@ struct DebugMenuScreen: View {
     @AppStorage(SearchResultsStyle.storageKey) private var searchStyle: SearchResultsStyle = .carousels
     /// Громкость звука музыки — превью Deezer (`MusicAudio`), по умолчанию 50 %.
     @AppStorage(MusicAudio.volumeKey) private var musicVolume = MusicAudio.defaultVolume
+    /// Затемнение фона под стеклом хрома (`ChromeGlass`), по умолчанию 40 %.
+    @AppStorage(ChromeGlass.dimKey) private var glassDim = ChromeGlass.defaultDim
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
@@ -34,8 +36,10 @@ struct DebugMenuScreen: View {
         static let checkIcon: CGFloat = 24
         /// Подпись громкости над слайдером
         static let sliderGap: CGFloat = 8
-        /// Шаг слайдера — 5 %
-        static let volumeStep: Double = 0.05
+        /// Шаг слайдеров — 5 %
+        static let sliderStep: Double = 0.05
+        /// Предел затемнения стекла: дальше пилюли на любом фоне — чёрные
+        static let glassDimRange: ClosedRange<Double> = 0...0.8
     }
 
     /// Название раздела видно всегда, подложки нет: экран короче её порога.
@@ -57,12 +61,22 @@ struct DebugMenuScreen: View {
                     optionsIsland
                         .padding(.horizontal, ProfileLayout.side)
 
-                    note("Сетка — вторая версия выдачи: все разделы в одной ленте, сверху фильтры. Выбор сохраняется между запусками.")
+                    note("Единая лента — вторая версия выдачи: все разделы в одной ленте, сверху фильтры. Выбор сохраняется между запусками.")
 
                     title("Звук музыки")
                     volumeIsland
                         .padding(.horizontal, ProfileLayout.side)
                     note("Играют 30-секундные превью Deezer, пока плеер в состоянии «играет». Громкость общая для всей музыки прототипа.")
+
+                    title("Стекло хрома")
+                    sliderIsland(
+                        "Затемнение фона",
+                        value: $glassDim,
+                        in: Layout.glassDimRange,
+                        accessibility: "Затемнение фона под стеклом хрома"
+                    )
+                    .padding(.horizontal, ProfileLayout.side)
+                    note("Чёрный слой под заливкой поиска, плееров и табов: на чёрном фоне не виден, светлые обложки под стеклом приглушает. Меняется на лету.")
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)
@@ -92,22 +106,35 @@ struct DebugMenuScreen: View {
             .padding(.horizontal, ProfileLayout.side + ProfileLayout.cellHorizontal)
     }
 
-    /// Громкость — островком той же формы, что выбор выдачи: подпись с процентами
-    /// и слайдер акцентного цвета. Меняется на лету, играет музыка или нет.
+    /// Громкость — меняется на лету, играет музыка или нет.
     private var volumeIsland: some View {
+        sliderIsland("Громкость", value: $musicVolume, in: 0...1, accessibility: "Громкость музыки")
+            .onChange(of: musicVolume) { _, volume in
+                MusicAudio.shared.setVolume(volume)
+            }
+    }
+
+    /// Островок-слайдер той же формы, что выбор выдачи: подпись с процентами
+    /// и слайдер акцентного цвета, шаг 5 %.
+    private func sliderIsland(
+        _ label: String,
+        value: Binding<Double>,
+        in range: ClosedRange<Double>,
+        accessibility: String
+    ) -> some View {
         VStack(alignment: .leading, spacing: Layout.sliderGap) {
             HStack(spacing: ProfileLayout.cellGap) {
-                Text("Громкость")
+                Text(label)
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("\(Int((musicVolume * 100).rounded()))\u{00A0}%")
+                Text("\(Int((value.wrappedValue * 100).rounded()))\u{00A0}%")
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillSubtitle)
             }
-            Slider(value: $musicVolume, in: 0...1, step: Layout.volumeStep)
+            Slider(value: value, in: range, step: Layout.sliderStep)
                 .tint(Color.moviesAccent)
-                .accessibilityLabel("Громкость музыки")
+                .accessibilityLabel(accessibility)
         }
         .padding(.horizontal, ProfileLayout.cellHorizontal)
         .padding(.vertical, ProfileLayout.cellVertical)
@@ -116,9 +143,6 @@ struct DebugMenuScreen: View {
             RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
                 .fill(Color.fillNine)
         )
-        .onChange(of: musicVolume) { _, volume in
-            MusicAudio.shared.setVolume(volume)
-        }
     }
 
     /// Островок выбора — как ячейки профиля (`ProfileLayout`): строки с разделителями,

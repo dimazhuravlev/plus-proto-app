@@ -1389,7 +1389,7 @@ private extension SearchHit {
                 id: "gb-\(book.id)",
                 title: book.title,
                 subtitle: book.author,
-                artwork: book.coverURL.map { ArtworkSource.remote($0) } ?? .asset("mockBookTechno")
+                artwork: book.coverURL.map { ArtworkSource.remote($0) } ?? .asset("mockChipBookCover")
             ))
         )
     }

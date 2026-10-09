@@ -18,8 +18,9 @@ private enum WatchingGeometry {
     /// поворот на 5° раздувает 277×156 до AABB 289.54×179.54, а её левый край (−7.27)
     /// и верх (1647) задают центр кадра (137.5, 1736.77) — отсюда и угол.
     static let videoOrigin = CGPoint(x: -1, y: 11.77)
-    /// `2004:10704` — ореол: та же картинка в блюре 28, непрозрачность 0.50 (§7).
-    static let ambilightOpacity: Double = 0.50
+    /// `2004:10704` — ореол: та же картинка в блюре 28. Непрозрачность — вдвое меньше
+    /// макетных 0.50 (§7), как у остальных карточек «Главной» (правка пользователя 2026-10-09).
+    static let ambilightOpacity: Double = 0.25
 
     /// `2004:10706` — скрим у нижнего края кадра под строкой и прогрессом
     static let scrimHeight: CGFloat = 35
@@ -67,11 +68,14 @@ private enum RateBlockGeometry {
 // MARK: - Карточка
 
 /// «Продолжить смотреть»: повёрнутый видеокадр с ореолом, логотип поверх, ✕ в углу
-/// и блок оценки под ним. У ✕ логики нет, оценка — реакция без записи (`RateBlock`).
+/// и блок оценки под ним. ✕ убирает карточку целиком, лента схлопывается (правка
+/// пользователя 2026-10-09); оценка — реакция без записи (`RateBlock`).
 struct ContinueWatchingCard: View {
     let block: WatchingBlock
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(ShowcaseCatalog.self) private var catalog
+    @Environment(ShowcaseFeedbackState.self) private var feedback: ShowcaseFeedbackState?
     @State private var playback = ClipPlayback()
     /// Клип играет только пока карточка в зоне видимости — иначе лента платит за декодер вслепую.
     @State private var isVisible = false
@@ -95,18 +99,23 @@ struct ContinueWatchingCard: View {
                 .offset(x: WatchingGeometry.logoOrigin.x, y: WatchingGeometry.logoOrigin.y)
                 .allowsHitTesting(false)
 
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть")
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть", action: dismiss)
                 .offset(x: WatchingGeometry.dismissOrigin.x, y: WatchingGeometry.dismissOrigin.y)
 
             RateBlock()
                 .offset(x: WatchingGeometry.rateOrigin.x, y: WatchingGeometry.rateOrigin.y)
         }
         .frame(width: WatchingGeometry.size.width, height: WatchingGeometry.size.height, alignment: .topLeading)
+        .showcaseSwappable()
         .onScrollVisibilityChange(threshold: WatchingGeometry.visibilityThreshold) { visible in
             isVisible = visible
             syncPlayback()
         }
         .onChange(of: scenePhase) { _, _ in syncPlayback() }
+        // Убранная карточка остаётся в ленте невидимой — ролик в ней не крутим.
+        .onChange(of: feedback?.isContentHidden) { _, _ in syncPlayback() }
+        // `-debugShowcaseDismiss 6` — тот же `dismiss()`, что у тапа по кресту.
+        .onChange(of: feedback?.debugDismisses) { dismiss() }
         .onDisappear { playback.pause() }
     }
 
@@ -133,8 +142,13 @@ struct ContinueWatchingCard: View {
         }
     }
 
+    /// ✕ — карточка уходит целиком, лента схлопывается (`removeCard`).
+    private func dismiss() {
+        feedback?.removeCard(.watching(block), from: catalog)
+    }
+
     private func syncPlayback() {
-        if isVisible, scenePhase == .active {
+        if isVisible, scenePhase == .active, feedback?.isContentHidden != true {
             playback.start(clip: block.clip)
         } else {
             playback.pause()
@@ -270,6 +284,13 @@ private struct RateBlock: View {
     }
 
     private func react(_ option: Option) {
+        // Повторный тап по выбранной снимает выбор (правка пользователя 2026-10-09): фон
+        // гаснет той же кривой, шарики не летят, хаптик — один лёгкий.
+        guard selected != option.id else {
+            selected = nil
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            return
+        }
         selected = option.id
         launches[option.id, default: 0] += 1
     }

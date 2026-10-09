@@ -137,7 +137,7 @@ final class BooksHomeCatalog {
             id: "gb-\(volume.id)",
             title: volume.title,
             author: volume.author,
-            cover: volume.coverURL.map { ArtworkSource.remote($0) } ?? .asset("mockBookTechno"),
+            cover: volume.coverURL.map { ArtworkSource.remote($0) } ?? .asset("mockChipBookCover"),
             aspect: aspects[volume.id],
             blurb: blurb(volume)
         )
@@ -217,22 +217,23 @@ final class BooksHomeCatalog {
 
     /// Без сети и под `-debugMockFeed` — забандленные обложки витрины.
     private func applyMocks() {
-        let covers = ["mockBookTechno", "mockBookMini", "mockChipBookCover", "mockBookIsometric"]
-        func mockBook(_ id: String, _ title: String, _ author: String, _ index: Int) -> Book {
-            Book(
-                id: "mock-book-\(id)",
-                title: title,
-                author: author,
-                cover: .asset(covers[index % covers.count]),
-                aspect: nil,
-                blurb: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику"
-            )
-        }
-        promos = [
-            mockBook("techno", "Технофеодализм", "Янис Варуфакис", 0),
-            mockBook("bullshit", "Бредовая работа", "Дэвид Гребер", 1),
-            mockBook("homo", "Homo bonus", "Рутгер Брегман", 2),
+        // Четыре настоящие книги со своими обложками и описаниями (по аннотациям
+        // издательств) — и в промо, и в каруселях тем.
+        let shelf: [(id: String, title: String, author: String, cover: String, blurb: String)] = [
+            ("graeber-truth", "Главная тайная истина мира…", "Дэвид Гребер", "mockBookGraeberTruth",
+             "Посмертный сборник эссе Гребера: мир — то, что мы создаём, и его вполне можно устроить иначе"),
+            ("fedorova-35-july", "35 июля. Но это не точно", "Аня Фёдорова", "mockBookFedorova",
+             "Две повести о детстве на стыке девяностых и нулевых: бабушка, тамагочи, приволжский город"),
+            ("zamirovskaya-things", "Некоторые вещи уже произошли", "Татьяна Замировская", "mockBookZamirovskaya",
+             "Рассказы о катастрофах и о том, как они меняют память, язык и нас самих"),
+            ("bullshit-jobs", "Бредовая работа", "Дэвид Гребер", "mockChipBookCover",
+             "Трактат о распространении бессмысленного труда — работы, в смысл которой не верят даже те, кто её делает"),
         ]
+        func mockBook(_ id: String, _ title: String, _ author: String, _ index: Int) -> Book {
+            let book = shelf[index % shelf.count]
+            return Book(id: "mock-book-\(id)", title: title, author: author, cover: .asset(book.cover), aspect: nil, blurb: book.blurb)
+        }
+        promos = shelf.enumerated().map { index, book in mockBook(book.id, book.title, book.author, index) }
         #if DEBUG
         promos = DebugMockPromos.padded(promos) { book, index in
             Book(id: "\(book.id)-\(index)", title: book.title, author: book.author, cover: book.cover, aspect: book.aspect, blurb: book.blurb)
@@ -242,8 +243,13 @@ final class BooksHomeCatalog {
             Row(
                 id: spec.id,
                 title: spec.title,
-                books: (0..<5).map { index in
-                    mockBook("\(spec.id)-\(index)", "Книга \(index + 1)", spec.seeds[index % spec.seeds.count].surname, rowIndex + index)
+                // Те же четыре настоящие книги, у каждой темы — в своём порядке. Раньше тут
+                // стояли «Книга 1…5» под фамилиями авторов темы — на настоящих обложках это
+                // враньё (правка пользователя 2026-10-09).
+                books: shelf.indices.map { offset in
+                    let index = (rowIndex + offset) % shelf.count
+                    let book = shelf[index]
+                    return mockBook("\(spec.id)-\(book.id)", book.title, book.author, index)
                 }
             )
         }

@@ -14,8 +14,11 @@ enum ShowcasePromoLayout {
     static let cardCenterY: CGFloat = 175
     static var carouselHeight: CGFloat { cardCenterY * 2 }
 
-    /// Наклон у каждой карточки свой, случайный, знак — тоже (в макете −3° у центральной,
-    /// +5.03° и +5.94° у соседей): по центру 2…4°, сбоку 4.5…6.5°.
+    /// Величина наклона у каждой карточки своя, случайная: по центру 2…4°, сбоку 4.5…6.5°.
+    /// Знак — от места в ряду, а не от карточки: по центру минус, у соседей плюс, через одну
+    /// снова минус, как в макете (−3° у центральной, +5.03° и +5.94° у соседей). Ряд
+    /// всегда «+ − + −» (правка пользователя 2026-10-09: со случайным знаком соседи
+    /// клонились в одну сторону).
     static let centerTilt: ClosedRange<Double> = 2...4
     static let sideTilt: ClosedRange<Double> = 4.5...6.5
     /// Соседи ниже центральной — на 6…16, у каждой карточки своё (в макете 16 и 6).
@@ -26,8 +29,17 @@ enum ShowcasePromoLayout {
     static let poster = CGSize(width: 210.155, height: 315.235)
     static let posterRadius: CGFloat = 16.358
     static let album: CGFloat = 219.8
-    static let albumRadius: CGFloat = 23.4
+    /// Скругление альбома — как у постера, а не макетные 23.4: «немного уменьшить»
+    /// (правка пользователя 2026-10-09), и углы карточек в ряду одинаковые.
+    static let albumRadius: CGFloat = posterRadius
     static let bookWidth: CGFloat = 210.155
+    /// Книга ряда. Скругления меньше общих (правка пользователя 2026-10-09): обложка —
+    /// как постер и альбом ряда, серая подложка — на ту же величину (19.2 → 16.4, 24.1 → 21.2).
+    static var book: (geometry: BookFigureGeometry, coverWidth: CGFloat) {
+        var figure = BookFigureGeometry.fitting(width: bookWidth, aspect: nil)
+        figure.geometry.radiusTrim = figure.geometry.coverRadius - posterRadius
+        return figure
+    }
 
     /// Пара ✕/✓ у фильма и книги — у нижней кромки карточки: левый край на 24.6 от её
     /// левой кромки, низ пары — на 27.6 ниже низа карточки (заходит на неё на 12).
@@ -76,7 +88,7 @@ enum ShowcasePromoLayout {
         case .album:
             return album
         case .book:
-            let figure = BookFigureGeometry.fitting(width: bookWidth, aspect: nil)
+            let figure = book
             return figure.geometry.frameSize(coverWidth: figure.coverWidth).height
         }
     }
@@ -88,9 +100,9 @@ enum ShowcasePromoLayout {
     /// Сколько фон уходит выше блока — до физического верха экрана.
     static var backdropAbove: CGFloat { ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight }
     static var backdropHeight: CGFloat { backdropAbove + height + backdropTail }
-    /// Фон — на 70 %, на 10 % прозрачнее фона промо сервисов (правка пользователя
-    /// 2026-10-08).
-    static let backdropOpacity: Double = 0.7
+    /// Фон — на 60 %: на 10 % прозрачнее фона промо сервисов (правка пользователя
+    /// 2026-10-08) и ещё на 10 % (правка 2026-10-09).
+    static let backdropOpacity: Double = 0.6
 
     /// Где слот относительно центра видимой ленты: 0 — по центру, ±1 — на месте соседа.
     /// Считается от рамки скролла, а не экрана: ширина устройства не важна.
@@ -562,10 +574,16 @@ private struct PromoCardMotion: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         content.visualEffect { [look, shift] content, proxy in
-            let distance = ShowcasePromoLayout.ease(abs(ShowcasePromoLayout.position(of: proxy) - shift))
+            let position = ShowcasePromoLayout.position(of: proxy) - shift
+            let distance = ShowcasePromoLayout.ease(abs(position))
+            let magnitude = look.centerTilt + (look.sideTilt - look.centerTilt) * Double(distance)
+            // Знак чередуется по местам ряда: −1 по центру, +1 у соседей, −1 через одну.
+            // Косинус меняет его плавно по ходу свайпа — карточка проходит через ноль,
+            // без щелчка, — и не зависит от копии круга и от состава набора.
+            let tilt = -magnitude * cos(Double.pi * Double(position))
             return content
                 .scaleEffect(1 - (1 - ShowcasePromoLayout.sideScale) * distance)
-                .rotationEffect(.degrees(look.centerTilt + (look.sideTilt - look.centerTilt) * Double(distance)))
+                .rotationEffect(.degrees(tilt))
                 .offset(x: -shift * ShowcasePromoLayout.step, y: look.drop * distance)
         }
     }
@@ -604,7 +622,7 @@ private final class PromoScrollState {
 
 // MARK: - Карточка
 
-/// Случайный вид карточки — наклон и опускание, свои у каждого айтема и одни у всех его
+/// Случайный вид карточки — величина наклона и опускание, свои у каждого айтема и одни у всех его
 /// копий (иначе перескок на среднюю копию был бы виден). Случайность — от id и соли
 /// процесса: на холодном запуске наклоны другие.
 private struct PromoCardLook {
@@ -616,10 +634,9 @@ private struct PromoCardLook {
         var hasher = Hasher()
         hasher.combine(id)
         var generator = SeededGenerator(seed: UInt64(bitPattern: Int64(hasher.finalize())))
-        let centerSign: Double = Bool.random(using: &generator) ? 1 : -1
-        let sideSign: Double = Bool.random(using: &generator) ? 1 : -1
-        centerTilt = centerSign * Double.random(in: ShowcasePromoLayout.centerTilt, using: &generator)
-        sideTilt = sideSign * Double.random(in: ShowcasePromoLayout.sideTilt, using: &generator)
+        // Только величины: знак задаёт место в ряду (`PromoCardMotion`).
+        centerTilt = Double.random(in: ShowcasePromoLayout.centerTilt, using: &generator)
+        sideTilt = Double.random(in: ShowcasePromoLayout.sideTilt, using: &generator)
         drop = CGFloat(Double.random(in: ShowcasePromoLayout.sideDrop, using: &generator))
     }
 }
@@ -638,7 +655,7 @@ private struct PromoCardFace: View {
         case .album(let album):
             cover(album.cover, size: CGSize(width: Layout.album, height: Layout.album), radius: Layout.albumRadius)
         case .book(let book):
-            let figure = BookFigureGeometry.fitting(width: Layout.bookWidth, aspect: nil)
+            let figure = Layout.book
             BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth) {
                 SkeletonArtwork(source: book.cover)
             }
@@ -709,7 +726,7 @@ private struct PromoReveal: ViewModifier {
 // MARK: - Фон
 
 /// Фон под слайдером — размытая картинка центральной карточки, затемнённая, сверху
-/// в полную силу (70 %), к низу уходит в прозрачность, в чёрный фон экрана. Два слоя: айтем
+/// в полную силу (60 %), к низу уходит в прозрачность, в чёрный фон экрана. Два слоя: айтем
 /// слева от центра ленты и айтем справа, правый проявляется по мере сдвига — кроссфейд
 /// за пальцем. Оба слоя непрозрачные, затемнение и прозрачность — на их сумме,
 /// сведённой в один растр: по отдельности слои просвечивали бы друг через друга.

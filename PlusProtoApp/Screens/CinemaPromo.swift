@@ -109,7 +109,7 @@ struct CinemaPromoCarousel: View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: CinemaPromoLayout.cardGap) {
                 ForEach(0..<(count * Self.copies), id: \.self) { index in
-                    CinemaPromoSlide(promo: promos[index % count], isCurrent: index == page)
+                    CinemaPromoSlide(promo: promos[index % count], slot: index, isCurrent: index == page)
                         // Во всю видимую ширину ленты — её поля уже вычтены.
                         .containerRelativeFrame(.horizontal)
                 }
@@ -203,6 +203,8 @@ struct CinemaPromoCarousel: View {
 /// «Смотреть» и «Позже». Тап по слайду открывает карточку тайтла, кнопки — своё.
 private struct CinemaPromoSlide: View {
     let promo: CinemaCatalog.Promo
+    /// Место в ленте копий — адрес источника зума у нетекущих копий.
+    let slot: Int
     /// Видимый слайд — источник зума: повторы того же тайтла в ленте источником
     /// быть не должны, иначе у перехода два кандидата.
     let isCurrent: Bool
@@ -240,10 +242,16 @@ private struct CinemaPromoSlide: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// Источник зума — у каждой копии, а адрес экрана тайтла — только у текущей: повторы
+    /// того же тайтла источником не становятся. Без ветки по `isCurrent`: её смена
+    /// пересоздавала обложку посреди свайпа, и она моргала (урок промо «Главной»).
     @ViewBuilder
     private var coverSource: some View {
-        if isCurrent, let zoom {
-            cover.matchedTransitionSource(id: promo.route, in: zoom)
+        if let zoom {
+            cover.matchedTransitionSource(
+                id: isCurrent ? AnyHashable(promo.route) : AnyHashable("cinema-promo-copy-\(slot)"),
+                in: zoom
+            )
         } else {
             cover
         }
@@ -380,6 +388,18 @@ private struct CinemaPromoLogo: View {
 
     @State private var image: UIImage?
     @State private var isDark = false
+
+    /// Логотип из памяти — сразу, на первом кадре: из задачи он вставал кадром позже,
+    /// и новый слайд на миг показывался без логотипа.
+    @MainActor
+    init(source: ArtworkSource, title: String) {
+        self.source = source
+        self.title = title
+        if case .remote(let url, _) = source, let hit = ArtworkLoader.shared.cached(url) {
+            _image = State(initialValue: hit)
+            _isDark = State(initialValue: ArtworkLoader.shared.isDarkLogo(url, image: hit))
+        }
+    }
 
     var body: some View {
         // Распорка, а не пустое тело: у пустой вью `.task` не выполняется.

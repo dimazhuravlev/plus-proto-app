@@ -117,7 +117,9 @@ struct CollectionScreen: View {
             ServiceTopNav(
                 filters: CollectionStore.Shelf.allCases.map(\.title),
                 selection: $shelfIndex,
-                scrollOffset: scrollOffset
+                scrollOffset: scrollOffset,
+                // «Моё» — не витрина: затемнения сверху нет (затемнение — у витрин, 2026-10-10).
+                showsTopShade: false
             )
         }
         .toolbar(.hidden, for: .navigationBar)

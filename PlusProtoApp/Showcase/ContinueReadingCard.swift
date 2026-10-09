@@ -1,4 +1,5 @@
 import SwiftUI
+import VariableBlur
 
 /// Геометрия карточки «продолжить чтение» — figma-screen1 §3.6. Координаты локальные:
 /// из абсолютных Y макета вычтен верх слота `ShowcaseLayout.Slot.reading` (1308.99).
@@ -20,6 +21,19 @@ private enum ReadingCardLayout {
     static let scrimSize = CGSize(width: 354, height: 118)
     static let scrimOpacity: Double = 0.35
     static let scrimSolidUntil: Double = 0.27885
+
+    /// Шапка блока — высота скрима: затемнение и зона тапа «к экрану книги».
+    static var headerHeight: CGFloat { scrimSize.height }
+    /// Прогрессивный блюр шапки — ниже и мягче скрима: в полную силу у верхнего края,
+    /// к третьей строке фрагмента (строка Text L — 24) сходит на нет. Было 118 и 16 —
+    /// «слишком сильный и высокий» (правки пользователя 2026-10-09).
+    static let headerBlurHeight: CGFloat = 80
+    static let headerBlurRadius: CGFloat = 8
+
+    /// Где карточка ловит палец: блок и полоса над ним, где торчит мини-книга.
+    static var tapArea: CGRect {
+        CGRect(x: blockOrigin.x, y: 0, width: blockSize.width, height: blockOrigin.y + blockSize.height)
+    }
 
     /// Кнопка ✕ `2004:10720` в правом верхнем углу блока. Лайка у этой карточки в макете нет.
     /// Лежит не внутри блока, а рядом: блок — интерактивная миниатюра, и кнопка внутри неё
@@ -57,23 +71,48 @@ private enum ReadingCardLayout {
 
 /// Карточка «продолжить чтение»: стеклянный блок с обрезанным фрагментом книги, скримом
 /// и строкой прогресса, а над его левым верхним углом торчит мини-обложка.
+///
+/// Нажимается целиком, двумя зонами (правка пользователя 2026-10-09): шапка — затемнение
+/// с блюром, обложка, прогресс — открывает экран книги, текст ниже — сразу читалку.
+/// ✕ убирает карточку целиком: гаснет, как карточки витрины на ✕, и лента схлопывается.
 struct ContinueReadingCard: View {
     let block: ReadingBlock
 
+    @Environment(\.showcaseThumbnail) private var thumbnail
+    @Environment(ActionBarState.self) private var actionBar
+    @Environment(AppNavigationState.self) private var navigation
+    @Environment(ShowcaseCatalog.self) private var catalog
+    @Environment(ShowcaseFeedbackState.self) private var feedback: ShowcaseFeedbackState?
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Стеклянный блок — интерактивная миниатюра карточки: страница книги и есть
-            // то, что разворачивается в экран. Строка прогресса, ✕ и мини-книга лежат
-            // поверх него отдельными слоями и в переходе не участвуют.
+            readingArea
+
+            // Крест — своя кнопка поверх карточки: палец на нём достаётся ему, а не ей.
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть", action: dismiss)
+                .offset(x: ReadingCardLayout.dismissOrigin.x, y: ReadingCardLayout.dismissOrigin.y)
+        }
+        .frame(
+            width: ShowcaseLayout.designWidth,
+            height: ReadingCardLayout.slot.height,
+            alignment: .topLeading
+        )
+        .showcaseSwappable()
+        // `-debugShowcaseDismiss 5` — тот же `dismiss()`, что у тапа по кресту.
+        .onChange(of: feedback?.debugDismisses) { dismiss() }
+    }
+
+    /// Блок, прогресс и мини-книга — одна нажимаемая область с общей просадкой. Куда вести,
+    /// решает точка тапа (`open(at:)`), а не две кнопки: просадка у прозрачной кнопки-зоны
+    /// была бы не видна. Источник зума — стеклянный блок, как у миниатюры витрины.
+    private var readingArea: some View {
+        ZStack(alignment: .topLeading) {
             glassBlock
-                .showcaseThumbnail()
+                .modifier(ReadingZoomSource(context: thumbnail))
                 .showcasePlaced(at: ReadingCardLayout.blockOrigin)
 
             timeline
                 .offset(x: ReadingCardLayout.timelineOrigin.x, y: ReadingCardLayout.timelineOrigin.y)
-
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть")
-                .offset(x: ReadingCardLayout.dismissOrigin.x, y: ReadingCardLayout.dismissOrigin.y)
 
             // Книга — сосед блока, а не его потомок: внутри её срезал бы клип.
             miniBook
@@ -84,6 +123,42 @@ struct ContinueReadingCard: View {
             height: ReadingCardLayout.slot.height,
             alignment: .topLeading
         )
+        .contentShape(Path(ReadingCardLayout.tapArea))
+        .pressScale(PressMotion.cardScale)
+        .onTapGesture(coordinateSpace: .local) { open(at: $0) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(block.title)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { openBook() }
+        .accessibilityAction(named: "Читать") { openReader() }
+    }
+
+    // MARK: - Нажатия
+
+    private func open(at location: CGPoint) {
+        let headerBottom = ReadingCardLayout.blockOrigin.y + ReadingCardLayout.headerHeight
+        if location.y < headerBottom {
+            openBook()
+        } else {
+            openReader()
+        }
+    }
+
+    private func openBook() {
+        guard let thumbnail, let route = thumbnail.route else { return }
+        thumbnail.onTap()
+        navigation.open(route)
+    }
+
+    /// Текст — сразу в читалку, как карточки «Смотреть дальше» — сразу в плеер.
+    private func openReader() {
+        thumbnail?.onTap()
+        actionBar.open(ShowcaseBlock.reading(block).player)
+    }
+
+    /// ✕ — карточка уходит целиком, лента схлопывается (`removeCard`).
+    private func dismiss() {
+        feedback?.removeCard(.reading(block), from: catalog)
     }
 
     // MARK: - Стеклянный блок
@@ -93,6 +168,14 @@ struct ContinueReadingCard: View {
 
         return ZStack(alignment: .topLeading) {
             excerpt
+            // Прогрессивный блюр шапки — под затемнением: верхние строки размыты под
+            // прогрессом и обложкой и проясняются к тексту (правка пользователя 2026-10-09).
+            VariableBlurView(
+                maxBlurRadius: ReadingCardLayout.headerBlurRadius,
+                direction: .blurredTopClearBottom
+            )
+            .frame(width: ReadingCardLayout.blockSize.width, height: ReadingCardLayout.headerBlurHeight)
+            .allowsHitTesting(false)
             scrim
         }
         .frame(
@@ -187,5 +270,18 @@ struct ContinueReadingCard: View {
             .allowsHitTesting(false)
             // Вторая копия той же обложки — VoiceOver не должен называть её дважды.
             .accessibilityHidden(true)
+    }
+}
+
+/// Источник зума в экран книги — стеклянный блок, тем же маршрутом, что у миниатюр витрины.
+private struct ReadingZoomSource: ViewModifier {
+    let context: ShowcaseThumbnailContext?
+
+    func body(content: Content) -> some View {
+        if let context, let route = context.route {
+            content.matchedTransitionSource(id: route, in: context.zoom)
+        } else {
+            content
+        }
     }
 }

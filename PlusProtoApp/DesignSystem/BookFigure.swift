@@ -31,9 +31,12 @@ struct BookFigureGeometry {
     /// Сколько подложки книга забирает в свою ширину — `pr-[2px]` макета: теперь это
     /// весь правый выступ, в зазор до соседа ничего не уходит.
     var pagesInset: CGFloat { pagesRight }
-    var coverRadius: CGFloat { 8 * scale }
+    var coverRadius: CGFloat { 8 * scale - radiusTrim }
     /// Скругление серой подложки — 10, у обложки 8 (правка пользователя 2026-10-03).
-    var pagesRadius: CGFloat { 10 * scale }
+    var pagesRadius: CGFloat { 10 * scale - radiusTrim }
+    /// На сколько скругления обложки и подложки меньше общих — поровну у обеих.
+    /// Ноль везде, кроме промо «Главной» (`ShowcasePromoLayout.book`).
+    var radiusTrim: CGFloat = 0
     /// Скошенный верх корешка у подложки: 4.1 % её ширины по горизонтали, 1.93 вниз.
     var spineBevel: CGSize { CGSize(width: 0.0406, height: 1.93 * scale) }
     var hingeWidth: CGFloat { 10 * scale }
@@ -89,6 +92,13 @@ struct BookFigure<Cover: View>: View {
         ZStack(alignment: .topLeading) {
             pages
                 .fill(BookFigureGeometry.pagesFill.opacity(layerOpacity))
+                // Под полупрозрачной подложкой — размытие фона, как у стеклянных блоков
+                // (правка пользователя 2026-10-09).
+                .background {
+                    BackdropBlurView(radius: PlusMetrics.buttonBlur)
+                        .clipShape(pages)
+                        .allowsHitTesting(false)
+                }
                 .overlay { pages.stroke(PlusSkeleton.fill.opacity(layerOpacity), lineWidth: PlusMetrics.hairline) }
                 .frame(
                     width: coverWidth + geometry.pagesRight,
@@ -96,7 +106,9 @@ struct BookFigure<Cover: View>: View {
                 )
 
             PlusSkeleton.fill.opacity(layerOpacity)
-                .overlay { cover }
+                // Сгиб у корешка рисует сама картинка (`ResolvedArtwork`): проявляется
+                // вместе с обложкой, а у скелетона его нет (правка пользователя 2026-10-09).
+                .overlay { cover.environment(\.bookHingeWidth, geometry.hingeWidth) }
                 .frame(width: coverWidth, height: geometry.coverHeight)
                 .clipShape(coverShape)
                 .overlay {
@@ -104,12 +116,6 @@ struct BookFigure<Cover: View>: View {
                     // слева корешок. Контур сам отступает внутрь на полтолщины.
                     BookCoverEdge(radius: geometry.coverRadius)
                         .stroke(CoverBorder.color.opacity(layerOpacity), lineWidth: CoverBorder.width)
-                        .allowsHitTesting(false)
-                }
-                .overlay(alignment: .leading) {
-                    BookHingeShade.gradient
-                        .frame(width: geometry.hingeWidth)
-                        .opacity(layerOpacity)
                         .allowsHitTesting(false)
                 }
                 .padding(.top, geometry.pagesTop)
@@ -176,7 +182,13 @@ private struct BookCoverEdge: Shape {
 /// Притенённый сгиб у корешка — полоска `Rectangle 240661877` макета, снятая
 /// по пикселям: блик у самой кромки, тень с пиком 15 % в 3/10 ширины от неё, спад
 /// к краю полоски. Мягче, чем у объёмной книги витрины: книга почти анфас.
-private enum BookHingeShade {
+extension EnvironmentValues {
+    /// Ширина сгиба у корешка — `BookFigure` ставит её своей обложке, а сгиб рисует сама
+    /// загруженная картинка (`ResolvedArtwork`). `nil` — не книга, сгиба нет.
+    @Entry var bookHingeWidth: CGFloat? = nil
+}
+
+enum BookHingeShade {
     static let gradient = LinearGradient(
         stops: [
             .init(color: .white.opacity(0.02), location: 0.05),

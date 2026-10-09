@@ -217,7 +217,7 @@ private struct BooksPromoCarousel: View {
             LazyHStack(spacing: BooksPromoLayout.gap) {
                 ForEach(0..<(count * Self.copies), id: \.self) { index in
                     let book = books[index % count]
-                    bookView(book, isCurrent: index == page)
+                    bookView(book, slot: index, isCurrent: index == page)
                         .frame(width: BooksPromoLayout.slot)
                         .visualEffect { content, proxy in
                             // Доля пути до соседнего места: 0 по центру экрана, ±1 у соседей.
@@ -267,16 +267,22 @@ private struct BooksPromoCarousel: View {
     }
 
     @ViewBuilder
-    private func bookView(_ book: BooksHomeCatalog.Book, isCurrent: Bool) -> some View {
+    private func bookView(_ book: BooksHomeCatalog.Book, slot: Int, isCurrent: Bool) -> some View {
         let geometry = BooksPromoLayout.geometry
         let coverWidth = geometry.coverWidth(aspect: min(book.aspect ?? BookFigureGeometry.defaultAspect, BooksPromoLayout.maxAspect))
         let figure = BookFigure(geometry: geometry, coverWidth: coverWidth) {
             SkeletonArtwork(source: book.cover)
         }
         Button { navigation.open(book.route) } label: {
+            // Источник зума — у каждой копии, адрес экрана книги — только у текущей. Без
+            // ветки по `isCurrent`: её смена пересоздавала книгу посреди свайпа, и обложка
+            // моргала (урок промо «Главной» и Кинопоиска).
             Group {
-                if isCurrent, let zoom {
-                    figure.matchedTransitionSource(id: book.route, in: zoom)
+                if let zoom {
+                    figure.matchedTransitionSource(
+                        id: isCurrent ? AnyHashable(book.route) : AnyHashable("books-promo-copy-\(slot)"),
+                        in: zoom
+                    )
                 } else {
                     figure
                 }

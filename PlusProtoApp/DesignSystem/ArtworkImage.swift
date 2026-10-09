@@ -26,6 +26,9 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
     /// анимации в любом случае — она есть уже на первом кадре.
     let appear: Animation?
     @ViewBuilder let content: (Image) -> Content
+    /// Обложка книги — сгиб у корешка поверх картинки (`BookFigure`): вместе с ней
+    /// он и проявляется, а пока её нет — его нет.
+    @Environment(\.bookHingeWidth) private var hingeWidth
     /// Что показать, если картинки нет вовсе: у источника нет бандленного фолбэка,
     /// а живая не загрузилась. Нужен там, где вместо картинки уместен текст —
     /// логотип проекта заменяется его названием.
@@ -59,6 +62,13 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
         Group {
             if let image = loaded ?? fallback {
                 content(image)
+                    .overlay(alignment: .leading) {
+                        if let hingeWidth {
+                            BookHingeShade.gradient
+                                .frame(width: hingeWidth)
+                                .allowsHitTesting(false)
+                        }
+                    }
             } else {
                 placeholder()
             }

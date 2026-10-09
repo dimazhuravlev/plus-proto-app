@@ -48,8 +48,9 @@ enum ShowcaseBlock: Identifiable {
             .music(MusicNowPlaying(id: b.id, cover: b.cover, title: b.title, artist: b.subtitle))
         case .book(let b):
             .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
-        case .vibe(let b):
-            .music(MusicNowPlaying(id: b.id, cover: b.cover, title: b.title, artist: b.subtitle))
+        case .vibe:
+            // Волна — поток, а не трек: играет настоящий трек её настроения (`MyVibeTracks`).
+            .music(MyVibeTracks.random())
         case .reading(let b):
             .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
         case .watching(let b):
@@ -137,6 +138,37 @@ struct VibeBlock {
     let subtitle: String
     /// Обложка для мини-плеера: у волны нет своей, берём заглушку трека.
     let cover: ArtworkSource
+    /// Иллюстрация волны и тон свечения под ней: ✕ сменяет их по кругу.
+    var art: VibeArt = .classic
+}
+
+/// Иллюстрации «Моей Волны» — чтобы новая волна по ✕ не была той же картинкой
+/// (задача пользователя 2026-10-09). Свечение — тот же ассет `vibeColorEllipse`,
+/// повёрнутый по оттенку под иллюстрацию.
+enum VibeArt: CaseIterable {
+    case classic
+    case pop
+
+    var glyph: String {
+        switch self {
+        case .classic: "vibeGlyph"
+        case .pop: "vibeGlyphPop"
+        }
+    }
+
+    /// Сдвиг оттенка свечения. Свечение (266°) на 15° холоднее глифа (281°); под Pop
+    /// (349°) держим то же соотношение — 334°, то есть +68°.
+    var haloHue: Angle {
+        switch self {
+        case .classic: .zero
+        case .pop: .degrees(68)
+        }
+    }
+
+    var next: VibeArt {
+        let all = Self.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
+    }
 }
 
 struct ReadingBlock {
@@ -243,12 +275,23 @@ extension ShowcaseFeed {
                 artistPicture: URL(string: "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg")
                     .map { ArtworkSource.remote($0) }
             )),
+            // Книги промо — не та, что в ленте ниже, и их две: без живых книг в круге
+            // стояла одна, та же, что в ленте (жалоба 2026-10-09). Подписи — по аннотациям
+            // издательств. Оттенок подписи у промо не используется.
             .book(BookBlock(
-                id: "technofeudalism",
-                title: "Технофеодализм",
-                render: .asset("mockBookTechno"),
-                cover: .asset("mockBookTechno"),
-                caption: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
+                id: "zamirovskaya-things",
+                title: "Некоторые вещи уже произошли",
+                render: .asset("mockBookZamirovskaya"),
+                cover: .asset("mockBookZamirovskaya"),
+                caption: "Рассказы Татьяны Замировской о катастрофах и о том, как они меняют память, язык и нас самих",
+                captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
+            )),
+            .book(BookBlock(
+                id: "fedorova-35-july",
+                title: "35 июля. Но это не точно",
+                render: .asset("mockBookFedorova"),
+                cover: .asset("mockBookFedorova"),
+                caption: "Две повести Ани Фёдоровой о детстве на стыке девяностых и нулевых: бабушка, тамагочи, приволжский город",
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
         ],
@@ -268,12 +311,13 @@ extension ShowcaseFeed {
                 subtitle: "Равноденствие"
             )),
             .book(BookBlock(
-                id: "technofeudalism",
-                title: "Технофеодализм",
-                render: .asset("mockBookTechno"),
-                cover: .asset("mockBookTechno"),
-                caption: "Что пришло на смену капитализму и как это изменило мир? Новый взгляд на экономику",
-                captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
+                id: "graeber-truth",
+                title: "Главная тайная истина мира…",
+                render: .asset("mockBookGraeberTruth"),
+                cover: .asset("mockBookGraeberTruth"),
+                caption: "Эссе Дэвида Гребера: мир — то, что мы создаём, и его вполне можно устроить иначе",
+                // Светлый тон жёлтой обложки — как у живых книг, где тон берётся с обложки.
+                captionTint: Color(red: 0xF6 / 255, green: 0xF1 / 255, blue: 0xB0 / 255)
             )),
             .vibe(VibeBlock(
                 id: "my-vibe",
@@ -284,7 +328,7 @@ extension ShowcaseFeed {
             .reading(ReadingBlock(
                 id: "bullshit-jobs",
                 title: "Бредовая работа",
-                cover: .asset("mockBookMini"),
+                cover: .asset("mockChipBookCover"),
                 excerpt: """
                 Пиль предполагал, что у рабочих не было другого выбора, кроме как продавать свой труд, \
                 но он не учёл важного обстоятельства общинных земель, которая происходила с конца XVIII \
