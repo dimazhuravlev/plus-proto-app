@@ -97,9 +97,6 @@ struct ShowcaseFeedView: View {
         .ignoresSafeArea(edges: .top)
         // Первый показ отыграл — следующие появления витрины без проявления.
         .onDisappear { ShowcaseAppearMemory.hasShown = true }
-        .background(alignment: .top) {
-            ShowcaseBackdrop(source: feed.backdrop)
-        }
         #if DEBUG
         // Скролл переставляется и после подмены блоков живыми: лента пересобирается,
         // и заданная на старте позиция сбрасывается в ноль. Пауза обязательна —

@@ -15,8 +15,6 @@ struct ShowcaseFeed {
     /// в карточках ленты, и новый на каждый холодный запуск.
     var promo: [ShowcaseBlock] = []
     let blocks: [ShowcaseBlock]
-    /// Обложка, из которой строится фон экрана. По решению — кавер первого блока витрины.
-    let backdrop: ArtworkSource
 }
 
 /// Блок ленты. Каждый несёт свой payload и знает свою геометрию в макете.
@@ -219,14 +217,6 @@ enum ShowcaseLayout {
         guard let previous else { return slot.top }
         return slot.top - (previous.top + previous.height)
     }
-
-    /// Фон: копия обложки шириной в два экрана, размытая и приглушённая (§0).
-    enum Backdrop {
-        static let size = CGSize(width: 804, height: 2269)
-        static let origin = CGPoint(x: -201, y: -81)
-        static let blur: CGFloat = PlusMetrics.backdropBlur
-        static let opacity: CGFloat = PlusMetrics.backdropOpacity
-    }
 }
 
 // MARK: - Демо-данные
@@ -315,8 +305,7 @@ extension ShowcaseFeed {
                 progress: 0.815,
                 remaining: "Осталось 16 мин"
             )),
-        ],
-        backdrop: .asset("mockBgCollage")
+        ]
     )
 }
 
@@ -351,10 +340,10 @@ extension ShowcaseBlock {
 }
 
 extension ShowcaseFeed {
-    /// Все картинки первого экрана: промо, блоки и фон. По этому списку
+    /// Все картинки первого экрана: промо и блоки. По этому списку
     /// сплэш понимает, что витрину можно показывать, — карточка без обложки
     /// и есть то мигание, ради которого заставку заводили.
     var artworks: [ArtworkSource] {
-        promo.flatMap(\.artworks) + blocks.flatMap(\.artworks) + [backdrop]
+        promo.flatMap(\.artworks) + blocks.flatMap(\.artworks)
     }
 }
