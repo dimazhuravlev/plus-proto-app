@@ -195,9 +195,9 @@ enum ShowcaseLayout {
         ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight
     }
     /// Первая карточка ленты — под промо: зазор, что был под заголовком с врезками
-    /// (220.48 − 184.93), и ещё 40 (правка пользователя 2026-10-08). В макете промо
-    /// карточек ниже нет.
-    static let promoToFirstBlock: CGFloat = 35.55 + 40
+    /// (220.48 − 184.93). Добавленные 2026-10-08 ещё 40 убраны на следующий день
+    /// (правки пользователя). В макете промо карточек ниже нет.
+    static let promoToFirstBlock: CGFloat = 35.55
 
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
     static let contentBottom: CGFloat = Slot.watching.top + Slot.watching.height
