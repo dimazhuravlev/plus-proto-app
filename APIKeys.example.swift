@@ -23,6 +23,15 @@ enum APIKeys {
         "",
     ]
 
+    /// kinopoiskapiunofficial.tech — запас поиска фильмов, когда у kinopoisk.dev кончилась
+    /// квота на всех ключах (`KinopoiskUnofficialService`). Заголовок X-API-KEY.
+    /// Ключ — после регистрации на https://kinopoiskapiunofficial.tech, в профиле.
+    /// Квота своя, 500 запросов в сутки на ключ. Пусто — запаса нет, поиск как раньше.
+    /// Вписать ключи во все копии этого файла — `./scripts/set-unofficial-keys.sh`.
+    static let kinopoiskUnofficial: [String] = [
+        "",
+    ]
+
     /// Google Books — метаданные книг (параметр запроса key). Обложки идут с Google CDN
     /// без ключа, текст — с Викитеки, тоже без ключа: этот ключ нужен только описаниям.
     ///

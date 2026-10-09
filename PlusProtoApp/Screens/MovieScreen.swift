@@ -85,8 +85,11 @@ enum MovieLayout {
     static let buttonLeading: CGFloat = 22
     static let buttonTrailing: CGFloat = 26
     static let buttonGap: CGFloat = 8
+    /// Воздух между концом ленты и кнопками панели: вплотную контент касался кнопок
+    /// (правка пользователя 2026-10-09).
+    static let panelAir: CGFloat = 32
     /// Сколько лента обязана оставить под прибитой панелью
-    static var panelClearance: CGFloat { buttonHeight + panelBottom }
+    static var panelClearance: CGFloat { buttonHeight + panelBottom + panelAir }
     /// Высота затемняющей подложки — общая с таббаром (правка пользователя 2026-08-25;
     /// прежде считалась своей суммой 96 + 56 + 24 = 176). Над кнопками остаётся
     /// 140 − 56 − 24 = 60 чистого градиента.

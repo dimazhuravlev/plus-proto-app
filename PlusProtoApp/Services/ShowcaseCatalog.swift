@@ -45,6 +45,15 @@ final class ShowcaseCatalog {
     private var upcomingPromo: [String: Task<Replacement?, Never>] = [:]
     /// Убранные из промо по ✕ — новые айтемы их не возвращают.
     private var dismissedPromoIDs: Set<String> = []
+    /// Они же по произведению (`workKey`): не возвращаются и другим изданием.
+    private var dismissedPromoWorks: Set<String> = []
+    /// Карточки ленты, убранные ✕ целиком («Продолжить читать»): их слот схлопывается,
+    /// лента ниже подтягивается. На процесс — каталог живёт в корне.
+    private(set) var hiddenBlockIDs: Set<String> = []
+
+    func hideBlock(id: String) {
+        hiddenBlockIDs.insert(id)
+    }
     /// Айтем промо на месте — помнится на сессию, как у промо Кинопоиска и Книг.
     var promoIndex = 0
 
@@ -493,8 +502,10 @@ final class ShowcaseCatalog {
             }
             spare += fitting.filter { book in !spare.contains(where: { $0.id == book.id }) }
         }
+        // Одна книга — один раз: ни второго издания, ни книги, что уже стоит в ленте.
+        var takenWorks = Set(found.map { Self.bookKey($0.title) })
         promoBooks = spare
-            .filter { book in !found.contains(where: { $0.id == book.id }) && book.coverURL != nil }
+            .filter { book in book.coverURL != nil && takenWorks.insert(Self.bookKey(book.title)).inserted }
             .prefix(ShowcaseSeeds.promoPerKind)
             .compactMap(Self.promoBookBlock)
         publishPromo()
@@ -511,8 +522,8 @@ final class ShowcaseCatalog {
                 id: "gb-\(featured.id)",
                 title: featured.title,
                 // Объём строится из плоской обложки — см. `BookRender`.
-                render: .remote(cover, fallback: "mockBookTechno"),
-                cover: .remote(cover, fallback: "mockBookTechno"),
+                render: .remote(cover),
+                cover: .remote(cover),
                 caption: (featured.volumeInfo.description ?? featured.volumeInfo.subtitle ?? "")
                     .showcaseCaption(maxCharacters: 92),
                 captionTint: tint ?? Self.mockBookTint
@@ -525,7 +536,7 @@ final class ShowcaseCatalog {
             apply(.reading(ReadingBlock(
                 id: "gb-r-\(reading.id)",
                 title: reading.title,
-                cover: .remote(cover, fallback: "mockBookMini"),
+                cover: .remote(cover),
                 // Кадр фрагмента 322×532 рассчитан на сплошной текст: короткое
                 // описание оставило бы половину блока пустой, поэтому ниже порога
                 // берём моковый отрывок.
@@ -538,6 +549,41 @@ final class ShowcaseCatalog {
 
     /// Том для витрины: написан самим автором сида (фамилия в `authors`), по-русски,
     /// с описанием под подпись карточки, и это не пересказ. Скан обложки отбирает сервис.
+    /// Произведение, а не издание: Google Books отдаёт одну книгу несколькими томами
+    /// с разными id (переиздания, другой подзаголовок), Deezer — альбом переизданиями.
+    /// Сверка по id пропускала их, и в круге промо стояла одна книга дважды (жалоба
+    /// 2026-10-09). Ключ — название до подзаголовка, без регистра и знаков.
+    private static func workKey(_ title: String) -> String {
+        let main = title.split(whereSeparator: { ":.(".contains($0) }).first.map(String.init) ?? title
+        return main.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func bookKey(_ title: String) -> String {
+        "book:" + workKey(title)
+    }
+
+    private static func albumKey(artist: String, album: String) -> String {
+        "album:" + artist.lowercased() + "|" + workKey(album)
+    }
+
+    /// Ключ произведения айтема ленты или промо — у книги и альбома.
+    private static func workKey(of block: ShowcaseBlock) -> String? {
+        switch block {
+        case .book(let book): bookKey(book.title)
+        case .reading(let reading): bookKey(reading.title)
+        case .album(let album): albumKey(artist: album.title, album: album.subtitle)
+        case .movie, .vibe, .watching: nil
+        }
+    }
+
+    /// Произведения на экране — в ленте и в промо — и убранные из промо.
+    private var shownWorks: Set<String> {
+        dismissedPromoWorks.union((feed.blocks + feed.promo).compactMap(Self.workKey(of:)))
+    }
+
     private static func isShowcaseBook(_ book: GoogleBook, by surname: String) -> Bool {
         let info = book.volumeInfo
         guard info.language == "ru", (info.description?.count ?? 0) >= Self.bookDescriptionMinimum else { return false }
@@ -552,8 +598,8 @@ final class ShowcaseCatalog {
         return BookBlock(
             id: "gb-\(book.id)",
             title: book.title,
-            render: .remote(cover, fallback: "mockBookTechno"),
-            cover: .remote(cover, fallback: "mockBookTechno"),
+            render: .remote(cover),
+            cover: .remote(cover),
             caption: (book.volumeInfo.description ?? book.volumeInfo.subtitle ?? "")
                 .showcaseCaption(maxCharacters: ShowcaseSeeds.promoCaptionLimit),
             captionTint: mockBookTint
@@ -655,6 +701,9 @@ final class ShowcaseCatalog {
     /// Айтем уходит из круга насовсем: новые его не вернут.
     func removePromo(id: String) {
         dismissedPromoIDs.insert(id)
+        if let removed = feed.promo.first(where: { $0.id == id }), let work = Self.workKey(of: removed) {
+            dismissedPromoWorks.insert(work)
+        }
         upcomingPromo.removeValue(forKey: id)?.cancel()
         promoMovies.removeAll { $0.id == id }
         promoAlbums.removeAll { $0.id == id }
@@ -752,10 +801,16 @@ final class ShowcaseCatalog {
     /// Альбом — студийный, с обложкой, из дискографии случайного сида; не тот же.
     private func nextAlbum(after current: AlbumBlock, forPromo: Bool = false) async -> Replacement? {
         var rng = SystemRandomNumberGenerator()
+        let works = shownWorks
+        // В круге промо — по альбому на исполнителя: второй того же читался бы повтором.
+        var promoArtists: Set<String> = []
+        for case .album(let album) in feed.promo { promoArtists.insert(album.title) }
         for seed in ShowcaseSeeds.musicArtists.shuffled(using: &rng).prefix(ShowcaseSeeds.artistAttempts) {
+            if forPromo, promoArtists.contains(seed.name) { continue }
             guard let albums = try? await DeezerService.shared.artistAlbums(id: seed.id) else { continue }
             let fitting = albums.filter {
                 Self.isShowcaseAlbum($0) && "dz-\($0.id)" != current.id && !shownAlbumIDs.contains("dz-\($0.id)")
+                    && !works.contains(Self.albumKey(artist: seed.name, album: $0.title))
             }
             if let album = fitting.randomElement(using: &rng),
                let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
@@ -794,9 +849,14 @@ final class ShowcaseCatalog {
         for id in dismissedPromoIDs where id.hasPrefix("gb-") {
             excluded.insert(String(id.dropFirst("gb-".count)))
         }
+        // И по произведению: другое издание той же книги — та же книга.
+        let works = shownWorks.union([Self.bookKey(current.title)])
         for seed in ShowcaseSeeds.bookSeeds.shuffled(using: &rng).prefix(ShowcaseSeeds.bookAttempts) {
             guard let volumes = try? await BooksService.shared.search(seed.query, limit: 20) else { continue }
-            let fitting = volumes.filter { Self.isShowcaseBook($0, by: seed.author) && !excluded.contains($0.id) }
+            let fitting = volumes.filter {
+                Self.isShowcaseBook($0, by: seed.author) && !excluded.contains($0.id)
+                    && !works.contains(Self.bookKey($0.title))
+            }
             guard let book = fitting.randomElement(using: &rng), let cover = book.coverURL else { continue }
             if forPromo, let block = Self.promoBookBlock(book) {
                 return Replacement(block: .book(block))
@@ -805,8 +865,8 @@ final class ShowcaseCatalog {
             return Replacement(block: .book(BookBlock(
                 id: "gb-\(book.id)",
                 title: book.title,
-                render: .remote(cover, fallback: "mockBookTechno"),
-                cover: .remote(cover, fallback: "mockBookTechno"),
+                render: .remote(cover),
+                cover: .remote(cover),
                 caption: (book.volumeInfo.description ?? book.volumeInfo.subtitle ?? "")
                     .showcaseCaption(maxCharacters: 92),
                 captionTint: tint ?? Self.mockBookTint
@@ -834,7 +894,8 @@ final class ShowcaseCatalog {
             id: cover.map { "vibe-\($0.album)" } ?? "vibe-\(UUID().uuidString)",
             title: current.title,
             subtitle: subtitle,
-            cover: cover.map { .remote($0.url, fallback: "mockPlayerCover") } ?? current.cover
+            cover: cover.map { .remote($0.url, fallback: "mockPlayerCover") } ?? current.cover,
+            art: current.art.next
         )))
     }
 

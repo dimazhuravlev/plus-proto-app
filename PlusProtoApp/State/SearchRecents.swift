@@ -200,7 +200,7 @@ enum SearchRecents {
                 id: "gb-\(id)",
                 title: title,
                 subtitle: author,
-                artwork: artwork ?? .asset("mockBookTechno")
+                artwork: artwork ?? .asset("mockChipBookCover")
             )),
             artworkAspect: aspect
         )

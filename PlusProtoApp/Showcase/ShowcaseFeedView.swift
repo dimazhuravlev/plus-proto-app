@@ -52,6 +52,7 @@ struct ShowcaseFeedView: View {
     @Binding var scrollOffset: CGFloat
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(ShowcaseCatalog.self) private var catalog
     @State private var scrollPosition = ScrollPosition()
 
     var body: some View {
@@ -145,13 +146,18 @@ struct ShowcaseFeedView: View {
     /// и в каком namespace зумить, карточка узнаёт из контекста: маршрут известен здесь,
     /// а миниатюра лежит на несколько слоёв глубже.
     private func card(_ block: ShowcaseBlock, index: Int) -> some View {
-        ShowcaseFeedbackHost(debugIndex: index + 1) { blockView(block) }
+        // Убранная ✕ целиком карточка — нулевой высоты: зазор под ней считается от её
+        // слота, и лента ниже подтягивается ровно на её высоту. Контент к этому моменту
+        // уже погас (`ContinueReadingCard.dismiss`).
+        let isHidden = catalog.hiddenBlockIDs.contains(block.id)
+        return ShowcaseFeedbackHost(debugIndex: index + 1) { blockView(block) }
             .environment(\.showcaseRefresh, ShowcaseRefresh { await prepareReplacement(block) })
             .frame(
                 width: ShowcaseLayout.designWidth,
-                height: block.slot.height,
+                height: isHidden ? 0 : block.slot.height,
                 alignment: .topLeading
             )
+            .allowsHitTesting(!isHidden)
             .environment(
                 \.showcaseThumbnail,
                 ShowcaseThumbnailContext(
@@ -175,6 +181,11 @@ struct ShowcaseFeedView: View {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
         guard block.entityRoute == nil else { return }
+        // «Моя Волна» — поток: включает настоящий трек волны, а не «трек» с её именем.
+        if case .vibe = block {
+            actionBar.openMyVibe()
+            return
+        }
         actionBar.open(block.player)
     }
 

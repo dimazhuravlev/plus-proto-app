@@ -207,6 +207,9 @@ struct MovieRateSection: View {
         /// Эмодзи — 24, как глиф кегля 24 (Title S макета), которым он был текстом.
         static let emoji: CGFloat = 24
         static let labelGap: CGFloat = 8
+        /// Воздух под заголовком блока — на 16 больше, чем у секций экрана (правка
+        /// пользователя 2026-10-09; 8 — мало): кнопки стояли вплотную к нему.
+        static let headerExtra: CGFloat = 16
     }
 
     private struct Option: Identifiable {
@@ -218,11 +221,12 @@ struct MovieRateSection: View {
         let burst: Int
     }
 
+    /// Подписи — как у блока оценки на витрине (правка пользователя 2026-10-09).
     private static let options = [
-        Option(emoji: "emojiRateDislike", title: "Не зашло", burst: 1),
-        Option(emoji: "emojiRateMeh", title: "Так себе", burst: 1),
-        Option(emoji: "emojiRateGood", title: "Хорошо", burst: 2),
-        Option(emoji: "emojiRateLove", title: "Обожаю", burst: 6),
+        Option(emoji: "emojiRateDislike", title: "Нет", burst: 1),
+        Option(emoji: "emojiRateMeh", title: "Норм", burst: 1),
+        Option(emoji: "emojiRateGood", title: "Супер", burst: 2),
+        Option(emoji: "emojiRateLove", title: "Шедевр", burst: 6),
     ]
 
     @State private var selected: String?
@@ -237,8 +241,14 @@ struct MovieRateSection: View {
                 ForEach(MovieRateSection.options) { option in
                     // Тап — реакция, как на витрине: белый фон, стайка эмодзи, хаптик.
                     Button {
-                        selected = option.id
-                        launches[option.id, default: 0] += 1
+                        // Повторный тап по выбранной снимает выбор — как на витрине.
+                        if selected == option.id {
+                            selected = nil
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        } else {
+                            selected = option.id
+                            launches[option.id, default: 0] += 1
+                        }
                     } label: {
                         VStack(spacing: Layout.labelGap) {
                             RateReactionChip(
@@ -248,9 +258,9 @@ struct MovieRateSection: View {
                                 emojiSize: Layout.emoji
                             )
 
-                            Text(option.title)
-                                .plusText(.textS, .semibold)
-                                .foregroundStyle(Color.fillOne)
+                            // Стиль подписи — тот же, что у блока оценки витрины.
+                            GradientText(option.title, from: .fillOne, to: .white.opacity(0.7))
+                                .plusText(.textM, .medium)
                         }
                         .contentShape(.rect)
                     }
@@ -271,6 +281,7 @@ struct MovieRateSection: View {
             }
             .frame(height: Layout.rowHeight, alignment: .top)
             .padding(.horizontal, MovieLayout.sectionSide)
+            .padding(.top, Layout.headerExtra)
         }
         .padding(.vertical, Layout.outer)
     }

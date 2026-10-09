@@ -99,9 +99,9 @@ struct MyVibeCard: View {
             // Орб — интерактивная миниатюра карточки: заголовок, подзаголовок и ♥/✕
             // остаются снаружи. Своей сущности у «Моей Волны» нет, поэтому тап только
             // включает плеер — разворачиваться некуда.
+            // Смена по ✕ — у каждого слоя орба своя (`orb`), не у орба целиком.
             orb
                 .showcaseThumbnail()
-                .showcaseSwappable()
                 .showcasePlaced(at: VibeGeometry.haloOrigin)
 
             textColumn
@@ -115,6 +115,11 @@ struct MyVibeCard: View {
     /// Три слоя снизу вверх: гало → зерно в color-dodge → глиф.
     /// В таймлайне живут только первые два, глиф вынесен наружу и не перерисовывается.
     ///
+    /// Гаснут при смене по ✕ слои по отдельности, а зерно — до своего наложения. Блюр
+    /// и прозрачность на всём орбе сводили его в отдельный прозрачный слой, color-dodge
+    /// там смешивался с пустотой вместо фона, и зерно вспыхивало серым квадратом в начале
+    /// и в конце смены (кадр 2026-10-09).
+    ///
     /// Кадр — круг гало, слои расставлены от его центра: зерно 317×316 и раздутое блюром
     /// гало 311 выходят за кадр далеко, и если отдать кнопке их габарит, она ловила бы тапы
     /// по пустому месту, а просадка под пальцем считалась бы вокруг чужого центра.
@@ -125,13 +130,15 @@ struct MyVibeCard: View {
 
                 ZStack {
                     halo(t)
+                        .showcaseSwappable()
                     grain(t)
                 }
             }
 
-            Image("vibeGlyph")
+            Image(block.art.glyph)
                 .resizable()
                 .frame(width: VibeGeometry.glyphSize, height: VibeGeometry.glyphSize)
+                .showcaseSwappable()
                 .offset(x: VibeGeometry.glyphOffset.width, y: VibeGeometry.glyphOffset.height)
         }
         .frame(width: VibeGeometry.haloSize, height: VibeGeometry.haloSize)
@@ -143,6 +150,10 @@ struct MyVibeCard: View {
         Image("vibeColorEllipse")
             .resizable()
             .frame(width: VibeGeometry.haloBleed, height: VibeGeometry.haloBleed)
+            // Тон — под иллюстрацию волны; меняется плавно, той же кривой, что проявление
+            // новой волны после ✕, а не щелчком на подмене блока.
+            .hueRotation(block.art.haloHue)
+            .animation(ShowcaseFeedbackMotion.swapIn, value: block.art)
             .scaleEffect(wave(t, period: VibeOrbMotion.haloPeriod, VibeOrbMotion.haloScale))
             .opacity(
                 wave(
@@ -172,6 +183,7 @@ struct MyVibeCard: View {
             .frame(width: VibeGeometry.grainBox.width, height: VibeGeometry.grainBox.height)
             .clipped()
             .opacity(wave(t, period: VibeOrbMotion.grainPeriodOpacity, VibeOrbMotion.grainOpacity))
+            .showcaseSwappable()
             .blendMode(.colorDodge)
             .offset(x: VibeGeometry.grainOffset.width, y: VibeGeometry.grainOffset.height)
     }

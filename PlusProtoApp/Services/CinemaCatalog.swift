@@ -144,14 +144,15 @@ final class CinemaCatalog {
         }
 
         MovieDetailsStore.remember(Array(fetched.values.joined()))
-        // Первый слайд — с картинками: обложка и логотип ждутся (не дольше потолка),
-        // иначе лента встала бы пустой рамкой и обложка проявлялась бы на глазах.
-        // Остальное догружается в фоне.
-        if let first = builtPromos.first {
-            await Self.prewarm([first.cover] + [first.logo].compactMap { $0 })
-        }
+        // Первый слайд и оба соседа по кругу (второй и последний) — с картинками: обложки
+        // и логотипы ждутся под скелетоном (не дольше потолка). Прежде ждался один первый,
+        // и на первых свайпах обложки проявлялись на глазах (жалоба 2026-10-10). Остальные
+        // слайды и подборки догружаются в фоне — все, а не два следующих.
+        let neighbors = [builtPromos.first, builtPromos.dropFirst().first, builtPromos.count > 2 ? builtPromos.last : nil]
+            .compactMap { $0 }
+        await Self.prewarm(neighbors.flatMap { [$0.cover] + [$0.logo].compactMap { $0 } })
         ArtworkLoader.shared.preload(
-            builtPromos.dropFirst().prefix(2).flatMap { [$0.cover] + [$0.logo].compactMap { $0 } }
+            builtPromos.flatMap { [$0.cover] + [$0.logo].compactMap { $0 } }
                 + builtRows.flatMap { $0.titles.prefix(4).compactMap(\.poster) }
         )
 

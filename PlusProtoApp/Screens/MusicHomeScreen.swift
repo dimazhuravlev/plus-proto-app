@@ -2,11 +2,9 @@ import SwiftUI
 import UIKit
 
 /// Числа «Моей волны» — по скриншоту Музыки (задача пользователя 2026-10-04): шейдер,
-/// крупное название по центру и большая белая кнопка под ним. Вертикаль — от низа
-/// навигации.
+/// крупное название и большая белая кнопка под ним. Блок «название + кнопка» — посередине
+/// между навигацией и барабаном станций (правка пользователя 2026-10-09).
 enum MyVibeLayout {
-    /// Центр названия — на 170 ниже низа навигации
-    static let titleBelowNav: CGFloat = 170
     /// Шейдер — квадрат шире экрана с центром у названия: пятно в кадре занимает
     /// ~70 %, и на скриншоте оно почти во всю ширину
     static let shaderSize: CGFloat = 500
@@ -53,7 +51,9 @@ struct MusicHomeScreen: View {
                 .scrollBounceBehavior(.always, axes: .vertical)
                 .scrollIndicators(.hidden)
                 .contentMargins(.bottom, 0, for: .scrollContent)
-                .ignoresSafeArea(edges: .top)
+                // Экран — от кромки до кромки: барабан отмеряется от низа экрана, где стоит
+                // нижний хром, а не от безопасной зоны.
+                .ignoresSafeArea(edges: [.top, .bottom])
                 .trackNavBarScroll(into: $scrollOffset)
             } else {
                 ServiceFilterStub(title: Self.filters[filter])
@@ -63,7 +63,9 @@ struct MusicHomeScreen: View {
             ServiceTopNav(
                 filters: Self.filters,
                 selection: $filter,
-                scrollOffset: filter == 0 ? scrollOffset : 0
+                scrollOffset: filter == 0 ? scrollOffset : 0,
+                // У «Моей волны» затемнения сверху нет (правка пользователя 2026-10-10).
+                showsTopShade: filter != 0
             )
         }
         // Лента таба, вернувшаяся после другого фильтра, доложит свой сдвиг сама —
@@ -77,38 +79,49 @@ struct MusicHomeScreen: View {
 private struct MyVibeHero: View {
     @Environment(ActionBarState.self) private var actionBar
 
-    /// «Моя волна» в баре — тот же id, что у блока витрины: включить её с витрины
-    /// и отсюда — одно и то же, и повторный тап ставит на паузу.
-    private static let vibeID = "my-vibe"
 
-    private var titleCenter: CGFloat {
-        ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + MyVibeLayout.titleBelowNav
+    private var navBottom: CGFloat {
+        ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight
+    }
+
+    /// Верх action bar от низа экрана: безопасная зона, ряд табов, зазор, сам бар.
+    private var actionBarTop: CGFloat {
+        PlusChromeMetrics.bottomSafeArea + PlusChromeMetrics.tabsRowHeight
+            + PlusChromeMetrics.actionBarToTabsGap + PlusMetrics.actionBarHeight
     }
 
     private var isPlaying: Bool {
-        actionBar.mode == .music && actionBar.music?.id == Self.vibeID && actionBar.isMusicPlaying
+        actionBar.mode == .music && MyVibeTracks.isVibe(actionBar.music?.id) && actionBar.isMusicPlaying
     }
 
     var body: some View {
         // Оверлеем на распорке: шейдер шире экрана, и своей шириной он раздувал экран —
         // навигация центрировалась по 500pt и срезалась с обеих сторон (кадр 2026-10-04).
         Color.clear
-            .overlay(alignment: .top) { hero }
+            .overlay { hero }
             .clipped()
-            .ignoresSafeArea(edges: .top)
     }
 
+    /// Навигация — блок — барабан. Блок держат две равные распорки: отступ от навигации
+    /// и до барабана одинаковый на любом экране, без замера вью.
     private var hero: some View {
-        ZStack(alignment: .top) {
-            VibeShader()
-                .frame(width: MyVibeLayout.shaderSize, height: MyVibeLayout.shaderSize)
-                .offset(y: titleCenter - MyVibeLayout.shaderSize / 2)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: navBottom)
+            Spacer(minLength: 0)
+            titleAndPlay
+            Spacer(minLength: 0)
+            // Барабан — видимой частью над action bar, остальное уходит под нижний хром.
+            VibeDrum { _ in play() }
+                .frame(height: VibeDrumLayout.visibleHeight + actionBarTop, alignment: .top)
+        }
+    }
 
+    private var titleAndPlay: some View {
+        VStack(spacing: MyVibeLayout.titleToPlay - PlusHeadline.xxxl.size / 2 - MyVibeLayout.playSize / 2) {
             Text("Моя волна")
                 .plusHeadline(.xxxl)
                 .foregroundStyle(Color.fillOne)
                 .frame(height: PlusHeadline.xxxl.size)
-                .offset(y: titleCenter - PlusHeadline.xxxl.size / 2)
 
             Button(action: play) {
                 PlayPauseGlyph(isPlaying: isPlaying, box: MyVibeLayout.playIcon)
@@ -118,19 +131,20 @@ private struct MyVibeHero: View {
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel(isPlaying ? "Пауза" : "Слушать Мою волну")
-            .offset(y: titleCenter + MyVibeLayout.titleToPlay - MyVibeLayout.playSize / 2)
+        }
+        // Шейдер — под названием, с центром на нём; фоном, чтобы ширина 500 не раздувала блок.
+        .background(alignment: .top) {
+            VibeShader()
+                .frame(width: MyVibeLayout.shaderSize, height: MyVibeLayout.shaderSize)
+                .offset(y: PlusHeadline.xxxl.size / 2 - MyVibeLayout.shaderSize / 2)
         }
     }
 
+    /// Настоящий трек волны (`MyVibeTracks`); волна уже в баре — пауза и снятие с неё.
     private func play() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.open(.music(MusicNowPlaying(
-            id: Self.vibeID,
-            cover: .asset("mockPlayerCover"),
-            title: "Моя Волна",
-            artist: "Атмосферный постпанк, когда внутри пасмурно"
-        )))
+        actionBar.openMyVibe()
     }
 }
 

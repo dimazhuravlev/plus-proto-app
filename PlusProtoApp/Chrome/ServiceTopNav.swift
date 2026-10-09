@@ -4,6 +4,11 @@ import VariableBlur
 
 /// Числа верхней навигации — макет `2455:75953` (главная Кинопоиска).
 enum ServiceTopNavLayout {
+    /// Затемнение сверху (тест 2026-10-10): высота от физического верха, пик и путь
+    /// скролла, за который оно проявляется от нуля до пика.
+    static let topShadeHeight: CGFloat = 100
+    static let topShadePeak: Double = 0.5
+    static let topShadeRamp: CGFloat = 300
     /// Ряд под статус-баром: табы 40 и аватар 48 по центру
     static let rowHeight: CGFloat = 56
 
@@ -95,6 +100,8 @@ struct ServiceTopNav: View {
     @Binding var selection: Int
     /// Сколько ленты ушло под бар — от этого прозрачность подложки.
     var scrollOffset: CGFloat = 0
+    /// Затемнение сверху по скроллу — у витрин; у «Моей волны» и «Моего» его нет.
+    var showsTopShade = true
     /// Аватар профиля — из макета навигации (`userpics` `2455:75985`), кадр 40pt на ×3.
     var avatar: ArtworkSource = .asset(ProfileMock.avatar)
 
@@ -106,7 +113,7 @@ struct ServiceTopNav: View {
             ProfileAvatarButton(avatar: avatar)
                 .padding(.trailing, ServiceTopNavLayout.side)
         }
-        .modifier(TopNavRow(scrollOffset: scrollOffset))
+        .modifier(TopNavRow(scrollOffset: scrollOffset, showsTopShade: showsTopShade))
     }
 
     // MARK: Табы
@@ -263,6 +270,7 @@ struct ServiceTopNav: View {
 /// табов и «Главной» — аватар у всех встаёт в одну точку.
 struct TopNavRow: ViewModifier {
     let scrollOffset: CGFloat
+    var showsTopShade = true
 
     func body(content: Content) -> some View {
         content
@@ -287,6 +295,22 @@ struct TopNavRow: ViewModifier {
                 // пользователя 2026-10-04: «моргает при переключении Любимое — Скачанное»).
                 .transaction { $0.animation = nil }
                 .ignoresSafeArea(edges: .top)
+            }
+            // Затемнение сверху — как под таббаром, только перевёрнутое (тест, правки
+            // пользователя 2026-10-10): 100 от физического верха, пик 50 %, те же 16 стопов.
+            // В покое его нет, проявляется по скроллу к 300 — плавно, smoothstep. Только
+            // на витринах: у «Моей волны» и «Моего» выключено (`showsTopShade`).
+            .background(alignment: .top) {
+                PlusGradient.bottomUnderlay(peak: ServiceTopNavLayout.topShadePeak)
+                    .scaleEffect(y: -1)
+                    .frame(height: ServiceTopNavLayout.topShadeHeight)
+                    .opacity(showsTopShade
+                        ? NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavLayout.topShadeRamp)
+                        : 0)
+                    .allowsHitTesting(false)
+                    // Чистая функция скролла — анимация выбора таба её не касается.
+                    .transaction { $0.animation = nil }
+                    .ignoresSafeArea(edges: .top)
             }
     }
 }

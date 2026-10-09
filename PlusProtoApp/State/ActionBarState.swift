@@ -345,7 +345,9 @@ final class ActionBarState {
         defer { isRestoring = false }
 
         mode = snapshot.mode
-        music = snapshot.music
+        // Старый снимок с «треком» «Моя Волна» (id `my-vibe`) — такого трека нет:
+        // вместо него настоящий трек волны (правка пользователя 2026-10-09).
+        music = snapshot.music?.id == "my-vibe" ? MyVibeTracks.random() : snapshot.music
         movie = snapshot.movie
         book = snapshot.book
         musicProgress = snapshot.musicProgress
@@ -625,7 +627,7 @@ extension ActionBarState {
     static let debugBook = BookInProgress(
         id: "debug-book",
         cover: .asset("mockChipBookCover"),
-        title: "Технофеодализм"
+        title: "Бредовая работа"
     )
 
     /// `-debugActionBar search|music|movie|book` — см. `PlusProtoAppApp.parseDebugLaunchArguments`.

@@ -51,6 +51,26 @@ final class ShowcaseFeedbackState {
     var debugDones = 0
 }
 
+extension ShowcaseFeedbackState {
+    /// ✕ у карточки, которую не подменяют, а убирают целиком («Продолжить читать»,
+    /// «Смотреть дальше» — правки пользователя 2026-10-09): гаснет тем же движением, что
+    /// айтем на ✕ (400 мс, блюр, масштаб 0.95), а на хвосте угасания её слот схлопывается
+    /// кривой схлопывания промо — лента ниже подтягивается (`ShowcaseCatalog.hideBlock`).
+    /// Блок — целиком, а не id его содержимого: лента прячет по `ShowcaseBlock.id`
+    /// («reading-…»), и голый id блока чтения не совпадал — карточка гасла, а слот
+    /// оставался дырой (жалоба 2026-10-09).
+    func removeCard(_ block: ShowcaseBlock, from catalog: ShowcaseCatalog) {
+        guard !isSwapping else { return }
+        isSwapping = true
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(ShowcaseFeedbackMotion.swapOut) { isContentHidden = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: ShowcasePromoMotion.collapseDelay)
+            withAnimation(ShowcasePromoMotion.collapse) { catalog.hideBlock(id: block.id) }
+        }
+    }
+}
+
 /// Как карточке получить новый контент: готовит замену и возвращает, чем её поставить.
 /// `nil` — замены нет (моковая лента без сети, сеть не ответила вовремя) — тогда айтем
 /// проявляется прежним.
