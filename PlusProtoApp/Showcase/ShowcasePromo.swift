@@ -175,6 +175,8 @@ struct ShowcasePromo: View {
     @State private var collapse: CGFloat = 0
     /// Набор меняет сам слайдер (✕) — центр он уже выставил, пересчитывать не нужно.
     @State private var isEditingSet = false
+    /// Лента встала на стартовую карточку (`placeIfNeeded`).
+    @State private var isPlaced = false
 
     init(items: [ShowcaseBlock], zoom: Namespace.ID, savedIndex: Binding<Int>) {
         self.items = items
@@ -193,97 +195,100 @@ struct ShowcasePromo: View {
     private var liveItems: [ShowcaseBlock] { catalog.feed.promo }
 
     var body: some View {
-        ScrollView(.horizontal) {
-            // Ряд — не ленивый: в ленивом перескок на среднюю копию кадр рисовал позицию
-            // на шаг левее, по оценке, — мелькала прежняя карточка (кадр 2026-10-08),
-            // а ушедшие за экран слоты держали прежний айтем. Слотов не больше 18.
-            HStack(spacing: 0) {
-                ForEach(0..<(count * Self.copies), id: \.self) { index in
-                    slot(index)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                // Ряд — не ленивый: в ленивом перескок на среднюю копию кадр рисовал позицию
+                // на шаг левее, по оценке, — мелькала прежняя карточка (кадр 2026-10-08),
+                // а ушедшие за экран слоты держали прежний айтем. Слотов не больше 18.
+                HStack(spacing: 0) {
+                    ForEach(0..<(count * Self.copies), id: \.self) { index in
+                        slot(index)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            // По одной карточке за свайп, как бы ни бросили.
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
+            .contentMargins(.horizontal, (PlusMetrics.designWidth - Layout.step) / 2, for: .scrollContent)
+            .scrollPosition(id: $page, anchor: .center)
+            .scrollIndicators(.hidden)
+            // Карточки шире слота — за краями экрана их видно.
+            .scrollClipDisabled()
+            .scrollDisabled(count < 2 || removal != nil)
+            .frame(height: Layout.height)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                (geometry.contentOffset.x + geometry.contentInsets.leading) / Layout.step
+            } action: { _, position in
+                scroll.position = position
+                placeIfNeeded(at: position, proxy: proxy)
+            }
+            // Фон — своим слоем под лентой, от физического верха экрана до ниже блока, как
+            // у промо Кинопоиска и Книг: уходит в прозрачность, а не в чёрный — ниже фон
+            // ленты, — и при оттяге тянется вверх. Слоями внутри ленты он внизу обрезался
+            // о фон ленты, а при оттяге открывал чёрное (правки пользователя 2026-10-08).
+            .background(alignment: .bottom) {
+                PromoBackdropStack(items: items, scroll: scroll, collapse: removal == nil ? 0 : collapse)
+                    .padding(.bottom, -Layout.backdropTail)
+            }
+            .onScrollPhaseChange { _, phase in
+                guard removal == nil else { return }
+                if phase == .idle {
+                    settle()
+                    scheduleReveal()
+                } else {
+                    hideReveal()
                 }
             }
-            .scrollTargetLayout()
-        }
-        // По одной карточке за свайп, как бы ни бросили.
-        .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
-        .contentMargins(.horizontal, (PlusMetrics.designWidth - Layout.step) / 2, for: .scrollContent)
-        .scrollPosition(id: $page, anchor: .center)
-        .scrollIndicators(.hidden)
-        // Карточки шире слота — за краями экрана их видно.
-        .scrollClipDisabled()
-        .scrollDisabled(count < 2 || removal != nil)
-        .frame(height: Layout.height)
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            (geometry.contentOffset.x + geometry.contentInsets.leading) / Layout.step
-        } action: { _, position in
-            scroll.position = position
-        }
-        // Фон — своим слоем под лентой, от физического верха экрана до ниже блока, как
-        // у промо Кинопоиска и Книг: уходит в прозрачность, а не в чёрный — ниже фон
-        // ленты, — и при оттяге тянется вверх. Слоями внутри ленты он внизу обрезался
-        // о фон ленты, а при оттяге открывал чёрное (правки пользователя 2026-10-08).
-        .background(alignment: .bottom) {
-            PromoBackdropStack(items: items, scroll: scroll, collapse: removal == nil ? 0 : collapse)
-                .padding(.bottom, -Layout.backdropTail)
-        }
-        .onScrollPhaseChange { _, phase in
-            guard removal == nil else { return }
-            if phase == .idle {
-                settle()
-                scheduleReveal()
-            } else {
-                hideReveal()
+            .onAppear { scheduleReveal() }
+            // Набор собрался заново (моки → живые, под заставкой) — центральный айтем
+            // остаётся в центре, если он есть в новом наборе, иначе — с начала.
+            .onChange(of: items.map(\.id)) { old, new in
+                guard !isEditingSet else {
+                    isEditingSet = false
+                    return
+                }
+                recenter(old: old, new: new)
             }
-        }
-        .onAppear { scheduleReveal() }
-        // Набор собрался заново (моки → живые, под заставкой) — центральный айтем
-        // остаётся в центре, если он есть в новом наборе, иначе — с начала.
-        .onChange(of: items.map(\.id)) { old, new in
-            guard !isEditingSet else {
-                isEditingSet = false
-                return
+            // Размытые фоны — заранее, на весь набор: фон берёт готовый растр с первого кадра.
+            .task(id: items.map(\.promoArtwork)) {
+                for item in items {
+                    _ = await PromoBackdropRaster.render(item.promoArtwork)
+                    scroll.rasters += 1
+                }
             }
-            recenter(old: old, new: new)
-        }
-        // Размытые фоны — заранее, на весь набор: фон берёт готовый растр с первого кадра.
-        .task(id: items.map(\.promoArtwork)) {
-            for item in items {
-                _ = await PromoBackdropRaster.render(item.promoArtwork)
-                scroll.rasters += 1
+            #if DEBUG
+            // `-debugHomePromoStep <back|next|n|cycle>` — через 3с пролистать слайдер:
+            // свайпнуть из шелла нечем. `cycle` — вперёд по карточке раз в 1.6 с, 14 шагов:
+            // круг проходит перескок копий, его снимают на видео. Словами, а не «-1»: минус
+            // аргументы запуска читают как ключ.
+            .task {
+                let value = UserDefaults.standard.string(forKey: "debugHomePromoStep") ?? ""
+                let cycleSteps = 14
+                let cycleInterval: Duration = .seconds(1.6)
+                let step = value == "back" ? -1 : (value == "next" || value == "cycle" ? 1 : Int(value) ?? 0)
+                guard step != 0 else { return }
+                try? await Task.sleep(for: .seconds(3))
+                for _ in 0..<(value == "cycle" ? cycleSteps : 1) {
+                    guard !Task.isCancelled else { return }
+                    withAnimation(ShowcasePromoMotion.step) { page = (page ?? count) + step }
+                    try? await Task.sleep(for: cycleInterval)
+                }
             }
-        }
-        #if DEBUG
-        // `-debugHomePromoStep <back|next|n|cycle>` — через 3с пролистать слайдер:
-        // свайпнуть из шелла нечем. `cycle` — вперёд по карточке раз в 1.6 с, 14 шагов:
-        // круг проходит перескок копий, его снимают на видео. Словами, а не «-1»: минус
-        // аргументы запуска читают как ключ.
-        .task {
-            let value = UserDefaults.standard.string(forKey: "debugHomePromoStep") ?? ""
-            let cycleSteps = 14
-            let cycleInterval: Duration = .seconds(1.6)
-            let step = value == "back" ? -1 : (value == "next" || value == "cycle" ? 1 : Int(value) ?? 0)
-            guard step != 0 else { return }
-            try? await Task.sleep(for: .seconds(3))
-            for _ in 0..<(value == "cycle" ? cycleSteps : 1) {
-                guard !Task.isCancelled else { return }
-                withAnimation(ShowcasePromoMotion.step) { page = (page ?? count) + step }
-                try? await Task.sleep(for: cycleInterval)
+            // `-debugHomePromoDismiss <n>` — ✕ у центральной карточки n раз подряд: первый
+            // через 6 с, дальше раз в 2.5 с. Тот же `dismiss()` пары, что у тапа.
+            .task {
+                let times = UserDefaults.standard.integer(forKey: "debugHomePromoDismiss")
+                guard times > 0 else { return }
+                try? await Task.sleep(for: .seconds(6))
+                for _ in 0..<times {
+                    let promo = liveItems
+                    guard !Task.isCancelled, !promo.isEmpty, let current = page else { return }
+                    feedback.state(for: promo[Self.wrap(current, promo.count)].id).debugDismisses += 1
+                    try? await Task.sleep(for: .seconds(2.5))
+                }
             }
+            #endif
         }
-        // `-debugHomePromoDismiss <n>` — ✕ у центральной карточки n раз подряд: первый
-        // через 6 с, дальше раз в 2.5 с. Тот же `dismiss()` пары, что у тапа.
-        .task {
-            let times = UserDefaults.standard.integer(forKey: "debugHomePromoDismiss")
-            guard times > 0 else { return }
-            try? await Task.sleep(for: .seconds(6))
-            for _ in 0..<times {
-                let promo = liveItems
-                guard !Task.isCancelled, !promo.isEmpty, let current = page else { return }
-                feedback.state(for: promo[Self.wrap(current, promo.count)].id).debugDismisses += 1
-                try? await Task.sleep(for: .seconds(2.5))
-            }
-        }
-        #endif
     }
 
     // MARK: Слот
@@ -487,6 +492,20 @@ struct ShowcasePromo: View {
     }
 
     // MARK: Круг и проявление
+
+    /// Стартовая позиция по id приходит раньше раскладки, и лента вставала на нулевой
+    /// слот — у левого края круга, без соседа слева (кадр 2026-10-09). Первая геометрия
+    /// после раскладки ставит ленту на стартовую карточку — без анимации. Тот же приём,
+    /// что у стартового чипса `FilterChipsRow`, только без паузы: геометрия приходит
+    /// уже после раскладки.
+    private func placeIfNeeded(at position: CGFloat, proxy: ScrollViewProxy) {
+        guard !isPlaced, let target = page else { return }
+        isPlaced = true
+        guard abs(position - CGFloat(target)) > 0.01 else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { proxy.scrollTo(target, anchor: .center) }
+    }
 
     /// Свайп остановился: запомнить айтем и, если это крайняя копия, перескочить на ту же
     /// карточку средней — без анимации, картинка та же.
