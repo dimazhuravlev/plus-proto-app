@@ -791,10 +791,10 @@ enum CollectionReorderMotion {
     /// Правка пользователя 2026-10-10: без боковых полей — фон и клип блока в руке
     /// от края до края экрана (подъём 1.02 уводит края за кромку — это нормально).
     static let glassInset: CGFloat = 0
-    /// Правка пользователя 2026-10-10: фон блока в руке выходит на 16 ниже содержимого —
-    /// иначе он кончался вплотную под подписями карточек. У кино и книг такое поле уже
-    /// есть внутри блока (`coverOnlyShelfBottom`), им не добавляем. Раскладку это не
-    /// меняет: фон и клип рисуются ниже рамки блока, соседи на месте.
+    /// Правка пользователя 2026-10-10: фон блока «Плейлисты» в руке выходит на 16 ниже
+    /// содержимого — иначе он кончался вплотную под подписями карточек. У остальных
+    /// видов поле не нужно (у кино и книг оно и так есть внутри блока). Раскладку это
+    /// не меняет: фон и клип рисуются ниже рамки блока, соседи на месте.
     static let glassBottomExtra: CGFloat = 16
     /// Клип вне захвата: шире блока ровно на радиус — дуги углов за кромкой, срезов нет.
     static let restClipInset: CGFloat = -glassRadius
@@ -979,11 +979,11 @@ private struct CollectionReorderBlock<Content: View>: View {
             .zIndex(reorder.liftedKind == kind ? 1 : 0)
     }
 
-    /// Сколько фон и клип выходят ниже рамки блока: у кино и книг нижнее поле уже внутри.
+    /// Сколько фон и клип выходят ниже рамки блока: только у плейлистов.
     private var bottomExtra: CGFloat {
         switch kind {
-        case .movie, .book: 0
-        case .track, .artist, .album, .playlist: CollectionReorderMotion.glassBottomExtra
+        case .playlist: CollectionReorderMotion.glassBottomExtra
+        case .movie, .book, .track, .artist, .album: 0
         }
     }
 
