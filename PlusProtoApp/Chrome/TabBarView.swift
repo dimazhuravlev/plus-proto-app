@@ -1,6 +1,15 @@
 import SwiftUI
 import UIKit
 
+/// Переключатель дебаг-меню: вид активного таба (правка пользователя 2026-10-10).
+/// Хранится в `UserDefaults`; таббар живёт в нескольких копиях, `@AppStorage` в `TabBarItem`
+/// подхватывает значение везде.
+enum TabStyleDebug {
+    /// Включён — глиф активного таба чисто белый (`fillOne`), без градиента и без свечения под
+    /// тайлом. Выключен (по умолчанию) — макетный вид.
+    static let whiteActiveKey = "tabActiveWhite"
+}
+
 /// Тайминги и отдача таббара.
 enum TabBarMotion {
     /// Одна анимация на все параметры таба: бордер тайла, заливка глифа, цвет лейбла,
@@ -228,6 +237,8 @@ private struct TabBarItem: View {
     let tab: AppTab
     let isActive: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Дебаг-переключатель: активный глиф белый, свечения нет (`TabStyleDebug`).
+    @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActive = false
 
     var body: some View {
         VStack(spacing: PlusMetrics.tabIconLabelGap) {
@@ -272,7 +283,7 @@ private struct TabBarItem: View {
                         .renderingMode(.template)
                         .resizable()
                         .frame(width: glyph.size.width, height: glyph.size.height)
-                        .foregroundStyle(PlusGradient.activeTabGlyph)
+                        .foregroundStyle(whiteActive ? AnyShapeStyle(Color.fillOne) : AnyShapeStyle(PlusGradient.activeTabGlyph))
                         .opacity(isActive ? 1 : 0)
                 }
                 // Сердце уступает миниатюре: прозрачность и утопление, оба слоя всегда в дереве.
@@ -311,7 +322,8 @@ private struct TabBarItem: View {
             .resizable()
             .frame(width: TabBarGeometry.sparkSize.width, height: TabBarGeometry.sparkSize.height)
             .offset(y: TabBarGeometry.sparkCenterOffset + (isActive ? 0 : TabBarGeometry.sparkRise))
-            .opacity(isActive ? 1 : 0)
+            // Белый активный таб (дебаг): свечение остаётся в дереве, но не видно.
+            .opacity(isActive && !whiteActive ? 1 : 0)
             // Своя кривая поверх общей у кнопки: внутренняя анимация перебивает внешнюю
             // для своего поддерева.
             .animation(isActive ? TabBarMotion.glowAppear : TabBarMotion.activation, value: isActive)

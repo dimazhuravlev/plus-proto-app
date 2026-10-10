@@ -102,8 +102,8 @@ enum ShowcasePromoLayout {
 enum ShowcasePromoMotion {
     /// Пара ✕/✓ (и подпись альбома) проявляются вместе (правка пользователя 2026-10-08) и не
     /// сразу, а когда карточка встала в центр: пауза, затем короткий сильный ease-out.
-    /// Пауза 100 мс — «уменьши задержку» (правка пользователя 2026-10-08, было 250).
-    static let revealDelay: Duration = .milliseconds(100)
+    /// Пауза 50 мс — «чуть быстрее» (правка пользователя 2026-10-10; было 100, до этого 250).
+    static let revealDelay: Duration = .milliseconds(50)
     static let revealIn: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
     /// Свайп начался — уходят быстро: они отвечают только за центральную карточку.
     static let revealOut: Animation = .easeOut(duration: 0.15)
