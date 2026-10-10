@@ -574,7 +574,9 @@ private struct ReaderCircleButton: View {
             }
             .animation(ActionBarMotion.iconSwap, value: isActive)
             .frame(width: BookReaderLayout.topBarButton, height: BookReaderLayout.topBarButton)
-            .secondaryButtonSurface(Circle(), fill: fill)
+            // Блюр, заливка и бордер макетные; сверху — затемнение стекла хрома (правка
+            // пользователя 2026-10-10), чтобы кнопки читались над светлой страницей.
+            .chromeGlass(Circle(), blur: PlusMetrics.buttonBlur, fill: fill)
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(title)

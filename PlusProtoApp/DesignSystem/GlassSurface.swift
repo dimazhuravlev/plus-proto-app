@@ -53,12 +53,13 @@ private struct ChromeGlassSurface<S: InsettableShape>: ViewModifier {
     @AppStorage(ChromeGlass.dimKey) private var dim = ChromeGlass.defaultDim
     let shape: S
     let blur: CGFloat
+    let fill: Color
 
     func body(content: Content) -> some View {
         content.modifier(GlassSurface(
             shape: shape,
             blur: blur,
-            fill: .buttonsPrimary,
+            fill: fill,
             border: SecondaryButtonBorder.color,
             borderWidth: SecondaryButtonBorder.width,
             dim: dim
@@ -129,9 +130,15 @@ extension View {
         chromeGlass(Capsule(style: .continuous))
     }
 
-    /// Стекло хрома произвольной формы — пилюля, чипы книги и кино в action bar.
-    func chromeGlass<S: InsettableShape>(_ shape: S, blur: CGFloat = PlusMetrics.glassBlur) -> some View {
-        modifier(ChromeGlassSurface(shape: shape, blur: blur))
+    /// Стекло хрома произвольной формы — пилюля, чипы книги и кино в action bar, круглые
+    /// кнопки навбаров и читалки. Заливка по умолчанию Buttons/Primary 10 %; у кнопок,
+    /// которым макет даёт Buttons/Secondary 8 %, — своя.
+    func chromeGlass<S: InsettableShape>(
+        _ shape: S,
+        blur: CGFloat = PlusMetrics.glassBlur,
+        fill: Color = .buttonsPrimary
+    ) -> some View {
+        modifier(ChromeGlassSurface(shape: shape, blur: blur, fill: fill))
     }
 
     /// Круглые кнопки 40pt — общий бордер серых кнопок. ~~Бордер white 6 % по figma-screen1

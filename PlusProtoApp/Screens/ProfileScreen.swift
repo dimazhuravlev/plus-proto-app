@@ -152,7 +152,8 @@ struct ProfileScreen: View {
                     .frame(width: ProfileLayout.closeIcon, height: ProfileLayout.closeIcon)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: ProfileLayout.closeButton, height: ProfileLayout.closeButton)
-                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary, blur: ProfileLayout.closeBlur)
+                    // Затемнение стекла хрома — как у кнопок навбаров (правка пользователя 2026-10-10).
+                    .chromeGlass(Circle(), blur: ProfileLayout.closeBlur, fill: .buttonsSecondary)
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel("Закрыть")
