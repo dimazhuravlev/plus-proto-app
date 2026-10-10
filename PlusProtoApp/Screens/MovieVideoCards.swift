@@ -205,41 +205,31 @@ struct MovieVideoSection: View {
             .allowsHitTesting(!isGlowLayer)
     }
 
-    /// Пока кадр карточки едет — болванка того же размера; приехал — карточка
-    /// целиком, кроссфейдом за `MovieVideoMotion.cardAppear` (правка пользователя
-    /// 2026-08-25). Обе ветки — дефолтный `.opacity`.
-    @ViewBuilder
+    /// Карточка всегда в дереве, её геометрия не меняется: пока кадр едет, на её
+    /// месте серая заливка скелетона, а приехал — на ней проявляются кадр и подпись
+    /// (`MovieVideoCard`). Подмена ветки `if/else` вставляла бы карточку транзишном,
+    /// а не проявляла — правка пользователя 2026-10-10.
     private func cardView(_ index: Int, _ card: MovieVideoCardMock) -> some View {
-        Group {
-            if stills[index] != nil {
-                MovieVideoCard(
-                    card: card,
-                    clip: Self.clip(for: index),
-                    still: stills[index],
-                    isActive: activeCard == index,
-                    aspect: Layout.cardAspect,
-                    radius: Layout.cardRadius
-                ) {
-                    playingCard = playingCard == index ? nil : index
-                }
-                // Порог — половина карточки: ниже него на быстром скролле успевали бы
-                // стартовать ролики, которых пользователь даже не увидит.
-                .onScrollVisibilityChange(threshold: 0.5) { isVisible in
-                    if isVisible {
-                        visibleCards.insert(index)
-                    } else {
-                        visibleCards.remove(index)
-                    }
-                }
-                .onDisappear { visibleCards.remove(index) }
+        MovieVideoCard(
+            card: card,
+            clip: Self.clip(for: index),
+            still: stills[index],
+            isActive: activeCard == index,
+            aspect: Layout.cardAspect,
+            radius: Layout.cardRadius
+        ) {
+            playingCard = playingCard == index ? nil : index
+        }
+        // Порог — половина карточки: ниже него на быстром скролле успевали бы
+        // стартовать ролики, которых пользователь даже не увидит.
+        .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+            if isVisible {
+                visibleCards.insert(index)
             } else {
-                MovieVideoCardSkeleton(aspect: Layout.cardAspect, radius: Layout.cardRadius)
+                visibleCards.remove(index)
             }
         }
-        .animation(
-            reduceMotion ? nil : MovieCardMotion.imageAppear,
-            value: stills[index] != nil
-        )
+        .onDisappear { visibleCards.remove(index) }
     }
 
     /// Свечение карточки — размытая копия её кадра, вылезающая за края.
@@ -254,9 +244,16 @@ struct MovieVideoSection: View {
                         .padding(.horizontal, -Layout.glowInsetX)
                         .padding(.vertical, -Layout.glowInsetY)
                         .blur(radius: Layout.glowBlur)
-                        .opacity(Layout.glowOpacity)
+                        // Прозрачность держим живой, а не вставкой ветки: свечение
+                        // проявляется той же анимацией, что и кадр карточки.
+                        .transition(.identity)
                 }
             }
+            .opacity(stills[index] != nil ? Layout.glowOpacity : 0)
+            .animation(
+                reduceMotion ? nil : MovieCardMotion.imageAppear,
+                value: stills[index] != nil
+            )
             .allowsHitTesting(false)
     }
 
@@ -305,21 +302,6 @@ enum MovieCardMotion {
     static let imageAppear: Animation = .easeInOut(duration: MovieVideoMotion.cardAppear)
 }
 
-/// Болванка карточки, пока её кадр едет: тот же скруглённый прямоугольник тех же
-/// пропорций с плейсхолдером цвета кавера — без текстов, контент приходит целиком
-/// одним кроссфейдом. Приём инфо-блока (`MovieInfoSkeleton`), цвет — кавера.
-private struct MovieVideoCardSkeleton: View {
-    let aspect: CGFloat
-    let radius: CGFloat
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(MovieCoverPlaceholder.color)
-            .aspectRatio(aspect, contentMode: .fit)
-            .accessibilityLabel("Загрузка")
-    }
-}
-
 /// Одна видеокарточка: свечение по краям, кадр со скруглением, скрим и подписи.
 ///
 /// Фон карточки — **сам ролик**: пока очередь играть не дошла, на карточке стоит его
@@ -350,30 +332,38 @@ private struct MovieVideoCard: View {
 
     @State private var playback = LoopingVideoPlayback()
     @State private var isVideoReady = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Кадр приехал: карточка оживает. До этого она — серая заливка скелетона.
+    private var hasStill: Bool { still != nil }
 
     var body: some View {
         // Кадр задаёт распорка, а видео его заполняет: `aspectRatio` на самом слое
         // считает высоту от идеального размера, а не от пропорции макета,
         // и карточка расползалась на всю ширину экрана. Та же идиома, что у кавера.
-        Color.clear
+        PlusSkeleton.fill
             .aspectRatio(aspect, contentMode: .fit)
             .overlay { frame }
             .overlay(alignment: .bottom) { caption }
             .clipShape(shape)
             // Рамка поверх клипа, иначе её съедает скругление. Общая у всех обложек
             // (в макете `2052:10643` — 1 pt; правка пользователя 2026-10-05 — 0.67).
-            .coverBorder(shape)
+            // Проявляется вместе с кадром: у скелетона рамки нет.
+            .overlay { Color.clear.coverBorder(shape).opacity(hasStill ? 1 : 0) }
+            // Кадр, подпись и рамка проявляются на месте скелетона: ease-in-out 300 мс.
+            .animation(reduceMotion ? nil : MovieCardMotion.imageAppear, value: hasStill)
             // Карточка целиком — кнопка. `contentShape` обязателен: и кадр, и подписи
             // сняты с хит-теста, а без формы тап ловят только непрозрачные пиксели.
             .contentShape(shape)
             .pressScale(PressMotion.cardScale)
-            .onTapGesture { onTap() }
+            .onTapGesture { if hasStill { onTap() } }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(card.title)
             .accessibilityValue(isActive ? "Играет" : "Остановлен")
             // Ролик заряжается сразу, но не запускается: играть он начнёт по тапу.
-            .task(id: clip) { playback.prepare(bundled: clip) }
+            // Скелетон плеер не заряжает: карточек-болванок бывает больше, чем кадров.
+            .task(id: hasStill ? clip : "") { if hasStill { playback.prepare(bundled: clip) } }
             // Пауза, а не остановка: ролик зациклен, и вернувшаяся карточка
             // должна продолжить, а не дёрнуться в начало.
             .onChange(of: isActive, initial: true) { _, active in
@@ -391,11 +381,17 @@ private struct MovieVideoCard: View {
     /// пока идёт кроссфейд — ровно как на кавере экрана.
     private var frame: some View {
         ZStack {
-            if let still {
-                still
-                    .resizable()
-                    .scaledToFill()
-            }
+            Color.clear
+                .overlay {
+                    if let still {
+                        still
+                            .resizable()
+                            .scaledToFill()
+                            // Проявляет контейнер ниже, а не вставка ветки.
+                            .transition(.identity)
+                    }
+                }
+                .opacity(hasStill ? 1 : 0)
 
             // Гасим по `isActive`, а не по «хоть раз играл»: `AVPlayerLayer` без единого
             // `play` кадра не рисует, и без этой привязки выключенная карточка показывала
@@ -424,6 +420,7 @@ private struct MovieVideoCard: View {
         .background {
             MovieScrim.gradient(peak: Self.captionScrimPeak, from: .top, to: .bottom)
         }
+        .opacity(hasStill ? 1 : 0)
         .allowsHitTesting(false)
     }
 
