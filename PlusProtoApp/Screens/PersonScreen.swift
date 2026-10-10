@@ -414,7 +414,7 @@ struct PersonScreen: View {
 
     /// В плеере бара — музыка этого исполнителя (играет или на паузе).
     private var isBarOnThisArtist: Bool {
-        actionBar.mode == .music && actionBar.music?.artist == entity.title
+        actionBar.isMiniPlayerVisible && actionBar.music?.artist == entity.title
     }
 
     /// Играет ли сейчас этот исполнитель — от этого глиф и подпись пилюли.

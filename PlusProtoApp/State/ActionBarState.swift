@@ -74,6 +74,12 @@ struct MusicNowPlaying: Equatable, Codable {
     var artistPicture: ArtworkSource? = nil
     /// Бейдж 18+ у названия. Опционал ради старых снимков: `nil` читается как «нет».
     var isExplicit: Bool? = nil
+    /// Откуда трек: `"album:dz-123"`, `"playlist:dz-456"`. Заполняют экраны альбома
+    /// и плейлиста; по нему кнопка «Слушать/Пауза» узнаёт свой трек в баре, не дожидаясь
+    /// загрузки треклиста и не завися от режима бара. `nil` у треков из других мест
+    /// и у записей на диске, сделанных до поля: для них экран узнаёт свой трек по
+    /// префиксу id (`dz-<альбом>-t<трек>`).
+    var containerID: String? = nil
 }
 
 /// Что смотрели: кадр 80×46 внутри чипа 88×54 (figma-actionbar §4.4).
@@ -267,6 +273,18 @@ final class ActionBarState {
     /// Мини-плеер на экране: круг (`.search`) или капсула (`.music`) с играющим треком.
     var isMiniPlayerVisible: Bool {
         music != nil && (mode == .music || mode == .search)
+    }
+
+    /// Играет ли в мини-плеере трек этого альбома или плейлиста (`kind` — `"album"`
+    /// или `"playlist"`). Кнопка «Слушать/Пауза» экрана зависит только от этого: ни от
+    /// режима бара (после поиска он остаётся кругом `.search`, а не `.music`), ни от
+    /// загруженного треклиста (с первого кадра экрана, пока детали едут). Режимы
+    /// `.book` и `.movie` не в счёт: бар за чипом, мини-плеера нет.
+    func isPlayingMusic(from entityID: String, kind: String) -> Bool {
+        guard isMiniPlayerVisible, isMusicPlaying, let music else { return false }
+        return music.containerID == "\(kind):\(entityID)"
+            || music.id == entityID
+            || music.id.hasPrefix(entityID + "-t")
     }
 
     /// Что играет дальше: хвост очереди после текущего, по кругу, без самого текущего.

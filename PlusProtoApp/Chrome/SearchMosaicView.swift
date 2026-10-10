@@ -688,7 +688,7 @@ private struct MosaicCard: View {
 
     /// Этот трек сейчас играет — на кнопке пауза.
     private var isPlayingThisTrack: Bool {
-        hit.kind == .track && actionBar.mode == .music
+        hit.kind == .track && actionBar.isMiniPlayerVisible
             && actionBar.music?.id == hit.id && actionBar.isMusicPlaying
     }
 

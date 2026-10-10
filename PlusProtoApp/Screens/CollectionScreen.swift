@@ -470,7 +470,7 @@ private struct CollectionTracksBlock: View {
 
     /// Играет ли сейчас трек этой полки — тогда «play» шапки — пауза.
     private var isPlayingShelf: Bool {
-        guard actionBar.mode == .music, actionBar.isMusicPlaying, let id = actionBar.music?.id else { return false }
+        guard actionBar.isMiniPlayerVisible, actionBar.isMusicPlaying, let id = actionBar.music?.id else { return false }
         return items.contains { $0.playable?.id == id }
     }
 
