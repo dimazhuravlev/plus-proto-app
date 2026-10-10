@@ -40,6 +40,11 @@ final class ContentPlayerPresenter {
     private var isAttached = false
     /// Слой уже увели свайпом за нижнюю кромку — снимать его надо без перехода.
     private var isPulledAway = false
+    /// Второй слой: большой плеер музыки поверх читалки (`ActionBarState.isMusicOverReader`).
+    /// Читалка под ним остаётся в `host`; закрыл плеер — снова она на том же месте.
+    private weak var overlayHost: UIViewController?
+    private var overlayShown = false
+    private var isOverlayPulledAway = false
 
     /// Начать следить за `ActionBarState.contentPlayer`.
     ///
@@ -54,14 +59,17 @@ final class ContentPlayerPresenter {
     }
 
     private func track(_ actionBar: ActionBarState, _ navigation: AppNavigationState) {
+        // Читаем и флаг слоя музыки: без него его смена не разбудила бы презентер.
         let player = withObservationTracking {
-            actionBar.contentPlayer
+            _ = actionBar.isMusicOverReader
+            return actionBar.contentPlayer
         } onChange: { [weak self] in
             // Срабатывает до записи нового значения — читаем его следующим тактом.
             // Подписка одноразовая, поэтому каждый такт ставит её заново.
             Task { @MainActor [weak self] in self?.track(actionBar, navigation) }
         }
         show(player, actionBar: actionBar, navigation: navigation)
+        syncOverlay(actionBar: actionBar, navigation: navigation)
     }
 
     private func show(_ player: ContentPlayer?, actionBar: ActionBarState, navigation: AppNavigationState) {
@@ -70,11 +78,30 @@ final class ContentPlayerPresenter {
             return
         }
         guard player.id != shownID else { return }
-        // Подмена плеера на лету бывает только в отладочных прогонах: из интерфейса
-        // второй не открыть — первый накрывает всё.
+        // Подмена плеера на лету: из интерфейса второй плеер не открыть — первый накрывает
+        // всё, а музыка поверх читалки идёт вторым слоем (`syncOverlay`), не заменой.
         dismiss(animated: false)
         guard let presenter = Self.topViewController() else { return }
 
+        let controller = makeController(for: player, actionBar: actionBar, navigation: navigation) { [weak self] in
+            self?.isPulledAway = true
+        }
+        // Бар меняется под уже выехавшим плеером, а не на глазах (`ActionBarState`).
+        presenter.present(controller, animated: true) {
+            actionBar.contentPlayerDidPresent()
+        }
+        host = controller
+        shownID = player.id
+    }
+
+    /// Контроллер плеера. `onPulledAway` — музыку увели свайпом за кромку: снимать её
+    /// надо без перехода.
+    private func makeController(
+        for player: ContentPlayer,
+        actionBar: ActionBarState,
+        navigation: AppNavigationState,
+        onPulledAway: @escaping () -> Void
+    ) -> UIViewController {
         let root = ContentPlayerRoot(player: player)
             .environment(actionBar)
             .environment(navigation)
@@ -94,25 +121,72 @@ final class ContentPlayerPresenter {
             // под уехавшим слоем была бы чернота. Статус-бар при этом решает сам плеер.
             controller.modalPresentationStyle = .overFullScreen
             controller.modalPresentationCapturesStatusBarAppearance = true
-            controller.enablePullToDismiss { [weak self] in
-                self?.isPulledAway = true
+            controller.enablePullToDismiss {
+                onPulledAway()
                 actionBar.closeContentPlayer()
             }
         } else {
             controller.modalPresentationStyle = .fullScreen
         }
-        // Бар меняется под уже выехавшим плеером, а не на глазах (`ActionBarState`).
-        presenter.present(controller, animated: true) {
-            actionBar.contentPlayerDidPresent()
+        return controller
+    }
+
+    /// Привести второй слой в соответствие с флагом: музыка поверх читалки есть,
+    /// только пока читалка открыта и флаг поднят. Базу (`host`) не трогаем.
+    private func syncOverlay(actionBar: ActionBarState, navigation: AppNavigationState) {
+        var isReader = false
+        if case .reader = actionBar.contentPlayer { isReader = true }
+        let wanted = isReader && actionBar.isMusicOverReader
+
+        if !wanted {
+            dismissOverlay(animated: true)
+            return
         }
-        host = controller
-        shownID = player.id
+        guard !overlayShown, let host else { return }
+        // С контроллера, который ещё выезжает или у которого уходит слой, не презентуют:
+        // UIKit молча роняет показ. Ждём конца перехода и сверяемся с флагом заново.
+        let busy = host.isBeingPresented || host.presentedViewController?.isBeingDismissed == true
+        if busy {
+            let retry: @MainActor () -> Void = { [weak self] in
+                self?.syncOverlay(actionBar: actionBar, navigation: navigation)
+            }
+            if let coordinator = host.transitionCoordinator ?? host.presentedViewController?.transitionCoordinator {
+                coordinator.animate(alongsideTransition: nil) { _ in
+                    Task { @MainActor in retry() }
+                }
+            } else {
+                Task { @MainActor in retry() }
+            }
+            return
+        }
+        // Читалка — `host`, музыка идёт поверх неё: `dismiss` базы здесь не зовём.
+        guard let presenter = Self.topViewController(), presenter === host else { return }
+        let controller = makeController(for: .music, actionBar: actionBar, navigation: navigation) { [weak self] in
+            self?.isOverlayPulledAway = true
+        }
+        presenter.present(controller, animated: true)
+        overlayHost = controller
+        overlayShown = true
+    }
+
+    private func dismissOverlay(animated: Bool) {
+        overlayShown = false
+        let pulledAway = isOverlayPulledAway
+        isOverlayPulledAway = false
+        guard let overlayHost else { return }
+        self.overlayHost = nil
+        guard overlayHost.presentingViewController != nil else { return }
+        overlayHost.dismiss(animated: animated && !pulledAway)
     }
 
     private func dismiss(animated: Bool) {
         shownID = nil
         let pulledAway = isPulledAway
         isPulledAway = false
+        // Слой музыки над читалкой UIKit снимет вместе с ней — только забываем о нём.
+        overlayHost = nil
+        overlayShown = false
+        isOverlayPulledAway = false
         guard let host else { return }
         self.host = nil
         // Слой могли уже снять вместе с презентацией под ним — тогда снимать нечего.

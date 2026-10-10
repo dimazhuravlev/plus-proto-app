@@ -45,8 +45,10 @@ private enum BookReaderLayout {
     /// под шапкой пустую полосу. Макет рисует колонку уже прокрученной, покоя в нём нет.
     static var textTop: CGFloat { scrimTop + scrimHeight - lineHeight }
 
-    /// Мини-плеер музыки — круг 60 в правом нижнем углу с полями 16.
-    static let musicInset: CGFloat = 16
+    /// Мини-плеер музыки — круг 60 в правом нижнем углу: справа поле 16, снизу 32 —
+    /// на 16 выше прежнего (правка пользователя 2026-10-10).
+    static let musicTrailing: CGFloat = 16
+    static let musicBottom: CGFloat = 32
     /// Воздух под последней строкой, когда текст докручен до конца.
     static let textTail: CGFloat = 24
     /// Без мини-плеера последняя строка выходит из-под home indicator.
@@ -57,6 +59,20 @@ enum BookReaderMotion {
     /// Текст проявляется целиком, когда готов, — одним фейдом, без движения:
     /// колонка не должна набираться на глазах абзац за абзацем.
     static let textAppear: Animation = .easeOut(duration: 0.2)
+
+    // MARK: Бросок мини-плеера
+    /// Круг цепляется жестом после 10 pt: меньший сдвиг — это ещё тап.
+    static let throwActivation: CGFloat = 10
+    /// «Закрыть легче, чем открыть»: хватает проекции остановки на 40 pt (две трети круга).
+    static let throwDistance: CGFloat = 40
+    static let throwFlickVelocity: CGFloat = 500
+    /// Улёт за кромку продолжает движение пальца, поэтому ease-out, а не ease-in-out.
+    static let throwOut: Animation = .easeOut(duration: 0.25)
+    /// Не дотянул — возврат пружиной (значение `SearchPullConfig.release` в баре: тот enum
+    /// приватный, а возврат должен ощущаться одинаково).
+    static let throwReturn: Animation = .spring(duration: 0.32, bounce: 0.42)
+    /// Reduce Motion: круг не летит, а гаснет на месте.
+    static let throwReducedFade: Animation = .easeOut(duration: 0.2)
 }
 
 // MARK: - Читалка
@@ -73,6 +89,10 @@ struct BookReaderView: View {
     @Environment(ActionBarState.self) private var actionBar
     @State private var text = BookTextStore()
     @State private var isMusicExpanded = false
+    /// Круг выкинули свайпом вправо — до конца этого сеанса читалки он не возвращается.
+    /// Состояние живёт здесь, а не в `ActionBarState`: следующая читалка стартует с кругом,
+    /// а музыка бросок не затрагивает вовсе.
+    @State private var isMusicThrown = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -81,8 +101,9 @@ struct BookReaderView: View {
             scrim
             header
             if showsMusic {
-                ReaderMusicPlayer(isExpanded: $isMusicExpanded)
-                    .padding(BookReaderLayout.musicInset)
+                ReaderMusicPlayer(isExpanded: $isMusicExpanded, isThrown: $isMusicThrown)
+                    .padding(.trailing, BookReaderLayout.musicTrailing)
+                    .padding(.bottom, BookReaderLayout.musicBottom)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
@@ -121,7 +142,7 @@ struct BookReaderView: View {
 
     private var textBottom: CGFloat {
         let clearance = showsMusic
-            ? BookReaderLayout.musicInset + PlusMetrics.actionBarCompact
+            ? BookReaderLayout.musicBottom + PlusMetrics.actionBarCompact
             : BookReaderLayout.homeIndicatorClearance
         return clearance + BookReaderLayout.textTail
     }
@@ -199,12 +220,20 @@ struct BookReaderView: View {
 
 /// Мини-плеер музыки — тот же компонент, что в action bar, в компактном варианте
 /// (`2338:18126`): круг 60 с обложкой. Тап разворачивает его в пилюлю с подписями
-/// и play/pause, как круг в баре (правило 2026-08-29). Свернуть — тапом по пилюле
-/// или прокруткой текста: полноэкранного плеера музыки поверх читалки нет, поэтому
-/// широкая пилюля здесь ведёт обратно в круг, а не дальше.
+/// и play/pause, как круг в баре (правило 2026-08-29). Тап по развёрнутой пилюле
+/// открывает большой плеер музыки поверх читалки (`ActionBarState.isMusicOverReader`):
+/// закрыл его — снова читалка на том же месте. Свернуть пилюлю — прокруткой текста.
 private struct ReaderMusicPlayer: View {
     @Environment(ActionBarState.self) private var actionBar
     @Binding var isExpanded: Bool
+    @Binding var isThrown: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Сдвиг круга за пальцем. Пишется только пока палец на экране, и применяется
+    /// через `offset` (transform), не раскладкой.
+    @State private var dragX: CGFloat = 0
+    /// Ось выбрана на первом событии жеста: `true` — горизонтальный, `false` — нет, и тогда
+    /// весь жест игнорируется (вертикаль — прокрутка текста, она рядом, но не здесь).
+    @State private var isHorizontalDrag: Bool?
 
     var body: some View {
         if let music = actionBar.music {
@@ -217,12 +246,91 @@ private struct ReaderMusicPlayer: View {
                 isLiked: actionBar.isMusicLiked,
                 onTogglePlay: { actionBar.toggleMusicPlayback() },
                 onToggleLike: { actionBar.toggleMusicLike() },
-                onExpand: { isExpanded.toggle() }
+                onExpand: handleTap
             )
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
             // левый уезжает, внутренности только проявляются.
             .frame(width: isExpanded ? ActionBarGeometry.miniPlayerExpandedWidth : PlusMetrics.actionBarCompact)
             .animation(ActionBarMotion.morph, value: isExpanded)
+            // Выкинуть можно только круг: в пилюле под пальцем кнопки like/play и тап,
+            // который ведёт в большой плеер. Вью после броска остаётся в дереве (убрать
+            // его `if` значило бы поменять раскладку и перемонтировать ряд), поэтому
+            // касания гасим явно; нижний отступ текста при этом не меняется — колонка
+            // не должна ехать на глазах (`textBottom` от броска не зависит).
+            // Жест стоит снаружи `offset` и меряется в глобальных координатах:
+            // иначе круг, едущий под пальцем, сам сбивал бы свой `translation`.
+            .offset(x: isThrown && !reduceMotion ? ActionBarGeometry.trailingEscape : dragX)
+            .opacity(isThrown && reduceMotion ? 0 : 1)
+            .allowsHitTesting(!isThrown)
+            .accessibilityHidden(isThrown)
+            .simultaneousGesture(throwGesture, including: isExpanded || isThrown ? .subviews : .all)
+            #if DEBUG
+            // `-debugReaderMusicTap 1`: через 1.5с тап по кругу, через 3с — по пилюле.
+            // Хук зовёт тот же обработчик, что и настоящий тап.
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugReaderMusicTap") else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                handleTap()
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                handleTap()
+            }
+            // `-debugReaderMusicThrow 1`: через 2с — тот же бросок, что свайп.
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugReaderMusicThrow") else { return }
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                throwAway()
+            }
+            #endif
+        }
+    }
+
+    private var throwGesture: some Gesture {
+        DragGesture(minimumDistance: BookReaderMotion.throwActivation, coordinateSpace: .global)
+            .onChanged { value in
+                if isHorizontalDrag == nil {
+                    isHorizontalDrag = abs(value.translation.width) > abs(value.translation.height)
+                }
+                guard isHorizontalDrag == true else { return }
+                // Круг 1:1 за пальцем, без анимации; влево не едет.
+                dragX = max(0, value.translation.width)
+            }
+            .onEnded { value in
+                defer { isHorizontalDrag = nil }
+                guard isHorizontalDrag == true else { return }
+                let isThrow = value.predictedEndTranslation.width >= BookReaderMotion.throwDistance
+                    || value.velocity.width >= BookReaderMotion.throwFlickVelocity
+                if isThrow {
+                    throwAway()
+                } else {
+                    withAnimation(BookReaderMotion.throwReturn) { dragX = 0 }
+                }
+            }
+    }
+
+    /// Бросок: круг улетает за правую кромку (Reduce Motion — гаснет там, где отпустили),
+    /// хаптика одна. Музыка не трогается — играет дальше.
+    private func throwAway() {
+        guard !isThrown else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if reduceMotion {
+            withAnimation(BookReaderMotion.throwReducedFade) { isThrown = true }
+        } else {
+            withAnimation(BookReaderMotion.throwOut) {
+                isThrown = true
+                dragX = 0
+            }
+        }
+    }
+
+    /// Круг разворачивается в пилюлю, пилюля открывает большой плеер — как в баре.
+    private func handleTap() {
+        if isExpanded {
+            actionBar.openMusicPlayer()
+        } else {
+            isExpanded = true
         }
     }
 }
