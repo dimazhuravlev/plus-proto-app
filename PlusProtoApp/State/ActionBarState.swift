@@ -699,6 +699,14 @@ final class ActionBarState {
         }
     }
 
+    /// Закрыть всё, что играет поверх экрана: музыку над читалкой и саму читалку/киноплеер.
+    /// Нужен тапу по тосту. Сброс флага до закрытия — иначе `closeContentPlayer` снял бы
+    /// только верхний слой (музыку) и остановился.
+    func closeAllPlayers() {
+        isMusicOverReader = false
+        closeContentPlayer()
+    }
+
     /// Закрыть киноплеер или читалку.
     ///
     /// - Parameters:

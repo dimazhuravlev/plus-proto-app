@@ -124,6 +124,17 @@ final class AppNavigationState {
         activeTab = tab
     }
 
+    /// Показать корень таба откуда угодно: профиль и слой фильма сняты, стек таба на корне,
+    /// таб активен. Для тапа по тосту — он живёт в окне поверх всего, и «закрыть всё и открыть
+    /// таб» делается одним синхронным вызовом, без анимаций. Профиль и слой с вложенными
+    /// экранами UIKit снимает целой стопкой — по одной презентации (см. `coveredRoute`).
+    func showRoot(of tab: AppTab) {
+        isProfileShown = false
+        coveredRoute = nil
+        paths[tab] = NavigationPath()
+        activeTab = tab
+    }
+
     /// Программный пуш. Нужен и отладке (тапнуть по симулятору из шелла нечем),
     /// и переходам, у которых нет `NavigationLink`: полные списки коллекции «Моё».
     func push(_ value: some Hashable, in tab: AppTab? = nil) {

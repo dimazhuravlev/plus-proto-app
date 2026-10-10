@@ -370,7 +370,12 @@ final class CollectionStore {
         }
         // Тост — только на «нравится» и «Позже»; скачивание тихое.
         if becameFavorite {
-            ToastCenter.shared.show(title: ToastCopy.randomAdded(), cover: record.artwork)
+            // Артист — фото вплотную к краю (`graphic=image`), остальное — обложка с наклоном.
+            var graphic = ToastGraphic.none
+            if let artwork = record.artwork {
+                graphic = record.kind == .artist ? .image(artwork) : .cover(artwork)
+            }
+            ToastCenter.shared.show(title: ToastCopy.randomAdded(), graphic: graphic, action: .openCollection)
         }
         if record.favoritedAt != nil || record.downloadedAt != nil {
             list.insert(record, at: 0)
