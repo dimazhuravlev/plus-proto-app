@@ -105,6 +105,15 @@ enum ToastLayout {
     static let coverShadowRadius: CGFloat = 6
     static let coverShadowY: CGFloat = 1
 
+    /// `graphic=cover` с прямоугольной обложкой (фильм, книга), `3350:66433` в `3350:66431`
+    /// (зеркальный RTL-вариант того же `3350:51043`: отступ 14 и зазор 8 те же): обложка
+    /// 32×44 r4 с тем же наклоном 6°, обводкой 0.66 `Fill/Nine` и тенью 0 1 6 чёрный 20 %,
+    /// рамка 36.424×47.104 (32·cos 6° + 44·sin 6°, 32·sin 6° + 44·cos 6°).
+    static let posterWidth: CGFloat = 32
+    static let posterHeight: CGFloat = 44
+    static let posterFrameWidth: CGFloat = 36.424
+    static let posterFrameHeight: CGFloat = 47.104
+
     /// `graphic=icon`, `3350:51042` / `3350:66556`: слева 16, слот иконки 24, зазор 12.
     /// Глиф `iconDone` нарисован на холсте 20×20 и стоит по центру слота.
     static let iconLeading: CGFloat = 16
@@ -129,7 +138,7 @@ struct ToastView: View {
     private var leadingInset: CGFloat {
         switch config.graphic {
         case .image: ToastLayout.imageTextInset
-        case .cover: ToastLayout.coverLeading
+        case .cover, .poster: ToastLayout.coverLeading
         case .icon: ToastLayout.iconLeading
         case .none: ToastLayout.noneLeading
         }
@@ -146,6 +155,7 @@ struct ToastView: View {
         if hasButton { width -= ToastLayout.gap + ToastLayout.buttonSize }
         switch config.graphic {
         case .cover: width -= ToastLayout.coverFrame + ToastLayout.coverGap
+        case .poster: width -= ToastLayout.posterFrameWidth + ToastLayout.coverGap
         case .icon: width -= ToastLayout.iconSlot + ToastLayout.gap
         case .image, .none: break
         }
@@ -156,8 +166,23 @@ struct ToastView: View {
         HStack(spacing: 0) {
             switch config.graphic {
             case .cover(let source):
-                cover(source)
-                    .padding(.trailing, ToastLayout.coverGap)
+                cover(
+                    source,
+                    width: ToastLayout.coverSide,
+                    height: ToastLayout.coverSide,
+                    frameWidth: ToastLayout.coverFrame,
+                    frameHeight: ToastLayout.coverFrame
+                )
+                .padding(.trailing, ToastLayout.coverGap)
+            case .poster(let source):
+                cover(
+                    source,
+                    width: ToastLayout.posterWidth,
+                    height: ToastLayout.posterHeight,
+                    frameWidth: ToastLayout.posterFrameWidth,
+                    frameHeight: ToastLayout.posterFrameHeight
+                )
+                .padding(.trailing, ToastLayout.coverGap)
             case .icon(let name):
                 icon(name)
                     .padding(.trailing, ToastLayout.gap)
@@ -201,11 +226,17 @@ struct ToastView: View {
         )
     }
 
-    /// Обложка 32 r4 с наклоном 6° и тенью внутри рамки 35.17. Кадр задаёт распорка,
-    /// картинка — `scaledToFill` в overlay (см. CLAUDE.md).
-    private func cover(_ source: ArtworkSource) -> some View {
+    /// Обложка r4 с наклоном 6° и тенью внутри рамки (квадрат 32 в 35.17 или портрет 32×44
+    /// в 36.424×47.104). Кадр задаёт распорка, картинка — `scaledToFill` в overlay (см. CLAUDE.md).
+    private func cover(
+        _ source: ArtworkSource,
+        width: CGFloat,
+        height: CGFloat,
+        frameWidth: CGFloat,
+        frameHeight: CGFloat
+    ) -> some View {
         Color.clear
-            .frame(width: ToastLayout.coverSide, height: ToastLayout.coverSide)
+            .frame(width: width, height: height)
             .overlay { ArtworkImage(source: source).scaledToFill() }
             .clipShape(RoundedRectangle(cornerRadius: ToastLayout.coverRadius))
             .overlay {
@@ -215,7 +246,7 @@ struct ToastView: View {
             .shadow(color: .black.opacity(0.2), radius: ToastLayout.coverShadowRadius, y: ToastLayout.coverShadowY)
             .rotationEffect(.degrees(coverRotation))
             .offset(y: coverOffsetY)
-            .frame(width: ToastLayout.coverFrame, height: ToastLayout.coverFrame)
+            .frame(width: frameWidth, height: frameHeight)
             .transition(.opacity)
     }
 
@@ -396,7 +427,7 @@ struct OverlayLayer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if DEBUG
-        // `-debugToast 1` — три типа подряд: лайк (обложка + кнопка) через 2 с, ✓ (иконка,
+        // `-debugToast 1` — три типа подряд: лайк (прямоугольная обложка фильма + кнопка) через 2 с, ✓ (иконка,
         // без кнопки) через 6 с, простой текст через 10 с.
         // `-debugShare 1` — экран шеринга альбома через 2 с.
         .task {
@@ -415,7 +446,7 @@ struct OverlayLayer: View {
             try? await Task.sleep(for: .seconds(2))
             ToastCenter.shared.show(
                 title: ToastCopy.randomAdded(),
-                graphic: .cover(.asset("mockAlbumCover")),
+                graphic: .poster(.asset("mockMoviePoster")),
                 action: .openCollection
             )
             try? await Task.sleep(for: .seconds(4))
