@@ -58,9 +58,14 @@ final class ToastCenter {
         action: ToastAction? = nil,
         duration: Duration = .seconds(4)
     ) {
+        current = ToastConfig(title: title, graphic: graphic, action: action, duration: duration)
+        startTimer(duration)
+    }
+
+    /// Таймер автоскрытия. Меняет токен — предыдущий таймер больше ничего не закроет.
+    private func startTimer(_ duration: Duration) {
         token += 1
         let mine = token
-        current = ToastConfig(title: title, graphic: graphic, action: action, duration: duration)
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: duration)
             guard let self, self.token == mine else { return }
@@ -68,13 +73,25 @@ final class ToastCenter {
         }
     }
 
-    /// Тап по тосту: тост уходит; есть действие — выполняем его. В окне затухания
-    /// (`current == nil`) тап ничего не делает.
+    /// Палец на тосте (смахивание): автоскрытие на паузе.
+    func holdTimer() {
+        token += 1
+    }
+
+    /// Палец отпущен, тост остался: таймер заново, на полный срок.
+    func resumeTimer() {
+        guard let current else { return }
+        startTimer(current.duration)
+    }
+
+    /// Тап по тосту: тост уходит; есть действие — выполняем его, с хаптикой кнопки. Тост без
+    /// кнопки закрывается молча. В окне затухания (`current == nil`) тап ничего не делает.
     func activate() {
         guard let action = current?.action else {
             if current != nil { dismiss() }
             return
         }
+        PlayerHaptics.tap()
         dismiss()
         switch action {
         case .openCollection: openCollection?()
