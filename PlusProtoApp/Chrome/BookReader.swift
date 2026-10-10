@@ -119,6 +119,13 @@ private enum BookReaderLayout {
     static let homeIndicatorClearance: CGFloat = 34
 }
 
+/// Показ обвязки на открытии читалки (правка пользователя 2026-10-10).
+enum ReaderIntro {
+    /// Экран читалки поднимается ~0.5 с (`.coverVertical`): обвязка проявляется не сразу,
+    /// а когда он уже почти встал, — иначе её появление теряется в выезде.
+    static let delay: Duration = .milliseconds(350)
+}
+
 enum BookReaderMotion {
     /// Показ и скрытие обвязки: верхняя панель, нижний блок, оба затемнения, сдвиг
     /// мини-плеера и его разворот в пилюлю — одной анимацией (правка пользователя
@@ -167,9 +174,14 @@ struct BookReaderView: View {
     /// Состояние живёт здесь, а не в `ActionBarState`: следующая читалка стартует с кругом,
     /// а музыка бросок не затрагивает вовсе.
     @State private var isMusicThrown = false
-    /// Обвязка (верхняя панель, нижний блок, затемнения) — при открытии скрыта, как в
-    /// макетах «скрытая обвязка» `2311:27488` / `2565:25233`; тап по тексту её переключает.
+    /// Обвязка (верхняя панель, нижний блок, затемнения). Читалка стартует со скрытой, как
+    /// в макетах «скрытая обвязка» `2311:27488` / `2565:25233`, и через `ReaderIntro.delay`
+    /// её проявляет (правка пользователя 2026-10-10); тап по тексту переключает.
     @State private var isChromeShown = false
+    /// Показ на открытии отработал, либо пользователь успел распорядиться обвязкой сам
+    /// (тап, начало прокрутки): ни то ни другое показ не перебивает и не повторяется —
+    /// `.task` читалки стартует заново, когда сверху закрывается большой плеер.
+    @State private var isChromeIntroDone = false
     /// Доля прокрутки текста 0…1, шагом 0.5 % (`progressStep`): в `@State` только она.
     @State private var scrollProgress: Double = 0
     /// Слов в тексте — для «осталось ~N мин»; считается один раз, когда текст готов.
@@ -208,6 +220,15 @@ struct BookReaderView: View {
         }
         .ignoresSafeArea()
         .task { await text.load(bookID: book.id) }
+        // Обвязка на открытии: экран читалки поднимается, и с небольшой задержкой
+        // проявляется обвязка (правка пользователя 2026-10-10). Идемпотентно: флаг
+        // не даёт перезапущенной задаче показать её ещё раз или перебить пользователя.
+        .task {
+            guard !isChromeIntroDone else { return }
+            try? await Task.sleep(for: ReaderIntro.delay)
+            guard !Task.isCancelled, !isChromeIntroDone else { return }
+            setChrome(true)
+        }
         .onChange(of: text.isReady, initial: true) { _, isReady in
             guard isReady else { return }
             totalWords = text.pages.reduce(0) { $0 + $1.split(whereSeparator: \.isWhitespace).count }
@@ -224,8 +245,8 @@ struct BookReaderView: View {
             guard !Task.isCancelled else { return }
             debugScrollPosition.scrollTo(y: offset)
         }
-        // `-debugReaderChrome 1`: через 2с показать обвязку, через 5с скрыть — тот же
-        // код, что у тапа по тексту.
+        // `-debugReaderChrome 1`: обвязка уже показана при открытии, поэтому через 2с
+        // её скрыть, через 5с показать снова — тот же код, что у тапа по тексту.
         .task {
             guard UserDefaults.standard.bool(forKey: "debugReaderChrome") else { return }
             try? await Task.sleep(for: .seconds(2))
@@ -247,6 +268,7 @@ struct BookReaderView: View {
     /// пилюля развёрнута (правка пользователя 2026-10-10), спрятали — сворачивается
     /// обратно в круг, как раньше при прокрутке. Выброшенного круга это не касается.
     private func setChrome(_ shown: Bool) {
+        isChromeIntroDone = true
         guard shown != isChromeShown else { return }
         withAnimation(chromeAnimation) {
             isChromeShown = shown
@@ -326,12 +348,13 @@ struct BookReaderView: View {
         return clearance + BookReaderLayout.textTail
     }
 
-    /// Верхний слой под шапкой: блюр (всегда) и затемнение `overlay bg` — 80 в скрытой
-    /// обвязке, 153 в показанной. Правка пользователя 2026-10-10: затемнение сверху
-    /// меняется вместе с обвязкой — явной анимируемой высотой от верхней кромки, одной
-    /// анимацией с панелью и нижним затемнением. Слой лежит соседом в корневом `ZStack`
-    /// и держит свой кадр `maxHeight: 153`, так что смена высоты текст и обвязку
-    /// не перекладывает.
+    /// Верхний слой под шапкой: блюр (часть верхней обвязки — виден только с ней) и
+    /// затемнение `overlay bg` — 80 в скрытой обвязке, 153 в показанной. Правка
+    /// пользователя 2026-10-10: затемнение сверху меняется вместе с обвязкой — явной
+    /// анимируемой высотой от верхней кромки, одной анимацией с панелью и нижним
+    /// затемнением; блюр проявляется и гаснет прозрачностью, без сдвига. Слой лежит
+    /// соседом в корневом `ZStack` и держит свой кадр `maxHeight: 153`, так что смена
+    /// высоты текст и обвязку не перекладывает.
     private var scrim: some View {
         ZStack(alignment: .top) {
             VariableBlurView(
@@ -340,6 +363,8 @@ struct BookReaderView: View {
             )
             .frame(height: BookReaderLayout.scrimBlurHeight)
             .offset(y: BookReaderLayout.scrimTop)
+            .opacity(hiddenOpacity)
+            .animation(chromeAnimation, value: isChromeShown)
 
             LinearGradient(
                 stops: [
@@ -365,15 +390,16 @@ struct BookReaderView: View {
 
     // MARK: Обвязка
 
-    /// Куда уезжают части обвязки и откуда приходят: за кромку, а не в прозрачность —
-    /// уходящее уезжает, а не гаснет раньше. Reduce Motion: никакого движения, только
-    /// прозрачность.
+    /// Куда уезжают части обвязки и откуда приходят: за кромку — и в прозрачность, одной
+    /// кривой (правка пользователя 2026-10-10: сдвига одного мало, уходящее должно гаснуть,
+    /// приходящее — проявляться). Reduce Motion: никакого движения, только прозрачность.
     private func hiddenOffset(_ travel: CGFloat) -> CGFloat {
         isChromeShown || reduceMotion ? 0 : travel
     }
 
+    /// Прозрачность скрытой обвязки — всегда, а не только при Reduce Motion.
     private var hiddenOpacity: Double {
-        reduceMotion && !isChromeShown ? 0 : 1
+        isChromeShown ? 1 : 0
     }
 
     private var chromeAnimation: Animation {
