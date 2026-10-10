@@ -237,7 +237,7 @@ struct MovieVideoSection: View {
             }
         }
         .animation(
-            reduceMotion ? nil : .easeOut(duration: MovieVideoMotion.cardAppear),
+            reduceMotion ? nil : MovieCardMotion.imageAppear,
             value: stills[index] != nil
         )
     }
@@ -296,6 +296,13 @@ enum MovieVideoMotion {
     /// Кроссфейд «болванка → карточка», когда кадр приехал, — 300мс по просьбе
     /// пользователя (2026-08-25)
     static let cardAppear: Double = 0.3
+}
+
+enum MovieCardMotion {
+    /// Как проявляется карточка с кадром, когда кадр приехал: ease-in-out, 300 мс.
+    /// Правка пользователя 2026-10-10: проявление читалось слишком резко (на экране
+    /// фильма кадры в карточках с названием и описанием — «Лейла», «Мустафа»).
+    static let imageAppear: Animation = .easeInOut(duration: MovieVideoMotion.cardAppear)
 }
 
 /// Болванка карточки, пока её кадр едет: тот же скруглённый прямоугольник тех же

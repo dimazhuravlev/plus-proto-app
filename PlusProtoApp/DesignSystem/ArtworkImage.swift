@@ -5,10 +5,15 @@ import SwiftUI
 /// из MusicPlayer: имя ассета + опциональный URL).
 struct ArtworkImage: View {
     let source: ArtworkSource
+    /// Как проявляется картинка, приехавшая из сети (см. `ResolvedArtwork.appear`).
+    /// `nil` — сразу, как было; другая кривая — только там, где её просили.
+    var appear: Animation? = nil
 
     var body: some View {
-        ResolvedArtwork(source: source) { image in
+        ResolvedArtwork(source: source, appear: appear) { image in
             image.resizable()
+        } placeholder: {
+            PlusSkeleton.fill
         }
     }
 }
