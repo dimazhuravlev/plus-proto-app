@@ -57,11 +57,15 @@ enum MovieLayout {
     static let infoOverlap: CGFloat = 80
     static let infoLeading: CGFloat = 48
     static let infoTrailing: CGFloat = 16
-    /// Лид ↔ мета — макет `2128:13022`: 12 от низа лида до первой строки меты.
-    static let leadToMeta: CGFloat = 12
-    /// Фиолетовый лейбл ↔ строка меты под ним. Лейбл — первая строка меты,
+    /// Блок «описание + мета» — по макету `2128:13022`, правка пользователя 2026-10-10.
+    /// Лид ↔ мета: 16 от низа лида до строки рейтинга (Description → meta, y 151).
+    static let leadToMeta: CGFloat = 16
+    /// Рейтинг ↔ строка меты под ним: 4 (meta, gap 4). Рейтинг — первая строка меты,
     /// а не подпись над лидом (правка пользователя 2026-10-03, тот же макет).
-    static let accentToMeta: CGFloat = 4
+    static let ratingToMeta: CGFloat = 4
+    /// Иконка Кинопоиска у рейтинга — `2565:25894`, 12×12; зазор до текста 4.
+    static let ratingIconSize: CGFloat = 12
+    static let ratingIconGap: CGFloat = 4
     static let infoBottom: CGFloat = 24
     // Прежний `leadInset = 32` («лид уже своего контейнера» из макета) снят —
     // правка пользователя 2026-08-25: правое поле всех текстов аргумента и описания
@@ -594,17 +598,27 @@ struct MovieScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if details.accent != nil || !details.meta.isEmpty {
-                VStack(alignment: .leading, spacing: MovieLayout.accentToMeta) {
+                VStack(alignment: .leading, spacing: MovieLayout.ratingToMeta) {
                     // Лейбл — над метой, под лидом (макет `2128:13022`, правка пользователя
                     // 2026-10-03; прежде стоял над лидом). В макете здесь «Best drame
                     // in the world». Редакционных подборок API не отдаёт, поэтому на этом
                     // месте самый сильный реальный факт о тайтле — позиция в топ-250 или
                     // оценка Кинопоиска. Нет и его — строки просто нет.
                     if let accent = details.accent {
-                        Text(accent)
-                            .plusText(.textM, .medium)
-                            // Правка пользователя 2026-10-10: белый вместо акцента.
-                            .foregroundStyle(Color.fillOne)
+                        // Иконка Кинопоиска — и у «Кинопоиск 7,4», и у «№N в топ-250
+                        // Кинопоиска» (макет `2128:13022`, правка пользователя 2026-10-10);
+                        // цвет как у текста, центр в строке: в макете y 3 при строке 18.
+                        HStack(spacing: MovieLayout.ratingIconGap) {
+                            Image("iconKinopoisk")
+                                .renderingMode(.template)
+                                .resizable()
+                                .frame(width: MovieLayout.ratingIconSize,
+                                       height: MovieLayout.ratingIconSize)
+                            Text(accent)
+                                .plusText(.textM, .medium)
+                        }
+                        // Правка пользователя 2026-10-10: белый вместо акцента.
+                        .foregroundStyle(Color.fillOne)
                     }
                     if !details.meta.isEmpty { meta }
                 }
