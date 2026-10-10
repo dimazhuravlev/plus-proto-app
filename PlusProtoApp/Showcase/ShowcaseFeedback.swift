@@ -235,6 +235,8 @@ struct ShowcaseFeedbackPair: View {
         guard let state, !state.isSwapping, !state.isDone else { return }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         state.isDone = true
+        // Сущности в паре нет — тост без обложки.
+        ToastCenter.shared.show(title: ToastCopy.randomDone())
         Task { @MainActor in
             try? await Task.sleep(for: ShowcaseFeedbackMotion.doneHold)
             withAnimation(ShowcaseFeedbackMotion.pairOut) { state.isPairHidden = true }

@@ -234,6 +234,17 @@ extension CollectionItem {
     }
 }
 
+// MARK: - Событие добавления
+
+/// Событие «сущность добавлена в Моё» — лайк, «Позже» или скачивание.
+struct CollectionAddition: Identifiable, Equatable {
+    enum Reason { case favorite, download }
+
+    let id = UUID()
+    let item: CollectionItem
+    let reason: Reason
+}
+
 // MARK: - Хранилище
 
 /// Коллекция «Моё» — общая для кино, книг и музыки (задача пользователя 2026-10-04,
@@ -250,6 +261,10 @@ extension CollectionItem {
 @Observable
 final class CollectionStore {
     static let shared = CollectionStore()
+
+    /// Последнее «добавлено в Моё» — лайк, «Позже» или скачивание. Пишется на каждый переход
+    /// «не было отметки → есть»; читает таб «Моё».
+    private(set) var lastAddition: CollectionAddition?
 
     /// Полки коллекции — табы её навигации.
     enum Shelf: Int, CaseIterable {
@@ -347,11 +362,26 @@ final class CollectionStore {
     private func update(_ item: CollectionItem, _ change: (inout CollectionItem) -> Void) {
         var list = items
         var record = item
+        var wasFavorite = false
+        var wasDownloaded = false
         if let index = list.firstIndex(where: { $0.id == item.id }) {
             record = list.remove(at: index)
             record.refresh(from: item)
+            wasFavorite = record.favoritedAt != nil
+            wasDownloaded = record.downloadedAt != nil
         }
         change(&record)
+        // Отметка появилась (было пусто, стало с датой) — это событие «добавлено в Моё».
+        // Снятие отметки событием не считается.
+        let becameFavorite = !wasFavorite && record.favoritedAt != nil
+        let becameDownloaded = !wasDownloaded && record.downloadedAt != nil
+        if becameFavorite || becameDownloaded {
+            lastAddition = CollectionAddition(item: record, reason: becameFavorite ? .favorite : .download)
+        }
+        // Тост — только на «нравится» и «Позже»; скачивание тихое.
+        if becameFavorite {
+            ToastCenter.shared.show(title: ToastCopy.randomAdded(), cover: record.artwork)
+        }
         if record.favoritedAt != nil || record.downloadedAt != nil {
             list.insert(record, at: 0)
         }
