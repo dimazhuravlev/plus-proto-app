@@ -33,6 +33,9 @@ enum CollectionLayout {
     /// вовсе (правка пользователя 2026-10-10) — лента ровно в обложку.
     static var posterRowHeight: CGFloat { posterHeight }
     static var bookRowHeight: CGFloat { book.frameSize(coverWidth: 0).height }
+    /// Нижний отступ полок кино и книг (правка пользователя 2026-10-10: без подписей
+    /// блок ниже прилипал). Высоты рядов не трогаем — отступ вне ленты, зум и клип целы.
+    static let coverOnlyShelfBottom: CGFloat = 16
     static var squareRowHeight: CGFloat { cardWidth + captionGap + 3 * captionLine }
     static var titleOnlyRowHeight: CGFloat { cardWidth + captionGap + 2 * captionLine }
 
@@ -189,10 +192,12 @@ struct CollectionScreen: View {
             CollectionCarousel(title: kind.title, height: CollectionLayout.posterRowHeight, items: items, openAll: openAll) { item in
                 CollectionPosterCard(item: item)
             }
+            .padding(.bottom, CollectionLayout.coverOnlyShelfBottom)
         case .book:
             CollectionCarousel(title: kind.title, height: CollectionLayout.bookRowHeight, items: items, openAll: openAll) { item in
                 CollectionBookCard(item: item)
             }
+            .padding(.bottom, CollectionLayout.coverOnlyShelfBottom)
         case .artist:
             CollectionCarousel(title: kind.title, height: CollectionLayout.titleOnlyRowHeight, items: items, openAll: openAll) { item in
                 CollectionArtistCard(item: item)
