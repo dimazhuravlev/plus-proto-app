@@ -17,9 +17,10 @@ enum GlassIconButtonConfig {
 struct GlassIconButton: View {
     let icon: String
     var accessibilityTitle: String = ""
-    /// Затемнение стекла хрома — и у кнопок навбаров (правка пользователя 2026-10-10):
-    /// кнопки верхних навбаров над светлой обложкой читаются так же, как пилюли action bar.
-    /// Сила — слайдером в дебаг-меню (`ChromeGlass`). Остальные кнопки — прежнее стекло.
+    /// Единое стекло хрома — и у кнопок навбаров (правка пользователя 2026-10-10): блюр 35,
+    /// затемнение, белый 10 % и бордер — как у пилюль action bar, кнопки читаются над светлой
+    /// обложкой. Сила затемнения — слайдером в дебаг-меню (`ChromeGlass`). Остальные кнопки —
+    /// прежнее стекло.
     /// Параметр стоит перед `action`, чтобы хвостовое замыкание оставалось за колбэком.
     var chrome: Bool = false
     var action: () -> Void = {}
@@ -39,14 +40,13 @@ struct GlassIconButton: View {
     }
 }
 
-/// Поверхность круга 40: `chrome` — стекло хрома с затемнением (блюр, заливка и бордер те же,
-/// что у `glassCircle`), иначе обычное. `chrome` постоянен на всю жизнь кнопки, ветка не переключается.
+/// Поверхность круга 40: `chrome` — стекло хрома (`chromeGlass`), иначе обычное (`glassCircle`). `chrome` постоянен на всю жизнь кнопки, ветка не переключается.
 private struct GlassIconButtonSurface: ViewModifier {
     let chrome: Bool
 
     func body(content: Content) -> some View {
         if chrome {
-            content.chromeGlass(Circle(), blur: PlusMetrics.buttonBlur)
+            content.chromeGlass(Circle())
         } else {
             content.glassCircle()
         }

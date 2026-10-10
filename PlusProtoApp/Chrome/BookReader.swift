@@ -483,7 +483,7 @@ struct BookReaderView: View {
     private var topBar: some View {
         HStack(spacing: BookReaderLayout.barGap) {
             HStack(spacing: BookReaderLayout.barGap) {
-                ReaderCircleButton(icon: "iconCross", fill: .buttonsPrimary, title: "Закрыть") {
+                ReaderCircleButton(icon: "iconCross", title: "Закрыть") {
                     actionBar.closeContentPlayer()
                 }
                 HStack(spacing: BookReaderLayout.coverToTitle) {
@@ -500,12 +500,11 @@ struct BookReaderView: View {
                     icon: "iconAdd",
                     activeIcon: "iconDone",
                     isActive: collection.isFavorite(collectionItem.id),
-                    fill: .buttonsSecondary,
                     title: "Добавить"
                 ) {
                     collection.toggleFavorite(collectionItem)
                 }
-                ReaderCircleButton(icon: "iconMore", fill: .buttonsSecondary, title: "Ещё")
+                ReaderCircleButton(icon: "iconMore", title: "Ещё")
             }
         }
         .contentShape(Rectangle())
@@ -544,16 +543,15 @@ struct BookReaderView: View {
 
 // MARK: - Обвязка: кнопки и нижний блок
 
-/// Круглая кнопка верхней панели 40×40 (`2565:25465`, `2565:25528`): глиф 20 в той же
-/// стеклянной поверхности, что у всех серых кнопок. Заливка — Buttons/Primary 10 %
-/// у «назад» и Buttons/Secondary 8 % у пары справа, как в макете. Действия у пары
+/// Круглая кнопка верхней панели 40×40 (`2565:25465`, `2565:25528`): глиф 20 в едином
+/// стекле хрома (`chromeGlass`; заливка 10 % у всех, а не 8 % у пары справа, как в макете —
+/// правка пользователя 2026-10-10). Действия у пары
 /// у «ещё» нет: отклик есть (просадка и хаптика), логики нет. У «+» два глифа —
 /// `icon` и `activeIcon`, они сменяются кросс-попом, как `LikeGlyph`.
 private struct ReaderCircleButton: View {
     let icon: String
     var activeIcon: String? = nil
     var isActive = false
-    let fill: Color
     let title: String
     var action: () -> Void = {}
 
@@ -574,9 +572,9 @@ private struct ReaderCircleButton: View {
             }
             .animation(ActionBarMotion.iconSwap, value: isActive)
             .frame(width: BookReaderLayout.topBarButton, height: BookReaderLayout.topBarButton)
-            // Блюр, заливка и бордер макетные; сверху — затемнение стекла хрома (правка
-            // пользователя 2026-10-10), чтобы кнопки читались над светлой страницей.
-            .chromeGlass(Circle(), blur: PlusMetrics.buttonBlur, fill: fill)
+            // Единое стекло хрома (правка пользователя 2026-10-10): кнопки читаются
+            // над светлой страницей.
+            .chromeGlass(Circle())
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(title)

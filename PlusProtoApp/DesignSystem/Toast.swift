@@ -281,13 +281,7 @@ struct ToastView: View {
             }
         }
         .clipShape(Capsule(style: .continuous))
-        .glassSurface(
-            Capsule(style: .continuous),
-            blur: PlusMetrics.glassBlur,
-            fill: .fillNine,
-            border: .fillNine,
-            borderWidth: PlusMetrics.hairline
-        )
+        .chromeGlass(Capsule(style: .continuous))
     }
 
     /// Обложка r4 с наклоном 6° и тенью внутри рамки (квадрат 32 в 35.17 или портрет 32×44
@@ -326,8 +320,7 @@ struct ToastView: View {
     }
 
     private var chevronButton: some View {
-        Circle()
-            .fill(Color.buttonsSecondary)
+        Color.clear
             .frame(width: ToastLayout.buttonSize, height: ToastLayout.buttonSize)
             .overlay {
                 Image("iconChevronRight")
@@ -336,6 +329,7 @@ struct ToastView: View {
                     .frame(width: ToastLayout.buttonIcon, height: ToastLayout.buttonIcon)
                     .foregroundStyle(Color.fillOne)
             }
+            .chromeGlass(Circle())
             .transition(.opacity)
     }
 }
