@@ -78,10 +78,12 @@ extension View {
 /// «картинки нет», под ним остаётся скелетон.
 struct SkeletonArtwork: View {
     let source: ArtworkSource
+    /// Как проявляется картинка из сети; по умолчанию — общий фейд скелетона.
+    var appear: Animation = PlusSkeleton.appear
 
     var body: some View {
         if let shown {
-            ResolvedArtwork(source: shown, appear: PlusSkeleton.appear) { image in
+            ResolvedArtwork(source: shown, appear: appear) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.clear

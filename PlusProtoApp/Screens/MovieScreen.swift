@@ -603,7 +603,8 @@ struct MovieScreen: View {
                     if let accent = details.accent {
                         Text(accent)
                             .plusText(.textM, .medium)
-                            .foregroundStyle(Color.moviesAccent)
+                            // Правка пользователя 2026-10-10: белый вместо акцента.
+                            .foregroundStyle(Color.fillOne)
                     }
                     if !details.meta.isEmpty { meta }
                 }
