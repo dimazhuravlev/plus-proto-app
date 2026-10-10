@@ -135,8 +135,9 @@ struct EntityNavBar<Trailing: View>: View {
     ///
     /// Кнопка — тот же `GlassIconButton`, что у крестика и сердца: круг 40, бокс глифа 20,
     /// стекло и пресс-стейт совпадали и раньше, просто были переписаны здесь заново.
+    /// `chrome` — затемнение стекла хрома из дебаг-меню, как у пилюль action bar.
     private var backButton: some View {
-        GlassIconButton(icon: "iconDropleft", accessibilityTitle: "Назад") {
+        GlassIconButton(icon: "iconDropleft", accessibilityTitle: "Назад", chrome: true) {
             if let onBack { onBack() } else { dismiss() }
         }
     }

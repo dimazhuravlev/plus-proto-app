@@ -399,7 +399,7 @@ struct MovieScreen: View {
     /// верхнему углу и по скроллу не меняются — ровно поведение trailing-слота навбара.
     private var headerActions: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
-            GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться") {
+            GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться", chrome: true) {
                 PlayerHaptics.tap()
                 ShareState.shared.present(.movie(
                     title: details.title,
@@ -407,7 +407,7 @@ struct MovieScreen: View {
                     poster: details.poster.map { ArtworkSource.remote($0) } ?? entity.artwork
                 ))
             }
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть") { dismiss() }
+            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть", chrome: true) { dismiss() }
         }
     }
 
