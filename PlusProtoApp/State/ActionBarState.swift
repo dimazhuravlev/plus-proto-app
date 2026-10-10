@@ -188,7 +188,19 @@ final class ActionBarState {
 
     /// Открытый плеер музыки, киноплеер или читалка. На диск не пишется: после
     /// перезапуска приложение поднимается на экране, а не посреди фильма.
-    private(set) var contentPlayer: ContentPlayer?
+    private(set) var contentPlayer: ContentPlayer? {
+        didSet {
+            // Сменилась или закрылась сама читалка — слой музыки над ней уходит вместе с ней.
+            if contentPlayer?.id != oldValue?.id { isMusicOverReader = false }
+        }
+    }
+
+    /// Большой плеер музыки открыт поверх читалки. Слотов `contentPlayer` один, и музыка
+    /// не должна его занимать: презентер тогда снял бы читалку, и после закрытия плеера
+    /// пользователь оказался бы в приложении, а не в книге. Поэтому поверх читалки —
+    /// второй слой флагом, а не стек: слоёв ровно два и только в этом сочетании.
+    /// Закрывается только он; читалка под ним живёт.
+    private(set) var isMusicOverReader = false
 
     /// Палец на таймлайне плеера музыки: тикер прогресса молчит, иначе он тянул бы
     /// заливку вперёд из-под пальца дважды в секунду.
@@ -460,7 +472,11 @@ final class ActionBarState {
     /// Открыть полноэкранный плеер музыки — тап по широкой пилюле мини-плеера.
     func openMusicPlayer() {
         guard music != nil else { return }
-        contentPlayer = .music
+        if case .reader = contentPlayer {
+            isMusicOverReader = true
+        } else {
+            contentPlayer = .music
+        }
     }
 
     /// Перемотка таймлайном плеера: позиция трека долей, 0…1.
@@ -579,6 +595,11 @@ final class ActionBarState {
         // Закрыли раньше, чем плеер доехал, — бар догоняет запуск сейчас: позиция
         // фильма пишется в его чип.
         applyPendingResume()
+        // Плеер музыки над читалкой: закрывается только верхний слой.
+        if isMusicOverReader {
+            isMusicOverReader = false
+            return
+        }
         switch contentPlayer {
         case .movie(let item):
             if let moviePosition, movie?.id == item.id {
@@ -604,6 +625,11 @@ final class ActionBarState {
     /// Состояние обязано догнать экран, иначе следующий тап не откроет ничего:
     /// презентер считал бы, что плеер уже показан.
     func contentPlayerDidDisappear(id: ContentPlayer.ID) {
+        // Слой музыки над читалкой сняли жестом или системой — читалка остаётся.
+        if id == "music", isMusicOverReader {
+            isMusicOverReader = false
+            return
+        }
         guard contentPlayer?.id == id else { return }
         closeContentPlayer()
     }

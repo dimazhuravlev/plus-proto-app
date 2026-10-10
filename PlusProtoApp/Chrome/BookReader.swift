@@ -45,8 +45,10 @@ private enum BookReaderLayout {
     /// под шапкой пустую полосу. Макет рисует колонку уже прокрученной, покоя в нём нет.
     static var textTop: CGFloat { scrimTop + scrimHeight - lineHeight }
 
-    /// Мини-плеер музыки — круг 60 в правом нижнем углу с полями 16.
-    static let musicInset: CGFloat = 16
+    /// Мини-плеер музыки — круг 60 в правом нижнем углу: справа поле 16, снизу 32 —
+    /// на 16 выше прежнего (правка пользователя 2026-10-10).
+    static let musicTrailing: CGFloat = 16
+    static let musicBottom: CGFloat = 32
     /// Воздух под последней строкой, когда текст докручен до конца.
     static let textTail: CGFloat = 24
     /// Без мини-плеера последняя строка выходит из-под home indicator.
@@ -82,7 +84,8 @@ struct BookReaderView: View {
             header
             if showsMusic {
                 ReaderMusicPlayer(isExpanded: $isMusicExpanded)
-                    .padding(BookReaderLayout.musicInset)
+                    .padding(.trailing, BookReaderLayout.musicTrailing)
+                    .padding(.bottom, BookReaderLayout.musicBottom)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
@@ -121,7 +124,7 @@ struct BookReaderView: View {
 
     private var textBottom: CGFloat {
         let clearance = showsMusic
-            ? BookReaderLayout.musicInset + PlusMetrics.actionBarCompact
+            ? BookReaderLayout.musicBottom + PlusMetrics.actionBarCompact
             : BookReaderLayout.homeIndicatorClearance
         return clearance + BookReaderLayout.textTail
     }
@@ -199,9 +202,9 @@ struct BookReaderView: View {
 
 /// Мини-плеер музыки — тот же компонент, что в action bar, в компактном варианте
 /// (`2338:18126`): круг 60 с обложкой. Тап разворачивает его в пилюлю с подписями
-/// и play/pause, как круг в баре (правило 2026-08-29). Свернуть — тапом по пилюле
-/// или прокруткой текста: полноэкранного плеера музыки поверх читалки нет, поэтому
-/// широкая пилюля здесь ведёт обратно в круг, а не дальше.
+/// и play/pause, как круг в баре (правило 2026-08-29). Тап по развёрнутой пилюле
+/// открывает большой плеер музыки поверх читалки (`ActionBarState.isMusicOverReader`):
+/// закрыл его — снова читалка на том же месте. Свернуть пилюлю — прокруткой текста.
 private struct ReaderMusicPlayer: View {
     @Environment(ActionBarState.self) private var actionBar
     @Binding var isExpanded: Bool
@@ -217,12 +220,34 @@ private struct ReaderMusicPlayer: View {
                 isLiked: actionBar.isMusicLiked,
                 onTogglePlay: { actionBar.toggleMusicPlayback() },
                 onToggleLike: { actionBar.toggleMusicLike() },
-                onExpand: { isExpanded.toggle() }
+                onExpand: handleTap
             )
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
             // левый уезжает, внутренности только проявляются.
             .frame(width: isExpanded ? ActionBarGeometry.miniPlayerExpandedWidth : PlusMetrics.actionBarCompact)
             .animation(ActionBarMotion.morph, value: isExpanded)
+            #if DEBUG
+            // `-debugReaderMusicTap 1`: через 1.5с тап по кругу, через 3с — по пилюле.
+            // Хук зовёт тот же обработчик, что и настоящий тап.
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugReaderMusicTap") else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                handleTap()
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                handleTap()
+            }
+            #endif
+        }
+    }
+
+    /// Круг разворачивается в пилюлю, пилюля открывает большой плеер — как в баре.
+    private func handleTap() {
+        if isExpanded {
+            actionBar.openMusicPlayer()
+        } else {
+            isExpanded = true
         }
     }
 }
