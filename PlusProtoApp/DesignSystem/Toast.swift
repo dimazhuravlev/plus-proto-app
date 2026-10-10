@@ -122,6 +122,72 @@ enum ToastLayout {
 
     /// `graphic=none`, `3350:66601` / `3350:66621`: слева 24.
     static let noneLeading: CGFloat = 24
+
+    // MARK: Ширина по тексту
+
+    /// Левый отступ до графики (у `image` — до текста: картинка лежит поверх отступа).
+    static func leadingInset(for graphic: ToastGraphic) -> CGFloat {
+        switch graphic {
+        case .image: imageTextInset
+        case .cover, .poster: coverLeading
+        case .icon: iconLeading
+        case .none: noneLeading
+        }
+    }
+
+    /// Графика вместе с зазором до текста.
+    static func graphicWidth(for graphic: ToastGraphic) -> CGFloat {
+        switch graphic {
+        case .cover: coverFrame + coverGap
+        case .poster: posterFrameWidth + coverGap
+        case .icon: iconSlot + gap
+        case .image, .none: 0
+        }
+    }
+
+    /// Всё в ряду, кроме текста: отступы, графика, кнопка с зазором.
+    private static func nonTextWidth(for config: ToastConfig) -> CGFloat {
+        let hasButton = config.action != nil
+        var width = leadingInset(for: config.graphic) + graphicWidth(for: config.graphic)
+        width += hasButton ? gap + buttonSize + trailingWithButton : trailingNoButton
+        return width
+    }
+
+    /// Места под фразу: от `max-width` вычитаем всё остальное в ряду.
+    static func textMaxWidth(for config: ToastConfig) -> CGFloat {
+        maxWidth - nonTextWidth(for: config)
+    }
+
+    /// Ширина фразы: самая длинная строка после переноса по словам в `maxWidth`.
+    ///
+    /// Почему замер строкой, а не чтением размера вью (геометрия, preference): размер пилюли
+    /// зависит от ширины текста, а читать размер вью, от которого зависит её же
+    /// раскладка, нельзя (правило 120 fps, CLAUDE.md) — раскладка идёт от констант.
+    /// Шрифт — тот же YS Text Medium 13, что у `plusText(.textS, .medium)`; перенос
+    /// здесь и в `Text` с `.frame(width:)` одинаковый, потому что ширина одна и та же.
+    static func textWidth(_ title: String, maxWidth: CGFloat) -> CGFloat {
+        let size = PlusTextSize.textS.size
+        let font = UIFont(name: PlusFont.textMedium, size: size)
+            ?? UIFont.systemFont(ofSize: size, weight: .medium)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let text = NSAttributedString(
+            string: title,
+            attributes: [.font: font, .paragraphStyle: paragraph]
+        )
+        let rect = text.boundingRect(
+            with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        )
+        return min(ceil(rect.width), maxWidth)
+    }
+
+    /// Ширина пилюли: обнимает текст, не шире `maxWidth`.
+    static func pillWidth(for config: ToastConfig) -> CGFloat {
+        nonTextWidth(for: config)
+            + textWidth(config.title, maxWidth: textMaxWidth(for: config))
+    }
 }
 
 // MARK: - Вид
@@ -135,31 +201,15 @@ struct ToastView: View {
 
     private var hasButton: Bool { config.action != nil }
 
-    private var leadingInset: CGFloat {
-        switch config.graphic {
-        case .image: ToastLayout.imageTextInset
-        case .cover, .poster: ToastLayout.coverLeading
-        case .icon: ToastLayout.iconLeading
-        case .none: ToastLayout.noneLeading
-        }
-    }
+    private var leadingInset: CGFloat { ToastLayout.leadingInset(for: config.graphic) }
 
     private var trailingInset: CGFloat {
         hasButton ? ToastLayout.trailingWithButton : ToastLayout.trailingNoButton
     }
 
-    /// Места под фразу: от `max-width` вычитаем всё остальное в ряду — раскладка от
-    /// констант, а не от измеренных размеров.
-    private var textMaxWidth: CGFloat {
-        var width = ToastLayout.maxWidth - leadingInset - trailingInset
-        if hasButton { width -= ToastLayout.gap + ToastLayout.buttonSize }
-        switch config.graphic {
-        case .cover: width -= ToastLayout.coverFrame + ToastLayout.coverGap
-        case .poster: width -= ToastLayout.posterFrameWidth + ToastLayout.coverGap
-        case .icon: width -= ToastLayout.iconSlot + ToastLayout.gap
-        case .image, .none: break
-        }
-        return width
+    /// Ширина фразы считается заранее (`ToastLayout.textWidth`), от констант и шрифта.
+    private var textWidth: CGFloat {
+        ToastLayout.textWidth(config.title, maxWidth: ToastLayout.textMaxWidth(for: config))
     }
 
     var body: some View {
@@ -195,7 +245,7 @@ struct ToastView: View {
                 .foregroundStyle(Color.fillOne)
                 .multilineTextAlignment(.leading)
                 .lineLimit(2)
-                .frame(maxWidth: textMaxWidth, alignment: .leading)
+                .frame(width: textWidth, alignment: .leading)
                 .contentTransition(.opacity)
 
             if hasButton {
@@ -205,7 +255,7 @@ struct ToastView: View {
         }
         .padding(.leading, leadingInset)
         .padding(.trailing, trailingInset)
-        .frame(height: ToastLayout.height)
+        .frame(width: ToastLayout.pillWidth(for: config), height: ToastLayout.height, alignment: .leading)
         .overlay(alignment: .topLeading) {
             if case .image(let source) = config.graphic {
                 // Картинка 83×83 от левого верхнего угла, пилюля обрезает её по высоте 56.
@@ -427,8 +477,9 @@ struct OverlayLayer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if DEBUG
-        // `-debugToast 1` — три типа подряд: лайк (прямоугольная обложка фильма + кнопка) через 2 с, ✓ (иконка,
-        // без кнопки) через 6 с, простой текст через 10 с.
+        // `-debugToast 1` — четыре тоста подряд: лайк (прямоугольная обложка фильма + кнопка) через 2 с, ✓ (иконка,
+        // без кнопки) через 6 с, простой текст через 10 с, короткий «Да!» с обложкой и кнопкой через 14 с
+        // (узкая пилюля).
         // `-debugShare 1` — экран шеринга альбома через 2 с.
         .task {
             guard UserDefaults.standard.bool(forKey: "debugShare") else { return }
@@ -453,6 +504,12 @@ struct OverlayLayer: View {
             ToastCenter.shared.show(title: ToastCopy.randomDone(), graphic: .icon("iconDone"))
             try? await Task.sleep(for: .seconds(4))
             ToastCenter.shared.show(title: "Проверка связи")
+            try? await Task.sleep(for: .seconds(4))
+            ToastCenter.shared.show(
+                title: "Да!",
+                graphic: .cover(.asset("mockAlbumCover")),
+                action: .openCollection
+            )
         }
         #endif
     }
