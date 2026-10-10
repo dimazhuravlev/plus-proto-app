@@ -468,7 +468,7 @@ private struct ActionBarLayout: Equatable {
             // Слои остаются в дереве, чтобы уехать, а не мигнуть исчезновением.
             // Мини-плеер только в своих режимах: иначе в .book/.movie он оказывался
             // активным одновременно с чипом и проявлялся из блюра прямо во время уезда.
-            showMiniPlayer = hasMusic && (mode == .music || mode == .search)
+            showMiniPlayer = ActionBarState.showsMiniPlayer(mode: mode, hasMusic: hasMusic)
             // Уехавший за кромку плеер тапов не ловит — компактным его звать незачем.
             isMiniPlayerCompact = false
             showBookChip = mode == .book

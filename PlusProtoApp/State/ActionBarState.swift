@@ -284,7 +284,13 @@ final class ActionBarState {
 
     /// Мини-плеер на экране: круг (`.search`) или капсула (`.music`) с играющим треком.
     var isMiniPlayerVisible: Bool {
-        music != nil && (mode == .music || mode == .search)
+        Self.showsMiniPlayer(mode: mode, hasMusic: music != nil)
+    }
+
+    /// Один предикат на состояние и на раскладку бара (`ActionBarLayout`): мини-плеер
+    /// есть только в режимах музыки и поиска, и только пока есть трек.
+    static func showsMiniPlayer(mode: ActionBarMode, hasMusic: Bool) -> Bool {
+        hasMusic && (mode == .music || mode == .search)
     }
 
     /// Играет ли в мини-плеере трек этого альбома или плейлиста (`kind` — `"album"`
