@@ -49,8 +49,11 @@ private enum BookReaderLayout {
     /// Размер пилюли мини-плеера в читалке `2565:25233`: 354 (поля 24 с обеих сторон,
     /// рядом нет круга поиска, как в баре, где она 286).
     static var musicExpandedWidth: CGFloat { PlusMetrics.designWidth - textInset * 2 }
-    /// Затемнение снизу `2565:25526`: 331 от нижней кромки, стопы те же, что сверху.
-    static let chromeBottomGradientHeight: CGFloat = 331
+    /// Затемнение и блюр снизу: от низа экрана до верхней кромки мини-плеера в показанной
+    /// обвязке — 40 + 132 + 60 = 232 (правка пользователя 2026-10-10; в макете
+    /// `2565:25526` было 331, градиент начинался выше плеера). Стопы те же, что сверху,
+    /// сжаты по высоте.
+    static var bottomChromeHeight: CGFloat { musicBottom + musicRaise + PlusMetrics.actionBarCompact }
 
     /// Нижний блок `2565:25814`: x 24, 354×124, низ на 32 от кромки; стек с зазором 12.
     static let bottomBlockSide: CGFloat = 24
@@ -78,6 +81,11 @@ private enum BookReaderLayout {
 
     /// Темп чтения для подписи «осталось ~N мин».
     static let wordsPerMinute: Double = 200
+    /// Трещотка таймлайна — числа перемотки в плеере музыки (`MusicPlayerMotion`):
+    /// одинаковое — одинаково.
+    static let scrubTickStep = MusicPlayerMotion.scrubTickStep
+    static let scrubTickInterval = MusicPlayerMotion.scrubTickInterval
+    static let scrubTickIntensity = MusicPlayerMotion.scrubTickIntensity
     /// Доля прокрутки в `@State` — шагом 0.5 %: полоса не перерисовывается на каждый пиксель.
     static let progressStep: Double = 200
 
@@ -108,9 +116,10 @@ private enum BookReaderLayout {
 }
 
 enum BookReaderMotion {
-    /// Показ и скрытие обвязки: верхняя панель, нижний блок, оба затемнения и сдвиг
-    /// мини-плеера — одной анимацией. Движение по экрану — ease-in-out.
-    static let chrome: Animation = .easeInOut(duration: 0.3)
+    /// Показ и скрытие обвязки: верхняя панель, нижний блок, оба затемнения, сдвиг
+    /// мини-плеера и его разворот в пилюлю — одной анимацией (правка пользователя
+    /// 2026-10-10: `.smooth`, неспешно).
+    static let chrome: Animation = .smooth(duration: 0.4)
     /// Reduce Motion: обвязка только проявляется и гаснет на месте.
     static let chromeReduced: Animation = .easeInOut(duration: 0.2)
 
@@ -161,6 +170,10 @@ struct BookReaderView: View {
     @State private var scrollProgress: Double = 0
     /// Слов в тексте — для «осталось ~N мин»; считается один раз, когда текст готов.
     @State private var totalWords = 0
+    /// Палец на таймлайне: пока он там, прокрутка текста долю не перезаписывает.
+    /// После отпускания доля остаётся где была до следующей прокрутки текста.
+    @State private var isScrubbing = false
+    @Environment(CollectionStore.self) private var collection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -206,7 +219,32 @@ struct BookReaderView: View {
 
     /// Тап по тексту. Без хаптики: тихий жест, «одна хаптика на действие» — про кнопки.
     private func toggleChrome() {
-        isChromeShown.toggle()
+        setChrome(!isChromeShown)
+    }
+
+    /// Показ и скрытие обвязки одной анимацией с мини-плеером: пока обвязка видна,
+    /// пилюля развёрнута (правка пользователя 2026-10-10), спрятали — сворачивается
+    /// обратно в круг, как раньше при прокрутке. Выброшенного круга это не касается.
+    private func setChrome(_ shown: Bool) {
+        guard shown != isChromeShown else { return }
+        withAnimation(chromeAnimation) {
+            isChromeShown = shown
+            if showsMusic, !isMusicThrown { isMusicExpanded = shown }
+        }
+    }
+
+    /// Книга читалки в коллекции «Моё». Пропорций обложки у читалки нет — карточка
+    /// встанет в карусель стандартной; id общий с экраном книги.
+    private var collectionItem: CollectionItem {
+        .book(
+            EntityRef(
+                id: book.id,
+                title: book.title,
+                subtitle: book.author ?? text.author ?? "",
+                artwork: book.cover
+            ),
+            aspect: nil
+        )
     }
 
     private var pages: some View {
@@ -243,13 +281,17 @@ struct BookReaderView: View {
             let step = BookReaderLayout.progressStep
             return (min(max(raw, 0), 1) * step).rounded() / step
         } action: { _, progress in
+            guard !isScrubbing else { return }
             scrollProgress = progress
         }
         .onScrollPhaseChange { _, phase in
+            // Начало жеста пальцем — обвязка уезжает (правка пользователя 2026-10-10).
+            // Инерция и программная прокрутка без касания её не трогают.
+            if phase == .interacting { setChrome(false) }
             // Вернулся к чтению — плеер сворачивается обратно в круг:
             // развёрнутый, он закрывает низ колонки.
             guard phase.isScrolling, isMusicExpanded else { return }
-            isMusicExpanded = false
+            withAnimation(ActionBarMotion.morph) { isMusicExpanded = false }
         }
     }
 
@@ -321,7 +363,7 @@ struct BookReaderView: View {
             .accessibilityHidden(!isChromeShown)
     }
 
-    /// Затемнение 331 снизу (стопы те же, что сверху, повёрнуто на 180°) и прогрессивный
+    /// Затемнение 232 снизу (стопы те же, что сверху, повёрнуто на 180°) и прогрессивный
     /// блюр под ним — текст, заходящий под нижний блок, расплывается, как в кадре макета
     /// (сам блюр в данных ноды не отдаётся: радиус и направление — как у верхнего).
     private var chromeBottomBackdrop: some View {
@@ -340,9 +382,9 @@ struct BookReaderView: View {
                 endPoint: .top
             )
         }
-        .frame(height: BookReaderLayout.chromeBottomGradientHeight)
+        .frame(height: BookReaderLayout.bottomChromeHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .offset(y: hiddenOffset(BookReaderLayout.chromeBottomGradientHeight))
+        .offset(y: hiddenOffset(BookReaderLayout.bottomChromeHeight))
         .opacity(hiddenOpacity)
         .animation(chromeAnimation, value: isChromeShown)
         .allowsHitTesting(false)
@@ -352,11 +394,17 @@ struct BookReaderView: View {
     private var chromeBottomBlock: some View {
         ReaderBottomBlock(
             progress: text.isReady ? scrollProgress : 0,
-            remainingWords: text.isReady ? Double(totalWords) * (1 - scrollProgress) : nil
+            remainingWords: text.isReady ? Double(totalWords) * (1 - scrollProgress) : nil,
+            onScrub: { fraction in
+                isScrubbing = true
+                let step = BookReaderLayout.progressStep
+                scrollProgress = (fraction * step).rounded() / step
+            },
+            onScrubEnd: { isScrubbing = false }
         )
         .padding(.bottom, BookReaderLayout.bottomBlockBottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .offset(y: hiddenOffset(BookReaderLayout.chromeBottomGradientHeight))
+        .offset(y: hiddenOffset(BookReaderLayout.bottomChromeHeight))
         .opacity(hiddenOpacity)
         .animation(chromeAnimation, value: isChromeShown)
         .allowsHitTesting(isChromeShown)
@@ -379,7 +427,17 @@ struct BookReaderView: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: BookReaderLayout.barGap) {
-                ReaderCircleButton(icon: "iconAdd", fill: .buttonsSecondary, title: "Добавить")
+                // «+» кладёт книгу в «Моё» и становится галочкой; тост про добавление
+                // показывает сам `CollectionStore`.
+                ReaderCircleButton(
+                    icon: "iconAdd",
+                    activeIcon: "iconDone",
+                    isActive: collection.isFavorite(collectionItem.id),
+                    fill: .buttonsSecondary,
+                    title: "Добавить"
+                ) {
+                    collection.toggleFavorite(collectionItem)
+                }
                 ReaderCircleButton(icon: "iconMore", fill: .buttonsSecondary, title: "Ещё")
             }
         }
@@ -422,9 +480,12 @@ struct BookReaderView: View {
 /// Круглая кнопка верхней панели 40×40 (`2565:25465`, `2565:25528`): глиф 20 в той же
 /// стеклянной поверхности, что у всех серых кнопок. Заливка — Buttons/Primary 10 %
 /// у «назад» и Buttons/Secondary 8 % у пары справа, как в макете. Действия у пары
-/// пока нет: отклик есть (просадка и хаптика), логики нет.
+/// у «ещё» нет: отклик есть (просадка и хаптика), логики нет. У «+» два глифа —
+/// `icon` и `activeIcon`, они сменяются кросс-попом, как `LikeGlyph`.
 private struct ReaderCircleButton: View {
     let icon: String
+    var activeIcon: String? = nil
+    var isActive = false
     let fill: Color
     let title: String
     var action: () -> Void = {}
@@ -434,27 +495,55 @@ private struct ReaderCircleButton: View {
             PlayerHaptics.tap()
             action()
         } label: {
-            Image(icon)
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: GlassIconButtonConfig.iconBox, height: GlassIconButtonConfig.iconBox)
-                .foregroundStyle(Color.fillOne)
-                .frame(width: BookReaderLayout.topBarButton, height: BookReaderLayout.topBarButton)
-                .secondaryButtonSurface(Circle(), fill: fill)
+            ZStack {
+                glyph(icon)
+                    .opacity(isActive ? 0 : 1)
+                    .scaleEffect(isActive ? ActionBarMotion.iconSwapScale : 1)
+                if let activeIcon {
+                    glyph(activeIcon)
+                        .opacity(isActive ? 1 : 0)
+                        .scaleEffect(isActive ? 1 : ActionBarMotion.iconSwapScale)
+                }
+            }
+            .animation(ActionBarMotion.iconSwap, value: isActive)
+            .frame(width: BookReaderLayout.topBarButton, height: BookReaderLayout.topBarButton)
+            .secondaryButtonSurface(Circle(), fill: fill)
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(title)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    private func glyph(_ name: String) -> some View {
+        Image(name)
+            .renderingMode(.template)
+            .resizable()
+            .frame(width: GlassIconButtonConfig.iconBox, height: GlassIconButtonConfig.iconBox)
+            .foregroundStyle(Color.fillOne)
     }
 }
 
 /// Нижний блок `2565:25814` (354×124): строка главы, таймлайн, четыре кнопки.
 /// Текст книги — аннотация, глав и страниц нет, поэтому в строке главы — «Аннотация»,
-/// а таймлайн — доля прокрутки текста (только отображение, без перетаскивания).
+/// а таймлайн — доля прокрутки текста; палец на нём ведёт заливку и подписи (мок:
+/// текст не двигается), с трещоткой, как перемотка в плеере музыки.
 private struct ReaderBottomBlock: View {
     /// Доля прокрутки 0…1.
     let progress: Double
     /// Сколько слов осталось дочитать; нет — текст ещё не готов.
     let remainingWords: Double?
+    /// Палец ведёт таймлайн: доля 0…1.
+    let onScrub: (Double) -> Void
+    let onScrubEnd: () -> Void
+
+    @State private var ratchet = ScrubRatchet(
+        step: BookReaderLayout.scrubTickStep,
+        interval: BookReaderLayout.scrubTickInterval,
+        intensity: BookReaderLayout.scrubTickIntensity
+    )
+    /// `GestureState`, а не флаг из `onEnded`: оборванный жест `onEnded` не зовёт
+    /// (как в плеере музыки), и прокрутка так и осталась бы заблокированной.
+    @GestureState private var isScrubGestureActive = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: BookReaderLayout.bottomBlockSpacing) {
@@ -468,17 +557,23 @@ private struct ReaderBottomBlock: View {
 
     /// `2565:25824`: название главы и иконка-`action` справа — без действия.
     private var chapter: some View {
-        HStack(spacing: BookReaderLayout.chapterIconGap) {
-            Text("Аннотация")
-                .plusText(.textL, .medium)
-                .foregroundStyle(Color.fillOne)
-            Image("iconChevronRight")
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: BookReaderLayout.chapterIconSize, height: BookReaderLayout.chapterIconSize)
-                .foregroundStyle(Color.fillSubtitle)
+        Button {
+            PlayerHaptics.tap()
+        } label: {
+            HStack(spacing: BookReaderLayout.chapterIconGap) {
+                Text("Аннотация")
+                    .plusText(.textL, .medium)
+                    .foregroundStyle(Color.fillOne)
+                Image("iconChevronRight")
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: BookReaderLayout.chapterIconSize, height: BookReaderLayout.chapterIconSize)
+                    .foregroundStyle(Color.fillSubtitle)
+            }
+            .lineLimit(1)
+            .contentShape(.rect)
         }
-        .lineLimit(1)
+        .buttonStyle(PressScaleButtonStyle())
     }
 
     /// `2565:25570`: подписи (Text S・13 Medium) над полосой 354×8 с заливкой orchid.
@@ -507,8 +602,28 @@ private struct ReaderBottomBlock: View {
                 .padding(.top, BookReaderLayout.timelineBarTop - PlusTextSize.textS.lineHeight)
         }
         .frame(width: BookReaderLayout.barWidth, height: BookReaderLayout.timelineHeight, alignment: .topLeading)
+        .contentShape(.rect)
+        .gesture(scrubGesture)
+        .onChange(of: isScrubGestureActive) { _, active in
+            guard !active else { return }
+            ratchet.end()
+            onScrubEnd()
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Прочитано \(percentLabel), \(remainingLabel)")
+    }
+
+    /// Касание сразу ставит долю под палец, протяжка ведёт её; вне полосы доля
+    /// упирается в 0 и 1. Меряется по всей зоне 354×28.
+    private var scrubGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .updating($isScrubGestureActive) { _, active, _ in active = true }
+            .onChanged { value in
+                let width = BookReaderLayout.barWidth
+                let x = min(max(0, value.location.x), width)
+                onScrub(Double(x / width))
+                ratchet.move(to: x)
+            }
     }
 
     private var percentLabel: String {
@@ -590,8 +705,9 @@ private struct ReaderMusicPlayer: View {
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
             // левый уезжает, внутренности только проявляются. Ширина — макетные 354
             // (`2565:25233`): круга поиска рядом нет, левый край пилюли на 24.
+            // Анимацию разворота задают места, где `isExpanded` меняется: тап по кругу и
+            // прокрутка — `ActionBarMotion.morph`, показ обвязки — её кривая (`BookReaderMotion.chrome`).
             .frame(width: isExpanded ? BookReaderLayout.musicExpandedWidth : PlusMetrics.actionBarCompact)
-            .animation(ActionBarMotion.morph, value: isExpanded)
             // Выкинуть можно только круг: в пилюле под пальцем кнопки like/play и тап,
             // который ведёт в большой плеер. Вью после броска остаётся в дереве (убрать
             // его `if` значило бы поменять раскладку и перемонтировать ряд), поэтому
@@ -673,7 +789,7 @@ private struct ReaderMusicPlayer: View {
             // Разворот круга — тот же отклик, что в баре (`ActionBarView`, `onExpand`):
             // одинаковое — одинаково.
             PlayerHaptics.tap()
-            isExpanded = true
+            withAnimation(ActionBarMotion.morph) { isExpanded = true }
         }
     }
 }
