@@ -789,10 +789,11 @@ enum CollectionReorderMotion {
     static let shakeFade: Animation = .easeInOut(duration: 0.2)
     /// Часы тряски идут ещё столько после «Готово», пока амплитуда не дойдёт до нуля.
     static let clockLinger: Duration = .milliseconds(400)
-    /// Фон блока в руке — скругление и поле от края экрана: блок во всю ширину, а под
-    /// подъёмом 1.02 стекло без поля вылезло бы за кромку.
+    /// Фон блока в руке — скругление.
     static let glassRadius: CGFloat = PlusRadius.readerBlock
-    static let glassInset: CGFloat = CollectionLayout.cardGap
+    /// Правка пользователя 2026-10-10: без боковых полей — фон и клип блока в руке
+    /// от края до края экрана (подъём 1.02 и наклон уводят края за кромку — это нормально).
+    static let glassInset: CGFloat = 0
     /// Клип вне захвата: шире блока ровно на радиус — дуги углов за кромкой, срезов нет.
     static let restClipInset: CGFloat = -glassRadius
 }
@@ -962,6 +963,10 @@ private struct CollectionReorderBlock<Content: View>: View {
             .clipShape(CollectionReorderClip(inset: isHeld ? CollectionReorderMotion.glassInset : CollectionReorderMotion.restClipInset))
             .animation(glassAnimation(isHeld: isHeld), value: isHeld)
             .background { glass(isHeld: isHeld) }
+            // Распознаватель — на неподвижном слое блока, до сдвига, наклона и масштаба:
+            // хит-тест и координаты не зависят от того, где блок нарисован сейчас.
+            .contentShape(.rect)
+            .gesture(CollectionReorderPress(kind: kind, reorder: reorder, isActive: isReordering))
             .scaleEffect(isHeld && !reduceMotion ? CollectionReorderMotion.liftScale : 1)
             .animation(isHeld ? PressMotion.pressIn : PressMotion.release, value: isHeld)
             .rotationEffect(.degrees(isHeld && !reduceMotion ? CollectionReorderMotion.liftTilt : 0))
@@ -969,8 +974,6 @@ private struct CollectionReorderBlock<Content: View>: View {
             .modifier(CollectionReorderShake(kind: kind))
             .modifier(CollectionReorderOffset(kind: kind))
             .zIndex(reorder.liftedKind == kind ? 1 : 0)
-            .contentShape(.rect)
-            .gesture(CollectionReorderPress(kind: kind, reorder: reorder, isActive: isReordering))
     }
 
     /// Появление — сразу, исчезновение — после посадки блока (задержка = время посадки).
@@ -1011,31 +1014,54 @@ private struct CollectionReorderPress: UIGestureRecognizerRepresentable {
 
     @MainActor
     final class Coordinator: NSObject {
-        /// Вертикаль пальца в момент захвата — в координатах содержимого ленты.
-        var startY: CGFloat = 0
+        /// Вертикаль пальца в окне (глобальные координаты конвертера SwiftUI) на захвате и сейчас.
+        /// Окно не едет вместе с блоком, наклон и сдвиг блока на них не влияют.
+        private var startGlobalY: CGFloat = 0
+        private var lastGlobalY: CGFloat = 0
+        /// Прокрутка ленты на захвате: сдвиг блока — это сдвиг пальца в окне плюс то,
+        /// на сколько уехала лента (автопрокрутка).
+        private var startOffsetY: CGFloat = 0
         weak var recognizer: UILongPressGestureRecognizer?
         weak var scrollView: UIScrollView?
         var reorder: CollectionReorderState?
         private var link: CADisplayLink?
         private var windowHeight: CGFloat = 0
 
-        /// Лента — ближайший `UIScrollView` над видом, на котором стоит распознаватель
-        /// (горизонтальные карусели блока лежат ниже, не выше).
-        func begin(_ recognizer: UILongPressGestureRecognizer, reorder: CollectionReorderState) {
+        #if DEBUG
+        /// `-debugReorderTrace 1` — строки `[reorder] …` в лог на каждый шаг жеста.
+        private static let isTracing = UserDefaults.standard.bool(forKey: "debugReorderTrace")
+        #endif
+
+        /// Сдвиг блока от точки захвата: палец в окне + путь, который проехала лента.
+        var translation: CGFloat {
+            (lastGlobalY - startGlobalY) + ((scrollView?.contentOffset.y ?? 0) - startOffsetY)
+        }
+
+        func begin(_ recognizer: UILongPressGestureRecognizer, globalY: CGFloat, reorder: CollectionReorderState) {
             self.recognizer = recognizer
             self.reorder = reorder
-            var ancestor = recognizer.view
-            while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
-            scrollView = ancestor as? UIScrollView
+            scrollView = Self.feedScrollView(for: recognizer)
             windowHeight = recognizer.view?.window?.bounds.height ?? 0
-            startY = contentY(recognizer)
+            startGlobalY = globalY
+            lastGlobalY = globalY
+            startOffsetY = scrollView?.contentOffset.y ?? 0
+            #if DEBUG
+            if Self.isTracing {
+                NSLog("[reorder] view=%@", recognizer.view.map { String(describing: type(of: $0)) } ?? "nil")
+                if scrollView == nil { NSLog("[reorder] лента не найдена: драг без автопрокрутки") }
+            }
+            #endif
+            trace("began", globalY: globalY)
+            // Автопрокрутке нужна лента; без неё драг работает, а часы не заводим.
+            guard scrollView != nil else { return }
             link?.invalidate()
             let newLink = CADisplayLink(target: self, selector: #selector(tick(_:)))
             newLink.add(to: .main, forMode: .common)
             link = newLink
         }
 
-        func end() {
+        func end(globalY: CGFloat? = nil) {
+            trace("ended", globalY: globalY ?? lastGlobalY)
             link?.invalidate()
             link = nil
             recognizer = nil
@@ -1043,20 +1069,51 @@ private struct CollectionReorderPress: UIGestureRecognizerRepresentable {
             reorder = nil
         }
 
-        /// Вертикаль пальца в содержимом ленты; без ленты — в окне.
-        func contentY(_ recognizer: UILongPressGestureRecognizer) -> CGFloat {
-            recognizer.location(in: scrollView ?? recognizer.view).y
+        /// Палец сдвинулся: блок идёт за ним, свап — той же функцией, что и у любого сдвига.
+        func update(globalY: CGFloat) {
+            lastGlobalY = globalY
+            trace("changed", globalY: globalY)
+            reorder?.drag(translation: translation)
         }
 
-        /// Палец сдвинулся (или лента — под ним): блок идёт за пальцем, свап — той же
-        /// функцией, что и у любого сдвига.
-        func updateDrag(_ recognizer: UILongPressGestureRecognizer) {
-            reorder?.drag(translation: contentY(recognizer) - startY)
+        /// Лента — вертикальный `UIScrollView` под пальцем. Распознаватель SwiftUI стоит
+        /// на служебном виде, который не обязан лежать внутри ленты, поэтому ищем не от него,
+        /// а `hitTest` окна по точке касания и поднимаемся по `superview`. Горизонтальные
+        /// карусели (содержимое шире рамки) и ленты без запаса прокрутки пропускаем.
+        private static func feedScrollView(for recognizer: UILongPressGestureRecognizer) -> UIScrollView? {
+            func isFeed(_ view: UIView) -> UIScrollView? {
+                guard let scroll = view as? UIScrollView,
+                      scroll.contentSize.height > scroll.bounds.height + 1,
+                      scroll.contentSize.width <= scroll.bounds.width + 1 else { return nil }
+                return scroll
+            }
+            if let window = recognizer.view?.window {
+                var view = window.hitTest(recognizer.location(in: window), with: nil)
+                while let current = view {
+                    if let scroll = isFeed(current) { return scroll }
+                    view = current.superview
+                }
+            }
+            var view = recognizer.view
+            while let current = view {
+                if let scroll = isFeed(current) { return scroll }
+                view = current.superview
+            }
+            return nil
+        }
+
+        private func trace(_ event: String, globalY: CGFloat) {
+            #if DEBUG
+            guard Self.isTracing else { return }
+            NSLog("[reorder] %@ y=%.1f tr=%.1f scroll=%.1f found=%d", event, globalY, translation, scrollView?.contentOffset.y ?? -1, scrollView == nil ? 0 : 1)
+            #endif
         }
 
         @objc private func tick(_ link: CADisplayLink) {
             guard let recognizer, let scrollView, let reorder, reorder.heldKind != nil else {
-                end()
+                // Часы гасим, сам захват не трогаем: его закрывает распознаватель.
+                link.invalidate()
+                self.link = nil
                 return
             }
             let speed = Self.autoScrollSpeed(fingerY: recognizer.location(in: nil).y, windowHeight: windowHeight)
@@ -1069,7 +1126,8 @@ private struct CollectionReorderPress: UIGestureRecognizerRepresentable {
             let target = min(maxY, max(minY, scrollView.contentOffset.y + speed * dt))
             guard target != scrollView.contentOffset.y else { return }
             scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: target), animated: false)
-            updateDrag(recognizer)
+            trace("scroll", globalY: lastGlobalY)
+            reorder.drag(translation: translation)
         }
 
         /// Скорость прокрутки, pt/с (плюс — вниз): зона 80 pt под навбаром и над хромом,
@@ -1114,14 +1172,17 @@ private struct CollectionReorderPress: UIGestureRecognizerRepresentable {
 
     func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
         let coordinator = context.coordinator
+        // Позиция — в глобальных координатах конвертера SwiftUI, а не в координатах вида
+        // распознавателя: те могут ехать вместе с блоком.
+        let globalY = context.converter.location(in: .global).y
         switch recognizer.state {
         case .began:
-            coordinator.begin(recognizer, reorder: reorder)
+            coordinator.begin(recognizer, globalY: globalY, reorder: reorder)
             reorder.grab(kind)
         case .changed:
-            coordinator.updateDrag(recognizer)
+            coordinator.update(globalY: globalY)
         case .ended, .cancelled, .failed:
-            coordinator.end()
+            coordinator.end(globalY: globalY)
             reorder.release(kind)
         default:
             break
