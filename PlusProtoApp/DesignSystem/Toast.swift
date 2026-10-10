@@ -23,6 +23,24 @@ enum ToastMotion {
     static let reducedUnmountDelay: Duration = .milliseconds(220)
     /// Смена содержимого на месте, пока тост на экране: ширина пилюли и текст едут вместе.
     static let swap = Animation.easeInOut(duration: 0.25)
+
+    // MARK: Смахивание вверх
+
+    /// Жест начинается с 6 pt (как `minimumDistance` пана), дальше тост идёт за пальцем 1:1.
+    static let swipeMinimumDistance: CGFloat = 6
+    /// Вниз тост не тянется: резина 20 % хода, потолок +12 pt.
+    static let pullResistance: CGFloat = 0.2
+    static let pullLimit: CGFloat = 12
+    /// Закрыть смахиванием: предсказанный ход вверх от 24 pt или бросок от 400 pt/с.
+    static let swipeDismissPredicted: CGFloat = -24
+    static let swipeDismissVelocity: CGFloat = -400
+    /// Путь до полного ухода за верхнюю кромку: высота тоста + верх безопасной зоны
+    /// (константа по холсту 402, не замер) + запас.
+    static let safeTop: CGFloat = 62
+    static let swipeOutTravel: CGFloat = ToastLayout.height + safeTop + 40
+    static let swipeOut = Animation.easeOut(duration: 0.25)
+    /// Недотяг: пружина на место.
+    static let swipeSnapBack = Animation.spring(duration: 0.32, bounce: 0.3)
 }
 
 // MARK: - Тексты
@@ -30,7 +48,7 @@ enum ToastMotion {
 /// Фразы тостов. В исходниках — обычные пробелы; предлоги из одной буквы получают
 /// неразрывный на выдаче (`ToastCopy.glued`), чтобы не оставались на конце строки.
 enum ToastCopy {
-    /// Лайк и «Позже». Набор — правка пользователя 2026-10-10.
+    /// Лайк и «Позже». Набор — ровно 12 фраз пользователя (2026-10-10), своих не добавлять.
     private static let added = [
         "Добавили в Любимое",
         "Сохранили — теперь в Любимом",
@@ -44,19 +62,6 @@ enum ToastCopy {
         "Учли — рекомендации станут точнее",
         "Есть! В коллекции",
         "Запомнили",
-        "Это в Любимое!",
-        "О да!",
-        "В точку",
-        "Красота",
-        "Есть контакт",
-        "Сохранили!",
-        "Отличный вкус",
-        "Хороший выбор",
-        "Вот это да!",
-        "Теперь не потеряется",
-        "Любимое пополнилось",
-        "Записали в Любимое",
-        "Ваше — теперь рядом",
     ]
 
     /// ✓ на «Главной».
@@ -358,6 +363,14 @@ private struct ToastPresenter: View {
     @State private var coverOffsetY: CGFloat = ToastMotion.coverStartOffset
     /// Меняется с каждым уходом и возвращением: устаревшее завершение ничего не демонтирует.
     @State private var exitToken = 0
+    /// Смещение под пальцем при смахивании: отдельно от `yOffset`, чтобы не мешать пружине появления.
+    @State private var dragY: CGFloat = 0
+    /// Палец ведёт тост (или только что отпущен): тап этого касания тостом не считается.
+    @State private var swipeActive = false
+    /// Тост смахнут и летит за верхнюю кромку: размонтируется сразу, без собственного затухания.
+    @State private var flyingOut = false
+    /// Палец на тосте — таймер автоскрытия на паузе. `@GestureState` сбрасывается и при отмене жеста.
+    @GestureState private var isHolding = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -371,9 +384,11 @@ private struct ToastPresenter: View {
                     .padding(.top, 12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .offset(y: yOffset)
+                    .offset(y: dragY)
                     .opacity(opacity)
                     .blur(radius: blurRadius)
-                    .onTapGesture { center.activate() }
+                    .onTapGesture { tap() }
+                    .simultaneousGesture(swipeGesture)
                     .accessibilityAddTraits(config.action != nil ? .isButton : [])
                     .onAppear { animateIn() }
                     .onDisappear { OverlayLayerState.shared.setInteractiveFrame(nil, for: "toast") }
@@ -382,6 +397,68 @@ private struct ToastPresenter: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: center.current) { _, new in
             if let new { present(new) } else { retire() }
+        }
+        .onChange(of: isHolding) { _, holding in
+            if holding {
+                center.holdTimer()
+            } else if !flyingOut {
+                // Отпустили без ухода: таймер заново, на полный срок.
+                center.resumeTimer()
+            }
+        }
+    }
+
+    // MARK: Смахивание
+
+    /// Вверх — за пальцем 1:1 без анимации; вниз — резина. `.global`: тост сам едет под пальцем.
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: ToastMotion.swipeMinimumDistance, coordinateSpace: .global)
+            .updating($isHolding) { _, holding, _ in holding = true }
+            .onChanged { value in
+                if !swipeActive { swipeActive = true }
+                let height = value.translation.height
+                dragY = height < 0
+                    ? height
+                    : min(height * ToastMotion.pullResistance, ToastMotion.pullLimit)
+            }
+            .onEnded { value in finishSwipe(value) }
+    }
+
+    /// Тап по тосту. Тап того же касания, что вело тост, не считается: рядом с порогом жеста
+    /// (6 pt) системный тап ещё может сработать.
+    private func tap() {
+        guard !swipeActive, !flyingOut else { return }
+        center.activate()
+    }
+
+    private func finishSwipe(_ value: DragGesture.Value) {
+        // Флаг снимаем позже текущего прохода: тап того же касания проверяет его раньше.
+        Task { @MainActor in swipeActive = false }
+
+        let isDismiss = value.predictedEndTranslation.height <= ToastMotion.swipeDismissPredicted
+            || value.velocity.height <= ToastMotion.swipeDismissVelocity
+        guard isDismiss else {
+            // Недотяг: на место. Reduce Motion — без пружины.
+            withAnimation(reduceMotion ? ToastMotion.reducedFade : ToastMotion.swipeSnapBack) {
+                dragY = 0
+            }
+            return
+        }
+        guard !reduceMotion else {
+            // Остаётся там, где отпустили, и гаснет (`retire`).
+            center.dismiss()
+            return
+        }
+        // За верхнюю кромку, потом закрываем: тост уже не виден, собственное затухание не нужно.
+        flyingOut = true
+        exitToken += 1
+        let mine = exitToken
+        withAnimation(ToastMotion.swipeOut, completionCriteria: .logicallyComplete) {
+            dragY = -ToastMotion.swipeOutTravel
+        } completion: {
+            // Пришёл новый тост или уход уже обработан — закрывать нечего.
+            guard mine == exitToken, flyingOut else { return }
+            center.dismiss()
         }
     }
 
@@ -392,6 +469,18 @@ private struct ToastPresenter: View {
         guard displayed != nil else {
             // Свежий показ: вью встанет в стартовом состоянии и сама запустит `animateIn`.
             displayed = config
+            return
+        }
+        if flyingOut {
+            // Прежний тост улетает за кромку: новый встаёт как свежий, а не под потолком.
+            flyingOut = false
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                displayed = config
+                dragY = 0
+            }
+            animateIn()
             return
         }
         // Тост ещё на экране (или уходит): меняем содержимое на месте и возвращаем видимость.
@@ -438,6 +527,11 @@ private struct ToastPresenter: View {
     private func retire() {
         exitToken += 1
         let mine = exitToken
+        if flyingOut {
+            // Тост уже за кромкой — затухание не нужно.
+            unmount()
+            return
+        }
         if reduceMotion {
             withAnimation(ToastMotion.reducedFade) { opacity = 0 }
         } else {
@@ -451,16 +545,23 @@ private struct ToastPresenter: View {
             try? await Task.sleep(for: delay)
             // Пришёл новый тост или повторный уход — демонтировать нечего.
             guard mine == exitToken, center.current == nil else { return }
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) {
-                displayed = nil
-                yOffset = ToastMotion.startOffset
-                opacity = 0
-                blurRadius = 0
-                coverRotation = ToastMotion.coverStartRotation
-                coverOffsetY = ToastMotion.coverStartOffset
-            }
+            unmount()
+        }
+    }
+
+    /// Демонтаж без анимации и возврат к стартовому состоянию.
+    private func unmount() {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            displayed = nil
+            yOffset = ToastMotion.startOffset
+            dragY = 0
+            opacity = 0
+            blurRadius = 0
+            coverRotation = ToastMotion.coverStartRotation
+            coverOffsetY = ToastMotion.coverStartOffset
+            flyingOut = false
         }
     }
 }
