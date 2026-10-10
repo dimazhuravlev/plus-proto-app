@@ -63,7 +63,15 @@ final class CollectionTabPeek {
         Task { @MainActor [weak self] in
             // Прогрев: без него `ArtworkImage` на холодной картинке рисует скелетон, и
             // серая вспышка вставала бы в тайл вместо обложки.
-            guard let self, await Self.warmed(item.artwork), self.token == mine else { return }
+            guard let self else { return }
+            let isReady = await Self.warmed(item.artwork)
+            guard self.token == mine else { return }
+            // Новая сущность без обложки к сроку — пика нет, а прошлый уже не закроет
+            // свой таймер (токен сменился): без этого он висел бы на табе навсегда.
+            guard isReady else {
+                self.item = nil
+                return
+            }
             self.displayed = item
             self.item = item
             try? await Task.sleep(for: CollectionTabPeekConfig.hold)
