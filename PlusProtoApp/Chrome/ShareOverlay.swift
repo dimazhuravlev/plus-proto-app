@@ -123,7 +123,7 @@ private struct ShareChannel {
 
 /// Действий у кнопок нет: ссылки на сущность в прототипе нет.
 private let shareChannels: [ShareChannel] = [
-    ShareChannel(icon: "iconInstagram", title: "Сторис"),
+    ShareChannel(icon: "iconTelegram", title: "Telegram"),
     ShareChannel(icon: "iconWhatsapp", title: "WhatsApp"),
     ShareChannel(icon: "iconCopyLink", title: "Ссылка"),
     ShareChannel(icon: "iconMore", title: "Ещё"),
