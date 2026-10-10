@@ -54,6 +54,13 @@ private enum BookReaderLayout {
     /// `2565:25526` было 331, градиент начинался выше плеера). Стопы те же, что сверху,
     /// сжаты по высоте.
     static var bottomChromeHeight: CGFloat { musicBottom + musicRaise + PlusMetrics.actionBarCompact }
+    /// Без мини-плеера (музыки не было или круг выбросили) затемнение и блюр ниже на 60 —
+    /// ровно на высоту плеера: 232 − 60 = 172 (правка пользователя 2026-10-10).
+    static var bottomChromeHeightNoMusic: CGFloat { bottomChromeHeight - PlusMetrics.actionBarCompact }
+    /// Ход нижнего блока при показе и скрытии: не меньше его собственного выступа над
+    /// кромкой (124 + 32 = 156), чтобы блок уезжал за кромку целиком при любой высоте
+    /// затемнения. Не зависит от плеера — блок движется как прежде.
+    static var bottomBlockTravel: CGFloat { bottomChromeHeight }
 
     /// Нижний блок `2565:25814`: x 24, 354×124, низ на 32 от кромки; стек с зазором 12.
     static let bottomBlockSide: CGFloat = 24
@@ -363,9 +370,20 @@ struct BookReaderView: View {
             .accessibilityHidden(!isChromeShown)
     }
 
-    /// Затемнение 232 снизу (стопы те же, что сверху, повёрнуто на 180°) и прогрессивный
-    /// блюр под ним — текст, заходящий под нижний блок, расплывается, как в кадре макета
-    /// (сам блюр в данных ноды не отдаётся: радиус и направление — как у верхнего).
+    /// Мини-плеер в читалке есть, пока музыка была при открытии и круг не выбросили.
+    /// Бросить круг можно только при скрытой обвязке, так что смена высоты затемнения
+    /// ниже не видна: оно в этот момент за кромкой.
+    private var hasPlayer: Bool { showsMusic && !isMusicThrown }
+
+    /// Высота нижнего затемнения и блюра: 232 с плеером, 172 без него.
+    private var bottomChromeHeight: CGFloat {
+        hasPlayer ? BookReaderLayout.bottomChromeHeight : BookReaderLayout.bottomChromeHeightNoMusic
+    }
+
+    /// Затемнение 232 (172 без плеера) снизу (стопы те же, что сверху, повёрнуто на 180°)
+    /// и прогрессивный блюр под ним — текст, заходящий под нижний блок, расплывается,
+    /// как в кадре макета (сам блюр в данных ноды не отдаётся: радиус и направление —
+    /// как у верхнего).
     private var chromeBottomBackdrop: some View {
         ZStack(alignment: .bottom) {
             VariableBlurView(
@@ -382,9 +400,9 @@ struct BookReaderView: View {
                 endPoint: .top
             )
         }
-        .frame(height: BookReaderLayout.bottomChromeHeight)
+        .frame(height: bottomChromeHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .offset(y: hiddenOffset(BookReaderLayout.bottomChromeHeight))
+        .offset(y: hiddenOffset(bottomChromeHeight))
         .opacity(hiddenOpacity)
         .animation(chromeAnimation, value: isChromeShown)
         .allowsHitTesting(false)
@@ -404,7 +422,7 @@ struct BookReaderView: View {
         )
         .padding(.bottom, BookReaderLayout.bottomBlockBottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .offset(y: hiddenOffset(BookReaderLayout.bottomChromeHeight))
+        .offset(y: hiddenOffset(BookReaderLayout.bottomBlockTravel))
         .opacity(hiddenOpacity)
         .animation(chromeAnimation, value: isChromeShown)
         .allowsHitTesting(isChromeShown)
