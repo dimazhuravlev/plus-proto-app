@@ -840,6 +840,9 @@ final class CollectionReorderState {
     @ObservationIgnored private var settleEnd = Date.distantPast
     @ObservationIgnored private var settleTask: Task<Void, Never>?
     @ObservationIgnored private var clockTask: Task<Void, Never>?
+    /// Щелчок на перескок блока через соседа (правка пользователя 2026-10-10) — самый лёгкий
+    /// отклик, как у колеса выбора. Греется на захвате; только у драга, не у отладочного свапа.
+    @ObservationIgnored private let swapHaptic = UISelectionFeedbackGenerator()
 
     func setHeight(_ height: CGFloat, for kind: CollectionItem.Kind) {
         heights[kind] = height
@@ -885,6 +888,7 @@ final class CollectionReorderState {
         dragTranslation = 0
         dragCompensation = 0
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        swapHaptic.prepare()
     }
 
     /// Палец сдвинулся на `translation` от точки захвата. Блок идёт за ним, а когда его
@@ -899,10 +903,12 @@ final class CollectionReorderState {
                let below = heights[draftOrder[index + 1]],
                center > origin + height + below / 2 {
                 swap(index, index + 1, compensating: -below)
+                swapHaptic.selectionChanged()
             } else if index > 0,
                       let above = heights[draftOrder[index - 1]],
                       center < origin - above / 2 {
                 swap(index, index - 1, compensating: above)
+                swapHaptic.selectionChanged()
             } else {
                 break
             }
