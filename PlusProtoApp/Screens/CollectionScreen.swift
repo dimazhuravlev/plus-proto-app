@@ -551,7 +551,6 @@ private struct CollectionTracksBlock: View {
 
     @Environment(ActionBarState.self) private var actionBar
     @Environment(CollectionReorderState.self) private var reorder
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Очередь полки: её треки по порядку — конец превью переключает на следующий.
     private var queue: [MusicNowPlaying] {
@@ -612,10 +611,11 @@ private struct CollectionTracksBlock: View {
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel(isPlayingShelf ? "Пауза" : "Слушать")
-            // В режиме порядка «play» гаснет кросс-попом, место за ним остаётся.
-            .opacity(reorder.isReordering ? 0 : 1)
-            .scaleEffect(reorder.isReordering && !reduceMotion ? ActionBarMotion.iconSwapScale : 1)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap, value: reorder.isReordering)
+            // В режиме порядка «play» остаётся на месте, приглушён и недоступен — как
+            // выключенная кнопка навбара (одна константа).
+            .opacity(reorder.isReordering ? CollectionReorderMotion.disabledOpacity : 1)
+            .allowsHitTesting(!reorder.isReordering)
+            .animation(CollectionReorderMotion.disabledFade, value: reorder.isReordering)
 
             // Название — переход в полный список, как шеврон у карусельных секций.
             Button(action: openAll) {
@@ -753,8 +753,6 @@ private struct CollectionTrackRow: View {
 /// `icon / change order` `2584:26578` (20 × 20, x 279, y 62 на кадре 375), хват в шапке
 /// блока `icon` `2584:29425` (20 × 20, x 339, y 16). Остальное — решения спеки 35.
 enum CollectionReorderMotion {
-    /// Сколько держать палец, чтобы блок оторвался: меньше — это скролл ленты.
-    static let holdDuration: Double = 0.15
     /// Соседи уступают место — как сдвиг строк при перестановке на домашнем экране.
     static let swap: Animation = .smooth(duration: 0.3)
     /// Отпущенный блок встаёт в свою ячейку.
@@ -765,6 +763,22 @@ enum CollectionReorderMotion {
     static let glassFade: Animation = .easeInOut(duration: glassFadeDuration)
     /// Подъём блока в руке — как просадка карточки, только вверх (`PressMotion`).
     static let liftScale: CGFloat = 1.02
+    /// Наклон блока в руке — по часовой, плавно на захвате и обратно на отпускании.
+    static let liftTilt: Double = 2
+    static let tilt: Animation = .smooth(duration: 0.25)
+    /// Приглушённое состояние недоступного: кнопка навбара при одном блоке и «play» «Треков»
+    /// в режиме — одно значение.
+    static let disabledOpacity: Double = 0.3
+    static let disabledFade: Animation = .easeInOut(duration: 0.2)
+    /// Захват — удержание 0.3 с без сдвига больше 10 pt: быстрый свайп раньше этого
+    /// уходит в прокрутку ленты.
+    static let pressDuration: TimeInterval = 0.3
+    static let pressSlop: CGFloat = 10
+    /// Автопрокрутка у края, пока блок в руке: зона 80 pt под навбаром и над хромом,
+    /// скорость пропорциональна глубине захода, до максимума в pt/с. Reduce Motion её
+    /// не отключает — это управление, а не украшение.
+    static let autoScrollZone: CGFloat = 80
+    static let autoScrollMaxSpeed: CGFloat = 600
     /// Тряска: угол в градусах, подскок в pt, период в секундах, сдвиг фазы между блоками
     /// (по виду) — соседи не качаются в унисон.
     static let shakeAngle: Double = 0.35
@@ -779,6 +793,8 @@ enum CollectionReorderMotion {
     /// подъёмом 1.02 стекло без поля вылезло бы за кромку.
     static let glassRadius: CGFloat = PlusRadius.readerBlock
     static let glassInset: CGFloat = CollectionLayout.cardGap
+    /// Клип вне захвата: шире блока ровно на радиус — дуги углов за кромкой, срезов нет.
+    static let restClipInset: CGFloat = -glassRadius
 }
 
 /// Состояние режима порядка — один объект на экран: переключение режима перерисовывает
@@ -925,8 +941,6 @@ private struct CollectionReorderBlock<Content: View>: View {
 
     @Environment(CollectionReorderState.self) private var reorder
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Палец на блоке после долгого нажатия; сбрасывается сам и на отпускании, и на отмене.
-    @GestureState private var isHolding = false
 
     init(kind: CollectionItem.Kind, @ViewBuilder content: () -> Content) {
         self.kind = kind
@@ -942,17 +956,28 @@ private struct CollectionReorderBlock<Content: View>: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 reorder.setHeight(height, for: kind)
             }
+            // Блок в руке обрезается по своему фону: карточки, уходящие за кромку стекла,
+            // не торчат из него. Клип проявляется той же кривой, что и фон; вне захвата
+            // он шире блока и ничего не режет.
+            .clipShape(CollectionReorderClip(inset: isHeld ? CollectionReorderMotion.glassInset : CollectionReorderMotion.restClipInset))
+            .animation(glassAnimation(isHeld: isHeld), value: isHeld)
             .background { glass(isHeld: isHeld) }
             .scaleEffect(isHeld && !reduceMotion ? CollectionReorderMotion.liftScale : 1)
             .animation(isHeld ? PressMotion.pressIn : PressMotion.release, value: isHeld)
+            .rotationEffect(.degrees(isHeld && !reduceMotion ? CollectionReorderMotion.liftTilt : 0))
+            .animation(CollectionReorderMotion.tilt, value: isHeld)
             .modifier(CollectionReorderShake(kind: kind))
             .modifier(CollectionReorderOffset(kind: kind))
             .zIndex(reorder.liftedKind == kind ? 1 : 0)
             .contentShape(.rect)
-            .gesture(reorderGesture, including: isReordering ? .all : .subviews)
-            .onChange(of: isHolding) { _, holding in
-                if !holding { reorder.release(kind) }
-            }
+            .gesture(CollectionReorderPress(kind: kind, reorder: reorder, isActive: isReordering))
+    }
+
+    /// Появление — сразу, исчезновение — после посадки блока (задержка = время посадки).
+    private func glassAnimation(isHeld: Bool) -> Animation {
+        isHeld
+            ? CollectionReorderMotion.glassFade
+            : CollectionReorderMotion.glassFade.delay(CollectionReorderMotion.settleDuration)
     }
 
     /// Фон блока в руке — стекло хрома: блюр не пропускает соседей. Проявляется на захвате,
@@ -962,27 +987,165 @@ private struct CollectionReorderBlock<Content: View>: View {
             .chromeGlass(RoundedRectangle(cornerRadius: CollectionReorderMotion.glassRadius, style: .continuous))
             .padding(.horizontal, CollectionReorderMotion.glassInset)
             .opacity(isHeld ? 1 : 0)
-            .animation(
-                isHeld
-                    ? CollectionReorderMotion.glassFade
-                    : CollectionReorderMotion.glassFade.delay(CollectionReorderMotion.settleDuration),
-                value: isHeld
-            )
+            .animation(glassAnimation(isHeld: isHeld), value: isHeld)
             .allowsHitTesting(false)
     }
+}
 
-    /// Долгое нажатие, затем протяжка: сдвиг считается в пространстве ленты, а не блока.
-    private var reorderGesture: some Gesture {
-        LongPressGesture(minimumDuration: CollectionReorderMotion.holdDuration)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(CollectionReorderState.feedSpace)))
-            .updating($isHolding) { value, state, _ in
-                if case .second = value { state = true }
+/// Захват блока — UIKit-распознаватель долгого нажатия (0.3 с, сдвиг до 10 pt). SwiftUI-
+/// жест с нулевой дистанцией на ленте забирал касания у `ScrollView`, и в режиме она
+/// не прокручивалась. У `UILongPressGestureRecognizer` быстрый свайп раньше 0.3 с
+/// не распознаётся и уходит в пан прокрутки; удержание — захват, и тот же
+/// распознаватель дальше отдаёт `.changed` с позицией пальца: это и есть драг.
+/// `.ended` и `.cancelled` — отпускание.
+///
+/// Позиция пальца — в координатах содержимого ленты (`location(in: UIScrollView)`):
+/// когда лента прокручивается, а палец стоит, сдвиг блока растёт сам и блок остаётся
+/// под пальцем. Пока блок в руке и палец у верха или низа экрана, ленту катит
+/// `CADisplayLink` напрямую через `UIScrollView` — покадровое не идёт через `@State`.
+private struct CollectionReorderPress: UIGestureRecognizerRepresentable {
+    let kind: CollectionItem.Kind
+    let reorder: CollectionReorderState
+    /// Вне режима распознаватель выключен — блок ведёт себя как обычно.
+    let isActive: Bool
+
+    @MainActor
+    final class Coordinator: NSObject {
+        /// Вертикаль пальца в момент захвата — в координатах содержимого ленты.
+        var startY: CGFloat = 0
+        weak var recognizer: UILongPressGestureRecognizer?
+        weak var scrollView: UIScrollView?
+        var reorder: CollectionReorderState?
+        private var link: CADisplayLink?
+        private var windowHeight: CGFloat = 0
+
+        /// Лента — ближайший `UIScrollView` над видом, на котором стоит распознаватель
+        /// (горизонтальные карусели блока лежат ниже, не выше).
+        func begin(_ recognizer: UILongPressGestureRecognizer, reorder: CollectionReorderState) {
+            self.recognizer = recognizer
+            self.reorder = reorder
+            var ancestor = recognizer.view
+            while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
+            scrollView = ancestor as? UIScrollView
+            windowHeight = recognizer.view?.window?.bounds.height ?? 0
+            startY = contentY(recognizer)
+            link?.invalidate()
+            let newLink = CADisplayLink(target: self, selector: #selector(tick(_:)))
+            newLink.add(to: .main, forMode: .common)
+            link = newLink
+        }
+
+        func end() {
+            link?.invalidate()
+            link = nil
+            recognizer = nil
+            scrollView = nil
+            reorder = nil
+        }
+
+        /// Вертикаль пальца в содержимом ленты; без ленты — в окне.
+        func contentY(_ recognizer: UILongPressGestureRecognizer) -> CGFloat {
+            recognizer.location(in: scrollView ?? recognizer.view).y
+        }
+
+        /// Палец сдвинулся (или лента — под ним): блок идёт за пальцем, свап — той же
+        /// функцией, что и у любого сдвига.
+        func updateDrag(_ recognizer: UILongPressGestureRecognizer) {
+            reorder?.drag(translation: contentY(recognizer) - startY)
+        }
+
+        @objc private func tick(_ link: CADisplayLink) {
+            guard let recognizer, let scrollView, let reorder, reorder.heldKind != nil else {
+                end()
+                return
             }
-            .onChanged { value in
-                guard case .second(true, let drag) = value else { return }
-                reorder.grab(kind)
-                if let drag { reorder.drag(translation: drag.translation.height) }
-            }
+            let speed = Self.autoScrollSpeed(fingerY: recognizer.location(in: nil).y, windowHeight: windowHeight)
+            guard speed != 0 else { return }
+            let dt = link.targetTimestamp - link.timestamp
+            // Пределы — с учётом полей содержимого (`contentMargins` сверху и под хромом).
+            let inset = scrollView.adjustedContentInset
+            let minY = -inset.top
+            let maxY = max(minY, scrollView.contentSize.height + inset.bottom - scrollView.bounds.height)
+            let target = min(maxY, max(minY, scrollView.contentOffset.y + speed * dt))
+            guard target != scrollView.contentOffset.y else { return }
+            scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: target), animated: false)
+            updateDrag(recognizer)
+        }
+
+        /// Скорость прокрутки, pt/с (плюс — вниз): зона 80 pt под навбаром и над хромом,
+        /// скорость пропорциональна глубине захода, до максимума; вне зон — стоп.
+        /// Края зон — от констант хрома, а не от замера вью.
+        static func autoScrollSpeed(fingerY: CGFloat, windowHeight: CGFloat) -> CGFloat {
+            let zone = CollectionReorderMotion.autoScrollZone
+            let top = ServiceTopNavLayout.topSafeArea + CollectionLayout.contentTop
+            let bottomInset = windowSafeBottom + PlusChromeMetrics.contentBottomInset
+            let bottom = windowHeight - bottomInset
+            let upDepth = (top + zone - fingerY) / zone
+            let downDepth = (fingerY - (bottom - zone)) / zone
+            if upDepth > 0 { return -min(1, upDepth) * CollectionReorderMotion.autoScrollMaxSpeed }
+            if downDepth > 0 { return min(1, downDepth) * CollectionReorderMotion.autoScrollMaxSpeed }
+            return 0
+        }
+
+        private static var windowSafeBottom: CGFloat {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap(\.windows)
+                .first { $0.isKeyWindow }?
+                .safeAreaInsets.bottom ?? 0
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer()
+        recognizer.minimumPressDuration = CollectionReorderMotion.pressDuration
+        recognizer.allowableMovement = CollectionReorderMotion.pressSlop
+        recognizer.isEnabled = isActive
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        recognizer.isEnabled = isActive
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        let coordinator = context.coordinator
+        switch recognizer.state {
+        case .began:
+            coordinator.begin(recognizer, reorder: reorder)
+            reorder.grab(kind)
+        case .changed:
+            coordinator.updateDrag(recognizer)
+        case .ended, .cancelled, .failed:
+            coordinator.end()
+            reorder.release(kind)
+        default:
+            break
+        }
+    }
+}
+
+/// Клип блока в руке — скруглённый прямоугольник со стеклянным фоном. Отступ от краёв
+/// блока анимируется: в покое он отрицательный (клип шире блока на радиус — углы дуги
+/// лежат за кромкой и ничего не режут), в руке — поле стекла. Вертикаль — рамка блока.
+private struct CollectionReorderClip: Shape {
+    var inset: CGFloat
+
+    var animatableData: CGFloat {
+        get { inset }
+        set { inset = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        Path(
+            roundedRect: rect.insetBy(dx: inset, dy: 0),
+            cornerRadius: CollectionReorderMotion.glassRadius,
+            style: .continuous
+        )
     }
 }
 
@@ -1092,10 +1255,10 @@ private struct CollectionReorderButton: View {
         let swapScale = reduceMotion ? 1 : ActionBarMotion.iconSwapScale
         Button(action: action) {
             ZStack {
-                glyph("iconChangeOrder")
+                glyph("iconChangeOrder", color: .fillSubtitle)
                     .opacity(isReordering ? 0 : 1)
                     .scaleEffect(isReordering ? swapScale : 1)
-                glyph("iconDone")
+                glyph("iconDone", color: .moviesAccent)
                     .opacity(isReordering ? 1 : 0)
                     .scaleEffect(isReordering ? 1 : swapScale)
             }
@@ -1107,17 +1270,19 @@ private struct CollectionReorderButton: View {
         .padding(-Self.hitInset)
         .disabled(!isEnabled)
         // Блоков меньше двух — переставлять нечего: кнопка приглушена, место за ней держится.
-        .opacity(isEnabled ? 1 : 0.3)
+        .opacity(isEnabled ? 1 : CollectionReorderMotion.disabledOpacity)
         .animation(.easeInOut(duration: 0.2), value: isEnabled)
         .accessibilityLabel(isReordering ? "Готово" : "Изменить порядок")
     }
 
-    private func glyph(_ name: String) -> some View {
+    /// «Изменить порядок» — приглушённый белый, «Готово» — фиолетовый акцент приложения;
+    /// цвет меняется вместе с иконкой, кросс-попом.
+    private func glyph(_ name: String, color: Color) -> some View {
         Image(name)
             .renderingMode(.template)
             .resizable()
             .frame(width: Self.box, height: Self.box)
-            .foregroundStyle(Color.fillSubtitle)
+            .foregroundStyle(color)
     }
 }
 
