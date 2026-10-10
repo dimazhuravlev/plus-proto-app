@@ -13,6 +13,10 @@ enum EntityMotion {
 enum EntitySectionLayout {
     static let side: CGFloat = EntityCoverLayout.side
     static let sectionPad: CGFloat = 8
+    /// Колонки треков (стек из трёх строк): следующая колонка выглядывает из-под правого
+    /// края экрана на столько. Одна константа у «Моего» и у экрана исполнителя (правка
+    /// пользователя 2026-10-10: следующая колонка выглядывает на 24).
+    static let trackColumnPeek: CGFloat = 24
     static let headerTop: CGFloat = 16
     static let headerBottom: CGFloat = 12
     /// Строка заголовка — 28, как у заголовков выдачи (Headline M при 100 %)

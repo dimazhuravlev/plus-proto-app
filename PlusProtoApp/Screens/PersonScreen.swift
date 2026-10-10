@@ -18,9 +18,10 @@ private enum PersonLayout {
     // «Популярные треки» — колонки по три строки, следующая выглядывает из-за края
     // (`carousel / Music / opened playlist`).
     static let tracksPerColumn = 3
-    static let trackColumnPeek: CGFloat = 40
     static let trackColumnGap: CGFloat = 16
-    static var trackColumnWidth: CGFloat { photoSize - side * 2 - trackColumnPeek }
+    /// Следующая колонка начинается на `side + ширина + зазор` = 402 − peek: ширина — от
+    /// ширины экрана без полей и без выглядывающей части (`EntitySectionLayout.trackColumnPeek`).
+    static var trackColumnWidth: CGFloat { photoSize - side * 2 - EntitySectionLayout.trackColumnPeek }
 
     static let skeletonCards = 3
     static let skeletonRows = 6

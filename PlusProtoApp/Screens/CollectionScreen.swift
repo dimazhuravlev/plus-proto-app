@@ -40,9 +40,11 @@ enum CollectionLayout {
     static var squareRowHeight: CGFloat { cardWidth + captionGap + 3 * captionLine }
     static var titleOnlyRowHeight: CGFloat { cardWidth + captionGap + 2 * captionLine }
 
-    /// Треки — колонки по три строки (`track stack` 335 с полями 16), строка — обложка
-    /// 48 r6 и поля 8 между строками; следующая колонка выглядывает справа
-    static let trackColumnWidth: CGFloat = 335
+    /// Треки — колонки по три строки (`track stack`), строка — обложка 48 r6 и поля 8
+    /// между строками. Колонка с собственными полями 16 по бокам: следующая начинается
+    /// на `ширина + 16`, и её обложка выглядывает из-под правого края на
+    /// `trackColumnPeek` (24; было 335 → выглядывало 51) — ширина = экран − peek − поле.
+    static var trackColumnWidth: CGFloat { PlusMetrics.designWidth - EntitySectionLayout.trackColumnPeek - side }
     static let tracksPerColumn = 3
     static let trackCover: CGFloat = 48
     static let trackCoverRadius: CGFloat = 6
