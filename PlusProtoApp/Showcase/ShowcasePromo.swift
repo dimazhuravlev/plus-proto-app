@@ -165,6 +165,11 @@ struct ShowcasePromo: View {
 
     /// Карточка ленты копий в центре.
     @State private var pageID: PromoSlotID?
+    /// Слот в центре на момент перестановки набора (`editSet`). Ленту прикалываем к нему
+    /// уже после того, как раскладка легла (`pinToEditAnchor`): `scrollTo` внутри самого
+    /// `editSet` разрешается по старой раскладке и становится no-op, а биндинг `pageID` при
+    /// вставке ленту не двигает — ключ слота не меняется, команды от него нет.
+    @State private var editAnchor: PromoSlotID?
     /// Прокси ленты — для явного `scrollTo` после перестановки набора (`remove(slot:)`).
     @State private var scrollProxy: ScrollViewProxy?
     /// Айтем, у которого показана пара ✕/✓ (у альбома — и подпись), — центральный, вставший на место.
@@ -278,6 +283,7 @@ struct ShowcasePromo: View {
             .onChange(of: items.map(\.id)) { _, new in
                 guard !isEditingSet else {
                     isEditingSet = false
+                    pinToEditAnchor()
                     return
                 }
                 recenter(new: new)
@@ -353,12 +359,7 @@ struct ShowcasePromo: View {
         let isCurrent = slotIndex == page
         let isAlbum = item.isAlbum
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
-            // `id` — по айтему: слот, чей айтем сменился (догрузка набора, ✕), встаёт
-            // новым вью и берёт картинку из кэша с первого кадра, а не кадр-другой
-            // показывает прежнюю.
             PromoCardFace(item: item)
-                .id(item.id)
-                .transition(.identity)
                 .showcaseSwappable()
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
@@ -389,10 +390,8 @@ struct ShowcasePromo: View {
                 // и свою высоту. `alignmentGuide` в оверлее не сработал (кадр 2026-10-08:
                 // подпись легла на обложку).
                 PromoAlbumCaption(album: album)
-                    .id(album.id)
-                    .transition(.identity)
                     .showcaseSwappable()
-                    .modifier(PromoReveal(isShown: isShown))
+                    .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
                     .allowsHitTesting(false)
             }
@@ -458,10 +457,11 @@ struct ShowcasePromo: View {
                     catalog.insertPromo(addition, after: next.id)
                     center(on: removed.id)
                     removal = page
-                    pinCenter()
                 }
                 // Перестановка ложится в свой проход до старта схлопывания.
                 try? await Task.sleep(for: ShowcasePromoMotion.editSettle)
+                // Страховка: если прикалывание в `onChange` уже отработало — no-op.
+                pinToEditAnchor()
             }
             withAnimation(ShowcasePromoMotion.collapse) {
                 collapse = 1
@@ -472,7 +472,6 @@ struct ShowcasePromo: View {
                     removal = nil
                     collapse = 0
                     center(on: next.id)
-                    pinCenter()
                 }
                 scheduleReveal()
             }
@@ -486,14 +485,21 @@ struct ShowcasePromo: View {
         withTransaction(instant) {
             isEditingSet = true
             change()
+            editAnchor = pageID
         }
     }
 
-    /// Страховка: после перестановки набора раскладка сдвигается на шаг, и лента явно
-    /// встаёт на центральный слот — в той же мгновенной транзакции.
-    private func pinCenter() {
-        guard let id = pageID else { return }
-        scrollProxy?.scrollTo(id, anchor: .center)
+    /// После перестановки набора раскладка сдвигается на шаг (вставка перед центром), а
+    /// ключ центрального слота прежний — лента сама не едет. Явно ставим её на сохранённый
+    /// якорь, когда `items` и раскладка уже новые; мгновенной транзакцией.
+    private func pinToEditAnchor() {
+        guard let anchor = editAnchor else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            pageID = anchor
+            scrollProxy?.scrollTo(anchor, anchor: .center)
+        }
     }
 
     /// Айтем `id` — в центр, в средней копии.
@@ -725,7 +731,8 @@ private struct PromoAlbumCaption: View {
     }
 }
 
-/// Пара и подпись альбома появляются прозрачностью; пара — ещё и масштабом от своего края.
+/// Пара и подпись альбома появляются прозрачностью и лёгким масштабом от своего края
+/// (правка пользователя 2026-10-10: подпись — как пара).
 /// С «уменьшением движения» — одной прозрачностью.
 private struct PromoReveal: ViewModifier {
     let isShown: Bool
