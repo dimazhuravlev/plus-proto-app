@@ -229,6 +229,10 @@ enum ShowcaseLayout {
     /// (правки пользователя). В макете промо карточек ниже нет.
     static let promoToFirstBlock: CGFloat = 35.55
 
+    /// Зазоры между одиночными блоками ленты меньше на 24 — правка пользователя
+    /// 2026-10-10. Зазор промо → первый блок (`promoToFirstBlock`) не затрагивает.
+    static let blockGapTrim: CGFloat = 24
+
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
     static let contentBottom: CGFloat = Slot.watching.top + Slot.watching.height
 
@@ -240,14 +244,15 @@ enum ShowcaseLayout {
     ///
     /// Значения нерегулярные (20…66pt), а два **отрицательные**: орб «Моей Волны»
     /// начинается раньше, чем кончается книжный блок, и карточка чтения наезжает на орб.
-    /// Это макет, а не ошибка — сдвигать нельзя.
+    /// Это макет, а не ошибка — сдвигать нельзя. Минус `blockGapTrim` сверху — правка
+    /// пользователя, она сильнее макета: наезды становятся глубже.
     ///
     /// Считается именно зазорами, а не абсолютным `offset`: `offset` не влияет на раскладку,
     /// из-за чего все карточки оказывались в одной точке — ломались и каскадное появление,
     /// и параллакс, которым нужна настоящая позиция блока в скролле.
     static func gap(above slot: Slot, after previous: Slot?) -> CGFloat {
         guard let previous else { return slot.top }
-        return slot.top - (previous.top + previous.height)
+        return slot.top - (previous.top + previous.height) - blockGapTrim
     }
 }
 

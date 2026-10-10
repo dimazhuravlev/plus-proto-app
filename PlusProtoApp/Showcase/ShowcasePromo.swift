@@ -51,15 +51,6 @@ enum ShowcasePromoLayout {
     static let albumPairTrailing: CGFloat = 14.5
     static let albumPairAbove: CGFloat = 22.5
 
-    /// Описание фильма и книги — под карточкой: Text S в четыре строки шириной 244;
-    /// левый край на 97 левее центра экрана, то есть центр строки на 25 правее.
-    /// Сверху — на 39.4 ниже низа своей карточки (у постера макета: 382 − 342.6).
-    static let descriptionGap: CGFloat = 39.4
-    static let descriptionWidth: CGFloat = 244
-    static let descriptionShift: CGFloat = 25
-    static let descriptionLines = 4
-    static var descriptionHeight: CGFloat { CGFloat(descriptionLines) * PlusTextSize.textS.lineHeight }
-
     /// Подпись альбома (макет `2537:27595`) — аватар исполнителя 40, справа название
     /// альбома и исполнитель Text M. Наклонена вместе с обложкой: левый край на 3.3
     /// правее её левой кромки, верх — на 7.2 ниже низа (замер в системе обложки).
@@ -72,31 +63,19 @@ enum ShowcasePromoLayout {
     static let albumCaptionLineOverlap: CGFloat = 2
     static let albumAvatar: CGFloat = 40
 
-    /// Высота блока — до низа описания под самой высокой карточкой, постером: место
-    /// держится всегда, и лента ниже не прыгает от айтема к айтему.
-    static var height: CGFloat { descriptionTop(cardHeight: poster.height) + descriptionHeight }
+    /// Пустое место под самой высокой карточкой, постером. Было 39.4 + 64 под описание;
+    /// описание убрано, пустое место ужато на 56 — правка пользователя 2026-10-10.
+    static let belowCards: CGFloat = 47.4
 
-    static func descriptionTop(cardHeight: CGFloat) -> CGFloat {
-        cardCenterY + cardHeight / 2 + descriptionGap
-    }
-
-    /// Высота карточки айтема по центру — по виду.
-    static func cardHeight(_ item: ShowcaseBlock) -> CGFloat {
-        switch item {
-        case .movie, .vibe, .reading, .watching:
-            return poster.height
-        case .album:
-            return album
-        case .book:
-            let figure = book
-            return figure.geometry.frameSize(coverWidth: figure.coverWidth).height
-        }
-    }
+    /// Высота блока — до низа постера плюс `belowCards`: место держится всегда, и лента
+    /// ниже не прыгает от айтема к айтему.
+    static var height: CGFloat { cardCenterY + poster.height / 2 + belowCards }
 
     /// Фон — картинка центральной карточки вдвое шире экрана, размытая: от физического
     /// верха экрана до низа блока и ещё немного ниже, в чёрный.
     static let backdropWidth: CGFloat = PlusMetrics.designWidth * 2
-    static let backdropTail: CGFloat = 64
+    /// +56 к прежним 64, чтобы фон не укоротился вместе с блоком (правка 2026-10-10).
+    static let backdropTail: CGFloat = 120
     /// Сколько фон уходит выше блока — до физического верха экрана.
     static var backdropAbove: CGFloat { ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight }
     static var backdropHeight: CGFloat { backdropAbove + height + backdropTail }
@@ -121,7 +100,7 @@ enum ShowcasePromoLayout {
 }
 
 enum ShowcasePromoMotion {
-    /// Пара ✕/✓ и описание проявляются вместе (правка пользователя 2026-10-08) и не
+    /// Пара ✕/✓ (и подпись альбома) проявляются вместе (правка пользователя 2026-10-08) и не
     /// сразу, а когда карточка встала в центр: пауза, затем короткий сильный ease-out.
     /// Пауза 100 мс — «уменьши задержку» (правка пользователя 2026-10-08, было 250).
     static let revealDelay: Duration = .milliseconds(100)
@@ -146,7 +125,7 @@ enum ShowcasePromoMotion {
 ///
 /// Центральная крупнее соседей, у каждой карточки свой случайный наклон; масштаб, наклон
 /// и опускание соседей идут за сдвигом ленты кадр в кадр (`visualEffect`, без стейта).
-/// Описание и пара ✕/✓ — только у центральной и вместе: с паузой, когда карточка
+/// Пара ✕/✓ (у альбома — и подпись) — только у центральной и вместе: с паузой, когда карточка
 /// встала. Фон — размытая картинка центральной, меняется вслед за сдвигом.
 ///
 /// ✕ не подменяет айтем, а убирает его из круга: карточка гаснет, ряд схлопывается,
@@ -174,7 +153,7 @@ struct ShowcasePromo: View {
 
     /// Карточка ленты копий в центре.
     @State private var page: Int?
-    /// Айтем, у которого показаны описание и пара ✕/✓, — центральный, вставший на место.
+    /// Айтем, у которого показана пара ✕/✓ (у альбома — и подпись), — центральный, вставший на место.
     @State private var revealed: String?
     @State private var revealTask: Task<Void, Never>?
     /// Состояние пары — на айтем, а не на копию и не на место в наборе: ✕ убирает айтемы,
@@ -315,14 +294,6 @@ struct ShowcasePromo: View {
                 .frame(height: Layout.carouselHeight)
                 .modifier(PromoCardMotion(look: look, shift: shift))
 
-            // У альбома подпись своя — на обложке, наклонена вместе с ней (`card`).
-            if !item.isAlbum {
-                description(item)
-                    .offset(x: Layout.descriptionShift, y: Layout.descriptionTop(cardHeight: Layout.cardHeight(item)))
-                    .modifier(PromoReveal(isShown: isShown))
-                    .offset(x: -shift * Layout.step)
-                    .allowsHitTesting(false)
-            }
         }
         .frame(width: Layout.step, height: Layout.height, alignment: .top)
         // Центральная — поверх соседей, как в макете: в ряду правый сосед ложился
@@ -399,15 +370,6 @@ struct ShowcasePromo: View {
             return
         }
         if let route = item.entityRoute { navigation.open(route) }
-    }
-
-    private func description(_ item: ShowcaseBlock) -> some View {
-        Text(item.promoDescription)
-            .plusText(.textS, .medium)
-            .foregroundStyle(Color.fillFour)
-            .lineLimit(Layout.descriptionLines)
-            .frame(width: Layout.descriptionWidth, height: Layout.descriptionHeight, alignment: .topLeading)
-            .showcaseSwappable()
     }
 
     // MARK: ✕ — айтем уходит из круга
@@ -706,7 +668,7 @@ private struct PromoAlbumCaption: View {
     }
 }
 
-/// Описание и пара появляются прозрачностью; пара — ещё и масштабом от своего края.
+/// Пара и подпись альбома появляются прозрачностью; пара — ещё и масштабом от своего края.
 /// С «уменьшением движения» — одной прозрачностью.
 private struct PromoReveal: ViewModifier {
     let isShown: Bool
@@ -868,16 +830,6 @@ private enum PromoBackdropRaster {
 extension ShowcaseBlock {
     var isAlbum: Bool {
         if case .album = self { true } else { false }
-    }
-
-    /// Описание под слайдером — у фильма и книги их подпись. У альбома подпись своя
-    /// (`PromoAlbumCaption`): описаний альбомов Deezer не отдаёт, а выдумывать их нельзя.
-    var promoDescription: String {
-        switch self {
-        case .movie(let movie): movie.caption
-        case .book(let book): book.caption
-        case .album, .vibe, .reading, .watching: ""
-        }
     }
 
     /// Картинка фона под слайдером — обложка айтема.
