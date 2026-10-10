@@ -280,7 +280,8 @@ struct AlbumScreen: View {
     private func play(_ item: MusicNowPlaying) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.open(.music(item))
+        // Очередь — треклист альбома: конец превью переключает на следующий трек.
+        actionBar.open(.music(item), queue: tracks.map(nowPlaying))
     }
 
     // MARK: Треклист

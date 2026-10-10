@@ -149,6 +149,10 @@ struct MusicPlayerView: View {
     @State private var isRepeating = false
     @State private var isShuffling = true
 
+    /// Обложка предыдущего трека — левая соседка в карусели паузы. Истории треков
+    /// у плеера нет, соседка — макетная.
+    private static let previousCover: ArtworkSource = .asset("mockPrevCover")
+
     /// Год под артистом нужен всегда (правка пользователя 2026-10-03), а знает его только
     /// экран альбома — у треков очереди и витрины года нет. Мок — год из примера пользователя.
     private static let fallbackYear = "2005"
@@ -242,8 +246,8 @@ struct MusicPlayerView: View {
         return VStack(spacing: 0) {
             CoverCarousel(
                 cover: music.cover,
-                previous: MusicQueue.previousCover,
-                next: MusicQueue.upcoming(after: music.id).first?.cover,
+                previous: Self.previousCover,
+                next: actionBar.upcoming.first?.cover,
                 isPlaying: actionBar.isMusicPlaying,
                 side: column,
                 screenWidth: width
@@ -270,9 +274,16 @@ struct MusicPlayerView: View {
             controls
                 .padding(.top, MusicPlayerLayout.timelineToControls)
 
-            queue(after: music.id)
-                .padding(.top, MusicPlayerLayout.controlsToQueue)
-                .padding(.bottom, MusicPlayerLayout.queueBottom + safeBottom)
+            // Очереди нет (одиночный запуск, «Моя волна») — секции нет: пустых не показываем.
+            let upcoming = actionBar.upcoming
+            if !upcoming.isEmpty {
+                queue(upcoming)
+                    .padding(.top, MusicPlayerLayout.controlsToQueue)
+                    .padding(.bottom, MusicPlayerLayout.queueBottom + safeBottom)
+            } else {
+                Color.clear
+                    .frame(height: safeBottom)
+            }
         }
         .frame(width: width)
         .background(alignment: .top) { backdrop(music.cover) }
@@ -510,13 +521,16 @@ struct MusicPlayerView: View {
 
     // MARK: Очередь
 
-    private func queue(after id: String) -> some View {
+    /// «Что дальше» — настоящая очередь: хвост после текущего трека, по кругу.
+    private func queue(_ upcoming: [MusicNowPlaying]) -> some View {
         VStack(spacing: 0) {
             queueHeader
-            ForEach(MusicQueue.upcoming(after: id)) { item in
+            // По позиции, а не по id: один трек в плейлисте бывает дважды.
+            ForEach(Array(upcoming.enumerated()), id: \.offset) { offset, item in
                 QueueRow(item: item) {
                     PlayerHaptics.tap()
-                    actionBar.startMusic(item.nowPlaying)
+                    let count = actionBar.queue.count
+                    actionBar.startMusic(item, queue: actionBar.queue, at: (actionBar.queueIndex + 1 + offset) % max(count, 1))
                 }
             }
         }
@@ -798,8 +812,10 @@ private struct FadingLine: View {
 // MARK: - Строка очереди
 
 private struct QueueRow: View {
-    let item: MusicQueueItem
+    let item: MusicNowPlaying
     let action: () -> Void
+
+    @Environment(CollectionStore.self) private var collection
 
     var body: some View {
         Button(action: action) {
@@ -841,7 +857,7 @@ private struct QueueRow: View {
                 Text(item.title)
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
-                if item.isExplicit {
+                if item.isExplicit == true {
                     Image("iconExplicit")
                         .renderingMode(.template)
                         .resizable()
@@ -861,7 +877,7 @@ private struct QueueRow: View {
     /// Значок «скачан» стоит у ручки; без него слот держит место 44×20, как в макете.
     @ViewBuilder
     private var status: some View {
-        if item.isDownloaded {
+        if collection.isDownloaded(CollectionItem.track(item).id) {
             MovieIcon(name: "iconDownload", box: MusicPlayerLayout.rowBadge)
         } else {
             Color.clear

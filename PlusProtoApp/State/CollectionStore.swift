@@ -215,17 +215,7 @@ extension CollectionItem {
             guard case .artist(let ref)? = hit.route else { return nil }
             self = .artist(ref)
         case .track:
-            let album: String? = if case .album(let ref)? = hit.route { ref.title } else { nil }
-            self = .track(
-                MusicNowPlaying(
-                    id: hit.id,
-                    cover: hit.artwork ?? .asset("mockAlbumCover"),
-                    title: hit.title,
-                    artist: hit.subtitle,
-                    album: album
-                ),
-                album: hit.route
-            )
+            self = .track(MusicNowPlaying(hit: hit), album: hit.route)
         case .playlist:
             self = .playlist(id: hit.id, title: hit.title, owner: hit.subtitle, cover: hit.artwork)
         case .director, .writer:

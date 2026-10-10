@@ -31,6 +31,10 @@ final class MusicAudio {
     /// Сколько живёт найденная ссылка на превью: она подписана и протухает.
     private static let previewLifetime: TimeInterval = 10 * 60
 
+    /// Превью доиграло до конца. Решает, что дальше, `ActionBarState` (очередь):
+    /// звук знает только, что трек кончился.
+    var onTrackEnd: (@MainActor () -> Void)?
+
     private let player = AVPlayer()
     private var readiness = Readiness.idle
     private var trackID: String?
@@ -44,7 +48,8 @@ final class MusicAudio {
 
     private init() {
         player.volume = Float(Self.storedVolume)
-        // Конец превью — снова с начала: прогресс плеера у мока тоже идёт по кругу.
+        // Конец превью решает `onTrackEnd`: следующий трек очереди. Нет подписчика —
+        // превью крутится с начала, как прогресс мока.
         player.actionAtItemEnd = .none
         NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification,
@@ -161,11 +166,26 @@ final class MusicAudio {
 
     private func itemDidEnd(_ item: AVPlayerItem?) {
         guard let item, item === player.currentItem else { return }
-        player.seek(to: .zero)
-        if wantsPlaying { player.play() }
+        if let onTrackEnd {
+            onTrackEnd()
+        } else {
+            player.seek(to: .zero)
+            if wantsPlaying { player.play() }
+        }
     }
 
     // MARK: - Превью
+
+    /// Заранее находит превью трека и кладёт ссылку в кэш: между треками очереди
+    /// звук не ждёт сеть. Не играет и не трогает текущий трек. Ссылка уже в кэше — ничего.
+    func prefetch(_ music: MusicNowPlaying) async {
+        if let cached = previews[music.id],
+           Date().timeIntervalSince(cached.found) < Self.previewLifetime {
+            return
+        }
+        guard let url = await Self.findPreview(for: music) else { return }
+        previews[music.id] = (url, Date())
+    }
 
     private func previewURL(for music: MusicNowPlaying, fresh: Bool) async -> URL? {
         if !fresh, let cached = previews[music.id],

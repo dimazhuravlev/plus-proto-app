@@ -156,10 +156,12 @@ struct PlaylistScreen: View {
 
     /// Тот же вход, что у альбома: `open` с тем же id — пауза/продолжение, с другим —
     /// запуск. Хаптика — как у тапа по карточке.
-    private func play(_ item: MusicNowPlaying) {
+    /// `index` — позиция строки: один трек в плейлисте бывает дважды, по id её не найти.
+    private func play(_ item: MusicNowPlaying, at index: Int? = nil) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.open(.music(item))
+        // Очередь — треклист плейлиста: конец превью переключает на следующий трек.
+        actionBar.open(.music(item), queue: details.tracks.map(nowPlaying), at: index)
     }
 
     // MARK: Треклист
@@ -187,7 +189,7 @@ struct PlaylistScreen: View {
                         showsDivider: index < tracks.count - 1
                     )
                     // Жестом, а не кнопкой: внутри строки своя кнопка «ещё».
-                    .onTapGesture { play(nowPlaying(track)) }
+                    .onTapGesture { play(nowPlaying(track), at: index) }
                 }
             }
             .padding(.horizontal, AlbumLayout.side)

@@ -457,6 +457,11 @@ private struct CollectionTracksBlock: View {
 
     @Environment(ActionBarState.self) private var actionBar
 
+    /// Очередь полки: её треки по порядку — конец превью переключает на следующий.
+    private var queue: [MusicNowPlaying] {
+        items.compactMap(\.playable)
+    }
+
     private var columns: [[CollectionItem]] {
         stride(from: 0, to: items.count, by: CollectionLayout.tracksPerColumn).map {
             Array(items[$0..<min($0 + CollectionLayout.tracksPerColumn, items.count)])
@@ -480,6 +485,7 @@ private struct CollectionTracksBlock: View {
                             ForEach(column.indices, id: \.self) { row in
                                 CollectionTrackRow(
                                     item: column[row],
+                                    queue: queue,
                                     isFirst: row == 0,
                                     isLast: row == column.count - 1
                                 )
@@ -535,7 +541,7 @@ private struct CollectionTracksBlock: View {
         if isPlayingShelf {
             actionBar.toggleMusicPlayback()
         } else if let first = items.first?.playable {
-            actionBar.open(.music(first))
+            actionBar.open(.music(first), queue: queue)
         }
     }
 }
@@ -545,6 +551,8 @@ private struct CollectionTracksBlock: View {
 /// разделитель 0.5.
 private struct CollectionTrackRow: View {
     let item: CollectionItem
+    /// Очередь полки, в которой стоит строка.
+    let queue: [MusicNowPlaying]
     let isFirst: Bool
     let isLast: Bool
 
@@ -627,7 +635,7 @@ private struct CollectionTrackRow: View {
     private func play() {
         guard let playable = item.playable else { return }
         PlayerHaptics.tap()
-        actionBar.open(.music(playable))
+        actionBar.open(.music(playable), queue: queue)
     }
 }
 

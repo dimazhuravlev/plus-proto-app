@@ -95,8 +95,10 @@ struct CollectionListScreen: View {
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
                         LazyVStack(spacing: 0) {
+                            // Очередь — треки показанного списка по порядку.
+                            let queue = items.filter { $0.kind == .track }.compactMap(\.playable)
                             ForEach(items) { item in
-                                CollectionListRow(item: item, isFirst: item.id == items.first?.id)
+                                CollectionListRow(item: item, queue: queue, isFirst: item.id == items.first?.id)
                             }
                         }
                         .padding(.top, CollectionListLayout.listTop)
@@ -201,6 +203,8 @@ enum CollectionListMotion {
 /// с бейджем 18+, деталь серым; справа отметка «скачано» и «ещё». Разделители 0.5.
 private struct CollectionListRow: View {
     let item: CollectionItem
+    /// Треки показанного списка — очередь, если строка сама трек.
+    let queue: [MusicNowPlaying]
     let isFirst: Bool
 
     @Environment(CollectionStore.self) private var collection
@@ -330,7 +334,8 @@ private struct CollectionListRow: View {
             navigation.open(route)
         } else if let playable = item.playable {
             PlayerHaptics.tap()
-            actionBar.open(.music(playable))
+            // Очередь — только у трека: плейлист в неё не входит и играет один.
+            actionBar.open(.music(playable), queue: item.kind == .track ? queue : [])
         }
     }
 }

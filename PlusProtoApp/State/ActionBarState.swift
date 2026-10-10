@@ -51,8 +51,13 @@ struct MusicClock: Equatable {
 
     func progress(at now: Date) -> Double {
         guard isAdvancing else { return anchor }
-        let advanced = anchor + max(0, now.timeIntervalSince(date)) / ActionBarState.musicDuration
-        return advanced.truncatingRemainder(dividingBy: 1)
+        return rawProgress(at: now).truncatingRemainder(dividingBy: 1)
+    }
+
+    /// Ход без заворота: больше или равно 1 — трек дошёл до конца (мок-ход без звука).
+    func rawProgress(at now: Date) -> Double {
+        guard isAdvancing else { return anchor }
+        return anchor + max(0, now.timeIntervalSince(date)) / ActionBarState.musicDuration
     }
 }
 
@@ -130,6 +135,10 @@ final class ActionBarState {
     private(set) var mode: ActionBarMode = .search { didSet { persist() } }
 
     init() {
+        // Конец превью решает очередь: звук только сообщает, что трек доиграл.
+        audio { [weak self] audio in
+            audio.onTrackEnd = { self?.musicTrackDidEnd() }
+        }
         restore()
         #if DEBUG
         // Флаг запуска перекрывает восстановленное состояние: прогон обязан начинаться
@@ -243,17 +252,89 @@ final class ActionBarState {
     private static let progressTick: TimeInterval = 0.5
     private var progressTicker: Task<Void, Never>?
 
-    func startMusic(_ item: MusicNowPlaying) {
+    /// Очередь треков: список, из которого запустили трек (альбом, плейлист, коллекция,
+    /// выдача). Конец превью переключает на следующий, в конце — снова первый. Пустая —
+    /// очереди нет (одиночный запуск, холодный старт): трек повторяется. На диск не
+    /// пишется: после холодного старта очереди нет.
+    private(set) var queue: [MusicNowPlaying] = []
+    /// Позиция играющего трека в очереди — числом, а не по id: в плейлисте один
+    /// трек бывает дважды.
+    private(set) var queueIndex = 0
+    /// Следующий трек «Моей волны», выбранный при старте текущего: звук успевает
+    /// найти его превью заранее, и «Дальше» играет тот же трек.
+    @ObservationIgnored private var vibeNext: MusicNowPlaying?
+
+    /// Мини-плеер на экране: круг (`.search`) или капсула (`.music`) с играющим треком.
+    var isMiniPlayerVisible: Bool {
+        music != nil && (mode == .music || mode == .search)
+    }
+
+    /// Что играет дальше: хвост очереди после текущего, по кругу, без самого текущего.
+    /// Пусто — очереди нет (одиночный запуск, «Моя волна»): «Что дальше» не показываем.
+    var upcoming: [MusicNowPlaying] {
+        guard queue.count > 1, queue.indices.contains(queueIndex) else { return [] }
+        return (1..<queue.count).prefix(Self.upcomingLimit).map { queue[(queueIndex + $0) % queue.count] }
+    }
+
+    private static let upcomingLimit = 20
+
+    /// Запуск трека пользователем: мини-плеер разворачивается в капсулу.
+    /// `list` — откуда запустили (пустой — очереди нет), `index` — позиция трека
+    /// в списке, если вызывающий её знает (дубли id в плейлисте).
+    func startMusic(_ item: MusicNowPlaying, queue list: [MusicNowPlaying] = [], at index: Int? = nil) {
+        queue = list
+        if let index, list.indices.contains(index), list[index].id == item.id {
+            queueIndex = index
+        } else {
+            queueIndex = list.firstIndex { $0.id == item.id } ?? 0
+        }
+        switchTrack(item)
+        mode = .music
+    }
+
+    /// Смена трека без смены режима: авто-переход на конце превью не должен
+    /// разворачивать круг в капсулу.
+    private func switchTrack(_ item: MusicNowPlaying) {
         music = item
         musicProgress = 0
         isMusicAdvancing = false
         isMusicPlaying = true
-        mode = .music
+        vibeNext = nil
         startProgressTicking()
         // Тот же трек ещё раз — тоже с начала.
         audio { audio in
             audio.play(item, from: 0, isPlaying: true)
             audio.seek(to: 0)
+        }
+        // Следующему треку превью ищем заранее: между треками без дыры.
+        if let next = nextTrack() {
+            Task { @MainActor in await MusicAudio.shared.prefetch(next.item) }
+        }
+    }
+
+    /// Что играет после текущего: «Моя волна» — случайный трек волны (выбранный один
+    /// раз на трек), очередь — следующий по кругу, иначе `nil` (одиночный запуск).
+    private func nextTrack() -> (item: MusicNowPlaying, index: Int)? {
+        if let music, MyVibeTracks.isVibe(music.id) {
+            let next = vibeNext ?? MyVibeTracks.random(excluding: music.id)
+            vibeNext = next
+            return (next, queueIndex)
+        }
+        guard queue.count > 1, queue.indices.contains(queueIndex) else { return nil }
+        let index = (queueIndex + 1) % queue.count
+        return (queue[index], index)
+    }
+
+    /// Превью доиграло (от звука или от мок-хода часов): следующий трек очереди,
+    /// а очереди нет — тот же трек с начала.
+    func musicTrackDidEnd() {
+        guard isMusicPlaying else { return }
+        if let next = nextTrack() {
+            queueIndex = next.index
+            switchTrack(next.item)
+        } else {
+            restartTrack()
+            audio { $0.setPlaying(true) }
         }
     }
 
@@ -422,6 +503,11 @@ final class ActionBarState {
                 } else if isAwaiting {
                     self.setMusicAdvancing(false)
                 } else {
+                    // Мок-ход дошёл до конца — как конец превью: следующий трек очереди.
+                    if self.musicClock.rawProgress(at: .now) >= 1 {
+                        await MainActor.run { self.musicTrackDidEnd() }
+                        continue
+                    }
                     self.musicProgress = self.liveMusicProgress
                     self.setMusicAdvancing(true)
                 }
@@ -438,15 +524,15 @@ final class ActionBarState {
     /// как пауза — иначе плеер нечем остановить, пока нет полноэкранного. Кино и книга
     /// открываются сразу на весь экран: «Смотреть» и «Читать» обещают фильм и текст,
     /// а не чип в баре.
-    func open(_ target: ShowcasePlayerTarget) {
+    func open(_ target: ShowcasePlayerTarget, queue list: [MusicNowPlaying] = [], at index: Int? = nil) {
         switch target {
         case .music(let item):
-            if mode == .music, music?.id == item.id {
+            if music?.id == item.id, isMiniPlayerVisible {
                 // Через тот же метод, что и кнопка: иначе тикер прогресса
                 // остался бы работать на паузе.
                 toggleMusicPlayback()
             } else {
-                startMusic(item)
+                startMusic(item, queue: list, at: index)
             }
         case .movie(let item):
             watch(item)
@@ -476,10 +562,15 @@ final class ActionBarState {
         audio { $0.seek(to: 0) }
     }
 
-    /// «Дальше» и дизлайк: следующий трек из очереди «Что дальше».
+    /// «Дальше» и дизлайк: следующий трек очереди; следующего нет — этот с начала.
+    /// Режим не трогаем: полноэкранный плеер открыт, бар под ним остаётся как был.
     func skipToNext() {
-        guard let next = MusicQueue.upcoming(after: music?.id).first else { return }
-        startMusic(next.nowPlaying)
+        if let next = nextTrack() {
+            queueIndex = next.index
+            switchTrack(next.item)
+        } else {
+            restartTrack()
+        }
     }
 
     /// Отметить играющий трек в «Любимом» коллекции или снять отметку.
