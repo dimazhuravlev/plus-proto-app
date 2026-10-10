@@ -75,7 +75,8 @@ struct PlaylistScreen: View {
             coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
             scrollOffset: scrollOffset,
             title: details.title,
-            collectionItem: collectionItem
+            collectionItem: collectionItem,
+            onShare: share
         ) {
             cover
         } person: {
@@ -100,6 +101,15 @@ struct PlaylistScreen: View {
             owner: details.owner,
             cover: entity.artwork
         )
+    }
+
+    /// «Поделиться»: карточка шеринга; владелец плейлиста — подпись, если известен.
+    private func share() {
+        ShareState.shared.present(.playlist(
+            title: details.title,
+            owner: details.owner,
+            cover: entity.artwork
+        ))
     }
 
     private var cover: some View {
