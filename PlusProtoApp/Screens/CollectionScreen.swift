@@ -763,9 +763,6 @@ enum CollectionReorderMotion {
     static let glassFade: Animation = .easeInOut(duration: glassFadeDuration)
     /// Подъём блока в руке — как просадка карточки, только вверх (`PressMotion`).
     static let liftScale: CGFloat = 1.02
-    /// Наклон блока в руке — по часовой, плавно на захвате и обратно на отпускании.
-    static let liftTilt: Double = 2
-    static let tilt: Animation = .smooth(duration: 0.25)
     /// Приглушённое состояние недоступного: кнопка навбара при одном блоке и «play» «Треков»
     /// в режиме — одно значение.
     static let disabledOpacity: Double = 0.3
@@ -792,7 +789,7 @@ enum CollectionReorderMotion {
     /// Фон блока в руке — скругление.
     static let glassRadius: CGFloat = PlusRadius.readerBlock
     /// Правка пользователя 2026-10-10: без боковых полей — фон и клип блока в руке
-    /// от края до края экрана (подъём 1.02 и наклон уводят края за кромку — это нормально).
+    /// от края до края экрана (подъём 1.02 уводит края за кромку — это нормально).
     static let glassInset: CGFloat = 0
     /// Клип вне захвата: шире блока ровно на радиус — дуги углов за кромкой, срезов нет.
     static let restClipInset: CGFloat = -glassRadius
@@ -963,14 +960,12 @@ private struct CollectionReorderBlock<Content: View>: View {
             .clipShape(CollectionReorderClip(inset: isHeld ? CollectionReorderMotion.glassInset : CollectionReorderMotion.restClipInset))
             .animation(glassAnimation(isHeld: isHeld), value: isHeld)
             .background { glass(isHeld: isHeld) }
-            // Распознаватель — на неподвижном слое блока, до сдвига, наклона и масштаба:
+            // Распознаватель — на неподвижном слое блока, до сдвига и масштаба:
             // хит-тест и координаты не зависят от того, где блок нарисован сейчас.
             .contentShape(.rect)
             .gesture(CollectionReorderPress(kind: kind, reorder: reorder, isActive: isReordering))
             .scaleEffect(isHeld && !reduceMotion ? CollectionReorderMotion.liftScale : 1)
             .animation(isHeld ? PressMotion.pressIn : PressMotion.release, value: isHeld)
-            .rotationEffect(.degrees(isHeld && !reduceMotion ? CollectionReorderMotion.liftTilt : 0))
-            .animation(CollectionReorderMotion.tilt, value: isHeld)
             .modifier(CollectionReorderShake(kind: kind))
             .modifier(CollectionReorderOffset(kind: kind))
             .zIndex(reorder.liftedKind == kind ? 1 : 0)
@@ -1015,7 +1010,7 @@ private struct CollectionReorderPress: UIGestureRecognizerRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         /// Вертикаль пальца в окне (глобальные координаты конвертера SwiftUI) на захвате и сейчас.
-        /// Окно не едет вместе с блоком, наклон и сдвиг блока на них не влияют.
+        /// Окно не едет вместе с блоком, сдвиг блока на них не влияет.
         private var startGlobalY: CGFloat = 0
         private var lastGlobalY: CGFloat = 0
         /// Прокрутка ленты на захвате: сдвиг блока — это сдвиг пальца в окне плюс то,
