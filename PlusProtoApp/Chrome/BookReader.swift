@@ -15,11 +15,12 @@ private enum BookReaderLayout {
     /// Абзацы разделены пустой строкой — в макете это пустой абзац высотой в строку.
     static let paragraphGap: CGFloat = lineHeight
 
-    /// Затемнение под шапкой: от верхней кромки (с выносом на 1pt, как в макете)
-    /// чёрный держится до 13 % высоты и сходит в ноль к низу.
-    static let scrimHeight: CGFloat = 164
+    /// Верхнее затемнение — `overlay bg` макетов: от верхней кромки (с выносом на 1pt)
+    /// чёрный держится до 12.981 % высоты и сходит в ноль к низу. Высота 80 в скрытой
+    /// обвязке (`2311:27488`, `2565:25233`) и 153 в показанной (`2565:25464`, 402×153).
     static let scrimTop: CGFloat = -1
     static let scrimSolid: CGFloat = 0.12981
+    static let scrimHiddenHeight: CGFloat = 80
     /// Прогрессивный блюр под затемнением (просьба пользователя 2026-10-03): текст,
     /// уходящий под шапку, не только темнеет, но и расплывается. Полоса блюра короче
     /// затемнения — правило проекта: иначе там, где блюр кончается, резкость
@@ -40,9 +41,14 @@ private enum BookReaderLayout {
     static let barGap: CGFloat = 8
     static let topBarButton: CGFloat = PlusMetrics.circleButton
     static let titleWidth: CGFloat = 155
-    /// Затемнение сверху при показанной обвязке `2565:25464`: 402×153, y −1,
-    /// чёрный до 12.981 % (в скрытой — 80, но у читалки свой, более длинный `scrim`).
+    /// Затемнение сверху при показанной обвязке `2565:25464`: 402×153, y −1.
     static let chromeTopGradientHeight: CGFloat = 153
+    /// Доля высоты скрытого затемнения от показанного: линейный градиент при сжатии
+    /// по вертикали остаётся тем же градиентом, поэтому 80 ↔ 153 — просто transform.
+    static var scrimHiddenScale: CGFloat { scrimHiddenHeight / chromeTopGradientHeight }
+    /// Размер пилюли мини-плеера в читалке `2565:25233`: 354 (поля 24 с обеих сторон,
+    /// рядом нет круга поиска, как в баре, где она 286).
+    static var musicExpandedWidth: CGFloat { PlusMetrics.designWidth - textInset * 2 }
     /// Затемнение снизу `2565:25526`: 331 от нижней кромки, стопы те же, что сверху.
     static let chromeBottomGradientHeight: CGFloat = 331
 
@@ -84,7 +90,9 @@ private enum BookReaderLayout {
     /// Первая строка в покое стоит в хвосте затемнения — на последних 25pt градиента,
     /// где он уже почти прозрачен: выше она тонула бы в чёрном, ниже оставляла бы
     /// под шапкой пустую полосу. Макет рисует колонку уже прокрученной, покоя в нём нет.
-    static var textTop: CGFloat { scrimTop + scrimHeight - lineHeight }
+    /// Константа (было `−1 + 164 − 24` при прежнем затемнении 164): положение текста
+    /// не выводится из высоты затемнения, которая теперь 80/153 по макету.
+    static let textTop: CGFloat = 139
 
     /// Мини-плеер музыки — `action bar` 402×60 с полями 24: круг 60 прижат вправо
     /// (`2565:25332` в `2311:27488`), низ на 40 от кромки (y 774).
@@ -252,6 +260,10 @@ struct BookReaderView: View {
         return clearance + BookReaderLayout.textTail
     }
 
+    /// Верхний слой под шапкой: блюр (всегда) и затемнение `overlay bg` — 80 в скрытой
+    /// обвязке, 153 в показанной. Затемнение нарисовано в 153 и в скрытом состоянии
+    /// сжато по вертикали от верхней кромки: смена состояния — transform, текст не
+    /// перекладывается. Анимация та же, что у обвязки.
     private var scrim: some View {
         ZStack(alignment: .top) {
             VariableBlurView(
@@ -259,6 +271,7 @@ struct BookReaderView: View {
                 direction: .blurredTopClearBottom
             )
             .frame(height: BookReaderLayout.scrimBlurHeight)
+            .offset(y: BookReaderLayout.scrimTop)
 
             LinearGradient(
                 stops: [
@@ -269,9 +282,12 @@ struct BookReaderView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
+            .frame(height: BookReaderLayout.chromeTopGradientHeight)
+            .scaleEffect(y: isChromeShown ? 1 : BookReaderLayout.scrimHiddenScale, anchor: .top)
+            .offset(y: BookReaderLayout.scrimTop)
+            .animation(chromeAnimation, value: isChromeShown)
         }
-        .frame(height: BookReaderLayout.scrimHeight, alignment: .top)
-        .offset(y: BookReaderLayout.scrimTop)
+        .frame(maxWidth: .infinity, maxHeight: BookReaderLayout.chromeTopGradientHeight, alignment: .top)
         .allowsHitTesting(false)
     }
 
@@ -292,32 +308,17 @@ struct BookReaderView: View {
         reduceMotion ? BookReaderMotion.chromeReduced : BookReaderMotion.chrome
     }
 
-    /// Затемнение 402×153 и верхняя панель — приходят сверху вместе.
+    /// Верхняя панель — приходит сверху за кромку экрана (затемнение под ней — `scrim`).
     private var chromeTop: some View {
-        ZStack(alignment: .top) {
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: BookReaderLayout.scrimSolid),
-                    .init(color: .black.opacity(0), location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: BookReaderLayout.chromeTopGradientHeight)
-            .offset(y: BookReaderLayout.scrimTop)
-            .allowsHitTesting(false)
-
-            topBar
-                .padding(.top, BookReaderLayout.topBarTop)
-                .padding(.horizontal, BookReaderLayout.topBarSide)
-        }
-        .frame(maxWidth: .infinity)
-        .offset(y: hiddenOffset(-BookReaderLayout.chromeTopGradientHeight))
-        .opacity(hiddenOpacity)
-        .animation(chromeAnimation, value: isChromeShown)
-        .allowsHitTesting(isChromeShown)
-        .accessibilityHidden(!isChromeShown)
+        topBar
+            .padding(.top, BookReaderLayout.topBarTop)
+            .padding(.horizontal, BookReaderLayout.topBarSide)
+            .frame(maxWidth: .infinity)
+            .offset(y: hiddenOffset(-(BookReaderLayout.topBarTop + BookReaderLayout.topBarButton)))
+            .opacity(hiddenOpacity)
+            .animation(chromeAnimation, value: isChromeShown)
+            .allowsHitTesting(isChromeShown)
+            .accessibilityHidden(!isChromeShown)
     }
 
     /// Затемнение 331 снизу (стопы те же, что сверху, повёрнуто на 180°) и прогрессивный
@@ -583,11 +584,13 @@ private struct ReaderMusicPlayer: View {
                 isLiked: actionBar.isMusicLiked,
                 onTogglePlay: { actionBar.toggleMusicPlayback() },
                 onToggleLike: { actionBar.toggleMusicLike() },
-                onExpand: handleTap
+                onExpand: handleTap,
+                expandedWidth: BookReaderLayout.musicExpandedWidth
             )
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
-            // левый уезжает, внутренности только проявляются.
-            .frame(width: isExpanded ? ActionBarGeometry.miniPlayerExpandedWidth : PlusMetrics.actionBarCompact)
+            // левый уезжает, внутренности только проявляются. Ширина — макетные 354
+            // (`2565:25233`): круга поиска рядом нет, левый край пилюли на 24.
+            .frame(width: isExpanded ? BookReaderLayout.musicExpandedWidth : PlusMetrics.actionBarCompact)
             .animation(ActionBarMotion.morph, value: isExpanded)
             // Выкинуть можно только круг: в пилюле под пальцем кнопки like/play и тап,
             // который ведёт в большой плеер. Вью после броска остаётся в дереве (убрать

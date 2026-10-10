@@ -1381,6 +1381,9 @@ struct MiniPlayerPill: View {
     let onTogglePlay: () -> Void
     let onToggleLike: () -> Void
     let onExpand: () -> Void
+    /// Ширина, по которой разложено содержимое. В баре рядом с пилюлей стоит круг
+    /// поиска (286); в читалке круга нет, и в макете `2565:25233` пилюля 354.
+    var expandedWidth: CGFloat = ActionBarGeometry.miniPlayerExpandedWidth
 
     /// Вращение обложки — см. `CoverSpin`.
     @State private var spin = CoverSpin()
@@ -1444,7 +1447,7 @@ struct MiniPlayerPill: View {
         .padding(.trailing, ActionBarGeometry.miniPlayerPaddingTrailing)
         // Раскладка по раскрытой ширине, а не по текущей — см. `miniPlayerExpandedWidth`.
         // Сжатую пилюлю лишнее просто не видит: его срезает капсула.
-        .frame(width: ActionBarGeometry.miniPlayerExpandedWidth, alignment: .leading)
+        .frame(width: expandedWidth, alignment: .leading)
     }
 
     private var cover: some View {
