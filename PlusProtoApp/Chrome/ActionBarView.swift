@@ -1196,6 +1196,8 @@ private struct TrailingSlot: View {
                     // плеер, и первый тап обязан его развернуть.
                     onExpand: {
                         if layout.isMiniPlayerCompact {
+                            // Разворот круга — отклик как у кнопок плеера (правка пользователя 2026-10-10).
+                            PlayerHaptics.tap()
                             actionBar.expandMiniPlayer()
                         } else {
                             actionBar.openMusicPlayer()
