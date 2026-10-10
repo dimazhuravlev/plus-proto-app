@@ -370,10 +370,15 @@ final class CollectionStore {
         }
         // Тост — только на «нравится» и «Позже»; скачивание тихое.
         if becameFavorite {
-            // Артист — фото вплотную к краю (`graphic=image`), остальное — обложка с наклоном.
+            // Артист — фото вплотную к краю (`graphic=image`), фильм и книга — прямоугольная
+            // обложка с наклоном, остальное — квадратная обложка с наклоном.
             var graphic = ToastGraphic.none
             if let artwork = record.artwork {
-                graphic = record.kind == .artist ? .image(artwork) : .cover(artwork)
+                switch record.kind {
+                case .artist: graphic = .image(artwork)
+                case .movie, .book: graphic = .poster(artwork)
+                case .track, .album, .playlist: graphic = .cover(artwork)
+                }
             }
             ToastCenter.shared.show(title: ToastCopy.randomAdded(), graphic: graphic, action: .openCollection)
         }
