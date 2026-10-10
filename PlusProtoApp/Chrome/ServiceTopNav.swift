@@ -48,6 +48,12 @@ enum ServiceTopNavLayout {
         endPoint: .bottom
     )
 
+    /// Иконка-аксессуар справа от табов — «Моё», `icon / change order` `2584:26578`
+    /// на кадре 375: табы кончаются на x 277, иконка 20 стоит на x 279 (зазор 2), до
+    /// кадра аватара 311 — 12. Голая иконка без подложки; зона тапа шире — в вызывающем.
+    static let accessoryLeading: CGFloat = 2
+    static let accessoryTrailing: CGFloat = 12
+
     static let avatarFrame: CGFloat = 48
     static let avatarSize: CGFloat = 40
     static let auraWidth: CGFloat = 2
@@ -104,12 +110,20 @@ struct ServiceTopNav: View {
     var showsTopShade = true
     /// Аватар профиля — из макета навигации (`userpics` `2455:75985`), кадр 40pt на ×3.
     var avatar: ArtworkSource = .asset(ProfileMock.avatar)
+    /// Иконка-кнопка между табами и аватаром (20 × 20, макет «Моего» `2584:26578`):
+    /// у остальных экранов её нет и раскладка прежняя.
+    var trailingAccessory: AnyView? = nil
 
     @Namespace private var pill
 
     var body: some View {
         HStack(spacing: 0) {
             tabs
+            if let trailingAccessory {
+                trailingAccessory
+                    .padding(.leading, ServiceTopNavLayout.accessoryLeading)
+                    .padding(.trailing, ServiceTopNavLayout.accessoryTrailing)
+            }
             ProfileAvatarButton(avatar: avatar)
                 .padding(.trailing, ServiceTopNavLayout.side)
         }

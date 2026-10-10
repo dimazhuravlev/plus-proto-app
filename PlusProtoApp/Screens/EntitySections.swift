@@ -41,8 +41,13 @@ enum EntitySectionLayout {
 /// альбомы». У плоских списков (фильмы режиссёра, книги писателя — список и есть
 /// весь раздел) шеврона нет: вести некуда.
 struct EntitySectionHeader: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let title: String
     var showsChevron = true
+    /// Шеврон уступил место иконке-хвату режима порядка («Моё») — гаснет кросс-попом,
+    /// место за ним остаётся.
+    var isChevronCollapsed = false
     /// Высота строки заголовка. У каруселей главной Кинопоиска она 24 — Headline M
     /// при 100 % (`carousel / Movies`, шапка 52 = 16 + 24 + 12).
     var lineHeight: CGFloat = EntitySectionLayout.headerLine
@@ -62,6 +67,9 @@ struct EntitySectionHeader: View {
                     .scaleEffect(x: -1)
                     .foregroundStyle(Color.fillSubtitle)
                     .offset(y: PlusMetrics.headerChevronDrop)
+                    .opacity(isChevronCollapsed ? 0 : 1)
+                    .scaleEffect(isChevronCollapsed && !reduceMotion ? ActionBarMotion.iconSwapScale : 1)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap, value: isChevronCollapsed)
             }
         }
         .frame(height: lineHeight)

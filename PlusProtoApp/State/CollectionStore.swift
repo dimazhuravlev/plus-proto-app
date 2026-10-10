@@ -275,13 +275,29 @@ final class CollectionStore {
 
     private static let storageKey = "collection"
 
+    /// Порядок блоков (видов) на каждой полке — его задаёт пользователь драг-н-дропом
+    /// в режиме редактирования «Моего». Свой у каждой полки, ключ — `Shelf.rawValue`.
+    /// Лежит отдельным ключом `collectionKindsOrder.<полка>`: массив `Kind.rawValue`.
+    private var kindsOrders: [Int: [CollectionItem.Kind]] = [:]
+
+    private static func kindsOrderKey(_ shelf: Shelf) -> String {
+        "collectionKindsOrder.\(shelf.rawValue)"
+    }
+
     private init() {
         #if DEBUG
         // `-debugResetCollection 1` — начать со стартового набора.
         if UserDefaults.standard.bool(forKey: "debugResetCollection") {
             UserDefaults.standard.removeObject(forKey: Self.storageKey)
+            for shelf in Shelf.allCases {
+                UserDefaults.standard.removeObject(forKey: Self.kindsOrderKey(shelf))
+            }
         }
         #endif
+        for shelf in Shelf.allCases {
+            let raw = UserDefaults.standard.stringArray(forKey: Self.kindsOrderKey(shelf)) ?? []
+            kindsOrders[shelf.rawValue] = raw.compactMap(CollectionItem.Kind.init(rawValue:))
+        }
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let saved = try? JSONDecoder().decode([CollectionItem].self, from: data) {
             items = saved.map { $0.repairingPoster().repairingPlaylistRoute() }
@@ -314,6 +330,22 @@ final class CollectionStore {
             .filter { $0.0.kind == kind }
             .sorted { $0.1 > $1.1 }
             .map(\.0)
+    }
+
+    // MARK: Порядок блоков
+
+    /// Порядок видов на полке: сохранённый, а виды, которых в нём нет, — в конце
+    /// в порядке `Kind.allCases`. Всегда полный список; пустые виды экран отфильтрует сам.
+    func kindsOrder(on shelf: Shelf) -> [CollectionItem.Kind] {
+        let saved = kindsOrders[shelf.rawValue] ?? []
+        return saved + CollectionItem.Kind.allCases.filter { !saved.contains($0) }
+    }
+
+    func setKindsOrder(_ order: [CollectionItem.Kind], on shelf: Shelf) {
+        var seen = Set<CollectionItem.Kind>()
+        let unique = order.filter { seen.insert($0).inserted }
+        kindsOrders[shelf.rawValue] = unique
+        UserDefaults.standard.set(unique.map(\.rawValue), forKey: Self.kindsOrderKey(shelf))
     }
 
     // MARK: Отметки
