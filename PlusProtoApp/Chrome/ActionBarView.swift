@@ -113,6 +113,9 @@ enum ActionBarGeometry {
     static let miniPlayerCoverGap: CGFloat = 8
     static let miniPlayerActionsGap: CGFloat = 18
     static let bookChipSize = CGSize(width: 44, height: 60)
+    /// Скругление чипа книги — на 1 больше `PlusRadius.bookChip` (правка пользователя 2026-10-10);
+    /// токен делит внутренний кадр чипа кино, его не трогаем.
+    static let bookChipRadius: CGFloat = PlusRadius.bookChip + 1
     static let bookCoverSize = CGSize(width: 36, height: 52)
     /// AABB повёрнутого чипа книги — ширина для раскладки HStack.
     static let bookChipAABBWidth: CGFloat = 48.078
@@ -1626,11 +1629,11 @@ private struct BookChip: View {
             ArtworkImage(source: cover)
                 .scaledToFill()
                 .frame(width: ActionBarGeometry.bookCoverSize.width, height: ActionBarGeometry.bookCoverSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
-                .coverBorder(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
+                .coverBorder(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
         }
         .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
-        .chromeGlass(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+        .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
         .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
         .frame(width: ActionBarGeometry.bookChipAABBWidth, height: PlusMetrics.actionBarHeight)
     }
