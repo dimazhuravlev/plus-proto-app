@@ -28,10 +28,11 @@ enum CollectionLayout {
     /// Название карточки — до двух строк, деталь (год, автор, исполнитель) — в одну
     /// (правка пользователя 2026-10-04)
     static let titleLines = 2
-    /// Высоты лент — карточка с подписью на пределе строк: название и деталь у кино,
-    /// книг и альбомов, одно название у исполнителей и плейлистов
-    static var posterRowHeight: CGFloat { posterHeight + captionGap + 3 * captionLine }
-    static var bookRowHeight: CGFloat { book.frameSize(coverWidth: 0).height + captionGap + 3 * captionLine }
+    /// Высоты лент — карточка с подписью на пределе строк: название и деталь у
+    /// альбомов, одно название у исполнителей и плейлистов. У кино и книг подписей нет
+    /// вовсе (правка пользователя 2026-10-10) — лента ровно в обложку.
+    static var posterRowHeight: CGFloat { posterHeight }
+    static var bookRowHeight: CGFloat { book.frameSize(coverWidth: 0).height }
     static var squareRowHeight: CGFloat { cardWidth + captionGap + 3 * captionLine }
     static var titleOnlyRowHeight: CGFloat { cardWidth + captionGap + 2 * captionLine }
 
@@ -247,7 +248,8 @@ private struct CollectionCarousel<Card: View>: View {
 
 // MARK: - Карточки
 
-/// Фильм — постер 86 × 129 r8, под ним название и год.
+/// Фильм — постер 86 × 129 r8, без подписи (правка пользователя 2026-10-10): название
+/// читает VoiceOver.
 private struct CollectionPosterCard: View {
     let item: CollectionItem
 
@@ -256,21 +258,18 @@ private struct CollectionPosterCard: View {
 
     var body: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: CollectionLayout.captionGap) {
-                CollectionArtwork(
-                    source: item.artwork,
-                    width: CollectionLayout.cardWidth,
-                    height: CollectionLayout.posterHeight,
-                    shape: RoundedRectangle(cornerRadius: CollectionLayout.cardRadius, style: .continuous)
-                )
-                .collectionZoomSource(item.route, in: zoom)
-
-                CollectionCaption(title: item.title, subtitle: item.subtitle)
-            }
+            CollectionArtwork(
+                source: item.artwork,
+                width: CollectionLayout.cardWidth,
+                height: CollectionLayout.posterHeight,
+                shape: RoundedRectangle(cornerRadius: CollectionLayout.cardRadius, style: .continuous)
+            )
+            .collectionZoomSource(item.route, in: zoom)
             .frame(width: CollectionLayout.cardWidth, alignment: .leading)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+        .accessibilityLabel(item.title)
         .contextMenu { CollectionItemMenu(item: item) }
     }
 
@@ -280,7 +279,8 @@ private struct CollectionPosterCard: View {
     }
 }
 
-/// Книга — наша проекция с обложкой 128 (`BookFigure`), под ней название и автор.
+/// Книга — наша проекция с обложкой 128 (`BookFigure`), без подписи (правка
+/// пользователя 2026-10-10): название читает VoiceOver.
 private struct CollectionBookCard: View {
     let item: CollectionItem
 
@@ -292,20 +292,17 @@ private struct CollectionBookCard: View {
         let coverWidth = geometry.coverWidth(aspect: item.aspect)
         let width = geometry.frameSize(coverWidth: coverWidth).width
         Button(action: open) {
-            VStack(alignment: .leading, spacing: CollectionLayout.captionGap) {
-                BookFigure(geometry: geometry, coverWidth: coverWidth) {
-                    if let artwork = item.artwork {
-                        SkeletonArtwork(source: artwork)
-                    }
+            BookFigure(geometry: geometry, coverWidth: coverWidth) {
+                if let artwork = item.artwork {
+                    SkeletonArtwork(source: artwork)
                 }
-                .collectionZoomSource(item.route, in: zoom)
-
-                CollectionCaption(title: item.title, subtitle: item.subtitle)
             }
+            .collectionZoomSource(item.route, in: zoom)
             .frame(width: width, alignment: .leading)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+        .accessibilityLabel(item.title)
         .contextMenu { CollectionItemMenu(item: item) }
     }
 
