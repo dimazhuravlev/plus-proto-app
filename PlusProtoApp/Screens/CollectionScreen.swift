@@ -801,6 +801,9 @@ enum CollectionReorderMotion {
     /// видов поле не нужно (у кино и книг оно и так есть внутри блока). Раскладку это
     /// не меняет: фон и клип рисуются ниже рамки блока, соседи на месте.
     static let glassBottomExtra: CGFloat = 16
+    /// Правка пользователя 2026-10-10: у «Треков» поле поменьше — 8 (у блока свой нижний
+    /// отступ 8, `tracksBlockBottom`).
+    static let tracksGlassBottomExtra: CGFloat = 8
     /// Клип вне захвата: шире блока ровно на радиус — дуги углов за кромкой, срезов нет.
     static let restClipInset: CGFloat = -glassRadius
 }
@@ -984,11 +987,12 @@ private struct CollectionReorderBlock<Content: View>: View {
             .zIndex(reorder.liftedKind == kind ? 1 : 0)
     }
 
-    /// Сколько фон и клип выходят ниже рамки блока: только у плейлистов.
+    /// Сколько фон и клип выходят ниже рамки блока: у плейлистов 16, у «Треков» 8.
     private var bottomExtra: CGFloat {
         switch kind {
         case .playlist: CollectionReorderMotion.glassBottomExtra
-        case .movie, .book, .track, .artist, .album: 0
+        case .track: CollectionReorderMotion.tracksGlassBottomExtra
+        case .movie, .book, .artist, .album: 0
         }
     }
 
