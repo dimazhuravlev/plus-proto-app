@@ -43,9 +43,6 @@ private enum BookReaderLayout {
     static let titleWidth: CGFloat = 155
     /// Затемнение сверху при показанной обвязке `2565:25464`: 402×153, y −1.
     static let chromeTopGradientHeight: CGFloat = 153
-    /// Доля высоты скрытого затемнения от показанного: линейный градиент при сжатии
-    /// по вертикали остаётся тем же градиентом, поэтому 80 ↔ 153 — просто transform.
-    static var scrimHiddenScale: CGFloat { scrimHiddenHeight / chromeTopGradientHeight }
     /// Размер пилюли мини-плеера в читалке `2565:25233`: 354 (поля 24 с обеих сторон,
     /// рядом нет круга поиска, как в баре, где она 286).
     static var musicExpandedWidth: CGFloat { PlusMetrics.designWidth - textInset * 2 }
@@ -182,6 +179,12 @@ struct BookReaderView: View {
     @State private var isScrubbing = false
     @Environment(CollectionStore.self) private var collection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if DEBUG
+    /// `-debugReaderScroll <pt>`: смещение колонки текста; 0 — флага нет. Позиция
+    /// привязывается к прокрутке, только когда флаг задан: в обычном запуске привязки нет.
+    @State private var debugScrollPosition = ScrollPosition()
+    private static let debugScrollOffset = UserDefaults.standard.double(forKey: "debugReaderScroll")
+    #endif
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -210,6 +213,17 @@ struct BookReaderView: View {
             totalWords = text.pages.reduce(0) { $0 + $1.split(whereSeparator: \.isWhitespace).count }
         }
         #if DEBUG
+        // `-debugReaderScroll <pt>`: через 1с после готовности текста прокрутить колонку
+        // на `<pt>` без анимации — чтобы текст лежал под затемнением (в начале книги под
+        // ним текста нет и смена высоты затемнения на записи не видна). Идемпотентно:
+        // под `.fullScreen` задача может стартовать заново.
+        .task(id: text.isReady) {
+            let offset = Self.debugScrollOffset
+            guard offset > 0, text.isReady else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            debugScrollPosition.scrollTo(y: offset)
+        }
         // `-debugReaderChrome 1`: через 2с показать обвязку, через 5с скрыть — тот же
         // код, что у тапа по тексту.
         .task {
@@ -272,6 +286,9 @@ struct BookReaderView: View {
             .animation(BookReaderMotion.textAppear, value: text.isReady)
         }
         .scrollIndicators(.hidden)
+        #if DEBUG
+        .scrollPosition(Self.debugScrollOffset > 0 ? $debugScrollPosition : .constant(ScrollPosition()))
+        #endif
         // Отступы колонки отмеряются от физических кромок, как в макете, —
         // системные поля безопасной зоны поверх них не нужны.
         .ignoresSafeArea()
@@ -310,9 +327,11 @@ struct BookReaderView: View {
     }
 
     /// Верхний слой под шапкой: блюр (всегда) и затемнение `overlay bg` — 80 в скрытой
-    /// обвязке, 153 в показанной. Затемнение нарисовано в 153 и в скрытом состоянии
-    /// сжато по вертикали от верхней кромки: смена состояния — transform, текст не
-    /// перекладывается. Анимация та же, что у обвязки.
+    /// обвязке, 153 в показанной. Правка пользователя 2026-10-10: затемнение сверху
+    /// меняется вместе с обвязкой — явной анимируемой высотой от верхней кромки, одной
+    /// анимацией с панелью и нижним затемнением. Слой лежит соседом в корневом `ZStack`
+    /// и держит свой кадр `maxHeight: 153`, так что смена высоты текст и обвязку
+    /// не перекладывает.
     private var scrim: some View {
         ZStack(alignment: .top) {
             VariableBlurView(
@@ -331,8 +350,12 @@ struct BookReaderView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: BookReaderLayout.chromeTopGradientHeight)
-            .scaleEffect(y: isChromeShown ? 1 : BookReaderLayout.scrimHiddenScale, anchor: .top)
+            .frame(
+                height: isChromeShown
+                    ? BookReaderLayout.chromeTopGradientHeight
+                    : BookReaderLayout.scrimHiddenHeight,
+                alignment: .top
+            )
             .offset(y: BookReaderLayout.scrimTop)
             .animation(chromeAnimation, value: isChromeShown)
         }
