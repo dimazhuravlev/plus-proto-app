@@ -275,12 +275,12 @@ struct ShowcasePromo: View {
             }
             // Набор собрался заново (моки → живые, под заставкой) — центральный айтем
             // остаётся в центре, если он есть в новом наборе, иначе — с начала.
-            .onChange(of: items.map(\.id)) { old, new in
+            .onChange(of: items.map(\.id)) { _, new in
                 guard !isEditingSet else {
                     isEditingSet = false
                     return
                 }
-                recenter(old: old, new: new)
+                recenter(new: new)
             }
             // Размытые фоны — заранее, на весь набор: фон берёт готовый растр с первого кадра.
             .task(id: items.map(\.promoArtwork)) {
@@ -506,7 +506,7 @@ struct ShowcasePromo: View {
     }
 
     /// Набор сменил каталог — центральный айтем остаётся в центре, если он в наборе.
-    private func recenter(old: [String], new: [String]) {
+    private func recenter(new: [String]) {
         guard !new.isEmpty else { return }
         // Центральный айтем — по ключу слота: каталог уже сменил набор, и номер места
         // в новом наборе указывал бы на чужой айтем.
