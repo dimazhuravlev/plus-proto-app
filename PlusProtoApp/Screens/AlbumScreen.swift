@@ -151,7 +151,8 @@ struct AlbumScreen: View {
             coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
             scrollOffset: scrollOffset,
             title: details.title,
-            collectionItem: collectionItem
+            collectionItem: collectionItem,
+            onShare: share
         ) {
             cover
         } person: {
@@ -186,6 +187,18 @@ struct AlbumScreen: View {
             title: details.title,
             subtitle: details.artist.isEmpty ? entity.subtitle : details.artist,
             artwork: entity.artwork
+        ))
+    }
+
+    /// «Поделиться»: карточка шеринга из того, что экран уже знает; детали не пришли —
+    /// название и обложка из `entity`, подпись пустая.
+    private func share() {
+        ShareState.shared.present(.album(
+            title: details.title,
+            artist: details.artist,
+            year: details.year,
+            cover: entity.artwork,
+            artistPicture: details.artistPicture
         ))
     }
 

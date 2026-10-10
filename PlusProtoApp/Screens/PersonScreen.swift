@@ -107,6 +107,11 @@ struct PersonScreen: View {
         return store.photo
     }
 
+    /// «Поделиться» исполнителем: имя и фото; карточка — круглая, без мета-строки.
+    private func shareArtist() {
+        ShareState.shared.present(.artist(name: entity.title, photo: photo))
+    }
+
     /// Оттяг вниз. Скролл вверх шапку не трогает — она обычным образом уезжает.
     private var pull: CGFloat { max(0, -scrollOffset) }
 
@@ -129,7 +134,8 @@ struct PersonScreen: View {
                 actions: [.like, .share],
                 showsControls: role == .artist,
                 // Исполнитель — в коллекции «Моё»: «нравится» кладёт его в «Любимое».
-                collectionItem: role == .artist ? .artist(entity) : nil
+                collectionItem: role == .artist ? .artist(entity) : nil,
+                onShare: role == .artist ? shareArtist : nil
             ) {
                 EmptyView()
             } primary: {

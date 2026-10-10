@@ -271,15 +271,37 @@ private struct ToastPresenter: View {
 // MARK: - Корень окна
 
 /// SwiftUI-корень `OverlayWindow`: всё, что должно лежать поверх экрана фильма и плееров.
-/// Сейчас тост; шеринг встанет сюда же.
+/// Снизу вверх: экран шеринга (пока он открыт, окно ловит все касания — `ShareState`),
+/// над ним тост.
 struct OverlayLayer: View {
+    private let share = ShareState.shared
+
     var body: some View {
         ZStack {
+            if let entity = share.presented {
+                ShareOverlay(entity: entity)
+                    .id(share.presentationID)
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
             ToastPresenter()
+                .zIndex(2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if DEBUG
         // `-debugToast 1` — тост с обложкой через 2 с и тост ✓ без обложки через 6 с.
+        // `-debugShare 1` — экран шеринга альбома через 2 с.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugShare") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            ShareState.shared.present(.album(
+                title: "Videotape",
+                artist: "Tame Impala",
+                year: "2026",
+                cover: .asset("mockAlbumCover"),
+                artistPicture: .asset("mockAvatar")
+            ))
+        }
         .task {
             guard UserDefaults.standard.bool(forKey: "debugToast") else { return }
             try? await Task.sleep(for: .seconds(2))
