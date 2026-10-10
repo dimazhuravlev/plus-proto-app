@@ -375,6 +375,14 @@ struct ActionBarView: View {
             }
         }
         .task {
+            // `-debugTrackEnd 1` — конец превью через 3 с после старта: следующий трек
+            // очереди тем же путём, что от звука, — ждать 30 с иначе незачем.
+            guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugTrackEnd") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            actionBar.musicTrackDidEnd()
+        }
+        .task {
             // `-debugTapChip 1` — тап по чипу кино или книги: киноплеер и читалку
             // из бара иначе не открыть, тапнуть по симулятору из шелла нечем.
             // Пара к `-debugActionBar movie|book`. Задержка — с запасом на заставку.
@@ -1196,6 +1204,8 @@ private struct TrailingSlot: View {
                     // плеер, и первый тап обязан его развернуть.
                     onExpand: {
                         if layout.isMiniPlayerCompact {
+                            // Разворот круга — отклик как у кнопок плеера (правка пользователя 2026-10-10).
+                            PlayerHaptics.tap()
                             actionBar.expandMiniPlayer()
                         } else {
                             actionBar.openMusicPlayer()

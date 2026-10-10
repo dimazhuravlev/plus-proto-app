@@ -91,7 +91,7 @@ private struct MyVibeHero: View {
     }
 
     private var isPlaying: Bool {
-        actionBar.mode == .music && MyVibeTracks.isVibe(actionBar.music?.id) && actionBar.isMusicPlaying
+        actionBar.isMiniPlayerVisible && MyVibeTracks.isVibe(actionBar.music?.id) && actionBar.isMusicPlaying
     }
 
     var body: some View {
