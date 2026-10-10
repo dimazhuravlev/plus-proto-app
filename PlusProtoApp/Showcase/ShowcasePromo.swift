@@ -276,8 +276,12 @@ struct ShowcasePromo: View {
             }
             .onAppear {
                 scrollProxy = proxy
+                trace("appear")
                 scheduleReveal()
             }
+            #if DEBUG
+            .onChange(of: pageID) { _, _ in trace("pageID") }
+            #endif
             // Набор собрался заново (моки → живые, под заставкой) — центральный айтем
             // остаётся в центре, если он есть в новом наборе, иначе — с начала.
             .onChange(of: items.map(\.id)) { _, new in
@@ -487,6 +491,7 @@ struct ShowcasePromo: View {
             change()
             editAnchor = pageID
         }
+        trace("edit")
     }
 
     /// После перестановки набора раскладка сдвигается на шаг (вставка перед центром), а
@@ -494,6 +499,7 @@ struct ShowcasePromo: View {
     /// якорь, когда `items` и раскладка уже новые; мгновенной транзакцией.
     private func pinToEditAnchor() {
         guard let anchor = editAnchor else { return }
+        trace("pin anchor=\(anchor.copy)/\(anchor.item)")
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant) {
@@ -524,6 +530,22 @@ struct ShowcasePromo: View {
             page = new.count + index
             scroll.position = CGFloat(new.count + index)
             savedIndex = index
+            editAnchor = pageID
+        }
+        trace("recenter new=\(new.count) index=\(index)")
+        // Диагноз (2026-10-10, задача 16). Витрина публикует промо порциями (кино, музыка,
+        // книги — `publishPromo`), и набор меняется уже после монтирования слайдера: число
+        // айтемов в копии растёт, и центральный айтем во второй копии уезжает на другое
+        // место ряда. До f519c7e место было числом, `page` менялся, и биндинг двигал ленту.
+        // С ключом слота `(копия, id)` ключ центрального айтема тот же — команды скролла нет,
+        // лента остаётся на старом offset и показывает в центре соседа, а `pageID` указывает
+        // на сдвинутого. Первое ✕ и `pinToEditAnchor` выравнивали их скачком. Ставим ленту
+        // на ключ явно, когда раскладка новая, — как после перестановки набора.
+        pinToEditAnchor()
+        Task { @MainActor in
+            try? await Task.sleep(for: ShowcasePromoMotion.editSettle)
+            guard removal == nil, !isEditingSet else { return }
+            pinToEditAnchor()
         }
         scheduleReveal()
     }
@@ -538,6 +560,7 @@ struct ShowcasePromo: View {
     private func placeIfNeeded(at position: CGFloat, proxy: ScrollViewProxy) {
         guard !isPlaced, let target = pageID, let place = page else { return }
         isPlaced = true
+        trace("place position=\(position) place=\(place)")
         guard abs(position - CGFloat(place)) > 0.01 else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
@@ -552,6 +575,7 @@ struct ShowcasePromo: View {
         let index = Self.wrap(current, count)
         savedIndex = index
         let middle = count + index
+        trace("scroll idle current=\(current) middle=\(middle)")
         guard current != middle else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
@@ -581,6 +605,16 @@ struct ShowcasePromo: View {
 
     private static func wrap(_ index: Int, _ count: Int) -> Int {
         ((index % count) + count) % count
+    }
+
+    /// `-debugPromoTrace 1` — события ленты и состояние в консоль: кто и когда двигает
+    /// `pageID`, чтобы сверить его с видимым центром (`scroll.position`).
+    private func trace(_ event: String) {
+        #if DEBUG
+        guard UserDefaults.standard.bool(forKey: "debugPromoTrace") else { return }
+        let slot = pageID.map { "\($0.copy)/\($0.item)" } ?? "nil"
+        print("[promo] \(event) pageID=\(slot) page=\(page.map(String.init) ?? "nil") position=\(scroll.position) count=\(liveItems.count)")
+        #endif
     }
 }
 
