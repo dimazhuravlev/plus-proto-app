@@ -29,6 +29,8 @@ struct DebugMenuScreen: View {
     @AppStorage(MusicAudio.volumeKey) private var musicVolume = MusicAudio.defaultVolume
     /// Затемнение фона под стеклом хрома (`ChromeGlass`), по умолчанию 40 %.
     @AppStorage(ChromeGlass.dimKey) private var glassDim = ChromeGlass.defaultDim
+    /// Белая иконка активного таба без свечения — ключ `tabActiveWhite` (`TabStyleDebug`).
+    @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActiveTab = false
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
@@ -77,6 +79,15 @@ struct DebugMenuScreen: View {
                     )
                     .padding(.horizontal, ProfileLayout.side)
                     note("Чёрный слой под заливкой поиска, плееров и табов: на чёрном фоне не виден, светлые обложки под стеклом приглушает. Меняется на лету.")
+
+                    title("Таббар")
+                    toggleIsland(
+                        "Активный таб без свечения",
+                        isOn: $whiteActiveTab,
+                        accessibility: "Активный таб: белая иконка без свечения"
+                    )
+                    .padding(.horizontal, ProfileLayout.side)
+                    note("Активный таб — белая иконка, без фиолетового свечения. Проверка вида, сохраняется между запусками.")
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)
@@ -136,6 +147,25 @@ struct DebugMenuScreen: View {
                 .tint(Color.moviesAccent)
                 .accessibilityLabel(accessibility)
         }
+        .padding(.horizontal, ProfileLayout.cellHorizontal)
+        .padding(.vertical, ProfileLayout.cellVertical)
+        .padding(.vertical, ProfileLayout.islandPadding)
+        .background(
+            RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
+                .fill(Color.fillNine)
+        )
+    }
+
+    /// Островок-переключатель той же формы, что остальные: подпись `textM` и `Toggle`
+    /// акцентного цвета, поля — как у ячеек профиля.
+    private func toggleIsland(_ label: String, isOn: Binding<Bool>, accessibility: String) -> some View {
+        Toggle(isOn: isOn) {
+            Text(label)
+                .plusText(.textM, .medium)
+                .foregroundStyle(Color.fillOne)
+        }
+        .tint(Color.moviesAccent)
+        .accessibilityLabel(accessibility)
         .padding(.horizontal, ProfileLayout.cellHorizontal)
         .padding(.vertical, ProfileLayout.cellVertical)
         .padding(.vertical, ProfileLayout.islandPadding)
