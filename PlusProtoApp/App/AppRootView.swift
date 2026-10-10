@@ -70,6 +70,30 @@ struct AppRootView: View {
         // Слой «поверх всего» (тост, дальше шеринг) — отдельное окно: экран фильма и плееры
         // лежат выше корня, оверлей в этом `ZStack` под ними не виден. См. `OverlayWindow`.
         .background { OverlayWindowHost() }
+        // Тап по тосту «добавлено в Моё» открывает «Моё» откуда угодно. Окно тоста окружения
+        // корня не видит, поэтому корень отдаёт центру замыкание (идемпотентно: перезапись того же).
+        .onAppear {
+            ToastCenter.shared.openCollection = { [navigation, actionBar, keyboard, search] in
+                // 1. Поиск: как тап по затемнению (`SearchLayers`); `dropSuspension` обязателен,
+                // иначе `SearchNavigationSync` вернёт выдачу.
+                if keyboard.isUp { keyboard.dismissSmoothly() }
+                actionBar.isSearchFocused = false
+                search.isBrowsing = false
+                search.dropSuspension()
+                search.collapse()
+                // 2. Экран шеринга лежит в окне тоста, сам себя не закроет.
+                if ShareState.shared.presented != nil { ShareState.shared.dismissImmediately() }
+                // 3. Плееры презентует UIKit поверх верхнего контроллера. Если под ними слой фильма
+                // или профиль — их снимет `showRoot`, и вместе с ними вся стопка: второй `dismiss`
+                // разом дал бы «dismiss is in progress». Иначе плееры закрываем сами.
+                if navigation.coveredRoute == nil, !navigation.isProfileShown {
+                    actionBar.closeAllPlayers()
+                }
+                // 4. Таб — мгновенно, без анимации; слои уходят штатно.
+                navigation.showRoot(of: .collection)
+                TabBarMotion.tapHaptic()
+            }
+        }
         // Выше всего, включая плеер: пока витрина собирается, показывать нечего
         // и трогать нечего. Уходит одной прозрачностью — см. `SplashTiming.fade`.
         .overlay {

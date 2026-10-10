@@ -72,29 +72,97 @@ enum ToastCopy {
     }
 }
 
+// MARK: - Геометрия
+
+/// Размеры компонента `toast` из 🧩 Mobile · Library (файл `b8maDlvYFFs2vagJxwxc4A`,
+/// набор вариантов `3350:51117`, замер с инстансов `RTL=off`). Общее для всех вариантов:
+/// высота 56, пилюля, `max-width 280`, фон `Fill/Nine` + backdrop-blur 35 (CSS), бордер
+/// 0.66 `Fill/Nine`, текст Text S·13/Medium (16) `Fill/One`, кнопка — круг 32
+/// (padding 8 + иконка 16) `Buttons/Secondary`.
+enum ToastLayout {
+    static let height: CGFloat = 56
+    static let maxWidth: CGFloat = 280
+    /// Зазор между текстом и кнопкой (и между иконкой и текстом).
+    static let gap: CGFloat = 12
+    static let buttonSize: CGFloat = 32
+    static let buttonIcon: CGFloat = 16
+    /// Правый отступ: с кнопкой `button=on` — 12, без неё — 24 (`3350:51042`, `3350:66601`).
+    static let trailingWithButton: CGFloat = 12
+    static let trailingNoButton: CGFloat = 24
+
+    /// `graphic=image`, `3350:51044`: квадрат 83 вплотную к левому краю, обрезан пилюлей
+    /// (поэтому видна верхняя часть картинки); текст — после него без зазора.
+    static let imageSize: CGFloat = 83
+    static let imageTextInset: CGFloat = imageSize + PlusMetrics.hairline
+
+    /// `graphic=cover`, `3350:51043`: слева 14; рамка 35.17 вокруг обложки 32 r4,
+    /// повёрнутой на 6° (32·(cos 6° + sin 6°)); зазор до текста 8; тень 0 1 6 чёрный 20 %.
+    static let coverLeading: CGFloat = 14
+    static let coverFrame: CGFloat = 35.17
+    static let coverSide: CGFloat = 32
+    static let coverRadius: CGFloat = 4
+    static let coverGap: CGFloat = 8
+    static let coverShadowRadius: CGFloat = 6
+    static let coverShadowY: CGFloat = 1
+
+    /// `graphic=icon`, `3350:51042` / `3350:66556`: слева 16, слот иконки 24, зазор 12.
+    /// Глиф `iconDone` нарисован на холсте 20×20 и стоит по центру слота.
+    static let iconLeading: CGFloat = 16
+    static let iconSlot: CGFloat = 24
+    static let iconGlyph: CGFloat = 20
+
+    /// `graphic=none`, `3350:66601` / `3350:66621`: слева 24.
+    static let noneLeading: CGFloat = 24
+}
+
 // MARK: - Вид
 
-/// Пилюля тоста: обложка, фраза, кнопка-шеврон (визуальная, как в MusicPlayer).
+/// Пилюля тоста по компоненту `toast` из Library: графика слева (обложка / картинка /
+/// иконка / ничего), фраза до двух строк, кнопка-шеврон — только если у тоста есть действие.
 struct ToastView: View {
     let config: ToastConfig
     var coverRotation: Double = ToastMotion.coverRestRotation
     var coverOffsetY: CGFloat = 0
 
+    private var hasButton: Bool { config.action != nil }
+
+    private var leadingInset: CGFloat {
+        switch config.graphic {
+        case .image: ToastLayout.imageTextInset
+        case .cover: ToastLayout.coverLeading
+        case .icon: ToastLayout.iconLeading
+        case .none: ToastLayout.noneLeading
+        }
+    }
+
+    private var trailingInset: CGFloat {
+        hasButton ? ToastLayout.trailingWithButton : ToastLayout.trailingNoButton
+    }
+
+    /// Места под фразу: от `max-width` вычитаем всё остальное в ряду — раскладка от
+    /// констант, а не от измеренных размеров.
+    private var textMaxWidth: CGFloat {
+        var width = ToastLayout.maxWidth - leadingInset - trailingInset
+        if hasButton { width -= ToastLayout.gap + ToastLayout.buttonSize }
+        switch config.graphic {
+        case .cover: width -= ToastLayout.coverFrame + ToastLayout.coverGap
+        case .icon: width -= ToastLayout.iconSlot + ToastLayout.gap
+        case .image, .none: break
+        }
+        return width
+    }
+
     var body: some View {
-        HStack(spacing: 8) {
-            if let cover = config.cover {
-                // Кадр задаёт распорка, картинка — `scaledToFill` в overlay (см. CLAUDE.md).
-                Color.clear
-                    .frame(width: 32, height: 32)
-                    .overlay { ArtworkImage(source: cover).scaledToFill() }
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
-                    }
-                    .rotationEffect(.degrees(coverRotation))
-                    .offset(y: coverOffsetY)
-                    .transition(.opacity)
+        HStack(spacing: 0) {
+            switch config.graphic {
+            case .cover(let source):
+                cover(source)
+                    .padding(.trailing, ToastLayout.coverGap)
+            case .icon(let name):
+                icon(name)
+                    .padding(.trailing, ToastLayout.gap)
+            case .image, .none:
+                EmptyView()
             }
 
             Text(config.title)
@@ -102,40 +170,78 @@ struct ToastView: View {
                 .foregroundStyle(Color.fillOne)
                 .multilineTextAlignment(.leading)
                 .lineLimit(2)
-                .layoutPriority(1)
+                .frame(maxWidth: textMaxWidth, alignment: .leading)
                 .contentTransition(.opacity)
 
-            Spacer(minLength: 12)
+            if hasButton {
+                chevronButton
+                    .padding(.leading, ToastLayout.gap)
+            }
+        }
+        .padding(.leading, leadingInset)
+        .padding(.trailing, trailingInset)
+        .frame(height: ToastLayout.height)
+        .overlay(alignment: .topLeading) {
+            if case .image(let source) = config.graphic {
+                // Картинка 83×83 от левого верхнего угла, пилюля обрезает её по высоте 56.
+                Color.clear
+                    .frame(width: ToastLayout.imageSize, height: ToastLayout.imageSize)
+                    .overlay { ArtworkImage(source: source).scaledToFill() }
+                    .clipped()
+                    .transition(.opacity)
+            }
+        }
+        .clipShape(Capsule(style: .continuous))
+        .glassSurface(
+            Capsule(style: .continuous),
+            blur: PlusMetrics.glassBlur,
+            fill: .fillNine,
+            border: .fillNine,
+            borderWidth: PlusMetrics.hairline
+        )
+    }
 
-            Circle()
-                .fill(Color.buttonsPrimary)
-                .frame(width: 32, height: 32)
-                .overlay {
-                    Image("iconChevronRight")
-                        .renderingMode(.template)
-                        .resizable()
-                        .frame(width: 16, height: 16)
-                        .foregroundStyle(Color.fillOne)
-                }
-        }
-        .padding(.trailing, 12)
-        .padding(.leading, 16)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 280)
-        .fixedSize(horizontal: true, vertical: false)
-        .background {
-            RoundedRectangle(cornerRadius: 80)
-                .fill(Color.black.opacity(0.01)) // лёгкая подкладка, чтобы blendMode сработал
-                .background(.ultraThinMaterial)
-                .blendMode(.overlay)
-                .clipShape(RoundedRectangle(cornerRadius: 80))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 80)
-                        .stroke(Color.fillNine, lineWidth: PlusMetrics.hairline)
-                }
-        }
-        // blendMode не должен затронуть остальное дерево.
-        .compositingGroup()
+    /// Обложка 32 r4 с наклоном 6° и тенью внутри рамки 35.17. Кадр задаёт распорка,
+    /// картинка — `scaledToFill` в overlay (см. CLAUDE.md).
+    private func cover(_ source: ArtworkSource) -> some View {
+        Color.clear
+            .frame(width: ToastLayout.coverSide, height: ToastLayout.coverSide)
+            .overlay { ArtworkImage(source: source).scaledToFill() }
+            .clipShape(RoundedRectangle(cornerRadius: ToastLayout.coverRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: ToastLayout.coverRadius)
+                    .strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
+            }
+            .shadow(color: .black.opacity(0.2), radius: ToastLayout.coverShadowRadius, y: ToastLayout.coverShadowY)
+            .rotationEffect(.degrees(coverRotation))
+            .offset(y: coverOffsetY)
+            .frame(width: ToastLayout.coverFrame, height: ToastLayout.coverFrame)
+            .transition(.opacity)
+    }
+
+    private func icon(_ name: String) -> some View {
+        Image(name)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: ToastLayout.iconGlyph, height: ToastLayout.iconGlyph)
+            .foregroundStyle(Color.fillOne)
+            .frame(width: ToastLayout.iconSlot, height: ToastLayout.iconSlot)
+            .transition(.opacity)
+    }
+
+    private var chevronButton: some View {
+        Circle()
+            .fill(Color.buttonsSecondary)
+            .frame(width: ToastLayout.buttonSize, height: ToastLayout.buttonSize)
+            .overlay {
+                Image("iconChevronRight")
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: ToastLayout.buttonIcon, height: ToastLayout.buttonIcon)
+                    .foregroundStyle(Color.fillOne)
+            }
+            .transition(.opacity)
     }
 }
 
@@ -177,7 +283,8 @@ private struct ToastPresenter: View {
                     .offset(y: yOffset)
                     .opacity(opacity)
                     .blur(radius: blurRadius)
-                    .onTapGesture { center.dismiss() }
+                    .onTapGesture { center.activate() }
+                    .accessibilityAddTraits(config.action != nil ? .isButton : [])
                     .onAppear { animateIn() }
                     .onDisappear { OverlayLayerState.shared.setInteractiveFrame(nil, for: "toast") }
             }
@@ -289,7 +396,8 @@ struct OverlayLayer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if DEBUG
-        // `-debugToast 1` — тост с обложкой через 2 с и тост ✓ без обложки через 6 с.
+        // `-debugToast 1` — три типа подряд: лайк (обложка + кнопка) через 2 с, ✓ (иконка,
+        // без кнопки) через 6 с, простой текст через 10 с.
         // `-debugShare 1` — экран шеринга альбома через 2 с.
         .task {
             guard UserDefaults.standard.bool(forKey: "debugShare") else { return }
@@ -305,9 +413,15 @@ struct OverlayLayer: View {
         .task {
             guard UserDefaults.standard.bool(forKey: "debugToast") else { return }
             try? await Task.sleep(for: .seconds(2))
-            ToastCenter.shared.show(title: ToastCopy.randomAdded(), cover: .asset("mockAlbumCover"))
+            ToastCenter.shared.show(
+                title: ToastCopy.randomAdded(),
+                graphic: .cover(.asset("mockAlbumCover")),
+                action: .openCollection
+            )
             try? await Task.sleep(for: .seconds(4))
-            ToastCenter.shared.show(title: ToastCopy.randomDone())
+            ToastCenter.shared.show(title: ToastCopy.randomDone(), graphic: .icon("iconDone"))
+            try? await Task.sleep(for: .seconds(4))
+            ToastCenter.shared.show(title: "Проверка связи")
         }
         #endif
     }

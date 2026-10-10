@@ -1,10 +1,30 @@
 import SwiftUI
 
-/// Один тост: обложка (необязательна) и фраза.
+/// Графика слева — варианты `graphic` компонента `toast` из Library.
+enum ToastGraphic: Equatable {
+    /// Нет графики.
+    case none
+    /// `graphic=cover`: квадратная обложка 32 с наклоном.
+    case cover(ArtworkSource)
+    /// `graphic=image`: картинка вплотную к левому краю пилюли (у артиста — фото).
+    case image(ArtworkSource)
+    /// `graphic=icon`: иконка из ассетов (template, `fillOne`).
+    case icon(String)
+}
+
+/// Действие тоста. Есть действие — справа кнопка-шеврон (`button=on`), тап по всему тосту
+/// его выполняет. Замыканий внутри нет: `ToastConfig` остаётся `Equatable`.
+enum ToastAction: Equatable {
+    /// Открыть таб «Моё».
+    case openCollection
+}
+
+/// Один тост: графика (необязательна), фраза, действие (необязательно).
 struct ToastConfig: Equatable, Identifiable {
     let id = UUID()
     var title: String
-    var cover: ArtworkSource?
+    var graphic: ToastGraphic = .none
+    var action: ToastAction?
     var duration: Duration
 }
 
@@ -25,14 +45,37 @@ final class ToastCenter {
     @ObservationIgnored
     private var token = 0
 
-    func show(title: String, cover: ArtworkSource? = nil, duration: Duration = .seconds(4)) {
+    /// Открывает «Моё» откуда угодно (закрывает фильм, плееры, профиль, поиск). Регистрирует
+    /// корень приложения: окно тоста окружения корня не видит, а навигация живёт в `@State` корня.
+    @ObservationIgnored
+    var openCollection: (@MainActor () -> Void)?
+
+    func show(
+        title: String,
+        graphic: ToastGraphic = .none,
+        action: ToastAction? = nil,
+        duration: Duration = .seconds(4)
+    ) {
         token += 1
         let mine = token
-        current = ToastConfig(title: title, cover: cover, duration: duration)
+        current = ToastConfig(title: title, graphic: graphic, action: action, duration: duration)
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: duration)
             guard let self, self.token == mine else { return }
             self.dismiss()
+        }
+    }
+
+    /// Тап по тосту: тост уходит; есть действие — выполняем его. В окне затухания
+    /// (`current == nil`) тап ничего не делает.
+    func activate() {
+        guard let action = current?.action else {
+            if current != nil { dismiss() }
+            return
+        }
+        dismiss()
+        switch action {
+        case .openCollection: openCollection?()
         }
     }
 
