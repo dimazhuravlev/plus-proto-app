@@ -791,6 +791,11 @@ enum CollectionReorderMotion {
     /// Правка пользователя 2026-10-10: без боковых полей — фон и клип блока в руке
     /// от края до края экрана (подъём 1.02 уводит края за кромку — это нормально).
     static let glassInset: CGFloat = 0
+    /// Правка пользователя 2026-10-10: фон блока в руке выходит на 16 ниже содержимого —
+    /// иначе он кончался вплотную под подписями карточек. У кино и книг такое поле уже
+    /// есть внутри блока (`coverOnlyShelfBottom`), им не добавляем. Раскладку это не
+    /// меняет: фон и клип рисуются ниже рамки блока, соседи на месте.
+    static let glassBottomExtra: CGFloat = 16
     /// Клип вне захвата: шире блока ровно на радиус — дуги углов за кромкой, срезов нет.
     static let restClipInset: CGFloat = -glassRadius
 }
@@ -957,7 +962,10 @@ private struct CollectionReorderBlock<Content: View>: View {
             // Блок в руке обрезается по своему фону: карточки, уходящие за кромку стекла,
             // не торчат из него. Клип проявляется той же кривой, что и фон; вне захвата
             // он шире блока и ничего не режет.
-            .clipShape(CollectionReorderClip(inset: isHeld ? CollectionReorderMotion.glassInset : CollectionReorderMotion.restClipInset))
+            .clipShape(CollectionReorderClip(
+                inset: isHeld ? CollectionReorderMotion.glassInset : CollectionReorderMotion.restClipInset,
+                bottomExtra: bottomExtra
+            ))
             .animation(glassAnimation(isHeld: isHeld), value: isHeld)
             .background { glass(isHeld: isHeld) }
             // Распознаватель — на неподвижном слое блока, до сдвига и масштаба:
@@ -969,6 +977,14 @@ private struct CollectionReorderBlock<Content: View>: View {
             .modifier(CollectionReorderShake(kind: kind))
             .modifier(CollectionReorderOffset(kind: kind))
             .zIndex(reorder.liftedKind == kind ? 1 : 0)
+    }
+
+    /// Сколько фон и клип выходят ниже рамки блока: у кино и книг нижнее поле уже внутри.
+    private var bottomExtra: CGFloat {
+        switch kind {
+        case .movie, .book: 0
+        case .track, .artist, .album, .playlist: CollectionReorderMotion.glassBottomExtra
+        }
     }
 
     /// Появление — сразу, исчезновение — после посадки блока (задержка = время посадки).
@@ -984,6 +1000,8 @@ private struct CollectionReorderBlock<Content: View>: View {
         Color.clear
             .chromeGlass(RoundedRectangle(cornerRadius: CollectionReorderMotion.glassRadius, style: .continuous))
             .padding(.horizontal, CollectionReorderMotion.glassInset)
+            // Ниже рамки блока на `bottomExtra`: отрицательный нижний отступ, раскладка та же.
+            .padding(.bottom, -bottomExtra)
             .opacity(isHeld ? 1 : 0)
             .animation(glassAnimation(isHeld: isHeld), value: isHeld)
             .allowsHitTesting(false)
@@ -1187,9 +1205,11 @@ private struct CollectionReorderPress: UIGestureRecognizerRepresentable {
 
 /// Клип блока в руке — скруглённый прямоугольник со стеклянным фоном. Отступ от краёв
 /// блока анимируется: в покое он отрицательный (клип шире блока на радиус — углы дуги
-/// лежат за кромкой и ничего не режут), в руке — поле стекла. Вертикаль — рамка блока.
+/// лежат за кромкой и ничего не режут), в руке — поле стекла. Вертикаль — рамка блока
+/// и `bottomExtra` ниже неё (то же поле, что у стекла; в покое под рамкой нечего резать).
 private struct CollectionReorderClip: Shape {
     var inset: CGFloat
+    let bottomExtra: CGFloat
 
     var animatableData: CGFloat {
         get { inset }
@@ -1197,8 +1217,10 @@ private struct CollectionReorderClip: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        Path(
-            roundedRect: rect.insetBy(dx: inset, dy: 0),
+        var frame = rect.insetBy(dx: inset, dy: 0)
+        frame.size.height += bottomExtra
+        return Path(
+            roundedRect: frame,
             cornerRadius: CollectionReorderMotion.glassRadius,
             style: .continuous
         )
