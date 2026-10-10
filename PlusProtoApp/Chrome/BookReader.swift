@@ -330,6 +330,9 @@ private struct ReaderMusicPlayer: View {
         if isExpanded {
             actionBar.openMusicPlayer()
         } else {
+            // Разворот круга — тот же отклик, что в баре (`ActionBarView`, `onExpand`):
+            // одинаковое — одинаково.
+            PlayerHaptics.tap()
             isExpanded = true
         }
     }
