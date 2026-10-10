@@ -84,6 +84,8 @@ enum ServiceTopNavMotion {
     /// Оттяг ленты вниз: ряд навигации едет за ним вчетверо медленнее и упирается
     /// в мягкий потолок — отступ над баром тянется, но заметно меньше ленты (правки
     /// пользователя 2026-10-04: сначала 0.4 без потолка — «слишком далеко уходит»)
+    /// Подложка, которую держит блок в руке («Моё»): входит и выходит плавно.
+    static let backdropHold: Animation = .easeInOut(duration: 0.2)
     static let pullFollow: CGFloat = 0.25
     static let pullLimit: CGFloat = 24
 
@@ -108,6 +110,10 @@ struct ServiceTopNav: View {
     var scrollOffset: CGFloat = 0
     /// Затемнение сверху по скроллу — у витрин; у «Моей волны» и «Моего» его нет.
     var showsTopShade = true
+    /// Подложка (прогрессивный блюр) держится полностью независимо от скролла — «Моё»,
+    /// пока блок в руке: он поднимается под навбар, а лента при этом стоит у верха, где
+    /// подложки по скроллу нет. Вход и выход — плавно; сам скролл по-прежнему без анимации.
+    var holdsBackdrop = false
     /// Аватар профиля — из макета навигации (`userpics` `2455:75985`), кадр 40pt на ×3.
     var avatar: ArtworkSource = .asset(ProfileMock.avatar)
     /// Иконка-кнопка между табами и аватаром (20 × 20, макет «Моего» `2584:26578`):
@@ -127,7 +133,7 @@ struct ServiceTopNav: View {
             ProfileAvatarButton(avatar: avatar)
                 .padding(.trailing, ServiceTopNavLayout.side)
         }
-        .modifier(TopNavRow(scrollOffset: scrollOffset, showsTopShade: showsTopShade))
+        .modifier(TopNavRow(scrollOffset: scrollOffset, showsTopShade: showsTopShade, holdsBackdrop: holdsBackdrop))
     }
 
     // MARK: Табы
@@ -285,6 +291,8 @@ struct ServiceTopNav: View {
 struct TopNavRow: ViewModifier {
     let scrollOffset: CGFloat
     var showsTopShade = true
+    /// Подложка держится на полной силе поверх скролла (`ServiceTopNav.holdsBackdrop`).
+    var holdsBackdrop = false
 
     func body(content: Content) -> some View {
         content
@@ -302,7 +310,13 @@ struct TopNavRow: ViewModifier {
                 )
                 .frame(height: EntityNavBarGeometry.backdropHeight)
                 .allowsHitTesting(false)
-                .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp))
+                .modifier(NavBackdropOpacity(
+                    scroll: NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavMotion.backdropRamp),
+                    hold: holdsBackdrop ? 1 : 0
+                ))
+                // Анимируется только «держим ↔ нет»: изменение `hold` приходит с этой кривой
+                // и проходит под внешним `transaction` ниже, а скролл анимации не получает.
+                .animation(ServiceTopNavMotion.backdropHold, value: holdsBackdrop)
                 // Подложка — чистая функция скролла: анимация выбора таба её не касается.
                 // Иначе смена таба уносила её прозрачность в пружину 0.3 с — фон проявлялся
                 // и гас на глазах, пока лента нового таба докладывала свой сдвиг (жалоба
@@ -326,6 +340,22 @@ struct TopNavRow: ViewModifier {
                     .transaction { $0.animation = nil }
                     .ignoresSafeArea(edges: .top)
             }
+    }
+}
+
+/// Прозрачность подложки навбара: большее из скролла (чистая функция, без анимации) и
+/// удержания (анимируется — `animatableData`). Один `opacity`, а не два слоя блюра.
+private struct NavBackdropOpacity: ViewModifier, Animatable {
+    let scroll: Double
+    var hold: Double
+
+    var animatableData: Double {
+        get { hold }
+        set { hold = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        content.opacity(max(scroll, hold))
     }
 }
 

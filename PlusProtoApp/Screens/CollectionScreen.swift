@@ -140,6 +140,9 @@ struct CollectionScreen: View {
                 scrollOffset: scrollOffset,
                 // «Моё» — не витрина: затемнения сверху нет (затемнение — у витрин, 2026-10-10).
                 showsTopShade: false,
+                // Блок в руке поднимается под навбар — подложка держится, даже когда лента
+                // стоит у верха (автопрокрутка докатывает её туда) и скролл подложки не даёт.
+                holdsBackdrop: reorder.heldKind != nil,
                 trailingAccessory: AnyView(
                     CollectionReorderButton(
                         isEnabled: reorder.isReordering || visibleKinds(shelf).count > 1,
