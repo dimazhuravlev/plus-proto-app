@@ -118,6 +118,18 @@ enum ShowcasePromoMotion {
     /// к 300 мс из 400 прошёл ~93 %): после полного угасания стояла мёртвая пауза
     /// с пустым центром (кадр 2026-10-08).
     static let collapseDelay: Duration = .milliseconds(300)
+    /// Перестановка набора перед ✕-схлопыванием должна лечь в свой проход, и только потом
+    /// стартует `collapse`: в одном проходе подмена вью получала неявный переход.
+    static let editSettle: Duration = .milliseconds(40)
+}
+
+/// Ключ слота ряда: копия круга и айтем, а не номер места. По номеру места каждая
+/// вставка и удаление (✕) сдвигала отображение `items[index % count]` почти у всех слотов,
+/// вью получали новый айтем и пересоздавались — пять видимых обложек мигали дважды
+/// (жалоба 2026-10-10). По `(копия, id)` существующие вью живут, ряд лишь перекладывается.
+private struct PromoSlotID: Hashable {
+    let copy: Int
+    let item: String
 }
 
 /// Промо-слайдер «Главной» (макет `2532:26618`, задача пользователя 2026-10-08):
@@ -152,7 +164,9 @@ struct ShowcasePromo: View {
     private static let minimumItems = 3
 
     /// Карточка ленты копий в центре.
-    @State private var page: Int?
+    @State private var pageID: PromoSlotID?
+    /// Прокси ленты — для явного `scrollTo` после перестановки набора (`remove(slot:)`).
+    @State private var scrollProxy: ScrollViewProxy?
     /// Айтем, у которого показана пара ✕/✓ (у альбома — и подпись), — центральный, вставший на место.
     @State private var revealed: String?
     @State private var revealTask: Task<Void, Never>?
@@ -175,11 +189,36 @@ struct ShowcasePromo: View {
         _savedIndex = savedIndex
         let count = max(items.count, 1)
         let start = count + savedIndex.wrappedValue % count
-        _page = State(initialValue: start)
+        _pageID = State(initialValue: items.isEmpty ? nil : PromoSlotID(copy: 1, item: items[start % count].id))
         _scroll = State(initialValue: PromoScrollState(position: CGFloat(start)))
     }
 
     private var count: Int { items.count }
+
+    /// Номер места центральной карточки в ряду копий. Хранится ключом слота (`pageID`),
+    /// номер — производный: остальной код читает и пишет его как раньше.
+    private var page: Int? {
+        get {
+            guard let id = pageID else { return nil }
+            let promo = liveItems
+            guard let index = promo.firstIndex(where: { $0.id == id.item }) else { return nil }
+            return id.copy * promo.count + index
+        }
+        nonmutating set {
+            let promo = liveItems
+            guard let value = newValue, !promo.isEmpty else {
+                pageID = nil
+                return
+            }
+            let copy = Int((Double(value) / Double(promo.count)).rounded(.down))
+            pageID = PromoSlotID(copy: copy, item: promo[Self.wrap(value, promo.count)].id)
+        }
+    }
+
+    /// Ключи слотов ряда: копии круга по порядку, в каждой — айтемы набора.
+    private var slotIDs: [PromoSlotID] {
+        (0..<Self.copies).flatMap { copy in items.map { PromoSlotID(copy: copy, item: $0.id) } }
+    }
 
     /// Набор как он есть сейчас — в отложенных шагах ✕ и в замыканиях задач: `items`
     /// там с того прохода, на котором их создали.
@@ -192,7 +231,7 @@ struct ShowcasePromo: View {
                 // на шаг левее, по оценке, — мелькала прежняя карточка (кадр 2026-10-08),
                 // а ушедшие за экран слоты держали прежний айтем. Слотов не больше 18.
                 HStack(spacing: 0) {
-                    ForEach(0..<(count * Self.copies), id: \.self) { index in
+                    ForEach(Array(slotIDs.enumerated()), id: \.element) { index, _ in
                         slot(index)
                     }
                 }
@@ -201,7 +240,7 @@ struct ShowcasePromo: View {
             // По одной карточке за свайп, как бы ни бросили.
             .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
             .contentMargins(.horizontal, (PlusMetrics.designWidth - Layout.step) / 2, for: .scrollContent)
-            .scrollPosition(id: $page, anchor: .center)
+            .scrollPosition(id: $pageID, anchor: .center)
             .scrollIndicators(.hidden)
             // Карточки шире слота — за краями экрана их видно.
             .scrollClipDisabled()
@@ -230,7 +269,10 @@ struct ShowcasePromo: View {
                     hideReveal()
                 }
             }
-            .onAppear { scheduleReveal() }
+            .onAppear {
+                scrollProxy = proxy
+                scheduleReveal()
+            }
             // Набор собрался заново (моки → живые, под заставкой) — центральный айтем
             // остаётся в центре, если он есть в новом наборе, иначе — с начала.
             .onChange(of: items.map(\.id)) { old, new in
@@ -316,6 +358,7 @@ struct ShowcasePromo: View {
             // показывает прежнюю.
             PromoCardFace(item: item)
                 .id(item.id)
+                .transition(.identity)
                 .showcaseSwappable()
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
@@ -347,6 +390,7 @@ struct ShowcasePromo: View {
                 // подпись легла на обложку).
                 PromoAlbumCaption(album: album)
                     .id(album.id)
+                    .transition(.identity)
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown))
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
@@ -414,7 +458,10 @@ struct ShowcasePromo: View {
                     catalog.insertPromo(addition, after: next.id)
                     center(on: removed.id)
                     removal = page
+                    pinCenter()
                 }
+                // Перестановка ложится в свой проход до старта схлопывания.
+                try? await Task.sleep(for: ShowcasePromoMotion.editSettle)
             }
             withAnimation(ShowcasePromoMotion.collapse) {
                 collapse = 1
@@ -425,6 +472,7 @@ struct ShowcasePromo: View {
                     removal = nil
                     collapse = 0
                     center(on: next.id)
+                    pinCenter()
                 }
                 scheduleReveal()
             }
@@ -441,6 +489,13 @@ struct ShowcasePromo: View {
         }
     }
 
+    /// Страховка: после перестановки набора раскладка сдвигается на шаг, и лента явно
+    /// встаёт на центральный слот — в той же мгновенной транзакции.
+    private func pinCenter() {
+        guard let id = pageID else { return }
+        scrollProxy?.scrollTo(id, anchor: .center)
+    }
+
     /// Айтем `id` — в центр, в средней копии.
     private func center(on id: String) {
         let promo = liveItems
@@ -453,7 +508,9 @@ struct ShowcasePromo: View {
     /// Набор сменил каталог — центральный айтем остаётся в центре, если он в наборе.
     private func recenter(old: [String], new: [String]) {
         guard !new.isEmpty else { return }
-        let centered = old.isEmpty ? nil : old[Self.wrap(page ?? 0, old.count)]
+        // Центральный айтем — по ключу слота: каталог уже сменил набор, и номер места
+        // в новом наборе указывал бы на чужой айтем.
+        let centered = pageID?.item
         let index = centered.flatMap { new.firstIndex(of: $0) } ?? 0
         var instant = Transaction()
         instant.disablesAnimations = true
@@ -473,9 +530,9 @@ struct ShowcasePromo: View {
     /// что у стартового чипса `FilterChipsRow`, только без паузы: геометрия приходит
     /// уже после раскладки.
     private func placeIfNeeded(at position: CGFloat, proxy: ScrollViewProxy) {
-        guard !isPlaced, let target = page else { return }
+        guard !isPlaced, let target = pageID, let place = page else { return }
         isPlaced = true
-        guard abs(position - CGFloat(target)) > 0.01 else { return }
+        guard abs(position - CGFloat(place)) > 0.01 else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant) { proxy.scrollTo(target, anchor: .center) }
