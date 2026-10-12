@@ -68,9 +68,16 @@ struct AlbumScreen: View {
 
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
-    @State private var store = AlbumDetailsStore()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var store: AlbumDetailsStore
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
+
+    init(entity: EntityRef) {
+        self.entity = entity
+        // Детали уже в кэше — стоят с первого кадра, без скелетона в строке исполнителя.
+        _store = State(initialValue: AlbumDetailsStore(entity: entity))
+    }
 
     /// Что показывать прямо сейчас: живые детали, иначе заглушка по данным витрины.
     private var details: AlbumDetails {
@@ -164,11 +171,15 @@ struct AlbumScreen: View {
                 // Строка исполнителя — переход на его экран (2026-10-04), когда
                 // известен его id: детали альбома пришли.
                 Button(action: openArtist) {
+                    // Имя и год проявляются вместе, когда детали пришли (или не придут):
+                    // до этого на их месте две полосы скелетона, место под обе строки держится.
                     EntityPersonRow(
                         picture: artistAvatar,
-                        name: details.artist,
-                        detail: details.year
+                        name: artistRowReady ? details.artist : nil,
+                        detail: artistRowReady ? details.year : nil,
+                        isDetailLoading: !artistRowReady
                     )
+                    .animation(reduceMotion ? nil : EntityMotion.reveal, value: artistRowReady)
                     .contentShape(.rect)
                 }
                 .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
@@ -213,6 +224,11 @@ struct AlbumScreen: View {
             .frame(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize)
             .clipShape(shape)
             .coverBorder(shape)
+    }
+
+    /// Детали альбома разобраны, либо их не будет: не из Deezer (мок) или загрузка упала.
+    private var artistRowReady: Bool {
+        store.details != nil || entity.deezerID == nil || store.failure != nil
     }
 
     /// Аватар исполнителя: пока детали едут — скелетон круга (моковое фото здесь было

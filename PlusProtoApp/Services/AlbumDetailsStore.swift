@@ -16,6 +16,15 @@ final class AlbumDetailsStore {
     private static var cache: [Int: AlbumDetails] = [:]
     private var requested: Int?
 
+    /// Альбом уже в общем кэше (возврат на тот же экран) — детали стоят синхронно,
+    /// до первого кадра: строка исполнителя не мелькает скелетоном (по образцу
+    /// `BookScreen.init`). `load` потом отдаст то же попадание.
+    init(entity: EntityRef) {
+        if let id = Self.debugID ?? entity.deezerID {
+            details = Self.cache[id]
+        }
+    }
+
     /// Один заход на альбом за жизнь экрана.
     func load(_ entity: EntityRef) async {
         guard let id = Self.debugID ?? entity.deezerID, requested != id else { return }
