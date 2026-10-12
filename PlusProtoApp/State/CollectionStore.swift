@@ -215,23 +215,24 @@ extension CollectionItem {
             guard case .artist(let ref)? = hit.route else { return nil }
             self = .artist(ref)
         case .track:
-            let album: String? = if case .album(let ref)? = hit.route { ref.title } else { nil }
-            self = .track(
-                MusicNowPlaying(
-                    id: hit.id,
-                    cover: hit.artwork ?? .asset("mockAlbumCover"),
-                    title: hit.title,
-                    artist: hit.subtitle,
-                    album: album
-                ),
-                album: hit.route
-            )
+            self = .track(MusicNowPlaying(hit: hit), album: hit.route)
         case .playlist:
             self = .playlist(id: hit.id, title: hit.title, owner: hit.subtitle, cover: hit.artwork)
         case .director, .writer:
             return nil
         }
     }
+}
+
+// MARK: - Событие добавления
+
+/// Событие «сущность добавлена в Моё» — лайк, «Позже» или скачивание.
+struct CollectionAddition: Identifiable, Equatable {
+    enum Reason { case favorite, download }
+
+    let id = UUID()
+    let item: CollectionItem
+    let reason: Reason
 }
 
 // MARK: - Хранилище
@@ -250,6 +251,10 @@ extension CollectionItem {
 @Observable
 final class CollectionStore {
     static let shared = CollectionStore()
+
+    /// Последнее «добавлено в Моё» — лайк, «Позже» или скачивание. Пишется на каждый переход
+    /// «не было отметки → есть»; читает таб «Моё».
+    private(set) var lastAddition: CollectionAddition?
 
     /// Полки коллекции — табы её навигации.
     enum Shelf: Int, CaseIterable {
@@ -270,13 +275,29 @@ final class CollectionStore {
 
     private static let storageKey = "collection"
 
+    /// Порядок блоков (видов) на каждой полке — его задаёт пользователь драг-н-дропом
+    /// в режиме редактирования «Моего». Свой у каждой полки, ключ — `Shelf.rawValue`.
+    /// Лежит отдельным ключом `collectionKindsOrder.<полка>`: массив `Kind.rawValue`.
+    private var kindsOrders: [Int: [CollectionItem.Kind]] = [:]
+
+    private static func kindsOrderKey(_ shelf: Shelf) -> String {
+        "collectionKindsOrder.\(shelf.rawValue)"
+    }
+
     private init() {
         #if DEBUG
         // `-debugResetCollection 1` — начать со стартового набора.
         if UserDefaults.standard.bool(forKey: "debugResetCollection") {
             UserDefaults.standard.removeObject(forKey: Self.storageKey)
+            for shelf in Shelf.allCases {
+                UserDefaults.standard.removeObject(forKey: Self.kindsOrderKey(shelf))
+            }
         }
         #endif
+        for shelf in Shelf.allCases {
+            let raw = UserDefaults.standard.stringArray(forKey: Self.kindsOrderKey(shelf)) ?? []
+            kindsOrders[shelf.rawValue] = raw.compactMap(CollectionItem.Kind.init(rawValue:))
+        }
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let saved = try? JSONDecoder().decode([CollectionItem].self, from: data) {
             items = saved.map { $0.repairingPoster().repairingPlaylistRoute() }
@@ -309,6 +330,22 @@ final class CollectionStore {
             .filter { $0.0.kind == kind }
             .sorted { $0.1 > $1.1 }
             .map(\.0)
+    }
+
+    // MARK: Порядок блоков
+
+    /// Порядок видов на полке: сохранённый, а виды, которых в нём нет, — в конце
+    /// в порядке `Kind.allCases`. Всегда полный список; пустые виды экран отфильтрует сам.
+    func kindsOrder(on shelf: Shelf) -> [CollectionItem.Kind] {
+        let saved = kindsOrders[shelf.rawValue] ?? []
+        return saved + CollectionItem.Kind.allCases.filter { !saved.contains($0) }
+    }
+
+    func setKindsOrder(_ order: [CollectionItem.Kind], on shelf: Shelf) {
+        var seen = Set<CollectionItem.Kind>()
+        let unique = order.filter { seen.insert($0).inserted }
+        kindsOrders[shelf.rawValue] = unique
+        UserDefaults.standard.set(unique.map(\.rawValue), forKey: Self.kindsOrderKey(shelf))
     }
 
     // MARK: Отметки
@@ -347,11 +384,36 @@ final class CollectionStore {
     private func update(_ item: CollectionItem, _ change: (inout CollectionItem) -> Void) {
         var list = items
         var record = item
+        var wasFavorite = false
+        var wasDownloaded = false
         if let index = list.firstIndex(where: { $0.id == item.id }) {
             record = list.remove(at: index)
             record.refresh(from: item)
+            wasFavorite = record.favoritedAt != nil
+            wasDownloaded = record.downloadedAt != nil
         }
         change(&record)
+        // Отметка появилась (было пусто, стало с датой) — это событие «добавлено в Моё».
+        // Снятие отметки событием не считается.
+        let becameFavorite = !wasFavorite && record.favoritedAt != nil
+        let becameDownloaded = !wasDownloaded && record.downloadedAt != nil
+        if becameFavorite || becameDownloaded {
+            lastAddition = CollectionAddition(item: record, reason: becameFavorite ? .favorite : .download)
+        }
+        // Тост — только на «нравится» и «Позже»; скачивание тихое.
+        if becameFavorite {
+            // Артист — фото вплотную к краю (`graphic=image`), фильм и книга — прямоугольная
+            // обложка с наклоном, остальное — квадратная обложка с наклоном.
+            var graphic = ToastGraphic.none
+            if let artwork = record.artwork {
+                switch record.kind {
+                case .artist: graphic = .image(artwork)
+                case .movie, .book: graphic = .poster(artwork)
+                case .track, .album, .playlist: graphic = .cover(artwork)
+                }
+            }
+            ToastCenter.shared.show(title: ToastCopy.randomAdded(), graphic: graphic, action: .openCollection)
+        }
         if record.favoritedAt != nil || record.downloadedAt != nil {
             list.insert(record, at: 0)
         }

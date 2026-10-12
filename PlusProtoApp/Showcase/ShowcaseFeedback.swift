@@ -235,6 +235,8 @@ struct ShowcaseFeedbackPair: View {
         guard let state, !state.isSwapping, !state.isDone else { return }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         state.isDone = true
+        // Сущности в паре нет — вместо обложки иконка, кнопки нет.
+        ToastCenter.shared.show(title: ToastCopy.randomDone(), graphic: .icon("iconDone"))
         Task { @MainActor in
             try? await Task.sleep(for: ShowcaseFeedbackMotion.doneHold)
             withAnimation(ShowcaseFeedbackMotion.pairOut) { state.isPairHidden = true }

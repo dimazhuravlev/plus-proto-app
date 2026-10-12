@@ -1,6 +1,15 @@
 import SwiftUI
 import UIKit
 
+/// Переключатель дебаг-меню: вид активного таба (правка пользователя 2026-10-10).
+/// Хранится в `UserDefaults`; таббар живёт в нескольких копиях, `@AppStorage` в `TabBarItem`
+/// подхватывает значение везде.
+enum TabStyleDebug {
+    /// Включён — глиф активного таба чисто белый (`fillOne`), без градиента и без свечения под
+    /// тайлом. Выключен (по умолчанию) — макетный вид.
+    static let whiteActiveKey = "tabActiveWhite"
+}
+
 /// Тайминги и отдача таббара.
 enum TabBarMotion {
     /// Одна анимация на все параметры таба: бордер тайла, заливка глифа, цвет лейбла,
@@ -33,6 +42,22 @@ enum TabBarMotion {
 private enum TabBarGeometry {
     /// Общая непрозрачность неактивного глифа — `fill-opacity="0.7"` из его SVG (§5).
     static let inactiveGlyphOpacity: Double = 0.7
+
+    /// Миниатюра добавленной обложки вместо сердца на табе «Моё». Четыре инстанса
+    /// `Tab=Collection-*, State=inactive`, 32×32 (бокс сердца), миниатюра — по центру
+    /// бокса, то есть по центру тайла 40×40; бордер у всех внутрь, 0.67 белый 8 %,
+    /// у картинки такой же радиус:
+    /// - `2560:27996` Collection-album — 24×24, радиус 3 (так же рисуем трек и плейлист:
+    ///   отдельных нод у них нет);
+    /// - `2560:28006` Collection-artist — 24×24, круг (радиус 1000);
+    /// - `2560:28002` Collection-book — 20×28, радиус 3 только справа (корешок слева прямой);
+    /// - `2560:28004` Collection-movie — 20×28, радиус 3.
+    /// Макет даёт только `inactive`: у активного таба миниатюра та же, без своих значений.
+    static let peekSquareSize: CGFloat = 24
+    static let peekPosterSize = CGSize(width: 20, height: 28)
+    static let peekCornerRadius: CGFloat = 3
+    static let peekBorderOpacity: Double = 0.08
+    static let peekBorderWidth: CGFloat = PlusMetrics.hairline
 
     /// Бордер тайла: непрозрачность и толщина, неактивный → активный
     static let tileBorderOpacity: (inactive: Double, active: Double) = (0.04, 0.06)
@@ -130,6 +155,18 @@ struct TabBarView: View {
         }
         .task { await debugTapCycle() }
         #if DEBUG
+        // `-debugCollectionPeek 1` — через 2 с лайк сид-альбома тем же путём, что тап по
+        // сердцу экрана: на табе «Моё» сердце сменяется миниатюрой. Если альбом уже в
+        // избранном, лайк сперва снимается.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugCollectionPeek"), chromeLayer == nil else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            let store = CollectionStore.shared
+            guard let album = store.items.first(where: { $0.kind == .album }) else { return }
+            if store.isFavorite(album.id) { store.setFavorite(album, false) }
+            store.setFavorite(album, true)
+        }
         // `-debugRetapTab <сек>` — через столько секунд тап по уже активному табу:
         // поп до корня (или скролл к началу) не проверить без тапа, а шелл не тапает.
         // Только у корневого таббара: его отсчёт идёт от запуска, и слой фильма, открытый
@@ -199,6 +236,9 @@ struct TabBarView: View {
 private struct TabBarItem: View {
     let tab: AppTab
     let isActive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Дебаг-переключатель: активный глиф белый, свечения нет (`TabStyleDebug`).
+    @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActive = false
 
     var body: some View {
         VStack(spacing: PlusMetrics.tabIconLabelGap) {
@@ -221,6 +261,13 @@ private struct TabBarItem: View {
     private var tile: some View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.iconTile, style: .continuous)
         let glyph = tab.glyphFrame
+        // Пик читает только «Моё»: у остальных табов объект не попадает в зависимости вью.
+        let peekItem = tab == .collection ? CollectionTabPeek.shared.item : nil
+        let peeking = peekItem != nil
+        // Кросс-поп тот же, что у play/pause и сердца (`ActionBarMotion.iconSwap`);
+        // Reduce Motion — только прозрачность.
+        let peekAnimation: Animation = reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap
+        let peekScale: CGFloat = reduceMotion ? 1 : ActionBarMotion.iconSwapScale
         // Один вектор на оба состояния: форма общая, меняется только заливка.
         // Позиция абсолютная — глифы в макете не центрированы и подрезаются краем тайла.
         return ZStack(alignment: .topLeading) {
@@ -236,10 +283,25 @@ private struct TabBarItem: View {
                         .renderingMode(.template)
                         .resizable()
                         .frame(width: glyph.size.width, height: glyph.size.height)
-                        .foregroundStyle(PlusGradient.activeTabGlyph)
+                        .foregroundStyle(whiteActive ? AnyShapeStyle(Color.fillOne) : AnyShapeStyle(PlusGradient.activeTabGlyph))
                         .opacity(isActive ? 1 : 0)
                 }
+                // Сердце уступает миниатюре: прозрачность и утопление, оба слоя всегда в дереве.
+                .opacity(peeking ? 0 : 1)
+                .scaleEffect(peeking ? peekScale : 1)
+                .animation(peekAnimation, value: peekItem?.id)
                 .offset(x: glyph.origin.x, y: glyph.origin.y)
+            // Анимация — на контейнере, снаружи вставки/смены миниатюры: её транзакция
+            // и ведёт переход кроссфейда.
+            ZStack {
+                if tab == .collection, let shown = CollectionTabPeek.shared.displayed {
+                    CollectionPeekThumbnail(
+                        item: shown, isShown: peeking, hiddenScale: peekScale, reduceMotion: reduceMotion
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(peekAnimation, value: peekItem?.id)
         }
         .frame(width: PlusMetrics.tabIconTile, height: PlusMetrics.tabIconTile)
         .clipShape(shape)
@@ -260,10 +322,76 @@ private struct TabBarItem: View {
             .resizable()
             .frame(width: TabBarGeometry.sparkSize.width, height: TabBarGeometry.sparkSize.height)
             .offset(y: TabBarGeometry.sparkCenterOffset + (isActive ? 0 : TabBarGeometry.sparkRise))
-            .opacity(isActive ? 1 : 0)
+            // Белый активный таб (дебаг): свечение остаётся в дереве, но не видно.
+            .opacity(isActive && !whiteActive ? 1 : 0)
             // Своя кривая поверх общей у кнопки: внутренняя анимация перебивает внешнюю
             // для своего поддерева.
             .animation(isActive ? TabBarMotion.glowAppear : TabBarMotion.activation, value: isActive)
             .allowsHitTesting(false)
+    }
+}
+
+/// Миниатюра обложки в тайле «Моё»: форма и размер по виду сущности (константы и ноды —
+/// в `TabBarGeometry`). Смена сущности (`.id`) — кроссфейд двух миниатюр тем же попом,
+/// что сердце ↔ миниатюра; гаснет она так же, не снимаясь с экрана.
+private struct CollectionPeekThumbnail: View {
+    let item: CollectionItem
+    let isShown: Bool
+    let hiddenScale: CGFloat
+    let reduceMotion: Bool
+
+    var body: some View {
+        thumbnail
+            .opacity(isShown ? 1 : 0)
+            .scaleEffect(isShown ? 1 : hiddenScale)
+            .transition(reduceMotion
+                ? .opacity
+                : .scale(scale: hiddenScale).combined(with: .opacity))
+            // После `.transition`: смена `id` снимает старую миниатюру и вставляет новую
+            // по этому переходу.
+            .id(item.id)
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        let radius = TabBarGeometry.peekCornerRadius
+        switch item.kind {
+        case .artist:
+            cover(Circle(), size: CGSize(width: TabBarGeometry.peekSquareSize, height: TabBarGeometry.peekSquareSize))
+        case .movie:
+            cover(RoundedRectangle(cornerRadius: radius, style: .continuous), size: TabBarGeometry.peekPosterSize)
+        case .book:
+            cover(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0, bottomLeadingRadius: 0,
+                    bottomTrailingRadius: radius, topTrailingRadius: radius,
+                    style: .continuous
+                ),
+                size: TabBarGeometry.peekPosterSize
+            )
+        case .album, .track, .playlist:
+            cover(
+                RoundedRectangle(cornerRadius: radius, style: .continuous),
+                size: CGSize(width: TabBarGeometry.peekSquareSize, height: TabBarGeometry.peekSquareSize)
+            )
+        }
+    }
+
+    /// Распорка задаёт кадр, картинка — `scaledToFill` в оверлее, обводка — внутрь.
+    private func cover<S: InsettableShape>(_ shape: S, size: CGSize) -> some View {
+        Color.clear
+            .frame(width: size.width, height: size.height)
+            .overlay {
+                if let artwork = item.artwork {
+                    ArtworkImage(source: artwork).scaledToFill()
+                }
+            }
+            .clipShape(shape)
+            .overlay {
+                shape.strokeBorder(
+                    .white.opacity(TabBarGeometry.peekBorderOpacity),
+                    lineWidth: TabBarGeometry.peekBorderWidth
+                )
+            }
     }
 }

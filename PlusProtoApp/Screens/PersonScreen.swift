@@ -18,9 +18,10 @@ private enum PersonLayout {
     // «Популярные треки» — колонки по три строки, следующая выглядывает из-за края
     // (`carousel / Music / opened playlist`).
     static let tracksPerColumn = 3
-    static let trackColumnPeek: CGFloat = 40
     static let trackColumnGap: CGFloat = 16
-    static var trackColumnWidth: CGFloat { photoSize - side * 2 - trackColumnPeek }
+    /// Следующая колонка начинается на `side + ширина + зазор` = 402 − peek: ширина — от
+    /// ширины экрана без полей и без выглядывающей части (`EntitySectionLayout.trackColumnPeek`).
+    static var trackColumnWidth: CGFloat { photoSize - side * 2 - EntitySectionLayout.trackColumnPeek }
 
     static let skeletonCards = 3
     static let skeletonRows = 6
@@ -107,6 +108,11 @@ struct PersonScreen: View {
         return store.photo
     }
 
+    /// «Поделиться» исполнителем: имя и фото; карточка — круглая, без мета-строки.
+    private func shareArtist() {
+        ShareState.shared.present(.artist(name: entity.title, photo: photo))
+    }
+
     /// Оттяг вниз. Скролл вверх шапку не трогает — она обычным образом уезжает.
     private var pull: CGFloat { max(0, -scrollOffset) }
 
@@ -129,7 +135,8 @@ struct PersonScreen: View {
                 actions: [.like, .share],
                 showsControls: role == .artist,
                 // Исполнитель — в коллекции «Моё»: «нравится» кладёт его в «Любимое».
-                collectionItem: role == .artist ? .artist(entity) : nil
+                collectionItem: role == .artist ? .artist(entity) : nil,
+                onShare: role == .artist ? shareArtist : nil
             ) {
                 EmptyView()
             } primary: {
@@ -414,7 +421,7 @@ struct PersonScreen: View {
 
     /// В плеере бара — музыка этого исполнителя (играет или на паузе).
     private var isBarOnThisArtist: Bool {
-        actionBar.mode == .music && actionBar.music?.artist == entity.title
+        actionBar.isMiniPlayerVisible && actionBar.music?.artist == entity.title
     }
 
     /// Играет ли сейчас этот исполнитель — от этого глиф и подпись пилюли.

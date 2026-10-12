@@ -13,6 +13,10 @@ enum EntityMotion {
 enum EntitySectionLayout {
     static let side: CGFloat = EntityCoverLayout.side
     static let sectionPad: CGFloat = 8
+    /// Колонки треков (стек из трёх строк): следующая колонка выглядывает из-под правого
+    /// края экрана на столько. Одна константа у «Моего» и у экрана исполнителя (правка
+    /// пользователя 2026-10-10: следующая колонка выглядывает на 24).
+    static let trackColumnPeek: CGFloat = 24
     static let headerTop: CGFloat = 16
     static let headerBottom: CGFloat = 12
     /// Строка заголовка — 28, как у заголовков выдачи (Headline M при 100 %)
@@ -41,8 +45,13 @@ enum EntitySectionLayout {
 /// альбомы». У плоских списков (фильмы режиссёра, книги писателя — список и есть
 /// весь раздел) шеврона нет: вести некуда.
 struct EntitySectionHeader: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let title: String
     var showsChevron = true
+    /// Шеврон уступил место иконке-хвату режима порядка («Моё») — гаснет кросс-попом,
+    /// место за ним остаётся.
+    var isChevronCollapsed = false
     /// Высота строки заголовка. У каруселей главной Кинопоиска она 24 — Headline M
     /// при 100 % (`carousel / Movies`, шапка 52 = 16 + 24 + 12).
     var lineHeight: CGFloat = EntitySectionLayout.headerLine
@@ -62,6 +71,9 @@ struct EntitySectionHeader: View {
                     .scaleEffect(x: -1)
                     .foregroundStyle(Color.fillSubtitle)
                     .offset(y: PlusMetrics.headerChevronDrop)
+                    .opacity(isChevronCollapsed ? 0 : 1)
+                    .scaleEffect(isChevronCollapsed && !reduceMotion ? ActionBarMotion.iconSwapScale : 1)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap, value: isChevronCollapsed)
             }
         }
         .frame(height: lineHeight)

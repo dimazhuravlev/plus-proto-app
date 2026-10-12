@@ -13,7 +13,6 @@ enum ProfileLayout {
     static let nameGap: CGFloat = 2
     static let closeButton: CGFloat = 40
     static let closeIcon: CGFloat = 20
-    static let closeBlur: CGFloat = 17
     /// Подложка шапки проявляется по скроллу за 24 и сходит на нет на 24 ниже ряда
     static let headerRamp: CGFloat = 24
     static let headerTail: CGFloat = 24
@@ -152,7 +151,8 @@ struct ProfileScreen: View {
                     .frame(width: ProfileLayout.closeIcon, height: ProfileLayout.closeIcon)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: ProfileLayout.closeButton, height: ProfileLayout.closeButton)
-                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary, blur: ProfileLayout.closeBlur)
+                    // Единое стекло хрома — как у кнопок навбаров (правка пользователя 2026-10-10).
+                    .chromeGlass(Circle())
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel("Закрыть")

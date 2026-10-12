@@ -195,7 +195,7 @@ struct SearchSectionView: View {
                     let rows = full.hits.filter { shownFilter.matches($0.kind) }
                     // Пусто — экран пустой выдачи поверх (`isEmpty`), список молчит.
                     ForEach(rows) { hit in
-                        row(hit, isFirst: hit.id == rows.first?.id)
+                        row(hit, in: rows, isFirst: hit.id == rows.first?.id)
                     }
             }
         } else {
@@ -212,7 +212,7 @@ struct SearchSectionView: View {
     }
 
     @ViewBuilder
-    private func row(_ hit: SearchHit, isFirst: Bool) -> some View {
+    private func row(_ hit: SearchHit, in rows: [SearchHit], isFirst: Bool) -> some View {
         let content = SearchListRow(
             hit: hit,
             isFirst: isFirst,
@@ -224,7 +224,7 @@ struct SearchSectionView: View {
             // Трек из полного списка играет сразу, без перехода в альбом (правка
             // пользователя 2026-10-03). В карусели обзора трек по-прежнему открывает
             // альбом. Мини-плеер в поиске не виден — он встанет в бар на выходе.
-            Button { play(hit) } label: { content }
+            Button { play(hit, in: rows) } label: { content }
                 .buttonStyle(BareButtonStyle())
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {
@@ -241,9 +241,9 @@ struct SearchSectionView: View {
 
     /// Включить трек в плеере бара. Трек — в «Искали недавно»: перехода нет,
     /// но выбор из выдачи тот же.
-    private func play(_ track: SearchHit) {
+    private func play(_ track: SearchHit, in rows: [SearchHit]) {
         search.remember(track)
-        startTrack(track, in: actionBar)
+        startTrack(track, queue: rows, in: actionBar)
     }
 
     /// Сердце строки — отметка коллекции «Моё» (2026-10-04); персоны, которых коллекция
@@ -260,17 +260,32 @@ struct SearchSectionView: View {
 
 /// Включить трек строки в плеере бара: обложка, название, исполнитель и альбом —
 /// из строки. Мини-плеер в поиске не виден — он встанет в бар на выходе.
+///
+/// `queue` — показанный список: его треки (`kind == .track`) становятся очередью,
+/// конец превью переключает на следующий из них.
 @MainActor
-func startTrack(_ track: SearchHit, in actionBar: ActionBarState) {
+func startTrack(_ track: SearchHit, queue: [SearchHit] = [], in actionBar: ActionBarState) {
     PlayerHaptics.tap()
-    let album: String? = if case .album(let ref) = track.route { ref.title } else { nil }
-    actionBar.startMusic(MusicNowPlaying(
-        id: track.id,
-        cover: track.artwork ?? .asset("mockAlbumCover"),
-        title: track.title,
-        artist: track.subtitle,
-        album: album
-    ))
+    actionBar.startMusic(MusicNowPlaying(hit: track), queue: MusicNowPlaying.queue(from: queue))
+}
+
+extension MusicNowPlaying {
+    /// Трек строки выдачи: обложка, название, исполнитель и альбом — из строки.
+    init(hit: SearchHit) {
+        let album: String? = if case .album(let ref)? = hit.route { ref.title } else { nil }
+        self.init(
+            id: hit.id,
+            cover: hit.artwork ?? .asset("mockAlbumCover"),
+            title: hit.title,
+            artist: hit.subtitle,
+            album: album
+        )
+    }
+
+    /// Очередь из списка выдачи: только треки, в порядке списка.
+    static func queue(from hits: [SearchHit]) -> [MusicNowPlaying] {
+        hits.filter { $0.kind == .track }.map(MusicNowPlaying.init(hit:))
+    }
 }
 
 // MARK: - Полный список истории
@@ -343,7 +358,7 @@ struct SearchHistoryView: View {
             isPressable: hit.kind == .track || hit.route != nil
         )
         if hit.kind == .track {
-            Button { startTrack(hit, in: actionBar) } label: { content }
+            Button { startTrack(hit, queue: search.history, in: actionBar) } label: { content }
                 .buttonStyle(BareButtonStyle())
                 .accessibilityHint("Включить трек")
         } else if let route = hit.route {

@@ -10,7 +10,8 @@ import UIKit
 /// Радиус — в CSS-единицах: у поля поиска CSS отдаёт `backdrop-blur 35` при `BACKGROUND_BLUR 70`
 /// в панели Figma, и так же вдвое меньше записаны все блюр-константы проекта
 /// (glass 35↔70, button 20↔40, ambilight 28↔56, backdrop 100↔200) — единицы меняются только все разом.
-/// 35 — пилюли r32, 20 — круглые кнопки 40pt и стеклянные блоки. У тайла иконки таба блюра нет.
+/// 35 — весь хром (`chromeGlass`: пилюли r32, тост, тайлы табов, круглые кнопки навбаров),
+/// 20 — прочие круглые кнопки 40pt и стеклянные блоки.
 struct GlassSurface<S: InsettableShape>: ViewModifier {
     let shape: S
     let blur: CGFloat
@@ -38,52 +39,36 @@ struct GlassSurface<S: InsettableShape>: ViewModifier {
     }
 }
 
-/// Стекло нижнего хрома — пилюли action bar (поиск, «назад», мини-плееры, чипы книги
-/// и кино) и тайлы табов. Макетный рецепт (блюр + белый 10 %) над светлыми обложками
-/// светлел, и белые текст и иконки в нём тонули (правка пользователя 2026-10-10).
-/// Под заливку лёг чёрный слой: чёрный фон он не меняет, светлый приглушает.
-/// Сила — слайдером в дебаг-меню профиля, хранится в `UserDefaults`.
+/// Стекло хрома — один рецепт (`chromeGlass`) на пилюли action bar (поиск, «назад»,
+/// мини-плееры, чипы книги и кино), тост, тайлы табов и круглые кнопки навбаров и читалки:
+/// блюр 35, затемнение, белый 10 %, бордер серых кнопок. Макетный рецепт (блюр + белый 10 %)
+/// над светлыми обложками светлел, и белые текст и иконки в нём тонули (правка пользователя
+/// 2026-10-10). Под заливку лёг чёрный слой: чёрный фон он не меняет, светлый приглушает.
+/// Сила — одним слайдером в дебаг-меню профиля, хранится в `UserDefaults`; каждая
+/// поверхность читает её из того же `@AppStorage`, локальных значений нет.
 enum ChromeGlass {
     static let dimKey = "chromeGlassDim"
     static let defaultDim: Double = 0.4
 }
 
 /// Стекло хрома: общий рецепт серых кнопок с затемнением фона из дебаг-меню.
+/// Бордер — серых кнопок; своим бывает только у тайлов табов.
 private struct ChromeGlassSurface<S: InsettableShape>: ViewModifier {
     @AppStorage(ChromeGlass.dimKey) private var dim = ChromeGlass.defaultDim
     let shape: S
     let blur: CGFloat
+    let border: Color
+    let borderWidth: CGFloat
 
     func body(content: Content) -> some View {
         content.modifier(GlassSurface(
             shape: shape,
             blur: blur,
             fill: .buttonsPrimary,
-            border: SecondaryButtonBorder.color,
-            borderWidth: SecondaryButtonBorder.width,
+            border: border,
+            borderWidth: borderWidth,
             dim: dim
         ))
-    }
-}
-
-/// Тайл таба: плоская заливка без блюра, как в макете, над тем же затемнением, что у
-/// стекла хрома.
-private struct ChromeIconTile: ViewModifier {
-    @AppStorage(ChromeGlass.dimKey) private var dim = ChromeGlass.defaultDim
-    let border: Color
-    let borderWidth: CGFloat
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.iconTile, style: .continuous)
-        content
-            .background {
-                ZStack {
-                    shape.fill(Color.black.opacity(dim))
-                    shape.fill(Color.buttonsPrimary)
-                }
-            }
-            .overlay { shape.strokeBorder(border, lineWidth: borderWidth) }
-            .contentShape(shape)
     }
 }
 
@@ -129,9 +114,16 @@ extension View {
         chromeGlass(Capsule(style: .continuous))
     }
 
-    /// Стекло хрома произвольной формы — пилюля, чипы книги и кино в action bar.
-    func chromeGlass<S: InsettableShape>(_ shape: S, blur: CGFloat = PlusMetrics.glassBlur) -> some View {
-        modifier(ChromeGlassSurface(shape: shape, blur: blur))
+    /// Стекло хрома произвольной формы — пилюля, чипы книги и кино в action bar, тост, тайлы
+    /// табов, круглые кнопки навбаров и читалки. Рецепт один: блюр 35, затемнение из дебаг-меню,
+    /// белый 10 %, бордер серых кнопок. Параметры у бордера — только для тайлов табов.
+    func chromeGlass<S: InsettableShape>(
+        _ shape: S,
+        blur: CGFloat = PlusMetrics.glassBlur,
+        border: Color = SecondaryButtonBorder.color,
+        borderWidth: CGFloat = SecondaryButtonBorder.width
+    ) -> some View {
+        modifier(ChromeGlassSurface(shape: shape, blur: blur, border: border, borderWidth: borderWidth))
     }
 
     /// Круглые кнопки 40pt — общий бордер серых кнопок. ~~Бордер white 6 % по figma-screen1
@@ -140,15 +132,19 @@ extension View {
         secondaryButtonSurface(Circle())
     }
 
-    /// Тайл иконки таба 40×40 r14 — figma-tabbar §5. Стекла у него нет: замер обоих вариантов
-    /// компонента (`2004:9375` / `2004:9387`) не даёт ни `backdrop-filter`, ни `filter: blur()` —
-    /// это плоская заливка white 10% с хайрлайном white 4% (неактивный) / 6% × 0.733pt (активный).
-    /// Под заливкой — затемнение стекла хрома (`ChromeGlass`).
+    /// Тайл иконки таба 40×40 r14 — figma-tabbar §5. В макете (`2004:9375` / `2004:9387`) это
+    /// плоская заливка white 10 % без блюра; решением пользователя 2026-10-10 тайл — то же
+    /// стекло хрома, что у остального хрома (блюр 35, затемнение). Свой остался бордер:
+    /// white 4 % (неактивный) / 6 % × 0.733pt (активный).
     func glassIconTile(
         border: Color = .white.opacity(0.04),
         borderWidth: CGFloat = PlusMetrics.hairline
     ) -> some View {
-        modifier(ChromeIconTile(border: border, borderWidth: borderWidth))
+        chromeGlass(
+            RoundedRectangle(cornerRadius: PlusRadius.iconTile, style: .continuous),
+            border: border,
+            borderWidth: borderWidth
+        )
     }
 }
 

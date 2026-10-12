@@ -51,15 +51,6 @@ enum ShowcasePromoLayout {
     static let albumPairTrailing: CGFloat = 14.5
     static let albumPairAbove: CGFloat = 22.5
 
-    /// Описание фильма и книги — под карточкой: Text S в четыре строки шириной 244;
-    /// левый край на 97 левее центра экрана, то есть центр строки на 25 правее.
-    /// Сверху — на 39.4 ниже низа своей карточки (у постера макета: 382 − 342.6).
-    static let descriptionGap: CGFloat = 39.4
-    static let descriptionWidth: CGFloat = 244
-    static let descriptionShift: CGFloat = 25
-    static let descriptionLines = 4
-    static var descriptionHeight: CGFloat { CGFloat(descriptionLines) * PlusTextSize.textS.lineHeight }
-
     /// Подпись альбома (макет `2537:27595`) — аватар исполнителя 40, справа название
     /// альбома и исполнитель Text M. Наклонена вместе с обложкой: левый край на 3.3
     /// правее её левой кромки, верх — на 7.2 ниже низа (замер в системе обложки).
@@ -72,31 +63,19 @@ enum ShowcasePromoLayout {
     static let albumCaptionLineOverlap: CGFloat = 2
     static let albumAvatar: CGFloat = 40
 
-    /// Высота блока — до низа описания под самой высокой карточкой, постером: место
-    /// держится всегда, и лента ниже не прыгает от айтема к айтему.
-    static var height: CGFloat { descriptionTop(cardHeight: poster.height) + descriptionHeight }
+    /// Пустое место под самой высокой карточкой, постером. Было 39.4 + 64 под описание;
+    /// описание убрано, пустое место ужато на 56 — правка пользователя 2026-10-10.
+    static let belowCards: CGFloat = 47.4
 
-    static func descriptionTop(cardHeight: CGFloat) -> CGFloat {
-        cardCenterY + cardHeight / 2 + descriptionGap
-    }
-
-    /// Высота карточки айтема по центру — по виду.
-    static func cardHeight(_ item: ShowcaseBlock) -> CGFloat {
-        switch item {
-        case .movie, .vibe, .reading, .watching:
-            return poster.height
-        case .album:
-            return album
-        case .book:
-            let figure = book
-            return figure.geometry.frameSize(coverWidth: figure.coverWidth).height
-        }
-    }
+    /// Высота блока — до низа постера плюс `belowCards`: место держится всегда, и лента
+    /// ниже не прыгает от айтема к айтему.
+    static var height: CGFloat { cardCenterY + poster.height / 2 + belowCards }
 
     /// Фон — картинка центральной карточки вдвое шире экрана, размытая: от физического
     /// верха экрана до низа блока и ещё немного ниже, в чёрный.
     static let backdropWidth: CGFloat = PlusMetrics.designWidth * 2
-    static let backdropTail: CGFloat = 64
+    /// +56 к прежним 64, чтобы фон не укоротился вместе с блоком (правка 2026-10-10).
+    static let backdropTail: CGFloat = 120
     /// Сколько фон уходит выше блока — до физического верха экрана.
     static var backdropAbove: CGFloat { ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight }
     static var backdropHeight: CGFloat { backdropAbove + height + backdropTail }
@@ -121,10 +100,10 @@ enum ShowcasePromoLayout {
 }
 
 enum ShowcasePromoMotion {
-    /// Пара ✕/✓ и описание проявляются вместе (правка пользователя 2026-10-08) и не
+    /// Пара ✕/✓ (и подпись альбома) проявляются вместе (правка пользователя 2026-10-08) и не
     /// сразу, а когда карточка встала в центр: пауза, затем короткий сильный ease-out.
-    /// Пауза 100 мс — «уменьши задержку» (правка пользователя 2026-10-08, было 250).
-    static let revealDelay: Duration = .milliseconds(100)
+    /// Пауза 50 мс — «чуть быстрее» (правка пользователя 2026-10-10; было 100, до этого 250).
+    static let revealDelay: Duration = .milliseconds(50)
     static let revealIn: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
     /// Свайп начался — уходят быстро: они отвечают только за центральную карточку.
     static let revealOut: Animation = .easeOut(duration: 0.15)
@@ -139,6 +118,18 @@ enum ShowcasePromoMotion {
     /// к 300 мс из 400 прошёл ~93 %): после полного угасания стояла мёртвая пауза
     /// с пустым центром (кадр 2026-10-08).
     static let collapseDelay: Duration = .milliseconds(300)
+    /// Перестановка набора перед ✕-схлопыванием должна лечь в свой проход, и только потом
+    /// стартует `collapse`: в одном проходе подмена вью получала неявный переход.
+    static let editSettle: Duration = .milliseconds(40)
+}
+
+/// Ключ слота ряда: копия круга и айтем, а не номер места. По номеру места каждая
+/// вставка и удаление (✕) сдвигала отображение `items[index % count]` почти у всех слотов,
+/// вью получали новый айтем и пересоздавались — пять видимых обложек мигали дважды
+/// (жалоба 2026-10-10). По `(копия, id)` существующие вью живут, ряд лишь перекладывается.
+private struct PromoSlotID: Hashable {
+    let copy: Int
+    let item: String
 }
 
 /// Промо-слайдер «Главной» (макет `2532:26618`, задача пользователя 2026-10-08):
@@ -146,7 +137,7 @@ enum ShowcasePromoMotion {
 ///
 /// Центральная крупнее соседей, у каждой карточки свой случайный наклон; масштаб, наклон
 /// и опускание соседей идут за сдвигом ленты кадр в кадр (`visualEffect`, без стейта).
-/// Описание и пара ✕/✓ — только у центральной и вместе: с паузой, когда карточка
+/// Пара ✕/✓ (у альбома — и подпись) — только у центральной и вместе: с паузой, когда карточка
 /// встала. Фон — размытая картинка центральной, меняется вслед за сдвигом.
 ///
 /// ✕ не подменяет айтем, а убирает его из круга: карточка гаснет, ряд схлопывается,
@@ -173,8 +164,15 @@ struct ShowcasePromo: View {
     private static let minimumItems = 3
 
     /// Карточка ленты копий в центре.
-    @State private var page: Int?
-    /// Айтем, у которого показаны описание и пара ✕/✓, — центральный, вставший на место.
+    @State private var pageID: PromoSlotID?
+    /// Слот в центре на момент перестановки набора (`editSet`). Ленту прикалываем к нему
+    /// уже после того, как раскладка легла (`pinToEditAnchor`): `scrollTo` внутри самого
+    /// `editSet` разрешается по старой раскладке и становится no-op, а биндинг `pageID` при
+    /// вставке ленту не двигает — ключ слота не меняется, команды от него нет.
+    @State private var editAnchor: PromoSlotID?
+    /// Прокси ленты — для явного `scrollTo` после перестановки набора (`remove(slot:)`).
+    @State private var scrollProxy: ScrollViewProxy?
+    /// Айтем, у которого показана пара ✕/✓ (у альбома — и подпись), — центральный, вставший на место.
     @State private var revealed: String?
     @State private var revealTask: Task<Void, Never>?
     /// Состояние пары — на айтем, а не на копию и не на место в наборе: ✕ убирает айтемы,
@@ -196,11 +194,36 @@ struct ShowcasePromo: View {
         _savedIndex = savedIndex
         let count = max(items.count, 1)
         let start = count + savedIndex.wrappedValue % count
-        _page = State(initialValue: start)
+        _pageID = State(initialValue: items.isEmpty ? nil : PromoSlotID(copy: 1, item: items[start % count].id))
         _scroll = State(initialValue: PromoScrollState(position: CGFloat(start)))
     }
 
     private var count: Int { items.count }
+
+    /// Номер места центральной карточки в ряду копий. Хранится ключом слота (`pageID`),
+    /// номер — производный: остальной код читает и пишет его как раньше.
+    private var page: Int? {
+        get {
+            guard let id = pageID else { return nil }
+            let promo = liveItems
+            guard let index = promo.firstIndex(where: { $0.id == id.item }) else { return nil }
+            return id.copy * promo.count + index
+        }
+        nonmutating set {
+            let promo = liveItems
+            guard let value = newValue, !promo.isEmpty else {
+                pageID = nil
+                return
+            }
+            let copy = Int((Double(value) / Double(promo.count)).rounded(.down))
+            pageID = PromoSlotID(copy: copy, item: promo[Self.wrap(value, promo.count)].id)
+        }
+    }
+
+    /// Ключи слотов ряда: копии круга по порядку, в каждой — айтемы набора.
+    private var slotIDs: [PromoSlotID] {
+        (0..<Self.copies).flatMap { copy in items.map { PromoSlotID(copy: copy, item: $0.id) } }
+    }
 
     /// Набор как он есть сейчас — в отложенных шагах ✕ и в замыканиях задач: `items`
     /// там с того прохода, на котором их создали.
@@ -213,7 +236,7 @@ struct ShowcasePromo: View {
                 // на шаг левее, по оценке, — мелькала прежняя карточка (кадр 2026-10-08),
                 // а ушедшие за экран слоты держали прежний айтем. Слотов не больше 18.
                 HStack(spacing: 0) {
-                    ForEach(0..<(count * Self.copies), id: \.self) { index in
+                    ForEach(Array(slotIDs.enumerated()), id: \.element) { index, _ in
                         slot(index)
                     }
                 }
@@ -222,7 +245,7 @@ struct ShowcasePromo: View {
             // По одной карточке за свайп, как бы ни бросили.
             .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
             .contentMargins(.horizontal, (PlusMetrics.designWidth - Layout.step) / 2, for: .scrollContent)
-            .scrollPosition(id: $page, anchor: .center)
+            .scrollPosition(id: $pageID, anchor: .center)
             .scrollIndicators(.hidden)
             // Карточки шире слота — за краями экрана их видно.
             .scrollClipDisabled()
@@ -251,15 +274,23 @@ struct ShowcasePromo: View {
                     hideReveal()
                 }
             }
-            .onAppear { scheduleReveal() }
+            .onAppear {
+                scrollProxy = proxy
+                trace("appear")
+                scheduleReveal()
+            }
+            #if DEBUG
+            .onChange(of: pageID) { _, _ in trace("pageID") }
+            #endif
             // Набор собрался заново (моки → живые, под заставкой) — центральный айтем
             // остаётся в центре, если он есть в новом наборе, иначе — с начала.
-            .onChange(of: items.map(\.id)) { old, new in
+            .onChange(of: items.map(\.id)) { _, new in
                 guard !isEditingSet else {
                     isEditingSet = false
+                    pinToEditAnchor()
                     return
                 }
-                recenter(old: old, new: new)
+                recenter(new: new)
             }
             // Размытые фоны — заранее, на весь набор: фон берёт готовый растр с первого кадра.
             .task(id: items.map(\.promoArtwork)) {
@@ -315,14 +346,6 @@ struct ShowcasePromo: View {
                 .frame(height: Layout.carouselHeight)
                 .modifier(PromoCardMotion(look: look, shift: shift))
 
-            // У альбома подпись своя — на обложке, наклонена вместе с ней (`card`).
-            if !item.isAlbum {
-                description(item)
-                    .offset(x: Layout.descriptionShift, y: Layout.descriptionTop(cardHeight: Layout.cardHeight(item)))
-                    .modifier(PromoReveal(isShown: isShown))
-                    .offset(x: -shift * Layout.step)
-                    .allowsHitTesting(false)
-            }
         }
         .frame(width: Layout.step, height: Layout.height, alignment: .top)
         // Центральная — поверх соседей, как в макете: в ряду правый сосед ложился
@@ -340,11 +363,7 @@ struct ShowcasePromo: View {
         let isCurrent = slotIndex == page
         let isAlbum = item.isAlbum
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
-            // `id` — по айтему: слот, чей айтем сменился (догрузка набора, ✕), встаёт
-            // новым вью и берёт картинку из кэша с первого кадра, а не кадр-другой
-            // показывает прежнюю.
             PromoCardFace(item: item)
-                .id(item.id)
                 .showcaseSwappable()
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
@@ -375,9 +394,8 @@ struct ShowcasePromo: View {
                 // и свою высоту. `alignmentGuide` в оверлее не сработал (кадр 2026-10-08:
                 // подпись легла на обложку).
                 PromoAlbumCaption(album: album)
-                    .id(album.id)
                     .showcaseSwappable()
-                    .modifier(PromoReveal(isShown: isShown))
+                    .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
                     .allowsHitTesting(false)
             }
@@ -399,15 +417,6 @@ struct ShowcasePromo: View {
             return
         }
         if let route = item.entityRoute { navigation.open(route) }
-    }
-
-    private func description(_ item: ShowcaseBlock) -> some View {
-        Text(item.promoDescription)
-            .plusText(.textS, .medium)
-            .foregroundStyle(Color.fillFour)
-            .lineLimit(Layout.descriptionLines)
-            .frame(width: Layout.descriptionWidth, height: Layout.descriptionHeight, alignment: .topLeading)
-            .showcaseSwappable()
     }
 
     // MARK: ✕ — айтем уходит из круга
@@ -453,6 +462,10 @@ struct ShowcasePromo: View {
                     center(on: removed.id)
                     removal = page
                 }
+                // Перестановка ложится в свой проход до старта схлопывания.
+                try? await Task.sleep(for: ShowcasePromoMotion.editSettle)
+                // Страховка: если прикалывание в `onChange` уже отработало — no-op.
+                pinToEditAnchor()
             }
             withAnimation(ShowcasePromoMotion.collapse) {
                 collapse = 1
@@ -476,6 +489,22 @@ struct ShowcasePromo: View {
         withTransaction(instant) {
             isEditingSet = true
             change()
+            editAnchor = pageID
+        }
+        trace("edit")
+    }
+
+    /// После перестановки набора раскладка сдвигается на шаг (вставка перед центром), а
+    /// ключ центрального слота прежний — лента сама не едет. Явно ставим её на сохранённый
+    /// якорь, когда `items` и раскладка уже новые; мгновенной транзакцией.
+    private func pinToEditAnchor() {
+        guard let anchor = editAnchor else { return }
+        trace("pin anchor=\(anchor.copy)/\(anchor.item)")
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            pageID = anchor
+            scrollProxy?.scrollTo(anchor, anchor: .center)
         }
     }
 
@@ -489,9 +518,11 @@ struct ShowcasePromo: View {
     }
 
     /// Набор сменил каталог — центральный айтем остаётся в центре, если он в наборе.
-    private func recenter(old: [String], new: [String]) {
+    private func recenter(new: [String]) {
         guard !new.isEmpty else { return }
-        let centered = old.isEmpty ? nil : old[Self.wrap(page ?? 0, old.count)]
+        // Центральный айтем — по ключу слота: каталог уже сменил набор, и номер места
+        // в новом наборе указывал бы на чужой айтем.
+        let centered = pageID?.item
         let index = centered.flatMap { new.firstIndex(of: $0) } ?? 0
         var instant = Transaction()
         instant.disablesAnimations = true
@@ -499,6 +530,22 @@ struct ShowcasePromo: View {
             page = new.count + index
             scroll.position = CGFloat(new.count + index)
             savedIndex = index
+            editAnchor = pageID
+        }
+        trace("recenter new=\(new.count) index=\(index)")
+        // Диагноз (2026-10-10, задача 16). Витрина публикует промо порциями (кино, музыка,
+        // книги — `publishPromo`), и набор меняется уже после монтирования слайдера: число
+        // айтемов в копии растёт, и центральный айтем во второй копии уезжает на другое
+        // место ряда. До f519c7e место было числом, `page` менялся, и биндинг двигал ленту.
+        // С ключом слота `(копия, id)` ключ центрального айтема тот же — команды скролла нет,
+        // лента остаётся на старом offset и показывает в центре соседа, а `pageID` указывает
+        // на сдвинутого. Первое ✕ и `pinToEditAnchor` выравнивали их скачком. Ставим ленту
+        // на ключ явно, когда раскладка новая, — как после перестановки набора.
+        pinToEditAnchor()
+        Task { @MainActor in
+            try? await Task.sleep(for: ShowcasePromoMotion.editSettle)
+            guard removal == nil, !isEditingSet else { return }
+            pinToEditAnchor()
         }
         scheduleReveal()
     }
@@ -511,9 +558,10 @@ struct ShowcasePromo: View {
     /// что у стартового чипса `FilterChipsRow`, только без паузы: геометрия приходит
     /// уже после раскладки.
     private func placeIfNeeded(at position: CGFloat, proxy: ScrollViewProxy) {
-        guard !isPlaced, let target = page else { return }
+        guard !isPlaced, let target = pageID, let place = page else { return }
         isPlaced = true
-        guard abs(position - CGFloat(target)) > 0.01 else { return }
+        trace("place position=\(position) place=\(place)")
+        guard abs(position - CGFloat(place)) > 0.01 else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant) { proxy.scrollTo(target, anchor: .center) }
@@ -527,6 +575,7 @@ struct ShowcasePromo: View {
         let index = Self.wrap(current, count)
         savedIndex = index
         let middle = count + index
+        trace("scroll idle current=\(current) middle=\(middle)")
         guard current != middle else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
@@ -556,6 +605,16 @@ struct ShowcasePromo: View {
 
     private static func wrap(_ index: Int, _ count: Int) -> Int {
         ((index % count) + count) % count
+    }
+
+    /// `-debugPromoTrace 1` — события ленты и состояние в консоль: кто и когда двигает
+    /// `pageID`, чтобы сверить его с видимым центром (`scroll.position`).
+    private func trace(_ event: String) {
+        #if DEBUG
+        guard UserDefaults.standard.bool(forKey: "debugPromoTrace") else { return }
+        let slot = pageID.map { "\($0.copy)/\($0.item)" } ?? "nil"
+        print("[promo] \(event) pageID=\(slot) page=\(page.map(String.init) ?? "nil") position=\(scroll.position) count=\(liveItems.count)")
+        #endif
     }
 }
 
@@ -706,7 +765,8 @@ private struct PromoAlbumCaption: View {
     }
 }
 
-/// Описание и пара появляются прозрачностью; пара — ещё и масштабом от своего края.
+/// Пара и подпись альбома появляются прозрачностью и лёгким масштабом от своего края
+/// (правка пользователя 2026-10-10: подпись — как пара).
 /// С «уменьшением движения» — одной прозрачностью.
 private struct PromoReveal: ViewModifier {
     let isShown: Bool
@@ -868,16 +928,6 @@ private enum PromoBackdropRaster {
 extension ShowcaseBlock {
     var isAlbum: Bool {
         if case .album = self { true } else { false }
-    }
-
-    /// Описание под слайдером — у фильма и книги их подпись. У альбома подпись своя
-    /// (`PromoAlbumCaption`): описаний альбомов Deezer не отдаёт, а выдумывать их нельзя.
-    var promoDescription: String {
-        switch self {
-        case .movie(let movie): movie.caption
-        case .book(let book): book.caption
-        case .album, .vibe, .reading, .watching: ""
-        }
     }
 
     /// Картинка фона под слайдером — обложка айтема.

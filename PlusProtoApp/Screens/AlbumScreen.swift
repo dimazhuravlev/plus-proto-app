@@ -151,7 +151,8 @@ struct AlbumScreen: View {
             coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
             scrollOffset: scrollOffset,
             title: details.title,
-            collectionItem: collectionItem
+            collectionItem: collectionItem,
+            onShare: share
         ) {
             cover
         } person: {
@@ -186,6 +187,18 @@ struct AlbumScreen: View {
             title: details.title,
             subtitle: details.artist.isEmpty ? entity.subtitle : details.artist,
             artwork: entity.artwork
+        ))
+    }
+
+    /// «Поделиться»: карточка шеринга из того, что экран уже знает; детали не пришли —
+    /// название и обложка из `entity`, подпись пустая.
+    private func share() {
+        ShareState.shared.present(.album(
+            title: details.title,
+            artist: details.artist,
+            year: details.year,
+            cover: entity.artwork,
+            artistPicture: details.artistPicture
         ))
     }
 
@@ -235,20 +248,23 @@ struct AlbumScreen: View {
             album: details.title,
             year: details.year,
             artistPicture: details.artistPicture,
-            isExplicit: track.isExplicit
+            isExplicit: track.isExplicit,
+            containerID: containerID
         )
     }
 
+    /// Признак принадлежности для бара: по нему кнопка узнаёт свой альбом (`isPlayingMusic`).
+    private var containerID: String { "album:\(entity.id)" }
+
     /// Трек этого альбома, который сейчас в плеере, — играет он или стоит на паузе.
     private var currentTrack: AlbumDetails.Track? {
-        guard actionBar.mode == .music, let id = actionBar.music?.id else { return nil }
+        guard actionBar.isMiniPlayerVisible, let id = actionBar.music?.id else { return nil }
         return tracks.first { playerID($0) == id }
     }
 
     /// Играет ли сейчас этот альбом — от этого зависят глиф и подпись пилюли.
     private var isPlayingThisAlbum: Bool {
-        guard actionBar.mode == .music, actionBar.isMusicPlaying else { return false }
-        return currentTrack != nil || actionBar.music?.id == entity.id
+        actionBar.isPlayingMusic(from: entity.id, kind: "album")
     }
 
     /// Что включает пилюля: трек, который уже стоит в плеере (тогда `open` работает
@@ -258,6 +274,11 @@ struct AlbumScreen: View {
     /// Пока треки не доехали, играем альбом как прежде: кнопка не имеет права быть
     /// мёртвой те секунды, что едет ответ Deezer.
     private var playButtonTarget: MusicNowPlaying {
+        // Играет наш трек, а треклист ещё не доехал, — цель сам трек из бара: тот же id,
+        // и `open` ставит на паузу, а не запускает альбом заново.
+        if isPlayingThisAlbum, let current = actionBar.music {
+            return current
+        }
         if let track = currentTrack ?? tracks.first {
             return nowPlaying(track)
         }
@@ -267,7 +288,8 @@ struct AlbumScreen: View {
             title: details.title,
             artist: details.artist,
             year: details.year,
-            artistPicture: details.artistPicture
+            artistPicture: details.artistPicture,
+            containerID: containerID
         )
     }
 
@@ -280,7 +302,8 @@ struct AlbumScreen: View {
     private func play(_ item: MusicNowPlaying) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.open(.music(item))
+        // Очередь — треклист альбома: конец превью переключает на следующий трек.
+        actionBar.open(.music(item), queue: tracks.map(nowPlaying))
     }
 
     // MARK: Треклист

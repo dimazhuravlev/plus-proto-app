@@ -51,8 +51,13 @@ struct MusicClock: Equatable {
 
     func progress(at now: Date) -> Double {
         guard isAdvancing else { return anchor }
-        let advanced = anchor + max(0, now.timeIntervalSince(date)) / ActionBarState.musicDuration
-        return advanced.truncatingRemainder(dividingBy: 1)
+        return rawProgress(at: now).truncatingRemainder(dividingBy: 1)
+    }
+
+    /// Ход без заворота: больше или равно 1 — трек дошёл до конца (мок-ход без звука).
+    func rawProgress(at now: Date) -> Double {
+        guard isAdvancing else { return anchor }
+        return anchor + max(0, now.timeIntervalSince(date)) / ActionBarState.musicDuration
     }
 }
 
@@ -69,6 +74,12 @@ struct MusicNowPlaying: Equatable, Codable {
     var artistPicture: ArtworkSource? = nil
     /// Бейдж 18+ у названия. Опционал ради старых снимков: `nil` читается как «нет».
     var isExplicit: Bool? = nil
+    /// Откуда трек: `"album:dz-123"`, `"playlist:dz-456"`. Заполняют экраны альбома
+    /// и плейлиста; по нему кнопка «Слушать/Пауза» узнаёт свой трек в баре, не дожидаясь
+    /// загрузки треклиста и не завися от режима бара. `nil` у треков из других мест
+    /// и у записей на диске, сделанных до поля: для них экран узнаёт свой трек по
+    /// префиксу id (`dz-<альбом>-t<трек>`).
+    var containerID: String? = nil
 }
 
 /// Что смотрели: кадр 80×46 внутри чипа 88×54 (figma-actionbar §4.4).
@@ -130,6 +141,10 @@ final class ActionBarState {
     private(set) var mode: ActionBarMode = .search { didSet { persist() } }
 
     init() {
+        // Конец превью решает очередь: звук только сообщает, что трек доиграл.
+        audio { [weak self] audio in
+            audio.onTrackEnd = { self?.musicTrackDidEnd() }
+        }
         restore()
         #if DEBUG
         // Флаг запуска перекрывает восстановленное состояние: прогон обязан начинаться
@@ -188,7 +203,19 @@ final class ActionBarState {
 
     /// Открытый плеер музыки, киноплеер или читалка. На диск не пишется: после
     /// перезапуска приложение поднимается на экране, а не посреди фильма.
-    private(set) var contentPlayer: ContentPlayer?
+    private(set) var contentPlayer: ContentPlayer? {
+        didSet {
+            // Сменилась или закрылась сама читалка — слой музыки над ней уходит вместе с ней.
+            if contentPlayer?.id != oldValue?.id { isMusicOverReader = false }
+        }
+    }
+
+    /// Большой плеер музыки открыт поверх читалки. Слотов `contentPlayer` один, и музыка
+    /// не должна его занимать: презентер тогда снял бы читалку, и после закрытия плеера
+    /// пользователь оказался бы в приложении, а не в книге. Поэтому поверх читалки —
+    /// второй слой флагом, а не стек: слоёв ровно два и только в этом сочетании.
+    /// Закрывается только он; читалка под ним живёт.
+    private(set) var isMusicOverReader = false
 
     /// Палец на таймлайне плеера музыки: тикер прогресса молчит, иначе он тянул бы
     /// заливку вперёд из-под пальца дважды в секунду.
@@ -214,17 +241,24 @@ final class ActionBarState {
     /// в свою широкую версию — а плеер тем же движением сжимается в круг и уезжает
     /// за кромку, — и после снятия фокуса бар в ней и остаётся. Возвращать круг незачем:
     /// пользователь только что показал, что ему нужен поиск.
+    ///
+    /// Круг — **только** от активации поиска (правка пользователя 2026-10-10): `didSet`
+    /// срабатывает и на снятии фокуса, и на повторной записи того же значения, а `false`
+    /// пишут отовсюду (выход из поиска, затемнение, уход в карточку, тост «Моё»), —
+    /// и развёрнутая пилюля схлопывалась без всякого поиска. Поэтому повышаем режим
+    /// только на переходе «нет фокуса → есть фокус».
     var isSearchFocused: Bool = false {
-        didSet { promoteSearchIfCompact() }
+        didSet {
+            guard isSearchFocused, !oldValue else { return }
+            promoteSearchIfCompact()
+        }
     }
 
     /// Повышает режим до `.search`, если поиск сейчас круг.
     ///
-    /// Зовётся и на получении фокуса, и на снятии, и это не перестраховка: музыка может
-    /// начаться **пока поиск открыт** (тап по карточке витрины из-под слоя, автозапуск
-    /// плеера), и тогда проверка только на входе промахивается — режим уезжает
-    /// в `.music` уже после неё, и на выходе поле снова схлопывается в круг. Ровно этот
-    /// промах и ловился, когда музыка приезжала позже фокуса.
+    /// Зовётся только на получении фокуса (правка пользователя 2026-10-10: круг —
+    /// только по активации поиска). Музыка, начавшаяся **пока поиск открыт**, пилюлю
+    /// не схлопывает: активации поиска не было.
     ///
     /// Круг поиска бывает только в `.music`: в `.book` и `.movie` поле и так во всю
     /// ширину, и повышение выбросило бы их чип — то есть отобрало бы книгу или фильм,
@@ -243,17 +277,107 @@ final class ActionBarState {
     private static let progressTick: TimeInterval = 0.5
     private var progressTicker: Task<Void, Never>?
 
-    func startMusic(_ item: MusicNowPlaying) {
+    /// Очередь треков: список, из которого запустили трек (альбом, плейлист, коллекция,
+    /// выдача). Конец превью переключает на следующий, в конце — снова первый. Пустая —
+    /// очереди нет (одиночный запуск, холодный старт): трек повторяется. На диск не
+    /// пишется: после холодного старта очереди нет.
+    private(set) var queue: [MusicNowPlaying] = []
+    /// Позиция играющего трека в очереди — числом, а не по id: в плейлисте один
+    /// трек бывает дважды.
+    private(set) var queueIndex = 0
+    /// Следующий трек «Моей волны», выбранный при старте текущего: звук успевает
+    /// найти его превью заранее, и «Дальше» играет тот же трек.
+    @ObservationIgnored private var vibeNext: MusicNowPlaying?
+
+    /// Мини-плеер на экране: круг (`.search`) или капсула (`.music`) с играющим треком.
+    var isMiniPlayerVisible: Bool {
+        Self.showsMiniPlayer(mode: mode, hasMusic: music != nil)
+    }
+
+    /// Один предикат на состояние и на раскладку бара (`ActionBarLayout`): мини-плеер
+    /// есть только в режимах музыки и поиска, и только пока есть трек.
+    static func showsMiniPlayer(mode: ActionBarMode, hasMusic: Bool) -> Bool {
+        hasMusic && (mode == .music || mode == .search)
+    }
+
+    /// Играет ли в мини-плеере трек этого альбома или плейлиста (`kind` — `"album"`
+    /// или `"playlist"`). Кнопка «Слушать/Пауза» экрана зависит только от этого: ни от
+    /// режима бара (после поиска он остаётся кругом `.search`, а не `.music`), ни от
+    /// загруженного треклиста (с первого кадра экрана, пока детали едут). Режимы
+    /// `.book` и `.movie` не в счёт: бар за чипом, мини-плеера нет.
+    func isPlayingMusic(from entityID: String, kind: String) -> Bool {
+        guard isMiniPlayerVisible, isMusicPlaying, let music else { return false }
+        return music.containerID == "\(kind):\(entityID)"
+            || music.id == entityID
+            || music.id.hasPrefix(entityID + "-t")
+    }
+
+    /// Что играет дальше: хвост очереди после текущего, по кругу, без самого текущего.
+    /// Пусто — очереди нет (одиночный запуск, «Моя волна»): «Что дальше» не показываем.
+    var upcoming: [MusicNowPlaying] {
+        guard queue.count > 1, queue.indices.contains(queueIndex) else { return [] }
+        return (1..<queue.count).prefix(Self.upcomingLimit).map { queue[(queueIndex + $0) % queue.count] }
+    }
+
+    private static let upcomingLimit = 20
+
+    /// Запуск трека пользователем: мини-плеер разворачивается в капсулу.
+    /// `list` — откуда запустили (пустой — очереди нет), `index` — позиция трека
+    /// в списке, если вызывающий её знает (дубли id в плейлисте).
+    func startMusic(_ item: MusicNowPlaying, queue list: [MusicNowPlaying] = [], at index: Int? = nil) {
+        queue = list
+        if let index, list.indices.contains(index), list[index].id == item.id {
+            queueIndex = index
+        } else {
+            queueIndex = list.firstIndex { $0.id == item.id } ?? 0
+        }
+        switchTrack(item)
+        mode = .music
+    }
+
+    /// Смена трека без смены режима: авто-переход на конце превью не должен
+    /// разворачивать круг в капсулу.
+    private func switchTrack(_ item: MusicNowPlaying) {
         music = item
         musicProgress = 0
         isMusicAdvancing = false
         isMusicPlaying = true
-        mode = .music
+        vibeNext = nil
         startProgressTicking()
         // Тот же трек ещё раз — тоже с начала.
         audio { audio in
             audio.play(item, from: 0, isPlaying: true)
             audio.seek(to: 0)
+        }
+        // Следующему треку превью ищем заранее: между треками без дыры.
+        if let next = nextTrack() {
+            Task { @MainActor in await MusicAudio.shared.prefetch(next.item) }
+        }
+    }
+
+    /// Что играет после текущего: «Моя волна» — случайный трек волны (выбранный один
+    /// раз на трек), очередь — следующий по кругу, иначе `nil` (одиночный запуск).
+    private func nextTrack() -> (item: MusicNowPlaying, index: Int)? {
+        if let music, MyVibeTracks.isVibe(music.id) {
+            let next = vibeNext ?? MyVibeTracks.random(excluding: music.id)
+            vibeNext = next
+            return (next, queueIndex)
+        }
+        guard queue.count > 1, queue.indices.contains(queueIndex) else { return nil }
+        let index = (queueIndex + 1) % queue.count
+        return (queue[index], index)
+    }
+
+    /// Превью доиграло (от звука или от мок-хода часов): следующий трек очереди,
+    /// а очереди нет — тот же трек с начала.
+    func musicTrackDidEnd() {
+        guard isMusicPlaying else { return }
+        if let next = nextTrack() {
+            queueIndex = next.index
+            switchTrack(next.item)
+        } else {
+            restartTrack()
+            audio { $0.setPlaying(true) }
         }
     }
 
@@ -422,6 +546,11 @@ final class ActionBarState {
                 } else if isAwaiting {
                     self.setMusicAdvancing(false)
                 } else {
+                    // Мок-ход дошёл до конца — как конец превью: следующий трек очереди.
+                    if self.musicClock.rawProgress(at: .now) >= 1 {
+                        await MainActor.run { self.musicTrackDidEnd() }
+                        continue
+                    }
                     self.musicProgress = self.liveMusicProgress
                     self.setMusicAdvancing(true)
                 }
@@ -438,15 +567,15 @@ final class ActionBarState {
     /// как пауза — иначе плеер нечем остановить, пока нет полноэкранного. Кино и книга
     /// открываются сразу на весь экран: «Смотреть» и «Читать» обещают фильм и текст,
     /// а не чип в баре.
-    func open(_ target: ShowcasePlayerTarget) {
+    func open(_ target: ShowcasePlayerTarget, queue list: [MusicNowPlaying] = [], at index: Int? = nil) {
         switch target {
         case .music(let item):
-            if mode == .music, music?.id == item.id {
+            if music?.id == item.id, isMiniPlayerVisible {
                 // Через тот же метод, что и кнопка: иначе тикер прогресса
                 // остался бы работать на паузе.
                 toggleMusicPlayback()
             } else {
-                startMusic(item)
+                startMusic(item, queue: list, at: index)
             }
         case .movie(let item):
             watch(item)
@@ -460,7 +589,11 @@ final class ActionBarState {
     /// Открыть полноэкранный плеер музыки — тап по широкой пилюле мини-плеера.
     func openMusicPlayer() {
         guard music != nil else { return }
-        contentPlayer = .music
+        if case .reader = contentPlayer {
+            isMusicOverReader = true
+        } else {
+            contentPlayer = .music
+        }
     }
 
     /// Перемотка таймлайном плеера: позиция трека долей, 0…1.
@@ -476,10 +609,15 @@ final class ActionBarState {
         audio { $0.seek(to: 0) }
     }
 
-    /// «Дальше» и дизлайк: следующий трек из очереди «Что дальше».
+    /// «Дальше» и дизлайк: следующий трек очереди; следующего нет — этот с начала.
+    /// Режим не трогаем: полноэкранный плеер открыт, бар под ним остаётся как был.
     func skipToNext() {
-        guard let next = MusicQueue.upcoming(after: music?.id).first else { return }
-        startMusic(next.nowPlaying)
+        if let next = nextTrack() {
+            queueIndex = next.index
+            switchTrack(next.item)
+        } else {
+            restartTrack()
+        }
     }
 
     /// Отметить играющий трек в «Любимом» коллекции или снять отметку.
@@ -568,6 +706,14 @@ final class ActionBarState {
         }
     }
 
+    /// Закрыть всё, что играет поверх экрана: музыку над читалкой и саму читалку/киноплеер.
+    /// Нужен тапу по тосту. Сброс флага до закрытия — иначе `closeContentPlayer` снял бы
+    /// только верхний слой (музыку) и остановился.
+    func closeAllPlayers() {
+        isMusicOverReader = false
+        closeContentPlayer()
+    }
+
     /// Закрыть киноплеер или читалку.
     ///
     /// - Parameters:
@@ -579,6 +725,11 @@ final class ActionBarState {
         // Закрыли раньше, чем плеер доехал, — бар догоняет запуск сейчас: позиция
         // фильма пишется в его чип.
         applyPendingResume()
+        // Плеер музыки над читалкой: закрывается только верхний слой.
+        if isMusicOverReader {
+            isMusicOverReader = false
+            return
+        }
         switch contentPlayer {
         case .movie(let item):
             if let moviePosition, movie?.id == item.id {
@@ -604,6 +755,11 @@ final class ActionBarState {
     /// Состояние обязано догнать экран, иначе следующий тап не откроет ничего:
     /// презентер считал бы, что плеер уже показан.
     func contentPlayerDidDisappear(id: ContentPlayer.ID) {
+        // Слой музыки над читалкой сняли жестом или системой — читалка остаётся.
+        if id == "music", isMusicOverReader {
+            isMusicOverReader = false
+            return
+        }
         guard contentPlayer?.id == id else { return }
         closeContentPlayer()
     }

@@ -75,7 +75,8 @@ struct PlaylistScreen: View {
             coverSize: CGSize(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize),
             scrollOffset: scrollOffset,
             title: details.title,
-            collectionItem: collectionItem
+            collectionItem: collectionItem,
+            onShare: share
         ) {
             cover
         } person: {
@@ -102,6 +103,15 @@ struct PlaylistScreen: View {
         )
     }
 
+    /// «Поделиться»: карточка шеринга; владелец плейлиста — подпись, если известен.
+    private func share() {
+        ShareState.shared.present(.playlist(
+            title: details.title,
+            owner: details.owner,
+            cover: entity.artwork
+        ))
+    }
+
     private var cover: some View {
         let shape = RoundedRectangle(cornerRadius: AlbumLayout.coverRadius, style: .continuous)
         return ArtworkImage(source: entity.artwork)
@@ -126,28 +136,41 @@ struct PlaylistScreen: View {
             title: track.title,
             artist: track.artist,
             album: track.album,
-            isExplicit: track.isExplicit
+            isExplicit: track.isExplicit,
+            containerID: containerID
         )
     }
 
+    /// Признак принадлежности для бара: по нему кнопка узнаёт свой плейлист (`isPlayingMusic`).
+    private var containerID: String { "playlist:\(entity.id)" }
+
     /// Трек этого плейлиста, который сейчас в плеере, — играет он или на паузе.
     private var currentTrack: PlaylistDetails.Track? {
-        guard actionBar.mode == .music, let id = actionBar.music?.id else { return nil }
+        guard actionBar.isMiniPlayerVisible, let id = actionBar.music?.id else { return nil }
         return details.tracks.first { playerID($0) == id }
     }
 
     private var isPlayingThisPlaylist: Bool {
-        guard actionBar.mode == .music, actionBar.isMusicPlaying else { return false }
-        return currentTrack != nil || actionBar.music?.id == entity.id
+        actionBar.isPlayingMusic(from: entity.id, kind: "playlist")
     }
 
     /// Что включает «Слушать»: трек, уже стоящий в плеере (тогда пауза или продолжение),
     /// иначе первый. Пока треки едут — плейлист целиком: кнопка не бывает мёртвой.
     private var playButtonTarget: MusicNowPlaying {
+        // Играет наш трек, а треклист ещё не доехал, — цель сам трек из бара (тоггл в `open`).
+        if isPlayingThisPlaylist, let current = actionBar.music {
+            return current
+        }
         if let track = currentTrack ?? details.tracks.first {
             return nowPlaying(track)
         }
-        return MusicNowPlaying(id: entity.id, cover: entity.artwork, title: details.title, artist: details.owner)
+        return MusicNowPlaying(
+            id: entity.id,
+            cover: entity.artwork,
+            title: details.title,
+            artist: details.owner,
+            containerID: containerID
+        )
     }
 
     private func togglePlayback() {
@@ -156,10 +179,12 @@ struct PlaylistScreen: View {
 
     /// Тот же вход, что у альбома: `open` с тем же id — пауза/продолжение, с другим —
     /// запуск. Хаптика — как у тапа по карточке.
-    private func play(_ item: MusicNowPlaying) {
+    /// `index` — позиция строки: один трек в плейлисте бывает дважды, по id её не найти.
+    private func play(_ item: MusicNowPlaying, at index: Int? = nil) {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.open(.music(item))
+        // Очередь — треклист плейлиста: конец превью переключает на следующий трек.
+        actionBar.open(.music(item), queue: details.tracks.map(nowPlaying), at: index)
     }
 
     // MARK: Треклист
@@ -187,7 +212,7 @@ struct PlaylistScreen: View {
                         showsDivider: index < tracks.count - 1
                     )
                     // Жестом, а не кнопкой: внутри строки своя кнопка «ещё».
-                    .onTapGesture { play(nowPlaying(track)) }
+                    .onTapGesture { play(nowPlaying(track), at: index) }
                 }
             }
             .padding(.horizontal, AlbumLayout.side)

@@ -314,6 +314,7 @@ final class KeyboardObserver {
                 queue: .main
             ) { [weak self] note in
                 guard
+                    Self.isOwnKeyboard(note),
                     let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
                 else { return }
                 let screenHeight = UIScreen.main.bounds.height
@@ -327,10 +328,20 @@ final class KeyboardObserver {
                 object: nil,
                 queue: .main
             ) { [weak self] note in
+                guard Self.isOwnKeyboard(note) else { return }
                 // Обратный переход обязан совпасть с кривой клавиатуры так же, как прямой.
                 self?.drive(overlap: 0, up: false, from: note)
             }
         )
+    }
+
+    /// Клавиатура — наша, а не чужого приложения. Уведомления о чужой iOS шлёт тоже:
+    /// вернулись из приложения, где она стояла, — пришли её смена кадра и уход. Смена
+    /// кадра поднимала `isUp`, и бар на мгновение раскладывался как в поиске: поле
+    /// во всю ширину, плеер уезжал вправо и сразу возвращался (жалоба 2026-10-10,
+    /// поймано записью возврата из «Настроек» с поднятой клавиатурой).
+    private static func isOwnKeyboard(_ note: Notification) -> Bool {
+        note.userInfo?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool ?? true
     }
 
     deinit {

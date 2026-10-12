@@ -113,6 +113,9 @@ enum ActionBarGeometry {
     static let miniPlayerCoverGap: CGFloat = 8
     static let miniPlayerActionsGap: CGFloat = 18
     static let bookChipSize = CGSize(width: 44, height: 60)
+    /// Скругление чипа книги — на 1 больше `PlusRadius.bookChip` (правка пользователя 2026-10-10);
+    /// токен делит внутренний кадр чипа кино, его не трогаем.
+    static let bookChipRadius: CGFloat = PlusRadius.bookChip + 1
     static let bookCoverSize = CGSize(width: 36, height: 52)
     /// AABB повёрнутого чипа книги — ширина для раскладки HStack.
     static let bookChipAABBWidth: CGFloat = 48.078
@@ -227,9 +230,8 @@ struct ActionBarView: View {
         // Фокус снимаем снаружи и **раньше поля**: снятый в самом поле фокус уводит
         // в просмотр без клавиатуры — и с пустым полем тоже, там «Искали недавно»
         // (см. onChange фокуса). А «Назад» из поиска выходит.
-        // Без фокуса тоже пишем: на записи `ActionBarState` повышает режим до поиска,
-        // если поле сейчас круг, — музыку могли включить, пока выдача была открыта
-        // (выдача → альбом → «Слушать» → назад), и без этого поле схлопнулось бы.
+        // Режим на снятии фокуса не трогаем: пилюля музыки сворачивается в круг только
+        // по активации поиска (правка пользователя 2026-10-10).
         actionBar.isSearchFocused = false
         if wasFocused {
             keyboard.dismissSmoothly()
@@ -375,6 +377,14 @@ struct ActionBarView: View {
             }
         }
         .task {
+            // `-debugTrackEnd 1` — конец превью через 3 с после старта: следующий трек
+            // очереди тем же путём, что от звука, — ждать 30 с иначе незачем.
+            guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugTrackEnd") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            actionBar.musicTrackDidEnd()
+        }
+        .task {
             // `-debugTapChip 1` — тап по чипу кино или книги: киноплеер и читалку
             // из бара иначе не открыть, тапнуть по симулятору из шелла нечем.
             // Пара к `-debugActionBar movie|book`. Задержка — с запасом на заставку.
@@ -460,7 +470,7 @@ private struct ActionBarLayout: Equatable {
             // Слои остаются в дереве, чтобы уехать, а не мигнуть исчезновением.
             // Мини-плеер только в своих режимах: иначе в .book/.movie он оказывался
             // активным одновременно с чипом и проявлялся из блюра прямо во время уезда.
-            showMiniPlayer = hasMusic && (mode == .music || mode == .search)
+            showMiniPlayer = ActionBarState.showsMiniPlayer(mode: mode, hasMusic: hasMusic)
             // Уехавший за кромку плеер тапов не ловит — компактным его звать незачем.
             isMiniPlayerCompact = false
             showBookChip = mode == .book
@@ -1196,6 +1206,8 @@ private struct TrailingSlot: View {
                     // плеер, и первый тап обязан его развернуть.
                     onExpand: {
                         if layout.isMiniPlayerCompact {
+                            // Разворот круга — отклик как у кнопок плеера (правка пользователя 2026-10-10).
+                            PlayerHaptics.tap()
                             actionBar.expandMiniPlayer()
                         } else {
                             actionBar.openMusicPlayer()
@@ -1371,6 +1383,9 @@ struct MiniPlayerPill: View {
     let onTogglePlay: () -> Void
     let onToggleLike: () -> Void
     let onExpand: () -> Void
+    /// Ширина, по которой разложено содержимое. В баре рядом с пилюлей стоит круг
+    /// поиска (286); в читалке круга нет, и в макете `2565:25233` пилюля 354.
+    var expandedWidth: CGFloat = ActionBarGeometry.miniPlayerExpandedWidth
 
     /// Вращение обложки — см. `CoverSpin`.
     @State private var spin = CoverSpin()
@@ -1434,7 +1449,7 @@ struct MiniPlayerPill: View {
         .padding(.trailing, ActionBarGeometry.miniPlayerPaddingTrailing)
         // Раскладка по раскрытой ширине, а не по текущей — см. `miniPlayerExpandedWidth`.
         // Сжатую пилюлю лишнее просто не видит: его срезает капсула.
-        .frame(width: ActionBarGeometry.miniPlayerExpandedWidth, alignment: .leading)
+        .frame(width: expandedWidth, alignment: .leading)
     }
 
     private var cover: some View {
@@ -1614,11 +1629,11 @@ private struct BookChip: View {
             ArtworkImage(source: cover)
                 .scaledToFill()
                 .frame(width: ActionBarGeometry.bookCoverSize.width, height: ActionBarGeometry.bookCoverSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
-                .coverBorder(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
+                .coverBorder(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
         }
         .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
-        .chromeGlass(RoundedRectangle(cornerRadius: PlusRadius.bookChip, style: .continuous))
+        .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
         .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
         .frame(width: ActionBarGeometry.bookChipAABBWidth, height: PlusMetrics.actionBarHeight)
     }

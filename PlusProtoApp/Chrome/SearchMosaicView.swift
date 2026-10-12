@@ -223,7 +223,7 @@ struct SearchMosaicView: View {
                         play: { track in
                             // Включённый трек — тот же выбор из выдачи, что переход.
                             search.remember(track)
-                            playMosaicTrack(track, actionBar: actionBar)
+                            playMosaicTrack(track, queue: items, actionBar: actionBar)
                         }
                     )
                     .transition(.opacity)
@@ -446,7 +446,7 @@ struct SearchRecentsMosaicView: View {
                             hit: hit,
                             zoom: zoomSources.contains(hit.id) ? zoom : nil,
                             open: open,
-                            play: { track in playMosaicTrack(track, actionBar: actionBar) }
+                            play: { track in playMosaicTrack(track, queue: items, actionBar: actionBar) }
                         )
                     }
                 }
@@ -516,12 +516,12 @@ private struct MosaicResultsKey: Equatable {
 /// 2026-10-05, макет `2479:25744`). Уже стоящий в плеере — на паузу и обратно,
 /// как кнопка мини-плеера; иначе запуск, как у строки полной выдачи (`startTrack`).
 @MainActor
-private func playMosaicTrack(_ track: SearchHit, actionBar: ActionBarState) {
-    if actionBar.mode == .music, actionBar.music?.id == track.id {
+private func playMosaicTrack(_ track: SearchHit, queue: [SearchHit], actionBar: ActionBarState) {
+    if actionBar.isMiniPlayerVisible, actionBar.music?.id == track.id {
         PlayerHaptics.tap()
         actionBar.toggleMusicPlayback()
     } else {
-        startTrack(track, in: actionBar)
+        startTrack(track, queue: queue, in: actionBar)
     }
 }
 
@@ -688,7 +688,7 @@ private struct MosaicCard: View {
 
     /// Этот трек сейчас играет — на кнопке пауза.
     private var isPlayingThisTrack: Bool {
-        hit.kind == .track && actionBar.mode == .music
+        hit.kind == .track && actionBar.isMiniPlayerVisible
             && actionBar.music?.id == hit.id && actionBar.isMusicPlaying
     }
 

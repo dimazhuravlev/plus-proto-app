@@ -178,7 +178,8 @@ struct BookScreen: View {
             scrollOffset: scrollOffset,
             backdropOpacity: coverAspect == nil ? 0 : 1,
             title: entity.title,
-            collectionItem: collectionItem
+            collectionItem: collectionItem,
+            onShare: share
         ) {
             bookCover
         } person: {
@@ -209,6 +210,18 @@ struct BookScreen: View {
             EntityRef(id: entity.id, title: entity.title, subtitle: author ?? entity.subtitle, artwork: entity.artwork),
             aspect: coverAspect ?? nil
         )
+    }
+
+    /// «Поделиться»: автор и год — если уже известны, обложка своих пропорций — если
+    /// они уже приехали.
+    private func share() {
+        ShareState.shared.present(.book(
+            title: entity.title,
+            author: author ?? "",
+            year: text.year,
+            cover: entity.artwork,
+            aspect: coverAspect ?? nil
+        ))
     }
 
     /// Книга — тот же рисунок, что карточка выдачи поиска, только крупно. Пока

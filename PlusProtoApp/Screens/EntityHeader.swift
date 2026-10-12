@@ -148,6 +148,8 @@ struct EntityHeader<Cover: View, Person: View, Primary: View>: View {
     let title: String
     /// Запись коллекции «Моё» — её отмечают «нравится» и «скачать» ряда действий.
     var collectionItem: CollectionItem? = nil
+    /// «Поделиться»: экран собирает карточку шеринга и открывает её (`ShareState`).
+    var onShare: (() -> Void)? = nil
     @ViewBuilder var cover: Cover
     @ViewBuilder var person: Person
     @ViewBuilder var primary: Primary
@@ -167,7 +169,7 @@ struct EntityHeader<Cover: View, Person: View, Primary: View>: View {
                 cover
             }
 
-            EntityTitleBlock(title: title, collectionItem: collectionItem) {
+            EntityTitleBlock(title: title, collectionItem: collectionItem, onShare: onShare) {
                 person
             } primary: {
                 primary
@@ -242,6 +244,8 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
     /// Запись коллекции «Моё»: «нравится» отмечает её в «Любимом», «скачать» —
     /// в «Скачанном» (2026-10-04). Нет записи — кнопки откликаются, как прежде.
     var collectionItem: CollectionItem? = nil
+    /// «Поделиться» открывает экран шеринга — карточку собирает экран (`ShareState`).
+    var onShare: (() -> Void)? = nil
     @ViewBuilder var person: Person
     @ViewBuilder var primary: Primary
 
@@ -259,13 +263,18 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
                     primary
                     Spacer(minLength: 8)
                     // «Нравится» и «скачать» — отметки коллекции «Моё» (2026-10-04);
-                    // «поделиться» в прототипе не спроектировано — откликается.
+                    // «поделиться» открывает экран шеринга (`onShare`).
                     HStack(spacing: PlusMetrics.circleButtonGap) {
                         ForEach(actions, id: \.self) { action in
                             if action == .like {
                                 LikeGlassButton(item: collectionItem)
                             } else if action == .download, let collectionItem {
                                 DownloadGlassButton(item: collectionItem)
+                            } else if action == .share {
+                                GlassIconButton(icon: action.icon, accessibilityTitle: action.title) {
+                                    PlayerHaptics.tap()
+                                    onShare?()
+                                }
                             } else {
                                 GlassIconButton(icon: action.icon, accessibilityTitle: action.title)
                             }
