@@ -9,9 +9,13 @@ enum MosaicLayout {
     static let rowGap: CGFloat = 16
     static let gridTop: CGFloat = 8
     static let coverGap: CGFloat = 6
-    /// Колонка — от холста 402, а не замером: (402 − 2 × 16 − 2 × 8) / 3 = 118.
-    static let card: CGFloat =
-        (PlusMetrics.designWidth - 2 * side - CGFloat(columns - 1) * columnGap) / CGFloat(columns)
+    /// Колонка делит ширину экрана при постоянных полях и зазорах (правило 4 CLAUDE.md):
+    /// на 402 — (402 − 2 × 16 − 2 × 8) / 3 = 118; `static var`, иначе значение
+    /// зафиксируется при первом чтении. Совпадает с шириной колонки `MosaicGrid`.
+    @MainActor
+    static var card: CGFloat {
+        PlusGrid.column(columns: columns, side: side, gap: columnGap)
+    }
     /// Постер кино и персон — 2:3, 118 × 177
     static let posterAspect: CGFloat = 2.0 / 3.0
     static let coverRadius = PlusRadius.movieChip
@@ -35,8 +39,10 @@ enum MosaicLayout {
     /// Полоски скелетона подписи — как у карусели: 12 по центру строки 16.
     static let skeletonBar: CGFloat = 12
     static let skeletonBarInset: CGFloat = (PlusTextSize.textS.lineHeight - skeletonBar) / 2
-    static let skeletonTitleBar: CGFloat = (card * 0.8).rounded()
-    static let skeletonSubtitleBar: CGFloat = (card * 0.55).rounded()
+    @MainActor
+    static var skeletonTitleBar: CGFloat { (card * 0.8).rounded() }
+    @MainActor
+    static var skeletonSubtitleBar: CGFloat { (card * 0.55).rounded() }
     /// Скелетон первой выдачи — вперемешку, как будущая лента. Порядок разделов ещё
     /// неизвестен, поэтому формы чередуются, а не повторяют какой-то из них. Первым —
     /// круг исполнителя, третьим — квадрат альбома (правки пользователя 2026-10-05).

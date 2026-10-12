@@ -674,9 +674,20 @@ private struct MusicWizardCard: View {
         static let radius: CGFloat = 16
         static let inner: CGFloat = 12
         static let avatar: CGFloat = 48
-        static let albumWidth: CGFloat = 95
         static let albumRadius: CGFloat = 12
         static let albumGap: CGFloat = 8
+        /// Поля экрана вокруг карточки колдунщика
+        static let side: CGFloat = 16
+        /// Альбомы внутри карточки — карусель с торчащим краем (правило 4 CLAUDE.md):
+        /// слева поле экрана и поле карточки, 28; на 402 — три обложки по 95 целиком,
+        /// четвёртая видна на 49 (65 до края экрана за вычетом поля 16 карточки).
+        /// Карточка шире экрана на 32 на любой ширине, поэтому видимый край везде тот же.
+        static var albumFit: CarouselFit {
+            CarouselFit(designCard: 95, whole: 3, side: side + inner, gap: albumGap)
+        }
+        /// Сторона обложки альбома на текущей ширине экрана
+        @MainActor
+        static var albumWidth: CGFloat { albumFit.cardWidth }
         static let playSize: CGFloat = 40
     }
 
@@ -694,7 +705,7 @@ private struct MusicWizardCard: View {
             RoundedRectangle(cornerRadius: Layout.radius, style: .continuous)
                 .strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Layout.side)
         .padding(.top, 8)
         .padding(.bottom, 16)
     }
