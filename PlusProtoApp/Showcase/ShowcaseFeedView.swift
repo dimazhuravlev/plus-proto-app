@@ -80,7 +80,7 @@ struct ShowcaseFeedView: View {
                         .showcaseAppear()
                 }
             }
-            .frame(width: ShowcaseLayout.designWidth)
+            .frame(width: PlusMetrics.screenWidth)
             // Клиренс под хромом ленте уже даёт `contentMargins` в корне — это воздух
             // сверх него, чтобы последняя карточка не притиралась к панели действий.
             .padding(.bottom, ShowcaseLayout.feedBottomPadding)
@@ -153,8 +153,8 @@ struct ShowcaseFeedView: View {
         return ShowcaseFeedbackHost(debugIndex: index + 1) { blockView(block) }
             .environment(\.showcaseRefresh, ShowcaseRefresh { await prepareReplacement(block) })
             .frame(
-                width: ShowcaseLayout.designWidth,
-                height: isHidden ? 0 : block.slot.height,
+                width: PlusMetrics.screenWidth,
+                height: isHidden ? 0 : block.slot.frameHeight,
                 alignment: .topLeading
             )
             .allowsHitTesting(!isHidden)

@@ -3,11 +3,11 @@ import SwiftUI
 // MARK: - Геометрия
 
 /// Карточка «Моя Волна» — `2004:10733`, figma-screen1 §3.5.
-/// Кадр карточки — слот витрины: ширина 402, высота 316. По X координаты остаются
+/// Кадр карточки — слот витрины: ширина экрана, высота 316 макета. По X координаты остаются
 /// в системе кадра витрины (орб уходит за левый край на 15), по Y из спеки вычтен верх слота.
+/// Числа здесь — макет на 402; на экране они умножаются на `ShowcaseLayout.scale`.
 private enum VibeGeometry {
     static let slot = ShowcaseLayout.Slot.vibe
-    static let size = CGSize(width: ShowcaseLayout.designWidth, height: slot.height)
 
     /// `2004:10735` — эллипс гало 150.48² в (59.46, 1101.92). Он же — кадр орба:
     /// слои рисования далеко выходят за него, а нажимается и подсаживается ровно круг.
@@ -102,11 +102,11 @@ struct MyVibeCard: View {
             // Смена по ✕ — у каждого слоя орба своя (`orb`), не у орба целиком.
             orb
                 .showcaseThumbnail()
-                .showcasePlaced(at: VibeGeometry.haloOrigin)
+                .showcasePlaced(at: ShowcaseLayout.scaled(VibeGeometry.haloOrigin))
 
             textColumn
         }
-        .frame(width: VibeGeometry.size.width, height: VibeGeometry.size.height, alignment: .topLeading)
+        .frame(width: PlusMetrics.screenWidth, height: VibeGeometry.slot.frameHeight, alignment: .topLeading)
         .onScrollVisibilityChange(threshold: VibeGeometry.visibilityThreshold) { isVisible = $0 }
     }
 
@@ -124,7 +124,8 @@ struct MyVibeCard: View {
     /// гало 311 выходят за кадр далеко, и если отдать кнопке их габарит, она ловила бы тапы
     /// по пустому месту, а просадка под пальцем считалась бы вокруг чужого центра.
     private var orb: some View {
-        ZStack {
+        let k = ShowcaseLayout.scale
+        return ZStack {
             TimelineView(.animation(minimumInterval: VibeOrbMotion.tick, paused: !isVisible)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
 
@@ -137,11 +138,11 @@ struct MyVibeCard: View {
 
             Image(block.art.glyph)
                 .resizable()
-                .frame(width: VibeGeometry.glyphSize, height: VibeGeometry.glyphSize)
+                .frame(width: VibeGeometry.glyphSize * k, height: VibeGeometry.glyphSize * k)
                 .showcaseSwappable()
-                .offset(x: VibeGeometry.glyphOffset.width, y: VibeGeometry.glyphOffset.height)
+                .offset(x: VibeGeometry.glyphOffset.width * k, y: VibeGeometry.glyphOffset.height * k)
         }
-        .frame(width: VibeGeometry.haloSize, height: VibeGeometry.haloSize)
+        .frame(width: VibeGeometry.haloSize * k, height: VibeGeometry.haloSize * k)
         .contentShape(Circle())
     }
 
@@ -149,7 +150,10 @@ struct MyVibeCard: View {
     private func halo(_ t: TimeInterval) -> some View {
         Image("vibeColorEllipse")
             .resizable()
-            .frame(width: VibeGeometry.haloBleed, height: VibeGeometry.haloBleed)
+            .frame(
+                width: VibeGeometry.haloBleed * ShowcaseLayout.scale,
+                height: VibeGeometry.haloBleed * ShowcaseLayout.scale
+            )
             // Тон — под иллюстрацию волны; меняется плавно, той же кривой, что проявление
             // новой волны после ✕, а не щелчком на подмене блока.
             .hueRotation(block.art.haloHue)
@@ -169,6 +173,7 @@ struct MyVibeCard: View {
     /// по чёрному — no-op, поэтому маска не нужна и прямоугольник кладётся на весь кадр.
     /// Сдвигаем ассет, взятый с запасом, и режем по кадру — так дрейф не открывает край текстуры.
     private func grain(_ t: TimeInterval) -> some View {
+        let k = ShowcaseLayout.scale
         let drift = VibeOrbMotion.grainDrift
         let dx = drift * CGFloat(wave(t, period: VibeOrbMotion.grainPeriodX, -1...1))
         let dy = drift * CGFloat(wave(t, period: VibeOrbMotion.grainPeriodY, -1...1))
@@ -176,16 +181,16 @@ struct MyVibeCard: View {
         return Image("mockVibeNoise")
             .resizable()
             .frame(
-                width: VibeGeometry.grainBox.width + drift * 2,
-                height: VibeGeometry.grainBox.height + drift * 2
+                width: VibeGeometry.grainBox.width * k + drift * 2,
+                height: VibeGeometry.grainBox.height * k + drift * 2
             )
             .offset(x: dx, y: dy)
-            .frame(width: VibeGeometry.grainBox.width, height: VibeGeometry.grainBox.height)
+            .frame(width: VibeGeometry.grainBox.width * k, height: VibeGeometry.grainBox.height * k)
             .clipped()
             .opacity(wave(t, period: VibeOrbMotion.grainPeriodOpacity, VibeOrbMotion.grainOpacity))
             .showcaseSwappable()
             .blendMode(.colorDodge)
-            .offset(x: VibeGeometry.grainOffset.width, y: VibeGeometry.grainOffset.height)
+            .offset(x: VibeGeometry.grainOffset.width * k, y: VibeGeometry.grainOffset.height * k)
     }
 
     // MARK: Текст
@@ -194,18 +199,18 @@ struct MyVibeCard: View {
         VStack(alignment: .leading, spacing: VibeGeometry.textGap) {
             GradientText(block.title, from: .fillOne, to: .white.opacity(0.7))
                 .plusText(.textM, .medium)
-                .frame(width: VibeGeometry.titleWidth, alignment: .leading)
+                .frame(width: VibeGeometry.titleWidth * ShowcaseLayout.scale, alignment: .leading)
                 .showcaseSwappable()
 
             GradientText(block.subtitle, from: .fillOne, to: .white.opacity(0.6))
                 .plusText(.textM, .medium)
-                .frame(width: VibeGeometry.subtitleWidth, alignment: .leading)
+                .frame(width: VibeGeometry.subtitleWidth * ShowcaseLayout.scale, alignment: .leading)
                 .opacity(VibeGeometry.subtitleOpacity)
                 .showcaseSwappable()
 
             ShowcaseFeedbackPair()
         }
-        .offset(x: VibeGeometry.textOrigin.x, y: VibeGeometry.textOrigin.y)
+        .offset(x: VibeGeometry.textOrigin.x * ShowcaseLayout.scale, y: VibeGeometry.textOrigin.y * ShowcaseLayout.scale)
     }
 }
 

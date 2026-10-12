@@ -3,15 +3,35 @@ import UIKit
 
 /// Числа промо-слайдера «Главной» — макет `2532:26618`. Холст макета 440, раскладка
 /// перенесена на 402 от центра экрана: размеры карточек и отступы от центра — как есть.
+///
+/// Числа ниже — макет на 402 (`scale` = 1). Слайдер — центрированная карусель с постоянными
+/// краями соседей: на любой ширине из-за края экрана выглядывает ровно столько же сосед,
+/// сколько на 402, а растёт вся геометрия карточек (шаг, размеры, высоты, отступы, подпись
+/// альбома) на `scale`. Кнопки ✕/✓ 40, шрифты и интерлиньяж подписи — не масштабируются,
+/// их позиции — да.
 enum ShowcasePromoLayout {
+    /// Видимый край соседней карточки на 402: от кромки экрана до внутреннего края соседа
+    /// (центр экрана 201 − половина шага до его кромки 107.2 = 93.8). Инвариант на любой ширине.
+    static let neighbourEdge: CGFloat = 93.8
+
+    /// Множитель промо: `(screenWidth/2 − край) / (402/2 − край)` — видимый край соседа
+    /// не меняется с шириной. 390 → ≈0.944, 402 → 1, 440 → ≈1.177.
+    @MainActor
+    static var scale: CGFloat {
+        (PlusMetrics.screenWidth / 2 - neighbourEdge) / (PlusMetrics.designWidth / 2 - neighbourEdge)
+    }
+
     /// Шаг между центрами карточек: соседи выглядывают из-за краёв экрана
     /// (в макете центры соседей на ±188 от центра).
-    static let step: CGFloat = 188
+    @MainActor
+    static var step: CGFloat { 188 * scale }
     /// Соседи меньше центральной: книга сбоку 161.56 против постера в центре 210.16.
     static let sideScale: CGFloat = 0.769
     /// Центр центральной карточки — от верха блока (низа навигации). В макете 185;
     /// на 10 выше — «отступ до навбара немного меньше» (правка пользователя 2026-10-08).
-    static let cardCenterY: CGFloat = 175
+    @MainActor
+    static var cardCenterY: CGFloat { 175 * scale }
+    @MainActor
     static var carouselHeight: CGFloat { cardCenterY * 2 }
 
     /// Величина наклона у каждой карточки своя, случайная: по центру 2…4°, сбоку 4.5…6.5°.
@@ -22,19 +42,25 @@ enum ShowcasePromoLayout {
     static let centerTilt: ClosedRange<Double> = 2...4
     static let sideTilt: ClosedRange<Double> = 4.5...6.5
     /// Соседи ниже центральной — на 6…16, у каждой карточки своё (в макете 16 и 6).
-    static let sideDrop: ClosedRange<Double> = 6...16
+    static let sideDrop: ClosedRange<Double> = 6...16   // на 402, умножается на `scale`
 
     /// Карточки по центру — по виду. Сбоку они те же, уменьшенные на `sideScale`:
     /// альбом сбоку 169, скругление 18 — в центре 219.8 и 23.4.
-    static let poster = CGSize(width: 210.155, height: 315.235)
-    static let posterRadius: CGFloat = 16.358
-    static let album: CGFloat = 219.8
+    @MainActor
+    static var poster: CGSize { CGSize(width: 210.155 * scale, height: 315.235 * scale) }
+    @MainActor
+    static var posterRadius: CGFloat { 16.358 * scale }
+    @MainActor
+    static var album: CGFloat { 219.8 * scale }
     /// Скругление альбома — как у постера, а не макетные 23.4: «немного уменьшить»
     /// (правка пользователя 2026-10-09), и углы карточек в ряду одинаковые.
-    static let albumRadius: CGFloat = posterRadius
-    static let bookWidth: CGFloat = 210.155
+    @MainActor
+    static var albumRadius: CGFloat { posterRadius }
+    @MainActor
+    static var bookWidth: CGFloat { 210.155 * scale }
     /// Книга ряда. Скругления меньше общих (правка пользователя 2026-10-09): обложка —
     /// как постер и альбом ряда, серая подложка — на ту же величину (19.2 → 16.4, 24.1 → 21.2).
+    @MainActor
     static var book: (geometry: BookFigureGeometry, coverWidth: CGFloat) {
         var figure = BookFigureGeometry.fitting(width: bookWidth, aspect: nil)
         figure.geometry.radiusTrim = figure.geometry.coverRadius - posterRadius
@@ -43,49 +69,66 @@ enum ShowcasePromoLayout {
 
     /// Пара ✕/✓ у фильма и книги — у нижней кромки карточки: левый край на 24.6 от её
     /// левой кромки, низ пары — на 27.6 ниже низа карточки (заходит на неё на 12).
-    static let pairLeading: CGFloat = 24.6
-    static let pairBelow: CGFloat = 27.6
+    @MainActor
+    static var pairLeading: CGFloat { 24.6 * scale }
+    @MainActor
+    static var pairBelow: CGFloat { 27.6 * scale }
     /// У альбома — у верхней кромки справа (макет `2537:27595`): правый край на 14.5
     /// от правой кромки обложки, верх — на 22.5 выше её верха. Замер — в системе
     /// координат повёрнутой обложки.
-    static let albumPairTrailing: CGFloat = 14.5
-    static let albumPairAbove: CGFloat = 22.5
+    @MainActor
+    static var albumPairTrailing: CGFloat { 14.5 * scale }
+    @MainActor
+    static var albumPairAbove: CGFloat { 22.5 * scale }
 
     /// Подпись альбома (макет `2537:27595`) — аватар исполнителя 40, справа название
     /// альбома и исполнитель Text M. Наклонена вместе с обложкой: левый край на 3.3
     /// правее её левой кромки, верх — на 7.2 ниже низа (замер в системе обложки).
     /// Ширина 227 с полем справа 8; строки заходят друг на друга на 2.
-    static let albumCaptionLeading: CGFloat = 3.3
-    static let albumCaptionGap: CGFloat = 7.2
-    static let albumCaptionWidth: CGFloat = 227
-    static let albumCaptionTrailing: CGFloat = 8
-    static let albumCaptionSpacing: CGFloat = 8
+    @MainActor
+    static var albumCaptionLeading: CGFloat { 3.3 * scale }
+    @MainActor
+    static var albumCaptionGap: CGFloat { 7.2 * scale }
+    @MainActor
+    static var albumCaptionWidth: CGFloat { 227 * scale }
+    @MainActor
+    static var albumCaptionTrailing: CGFloat { 8 * scale }
+    @MainActor
+    static var albumCaptionSpacing: CGFloat { 8 * scale }
+    /// Строки подписи заходят друг на друга на 2 — это интерлиньяж шрифта, не геометрия.
     static let albumCaptionLineOverlap: CGFloat = 2
-    static let albumAvatar: CGFloat = 40
+    @MainActor
+    static var albumAvatar: CGFloat { 40 * scale }
 
     /// Пустое место под самой высокой карточкой, постером. Было 39.4 + 64 под описание;
     /// описание убрано, пустое место ужато на 56 — правка пользователя 2026-10-10.
-    static let belowCards: CGFloat = 47.4
+    @MainActor
+    static var belowCards: CGFloat { 47.4 * scale }
 
     /// Высота блока — до низа постера плюс `belowCards`: место держится всегда, и лента
     /// ниже не прыгает от айтема к айтему.
+    @MainActor
     static var height: CGFloat { cardCenterY + poster.height / 2 + belowCards }
 
     /// Фон — картинка центральной карточки вдвое шире экрана, размытая: от физического
     /// верха экрана до низа блока и ещё немного ниже, в чёрный.
-    static let backdropWidth: CGFloat = PlusMetrics.designWidth * 2
+    @MainActor
+    static var backdropWidth: CGFloat { PlusMetrics.screenWidth * 2 }
     /// +56 к прежним 64, чтобы фон не укоротился вместе с блоком (правка 2026-10-10).
-    static let backdropTail: CGFloat = 120
+    @MainActor
+    static var backdropTail: CGFloat { 120 * scale }
     /// Сколько фон уходит выше блока — до физического верха экрана.
     static var backdropAbove: CGFloat { ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight }
+    @MainActor
     static var backdropHeight: CGFloat { backdropAbove + height + backdropTail }
     /// Фон — на 60 %: на 10 % прозрачнее фона промо сервисов (правка пользователя
     /// 2026-10-08) и ещё на 10 % (правка 2026-10-09).
     static let backdropOpacity: Double = 0.6
 
     /// Где слот относительно центра видимой ленты: 0 — по центру, ±1 — на месте соседа.
-    /// Считается от рамки скролла, а не экрана: ширина устройства не важна.
-    static func position(of proxy: GeometryProxy) -> CGFloat {
+    /// Считается от рамки скролла, а не экрана: ширина устройства не важна. Шаг приходит
+    /// параметром — вызывается из `visualEffect`, где `step` (ширина-зависимый) недоступен.
+    static func position(of proxy: GeometryProxy, step: CGFloat) -> CGFloat {
         guard let viewport = proxy.bounds(of: .scrollView) else { return 0 }
         return (proxy.size.width / 2 - viewport.midX) / step
     }
@@ -244,15 +287,17 @@ struct ShowcasePromo: View {
             }
             // По одной карточке за свайп, как бы ни бросили.
             .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
-            .contentMargins(.horizontal, (PlusMetrics.designWidth - Layout.step) / 2, for: .scrollContent)
-            .scrollPosition(id: $pageID, anchor: .center)
+            .contentMargins(.horizontal, (PlusMetrics.screenWidth - Layout.step) / 2, for: .scrollContent)
+            // `.leading` при симметричных полях центрирует точно, `.center` промахивался
+            // на ~3 pt (грабли в CLAUDE.md).
+            .scrollPosition(id: $pageID, anchor: .leading)
             .scrollIndicators(.hidden)
             // Карточки шире слота — за краями экрана их видно.
             .scrollClipDisabled()
             .scrollDisabled(count < 2 || removal != nil)
             .frame(height: Layout.height)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                (geometry.contentOffset.x + geometry.contentInsets.leading) / Layout.step
+            .onScrollGeometryChange(for: CGFloat.self) { [step = Layout.step] geometry in
+                (geometry.contentOffset.x + geometry.contentInsets.leading) / step
             } action: { _, position in
                 scroll.position = position
                 placeIfNeeded(at: position, proxy: proxy)
@@ -632,8 +677,12 @@ private struct PromoCardMotion: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        content.visualEffect { [look, shift] content, proxy in
-            let position = ShowcasePromoLayout.position(of: proxy) - shift
+        // Всё, что зависит от ширины экрана, берётся здесь, на главном потоке: замыкание
+        // `visualEffect` не изолировано.
+        let step = ShowcasePromoLayout.step
+        let drop = look.drop * ShowcasePromoLayout.scale
+        return content.visualEffect { [look, shift] content, proxy in
+            let position = ShowcasePromoLayout.position(of: proxy, step: step) - shift
             let distance = ShowcasePromoLayout.ease(abs(position))
             let magnitude = look.centerTilt + (look.sideTilt - look.centerTilt) * Double(distance)
             // Знак чередуется по местам ряда: −1 по центру, +1 у соседей, −1 через одну.
@@ -643,7 +692,7 @@ private struct PromoCardMotion: ViewModifier, Animatable {
             return content
                 .scaleEffect(1 - (1 - ShowcasePromoLayout.sideScale) * distance)
                 .rotationEffect(.degrees(tilt))
-                .offset(x: -shift * ShowcasePromoLayout.step, y: look.drop * distance)
+                .offset(x: -shift * step, y: drop * distance)
         }
     }
 }
@@ -841,11 +890,11 @@ private struct PromoBackdropStack: View, Animatable {
             )
         }
         .opacity(Layout.backdropOpacity)
-        .visualEffect { content, proxy in
+        .visualEffect { [height = Layout.backdropHeight] content, proxy in
             // Верх фона в покое — физический верх экрана; ниже него — это оттяг.
             let pull = max(0, proxy.frame(in: .global).minY)
             return content.scaleEffect(
-                (Layout.backdropHeight + pull) / Layout.backdropHeight,
+                (height + pull) / height,
                 anchor: .bottom
             )
         }

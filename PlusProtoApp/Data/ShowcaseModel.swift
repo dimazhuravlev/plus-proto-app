@@ -200,13 +200,37 @@ struct WatchingBlock {
 /// Геометрия витрины из `figma-screen1.md`. Координаты абсолютные, в системе кадра
 /// шириной 402 — карточки в макете наезжают друг на друга и выходят за края экрана,
 /// поэтому вертикальный стек с отступами их не воспроизводит.
+///
+/// Лента — композиция во всю ширину экрана: вся геометрия (слоты, зазоры, X и размеры
+/// внутри карточек) умножается на `scale` = `screenWidth / 402` по обеим осям, шрифты
+/// и кнопки 40 — нет (правило 4 CLAUDE.md). Числа в `Slot` и в раскладках карточек —
+/// координаты макета на 402, множитель применяется в месте расстановки.
 enum ShowcaseLayout {
-    static let designWidth: CGFloat = PlusMetrics.designWidth
+    /// Множитель геометрии ленты: 1 на 402.
+    @MainActor
+    static var scale: CGFloat { PlusMetrics.widthScale }
 
-    /// Вертикальный слот блока: `top` — верх бокса в кадре, `height` — его высота.
+    /// Точка и размер макета на текущей ширине экрана.
+    @MainActor
+    static func scaled(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * scale, y: point.y * scale)
+    }
+
+    @MainActor
+    static func scaled(_ size: CGSize) -> CGSize {
+        CGSize(width: size.width * scale, height: size.height * scale)
+    }
+
+    /// Вертикальный слот блока: `top` — верх бокса в кадре, `height` — его высота
+    /// (оба в координатах макета на 402; по ним же блоки отличаются друг от друга —
+    /// ключ слота). Высота кадра на экране — `frameHeight`.
     struct Slot {
         let top: CGFloat
         let height: CGFloat
+
+        /// Высота кадра блока на текущей ширине экрана.
+        @MainActor
+        var frameHeight: CGFloat { height * ShowcaseLayout.scale }
 
         static let movie = Slot(top: 220.48, height: 298.51)
         static let album = Slot(top: 562, height: 206)
@@ -229,14 +253,17 @@ enum ShowcaseLayout {
     /// (правки пользователя). В макете промо карточек ниже нет. Ещё на 32 ближе —
     /// правка пользователя 2026-10-10; не из `belowCards`, чтобы ScrollView промо
     /// не обрезал пару ✕/✓.
-    static let promoToFirstBlock: CGFloat = 35.55 - 32
+    static let designPromoToFirstBlock: CGFloat = 35.55 - 32
+    @MainActor
+    static var promoToFirstBlock: CGFloat { designPromoToFirstBlock * scale }
 
     /// Зазоры между одиночными блоками ленты меньше на 24 — правка пользователя
     /// 2026-10-10. Зазор промо → первый блок (`promoToFirstBlock`) не затрагивает.
     static let blockGapTrim: CGFloat = 24
 
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
-    static let contentBottom: CGFloat = Slot.watching.top + Slot.watching.height
+    @MainActor
+    static var contentBottom: CGFloat { (Slot.watching.top + Slot.watching.height) * scale }
 
     /// Воздух под последним блоком, поверх клиренса нижнего хрома. Без него докрученная
     /// до конца лента упирается последней карточкой прямо в панель действий.
@@ -252,9 +279,10 @@ enum ShowcaseLayout {
     /// Считается именно зазорами, а не абсолютным `offset`: `offset` не влияет на раскладку,
     /// из-за чего все карточки оказывались в одной точке — ломались и каскадное появление,
     /// и параллакс, которым нужна настоящая позиция блока в скролле.
+    @MainActor
     static func gap(above slot: Slot, after previous: Slot?) -> CGFloat {
-        guard let previous else { return slot.top }
-        return slot.top - (previous.top + previous.height) - blockGapTrim
+        guard let previous else { return slot.top * scale }
+        return (slot.top - (previous.top + previous.height) - blockGapTrim) * scale
     }
 }
 

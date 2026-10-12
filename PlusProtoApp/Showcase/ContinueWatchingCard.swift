@@ -5,11 +5,12 @@ import UIKit
 // MARK: - Геометрия
 
 /// Карточка «Продолжить смотреть» — `2004:10703`, figma-screen1 §3.7.
-/// Кадр карточки — слот витрины: ширина 402, высота 313 (вместе с блоком оценки).
+/// Кадр карточки — слот витрины: ширина экрана, высота 313 макета (вместе с блоком оценки).
 /// По X координаты остаются в системе кадра витрины, по Y из спеки вычтен верх слота.
+/// Числа здесь — макет на 402; на экране они умножаются на `ShowcaseLayout.scale`
+/// (кнопка ✕ 40, шрифты и мелкие поля — нет).
 private enum WatchingGeometry {
     static let slot = ShowcaseLayout.Slot.watching
-    static let size = CGSize(width: ShowcaseLayout.designWidth, height: slot.height)
 
     /// `2004:10705` — видеокадр 277×156, r12, рамка 0.66 white 8%, поворот −5°.
     static let videoSize = CGSize(width: 277, height: 156)
@@ -28,8 +29,9 @@ private enum WatchingGeometry {
     /// Контент кадра: px8 pb8, зазор 2 (pt124 добирается прижатием к низу)
     static let contentInset: CGFloat = 8
     static let contentGap: CGFloat = 2
-    /// `2004:10708` — трек прогресса
-    static let trackWidth: CGFloat = 261
+    /// `2004:10708` — трек прогресса: ширина кадра за вычетом полей (277 − 2·8 = 261 на 402)
+    @MainActor
+    static var trackWidth: CGFloat { videoSize.width * ShowcaseLayout.scale - 2 * contentInset }
 
     /// `2004:10711` — логотип 147×101 в (237, 1671). Лежит отдельным слоем: кадр поворачивается, логотип нет.
     static let logoSize = CGSize(width: 147, height: 101)
@@ -49,13 +51,15 @@ private enum WatchingGeometry {
 
 /// Блок «Что думаешь?» — `2004:10713`.
 private enum RateBlockGeometry {
-    static let size = CGSize(width: ShowcaseLayout.designWidth, height: 158)
+    static let designHeight: CGFloat = 158
     static let verticalPadding: CGFloat = 8
     static let horizontalPadding: CGFloat = 16
     /// Макетные 16 и 12 — плюс по 3: строка заголовка по шкале UI kit (Headline S,
     /// 20/20) на 6 ниже макетной 26, и без добавки глиф и ряд эмодзи уехали бы вверх.
     static let titleTop: CGFloat = 16 + 3
     static let titleBottom: CGFloat = 12 + 3
+    // Вертикальные поля блока растут вместе с лентой (`ShowcaseLayout.scale`), чип,
+    // шрифты и боковые поля — нет.
     /// Колонка: pt8 pb6 px8, зазор 8
     static let columnTop: CGFloat = 8
     static let columnBottom: CGFloat = 6
@@ -88,24 +92,33 @@ struct ContinueWatchingCard: View {
             // остаются снаружи и в зум-переходе не участвуют. Миниатюрой себя
             // помечает сам `AmbilightArtwork` — см. комментарий у него.
             videoFrame
-                .showcasePlaced(at: WatchingGeometry.videoOrigin)
+                .showcasePlaced(at: ShowcaseLayout.scaled(WatchingGeometry.videoOrigin))
 
             projectLogo
                 .frame(
-                    width: WatchingGeometry.logoSize.width,
-                    height: WatchingGeometry.logoSize.height,
+                    width: WatchingGeometry.logoSize.width * ShowcaseLayout.scale,
+                    height: WatchingGeometry.logoSize.height * ShowcaseLayout.scale,
                     alignment: .bottomLeading
                 )
-                .offset(x: WatchingGeometry.logoOrigin.x, y: WatchingGeometry.logoOrigin.y)
+                .offset(
+                    x: WatchingGeometry.logoOrigin.x * ShowcaseLayout.scale,
+                    y: WatchingGeometry.logoOrigin.y * ShowcaseLayout.scale
+                )
                 .allowsHitTesting(false)
 
             GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть", action: dismiss)
-                .offset(x: WatchingGeometry.dismissOrigin.x, y: WatchingGeometry.dismissOrigin.y)
+                .offset(
+                    x: WatchingGeometry.dismissOrigin.x * ShowcaseLayout.scale,
+                    y: WatchingGeometry.dismissOrigin.y * ShowcaseLayout.scale
+                )
 
             RateBlock()
-                .offset(x: WatchingGeometry.rateOrigin.x, y: WatchingGeometry.rateOrigin.y)
+                .offset(
+                    x: WatchingGeometry.rateOrigin.x * ShowcaseLayout.scale,
+                    y: WatchingGeometry.rateOrigin.y * ShowcaseLayout.scale
+                )
         }
-        .frame(width: WatchingGeometry.size.width, height: WatchingGeometry.size.height, alignment: .topLeading)
+        .frame(width: PlusMetrics.screenWidth, height: WatchingGeometry.slot.frameHeight, alignment: .topLeading)
         .showcaseSwappable()
         .onScrollVisibilityChange(threshold: WatchingGeometry.visibilityThreshold) { visible in
             isVisible = visible
@@ -169,16 +182,19 @@ struct ContinueWatchingCard: View {
     /// Клип по скруглению — только у видео: ореолу нужно торчать за границы кадра,
     /// а подписи хватает отступа 8pt, чтобы не заехать на скругление.
     private var videoFrame: some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
+        let k = ShowcaseLayout.scale
+        let videoSize = ShowcaseLayout.scaled(WatchingGeometry.videoSize)
+        let shape = RoundedRectangle(cornerRadius: PlusRadius.card * k, style: .continuous)
 
         return AmbilightArtwork(
             source: block.still,
-            size: WatchingGeometry.videoSize,
+            size: videoSize,
+            corner: PlusRadius.card * k,
             rotation: WatchingGeometry.videoRotation,
             glowOpacity: WatchingGeometry.ambilightOpacity
         ) {
             ClipLayerView(player: playback.queue) { isVideoReady = true }
-                .frame(width: WatchingGeometry.videoSize.width, height: WatchingGeometry.videoSize.height)
+                .frame(width: videoSize.width, height: videoSize.height)
                 .opacity(isVideoReady ? 1 : 0)
                 .animation(WatchingGeometry.videoFadeIn, value: isVideoReady)
                 .clipShape(shape)
@@ -203,8 +219,8 @@ struct ContinueWatchingCard: View {
         .padding(.horizontal, WatchingGeometry.contentInset)
         .padding(.bottom, WatchingGeometry.contentInset)
         .frame(
-            width: WatchingGeometry.videoSize.width,
-            height: WatchingGeometry.videoSize.height,
+            width: WatchingGeometry.videoSize.width * ShowcaseLayout.scale,
+            height: WatchingGeometry.videoSize.height * ShowcaseLayout.scale,
             alignment: .bottomLeading
         )
         .background(alignment: .bottom) {
@@ -213,7 +229,7 @@ struct ContinueWatchingCard: View {
                 startPoint: .bottom,
                 endPoint: .top
             )
-            .frame(height: WatchingGeometry.scrimHeight)
+            .frame(height: WatchingGeometry.scrimHeight * ShowcaseLayout.scale)
         }
     }
 }
@@ -255,8 +271,8 @@ private struct RateBlock: View {
             Text("Что думаешь?")
                 .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
-                .padding(.top, RateBlockGeometry.titleTop)
-                .padding(.bottom, RateBlockGeometry.titleBottom)
+                .padding(.top, RateBlockGeometry.titleTop * ShowcaseLayout.scale)
+                .padding(.bottom, RateBlockGeometry.titleBottom * ShowcaseLayout.scale)
 
             HStack(spacing: 0) {
                 ForEach(options) { option in
@@ -270,7 +286,7 @@ private struct RateBlock: View {
                                 burst: option.burst,
                                 launches: launches[option.id] ?? 0
                             )
-                            .padding(.top, RateBlockGeometry.columnTop)
+                            .padding(.top, RateBlockGeometry.columnTop * ShowcaseLayout.scale)
                         }
                         .accessibilityLabel(option.label)
                         .accessibilityAddTraits(selected == option.id ? .isSelected : [])
@@ -280,7 +296,11 @@ private struct RateBlock: View {
             .padding(.horizontal, RateBlockGeometry.horizontalPadding)
         }
         .padding(.vertical, RateBlockGeometry.verticalPadding)
-        .frame(width: RateBlockGeometry.size.width, height: RateBlockGeometry.size.height, alignment: .top)
+        .frame(
+            width: PlusMetrics.screenWidth,
+            height: RateBlockGeometry.designHeight * ShowcaseLayout.scale,
+            alignment: .top
+        )
     }
 
     private func react(_ option: Option) {
@@ -307,8 +327,8 @@ private struct RateBlock: View {
             GradientText(option.label, from: .fillOne, to: .white.opacity(0.7))
                 .plusText(.textM, .medium)
         }
-        .padding(.top, RateBlockGeometry.columnTop)
-        .padding(.bottom, RateBlockGeometry.columnBottom)
+        .padding(.top, RateBlockGeometry.columnTop * ShowcaseLayout.scale)
+        .padding(.bottom, RateBlockGeometry.columnBottom * ShowcaseLayout.scale)
         .padding(.horizontal, RateBlockGeometry.columnInset)
     }
 }

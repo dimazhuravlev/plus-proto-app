@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Геометрия карточки кино `2004:10766` (figma-screen1 §3.2). В спеке координаты даны
 /// в кадре витрины шириной 402 — в локальные переводим вычитанием верха слота.
+/// Числа здесь — макет на 402; на экране они умножаются на `ShowcaseLayout.scale`.
 private enum MovieCardLayout {
     static let slot = ShowcaseLayout.Slot.movie
 
@@ -46,7 +47,7 @@ struct MovieCard: View {
     /// Задаёт размер слота, чтобы смещения отсчитывались от левого верхнего угла карточки
     private var cardFrame: some View {
         Color.clear
-            .frame(width: ShowcaseLayout.designWidth, height: MovieCardLayout.slot.height)
+            .frame(width: PlusMetrics.screenWidth, height: MovieCardLayout.slot.frameHeight)
             .allowsHitTesting(false)
     }
 
@@ -57,25 +58,26 @@ struct MovieCard: View {
     private var poster: some View {
         AmbilightArtwork(
             source: block.poster,
-            size: MovieCardLayout.posterSize,
+            size: ShowcaseLayout.scaled(MovieCardLayout.posterSize),
+            corner: PlusRadius.card * ShowcaseLayout.scale,
             rotation: MovieCardLayout.posterRotation,
             glowOpacity: MovieCardLayout.glowOpacity
         )
         .showcaseSwappable()
-        .showcasePlaced(at: MovieCardLayout.posterOrigin)
+        .showcasePlaced(at: ShowcaseLayout.scaled(MovieCardLayout.posterOrigin))
     }
 
     /// Градиент уведён в цвет постера с той стороны, где постер лежит (§1)
     private var caption: some View {
         GradientText(block.caption, from: block.captionTint, to: .fillOne)
             .plusText(.textM, .medium)
-            .frame(width: MovieCardLayout.captionWidth, alignment: .leading)
+            .frame(width: MovieCardLayout.captionWidth * ShowcaseLayout.scale, alignment: .leading)
             .showcaseSwappable()
-            .offset(x: MovieCardLayout.captionOrigin.x, y: MovieCardLayout.captionOrigin.y)
+            .offset(x: MovieCardLayout.captionOrigin.x * ShowcaseLayout.scale, y: MovieCardLayout.captionOrigin.y * ShowcaseLayout.scale)
     }
 
     private var buttons: some View {
         ShowcaseFeedbackPair()
-            .offset(x: MovieCardLayout.buttonsOrigin.x, y: MovieCardLayout.buttonsOrigin.y)
+            .offset(x: MovieCardLayout.buttonsOrigin.x * ShowcaseLayout.scale, y: MovieCardLayout.buttonsOrigin.y * ShowcaseLayout.scale)
     }
 }
