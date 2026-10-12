@@ -3,24 +3,33 @@ import UIKit
 
 /// Числа промо книжной витрины. Макета нет — раскладка по скриншоту Книг (задача
 /// пользователя 2026-10-04), книга — наша, в проекции (`BookFigure`).
+///
+/// Адаптивность: числа сняты на 402, слот растёт с шириной экрана так, что видимые края
+/// соседей остаются прежними (`CenteredCarouselFit`), а геометрия книги (обложка, спуск
+/// соседей, поля под наклон, поля описания) идёт тем же `scale`. Кнопка, зазор слотов и
+/// поля под кнопкой — фиксированные.
+@MainActor
 enum BooksPromoLayout {
-    /// Книга по центру: обложка 290 по высоте (было 260 — «немного увеличить», правка
-    /// пользователя), пропорции не шире 0.72 — иначе альбомный скан распёр бы слот
-    static let geometry = BookFigureGeometry(coverHeight: 290)
-    static let maxAspect: CGFloat = 0.72
-    /// Слот книги в ленте и зазор: соседи выглядывают из-за краёв на ~50
-    static let slot: CGFloat = 222
-    static let gap: CGFloat = 24
+    /// Слот книги в ленте (222 на 402) и зазор: соседи выглядывают из-за краёв на ~50
+    static let fit = CenteredCarouselFit(designSlot: 222, gap: 24)
+    static var slot: CGFloat { fit.slot }
+    static var gap: CGFloat { fit.gap }
     static var step: CGFloat { slot + gap }
+    /// Множитель геометрии книги: `slot / 222`
+    static var scale: CGFloat { fit.scale }
+    /// Книга по центру: обложка 290 по высоте на 402 (было 260 — «немного увеличить», правка
+    /// пользователя), пропорции не шире 0.72 — иначе альбомный скан распёр бы слот
+    static var geometry: BookFigureGeometry { BookFigureGeometry(coverHeight: 290 * scale) }
+    static let maxAspect: CGFloat = 0.72
     /// Соседи меньше и наклонены на 3° наружу — как обложки соседей в большом плеере
     /// музыки (`MusicPlayerLayout.neighborTilt`), угол — от расстояния до центра
     static let sideTilt: Double = 3
     static let sideShrink: CGFloat = 0.14
     /// …и ниже центральной на 16 (правка пользователя 2026-10-04) — тоже за сдвигом
-    static let sideDrop: CGFloat = 16
+    static var sideDrop: CGFloat { 16 * scale }
     /// Поля над и под книгой — под наклон и тень
-    static let carouselTop: CGFloat = 20
-    static let carouselBottom: CGFloat = 24
+    static var carouselTop: CGFloat { 20 * scale }
+    static var carouselBottom: CGFloat { 24 * scale }
     static var carouselHeight: CGFloat {
         carouselTop + geometry.frameSize(coverWidth: 0).height + carouselBottom
     }
@@ -28,11 +37,14 @@ enum BooksPromoLayout {
     /// держится всегда, чтобы кнопка не прыгала от книги к книге
     static let blurbLines = 3
     static var blurbHeight: CGFloat { PlusTextSize.textM.lineHeight * CGFloat(blurbLines) }
-    static let blurbSide: CGFloat = 32
+    static var blurbSide: CGFloat { 32 * scale }
     static let blurbToButton: CGFloat = 20
     static let blurbFade: Animation = .smooth(duration: 0.3)
     static let buttonHeight: CGFloat = 48
     static let buttonPadding: CGFloat = 32
+    /// Ширина текста описания на 402 (402 − 2·32) — от неё полосы скелетона
+    static let designBlurbWidth: CGFloat = PlusMetrics.designWidth - 2 * 32
+    static var blurbWidth: CGFloat { PlusMetrics.screenWidth - 2 * blurbSide }
     static let buttonBottom: CGFloat = 24
     /// Фон промо — 0.6, приглушённый (правка пользователя 2026-10-04; тем же днём
     /// побывал 0.8 и 1)
@@ -40,8 +52,14 @@ enum BooksPromoLayout {
 }
 
 /// Карточка книги в карусели темы.
+///
+/// Обложка 200 по высоте на 402 растёт тем же множителем, что эталонная карточка 2:3
+/// (136 pt, две целых и торчащий край ~98): ширины книг других пропорций точного края
+/// не дают, но порядок прежний.
+@MainActor
 enum BooksCardLayout {
-    static let geometry = BookFigureGeometry(coverHeight: 200)
+    static let fit = CarouselFit(designCard: 136, whole: 2, side: ServiceCarouselLayout.side, gap: ServiceCarouselLayout.cardGap)
+    static var geometry: BookFigureGeometry { BookFigureGeometry(coverHeight: 200 * fit.scale) }
     static let captionGap: CGFloat = 8
     static let titleLines = 2
     static var captionHeight: CGFloat { PlusTextSize.textS.lineHeight * CGFloat(titleLines + 1) }
@@ -213,6 +231,12 @@ private struct BooksPromoCarousel: View {
 
     private var carousel: some View {
         let count = books.count
+        // Числа эффекта — из констант, не из размеров вью; замыкание `visualEffect` не
+        // привязано к главному актору, поэтому читаем их заранее.
+        let step = BooksPromoLayout.step
+        let shrink = BooksPromoLayout.sideShrink
+        let tilt = BooksPromoLayout.sideTilt
+        let drop = BooksPromoLayout.sideDrop
         return ScrollView(.horizontal) {
             LazyHStack(spacing: BooksPromoLayout.gap) {
                 ForEach(0..<(count * Self.copies), id: \.self) { index in
@@ -220,24 +244,26 @@ private struct BooksPromoCarousel: View {
                     bookView(book, slot: index, isCurrent: index == page)
                         .frame(width: BooksPromoLayout.slot)
                         .visualEffect { content, proxy in
-                            // Доля пути до соседнего места: 0 по центру экрана, ±1 у соседей.
-                            // Кадр — в координатах экрана: в координатах скролла он отсчитан
-                            // от поля ленты, и самая крупная книга стояла правее центра на
-                            // это поле (жалоба пользователя 2026-10-04).
-                            let mid = proxy.frame(in: .global).midX
-                            let t = max(-1, min(1, (mid - PlusMetrics.designWidth / 2) / BooksPromoLayout.step))
+                            // Доля пути до соседнего места: 0 по центру ленты, ±1 у соседей.
+                            // Центр — от рамки скролла (как `ShowcasePromoLayout.position`), не
+                            // константа 201: на широком экране якорь и константа расходились
+                            // на 19 pt, и свайп не листал (задача 43).
+                            let center = proxy.bounds(of: .scrollView)?.midX ?? proxy.size.width / 2
+                            let t = max(-1, min(1, (proxy.size.width / 2 - center) / step))
                             return content
-                                .scaleEffect(1 - BooksPromoLayout.sideShrink * abs(t))
-                                .rotationEffect(.degrees(BooksPromoLayout.sideTilt * Double(t)))
-                                .offset(y: BooksPromoLayout.sideDrop * abs(t))
+                                .scaleEffect(1 - shrink * abs(t))
+                                .rotationEffect(.degrees(tilt * Double(t)))
+                                .offset(y: drop * abs(t))
                         }
                 }
             }
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
-        .contentMargins(.horizontal, (PlusMetrics.designWidth - BooksPromoLayout.slot) / 2, for: .scrollContent)
-        .scrollPosition(id: $page, anchor: .center)
+        .contentMargins(.horizontal, BooksPromoLayout.fit.margin, for: .scrollContent)
+        // `.leading`, не `.center`: при симметричных полях сетка снэпа `viewAligned` и якорь
+        // совпадают точно (`.center` промахивался — «Грабли» в CLAUDE.md).
+        .scrollPosition(id: $page, anchor: .leading)
         .onScrollPhaseChange { _, phase in
             if phase == .idle { settle() }
         }
@@ -349,8 +375,8 @@ private struct BooksPromoSkeleton: View {
                 }
                 .clipped()
             VStack(spacing: 8) {
-                SkeletonBar(width: 280)
-                SkeletonBar(width: 220)
+                SkeletonBar(width: BooksPromoLayout.blurbWidth * 280 / BooksPromoLayout.designBlurbWidth)
+                SkeletonBar(width: BooksPromoLayout.blurbWidth * 220 / BooksPromoLayout.designBlurbWidth)
             }
             .frame(height: BooksPromoLayout.blurbHeight, alignment: .top)
             .padding(.top, 4)
