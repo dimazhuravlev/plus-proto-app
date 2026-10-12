@@ -3,6 +3,8 @@ import VariableBlur
 
 /// Геометрия карточки «продолжить чтение» — figma-screen1 §3.6. Координаты локальные:
 /// из абсолютных Y макета вычтен верх слота `ShowcaseLayout.Slot.reading` (1308.99).
+/// Числа здесь — макет на 402; на экране они умножаются на `ShowcaseLayout.scale`
+/// (кнопка ✕ 40, шрифты и размытие — нет).
 private enum ReadingCardLayout {
     static let slot = ShowcaseLayout.Slot.reading
 
@@ -38,11 +40,16 @@ private enum ReadingCardLayout {
     /// Кнопка ✕ `2004:10720` в правом верхнем углу блока. Лайка у этой карточки в макете нет.
     /// Лежит не внутри блока, а рядом: блок — интерактивная миниатюра, и кнопка внутри неё
     /// стала бы кнопкой в кнопке, то есть перестала бы нажиматься сама.
+    /// Угол блока и отступ масштабируются, сама кнопка — нет.
     static let dismissInset: CGFloat = 7.34
-    static let dismissOrigin = CGPoint(
-        x: blockOrigin.x + blockSize.width - dismissInset - PlusMetrics.circleButton,
-        y: blockOrigin.y + dismissInset
-    )
+    @MainActor
+    static var dismissOrigin: CGPoint {
+        let k = ShowcaseLayout.scale
+        return CGPoint(
+            x: (blockOrigin.x + blockSize.width - dismissInset) * k - PlusMetrics.circleButton,
+            y: (blockOrigin.y + dismissInset) * k
+        )
+    }
 
     /// Строка прогресса `2004:10721`: (109, 1346.55), ширина 137 = «36%» + 6 + трек 108.
     static let timelineOrigin = CGPoint(x: 109, y: 1346.55 - slot.top)
@@ -93,8 +100,8 @@ struct ContinueReadingCard: View {
                 .offset(x: ReadingCardLayout.dismissOrigin.x, y: ReadingCardLayout.dismissOrigin.y)
         }
         .frame(
-            width: ShowcaseLayout.designWidth,
-            height: ReadingCardLayout.slot.height,
+            width: PlusMetrics.screenWidth,
+            height: ReadingCardLayout.slot.frameHeight,
             alignment: .topLeading
         )
         .showcaseSwappable()
@@ -109,21 +116,23 @@ struct ContinueReadingCard: View {
         ZStack(alignment: .topLeading) {
             glassBlock
                 .modifier(ReadingZoomSource(context: thumbnail))
-                .showcasePlaced(at: ReadingCardLayout.blockOrigin)
+                .showcasePlaced(at: ShowcaseLayout.scaled(ReadingCardLayout.blockOrigin))
 
             timeline
-                .offset(x: ReadingCardLayout.timelineOrigin.x, y: ReadingCardLayout.timelineOrigin.y)
+                .offset(x: ReadingCardLayout.timelineOrigin.x * ShowcaseLayout.scale, y: ReadingCardLayout.timelineOrigin.y * ShowcaseLayout.scale)
 
             // Книга — сосед блока, а не его потомок: внутри её срезал бы клип.
             miniBook
-                .offset(x: ReadingCardLayout.miniBookOrigin.x, y: ReadingCardLayout.miniBookOrigin.y)
+                .offset(x: ReadingCardLayout.miniBookOrigin.x * ShowcaseLayout.scale, y: ReadingCardLayout.miniBookOrigin.y * ShowcaseLayout.scale)
         }
         .frame(
-            width: ShowcaseLayout.designWidth,
-            height: ReadingCardLayout.slot.height,
+            width: PlusMetrics.screenWidth,
+            height: ReadingCardLayout.slot.frameHeight,
             alignment: .topLeading
         )
-        .contentShape(Path(ReadingCardLayout.tapArea))
+        .contentShape(Path(ReadingCardLayout.tapArea.applying(
+            CGAffineTransform(scaleX: ShowcaseLayout.scale, y: ShowcaseLayout.scale)
+        )))
         .pressScale(PressMotion.cardScale)
         .onTapGesture(coordinateSpace: .local) { open(at: $0) }
         .accessibilityElement(children: .ignore)
@@ -136,7 +145,7 @@ struct ContinueReadingCard: View {
     // MARK: - Нажатия
 
     private func open(at location: CGPoint) {
-        let headerBottom = ReadingCardLayout.blockOrigin.y + ReadingCardLayout.headerHeight
+        let headerBottom = (ReadingCardLayout.blockOrigin.y + ReadingCardLayout.headerHeight) * ShowcaseLayout.scale
         if location.y < headerBottom {
             openBook()
         } else {
@@ -164,7 +173,8 @@ struct ContinueReadingCard: View {
     // MARK: - Стеклянный блок
 
     private var glassBlock: some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.readerBlock, style: .continuous)
+        let k = ShowcaseLayout.scale
+        let shape = RoundedRectangle(cornerRadius: PlusRadius.readerBlock * k, style: .continuous)
 
         return ZStack(alignment: .topLeading) {
             excerpt
@@ -174,13 +184,13 @@ struct ContinueReadingCard: View {
                 maxBlurRadius: ReadingCardLayout.headerBlurRadius,
                 direction: .blurredTopClearBottom
             )
-            .frame(width: ReadingCardLayout.blockSize.width, height: ReadingCardLayout.headerBlurHeight)
+            .frame(width: ReadingCardLayout.blockSize.width * k, height: ReadingCardLayout.headerBlurHeight * k)
             .allowsHitTesting(false)
             scrim
         }
         .frame(
-            width: ReadingCardLayout.blockSize.width,
-            height: ReadingCardLayout.blockSize.height,
+            width: ReadingCardLayout.blockSize.width * k,
+            height: ReadingCardLayout.blockSize.height * k,
             alignment: .topLeading
         )
         .clipShape(shape)
@@ -190,16 +200,17 @@ struct ContinueReadingCard: View {
     /// Кадр фиксирован по макету, чтобы полтысячи точек текста не перемерялись на скролле,
     /// а `drawingGroup` запекает их в один растр — под клипом это самое дорогое место карточки.
     private var excerpt: some View {
-        Text(block.excerpt)
+        let k = ShowcaseLayout.scale
+        return Text(block.excerpt)
             .plusText(.textL, .medium)
             .foregroundStyle(Color.fillOne)
             .frame(
-                width: ReadingCardLayout.excerptSize.width,
-                height: ReadingCardLayout.excerptSize.height,
+                width: ReadingCardLayout.excerptSize.width * k,
+                height: ReadingCardLayout.excerptSize.height * k,
                 alignment: .topLeading
             )
             .drawingGroup()
-            .offset(x: ReadingCardLayout.excerptOrigin.x, y: ReadingCardLayout.excerptOrigin.y)
+            .offset(x: ReadingCardLayout.excerptOrigin.x * k, y: ReadingCardLayout.excerptOrigin.y * k)
     }
 
     private var scrim: some View {
@@ -212,7 +223,10 @@ struct ContinueReadingCard: View {
             startPoint: .top,
             endPoint: .bottom
         )
-        .frame(width: ReadingCardLayout.scrimSize.width, height: ReadingCardLayout.scrimSize.height)
+        .frame(
+            width: ReadingCardLayout.scrimSize.width * ShowcaseLayout.scale,
+            height: ReadingCardLayout.scrimSize.height * ShowcaseLayout.scale
+        )
         .allowsHitTesting(false)
     }
 
@@ -225,7 +239,7 @@ struct ContinueReadingCard: View {
                     .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillSubtitle)
 
-                PlusProgressBar(progress: block.progress, width: ReadingCardLayout.trackWidth)
+                PlusProgressBar(progress: block.progress, width: ReadingCardLayout.trackWidth * ShowcaseLayout.scale)
             }
 
             Text(block.remaining)
@@ -249,7 +263,10 @@ struct ContinueReadingCard: View {
     private var miniBookCover: some View {
         ArtworkImage(source: block.cover)
             .aspectRatio(contentMode: .fill)
-            .frame(width: ReadingCardLayout.miniBookSize.width, height: ReadingCardLayout.miniBookSize.height)
+            .frame(
+                width: ReadingCardLayout.miniBookSize.width * ShowcaseLayout.scale,
+                height: ReadingCardLayout.miniBookSize.height * ShowcaseLayout.scale
+            )
             .clipped()
             .coverBorder(Rectangle())
     }
@@ -258,12 +275,13 @@ struct ContinueReadingCard: View {
     /// пересчитывается на каждом кадре скролла. Кадр расширен, чтобы растр не срезал свечение.
     private var miniBookGlow: some View {
         let spill = ReadingCardLayout.miniBookGlowBlur * AmbilightConfig.spillFactor
+        let size = ShowcaseLayout.scaled(ReadingCardLayout.miniBookSize)
 
         return miniBookCover
             .blur(radius: ReadingCardLayout.miniBookGlowBlur)
             .frame(
-                width: ReadingCardLayout.miniBookSize.width + spill * 2,
-                height: ReadingCardLayout.miniBookSize.height + spill * 2
+                width: size.width + spill * 2,
+                height: size.height + spill * 2
             )
             .drawingGroup()
             .opacity(ReadingCardLayout.miniBookGlowOpacity)

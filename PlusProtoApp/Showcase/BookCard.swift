@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Геометрия карточки книги — figma-screen1 §3.4. Координаты локальные: из абсолютных Y
 /// макета вычтен верх слота `ShowcaseLayout.Slot.book` (787.96), X совпадает с макетом —
-/// кадр карточки во всю ширину витрины.
+/// кадр карточки во всю ширину витрины. Числа здесь — макет на 402; на экране они
+/// умножаются на `ShowcaseLayout.scale`.
 private enum BookCardLayout {
     static let slot = ShowcaseLayout.Slot.book
 
@@ -41,24 +42,34 @@ struct BookCard: View {
         ZStack(alignment: .topLeading) {
             // Рендер — интерактивная миниатюра карточки. Миниатюрой себя помечает
             // сам `BookRender`: ореол обязан остаться снаружи источника зума.
+            //
+            // Рендер книги — растровая композиция с зашитой геометрией, поэтому на ширине,
+            // отличной от 402, масштабируется целиком (`scaleEffect`), а кадр под него
+            // растёт вместе: рисунок по-прежнему умещается в собственный кадр.
             BookRender(cover: block.render, glowOpacity: BookCardLayout.glowOpacity)
+                .scaleEffect(ShowcaseLayout.scale, anchor: .topLeading)
+                .frame(
+                    width: BookRender.bounds.width * ShowcaseLayout.scale,
+                    height: BookRender.bounds.height * ShowcaseLayout.scale,
+                    alignment: .topLeading
+                )
                 .showcaseSwappable()
-                .showcasePlaced(at: BookCardLayout.renderOrigin)
+                .showcasePlaced(at: ShowcaseLayout.scaled(BookCardLayout.renderOrigin))
 
             VStack(alignment: .trailing, spacing: BookCardLayout.captionToButtons) {
                 GradientText(block.caption, from: .fillOne, to: block.captionTint)
                     .plusText(.textM, .medium)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: BookCardLayout.captionWidth, alignment: .trailing)
+                    .frame(width: BookCardLayout.captionWidth * ShowcaseLayout.scale, alignment: .trailing)
                     .showcaseSwappable()
 
                 ShowcaseFeedbackPair()
             }
-            .offset(x: BookCardLayout.captionOrigin.x, y: BookCardLayout.captionOrigin.y)
+            .offset(x: BookCardLayout.captionOrigin.x * ShowcaseLayout.scale, y: BookCardLayout.captionOrigin.y * ShowcaseLayout.scale)
         }
         .frame(
-            width: ShowcaseLayout.designWidth,
-            height: BookCardLayout.slot.height,
+            width: PlusMetrics.screenWidth,
+            height: BookCardLayout.slot.frameHeight,
             alignment: .topLeading
         )
     }

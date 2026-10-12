@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Геометрия карточки альбома `2004:10757` (figma-screen1 §3.3). Координаты спеки даны
 /// в кадре витрины шириной 402 — в локальные переводим вычитанием верха слота.
+/// Числа здесь — макет на 402; на экране они умножаются на `ShowcaseLayout.scale`.
 /// Зеркальна карточке кино: обложка справа, тексты слева, наклон противоположного знака (§6).
 private enum AlbumCardLayout {
     static let slot = ShowcaseLayout.Slot.album
@@ -49,7 +50,7 @@ struct AlbumCard: View {
     /// Задаёт размер слота, чтобы смещения отсчитывались от левого верхнего угла карточки
     private var cardFrame: some View {
         Color.clear
-            .frame(width: ShowcaseLayout.designWidth, height: AlbumCardLayout.slot.height)
+            .frame(width: PlusMetrics.screenWidth, height: AlbumCardLayout.slot.frameHeight)
             .allowsHitTesting(false)
     }
 
@@ -59,12 +60,13 @@ struct AlbumCard: View {
     private var cover: some View {
         AmbilightArtwork(
             source: block.cover,
-            size: AlbumCardLayout.coverSize,
+            size: ShowcaseLayout.scaled(AlbumCardLayout.coverSize),
+            corner: PlusRadius.card * ShowcaseLayout.scale,
             rotation: AlbumCardLayout.coverRotation,
             glowOpacity: AlbumCardLayout.glowOpacity
         )
         .showcaseSwappable()
-        .showcasePlaced(at: AlbumCardLayout.coverOrigin)
+        .showcasePlaced(at: ShowcaseLayout.scaled(AlbumCardLayout.coverOrigin))
     }
 
     /// Обе строки — Text M・15 / Medium без зазора: в макете это две соседние строки одного бокса.
@@ -83,13 +85,13 @@ struct AlbumCard: View {
                 .foregroundStyle(Color.fillSubtitle)
         }
         .lineLimit(2)
-        .frame(width: AlbumCardLayout.titlesWidth, alignment: .leading)
+        .frame(width: AlbumCardLayout.titlesWidth * ShowcaseLayout.scale, alignment: .leading)
         .showcaseSwappable()
-        .offset(x: AlbumCardLayout.titlesOrigin.x, y: AlbumCardLayout.titlesOrigin.y)
+        .offset(x: AlbumCardLayout.titlesOrigin.x * ShowcaseLayout.scale, y: AlbumCardLayout.titlesOrigin.y * ShowcaseLayout.scale)
     }
 
     private var buttons: some View {
         ShowcaseFeedbackPair()
-            .offset(x: AlbumCardLayout.buttonsOrigin.x, y: AlbumCardLayout.buttonsOrigin.y)
+            .offset(x: AlbumCardLayout.buttonsOrigin.x * ShowcaseLayout.scale, y: AlbumCardLayout.buttonsOrigin.y * ShowcaseLayout.scale)
     }
 }
