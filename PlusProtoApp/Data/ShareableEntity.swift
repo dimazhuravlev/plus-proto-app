@@ -59,14 +59,13 @@ struct ShareableEntity {
     static func book(
         title: String,
         author: String,
-        year: String?,
         cover: ArtworkSource?,
         aspect: CGFloat?
     ) -> ShareableEntity {
         ShareableEntity(
             title: title,
             subtitle: author.isEmpty ? nil : author,
-            year: year,
+            year: nil,
             cover: cover,
             avatar: nil,
             shape: .book(aspect: aspect)

@@ -607,17 +607,40 @@ struct OverlayLayer: View {
             if store.isFavorite(artist.id) { store.setFavorite(artist, false) }
             store.setFavorite(artist, true)
         }
-        // `-debugShare 1` — экран шеринга альбома через 2 с.
+        // `-debugShare <album|movie|book>` — экран шеринга через 2 с (`1` = album, как раньше);
+        // `-debugShareTitle <текст>` подменяет заголовок — проверить длины и ступени.
         .task {
-            guard UserDefaults.standard.bool(forKey: "debugShare") else { return }
+            let defaults = UserDefaults.standard
+            let kind = defaults.string(forKey: "debugShare") ?? ""
+            let customTitle = defaults.string(forKey: "debugShareTitle")
+            let entity: ShareableEntity
+            switch kind {
+            case "movie":
+                entity = .movie(
+                    title: customTitle ?? "El Camino: Во все тяжкие",
+                    year: "2019",
+                    poster: .asset("mockMoviePoster")
+                )
+            case "book":
+                entity = .book(
+                    title: customTitle ?? "Игры тестостерона и другие вопросы биологии поведения",
+                    author: "Роберт Сапольски",
+                    cover: .asset("mockBookGraeberTruth"),
+                    aspect: nil
+                )
+            default:
+                guard kind == "album" || defaults.bool(forKey: "debugShare") else { return }
+                entity = .album(
+                    title: customTitle ?? "Videotape",
+                    artist: "Tame Impala",
+                    year: "2026",
+                    cover: .asset("mockAlbumCover"),
+                    artistPicture: .asset("mockAvatar")
+                )
+            }
             try? await Task.sleep(for: .seconds(2))
-            ShareState.shared.present(.album(
-                title: "Videotape",
-                artist: "Tame Impala",
-                year: "2026",
-                cover: .asset("mockAlbumCover"),
-                artistPicture: .asset("mockAvatar")
-            ))
+            guard !Task.isCancelled else { return }
+            ShareState.shared.present(entity)
         }
         .task {
             guard UserDefaults.standard.bool(forKey: "debugToast") else { return }
