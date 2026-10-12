@@ -171,7 +171,7 @@ enum PlusGradient {
         endPoint: .bottomTrailing
     )
 
-    /// Заливка глифа неактивного таба — белый с падающей прозрачностью, поверх ещё 0.7 общей непрозрачности
+    /// Заливка глифа неактивного таба — белый с падающей прозрачностью, поверх ещё 0.9 общей непрозрачности (макет обновлён 2026-10-12)
     static let inactiveTabGlyph = LinearGradient(
         colors: [.white.opacity(0.5), .white.opacity(0.25)],
         startPoint: .topTrailing,

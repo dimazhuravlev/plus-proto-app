@@ -40,8 +40,21 @@ enum TabBarMotion {
 /// Числа таббара, которых нет в `Tokens.swift`: каждое встречается ровно здесь
 /// («токен ради единственного вызова не заводим»). Источник — figma-tabbar §2/§5/§6.
 private enum TabBarGeometry {
-    /// Общая непрозрачность неактивного глифа — `fill-opacity="0.7"` из его SVG (§5).
-    static let inactiveGlyphOpacity: Double = 0.7
+    /// Общая непрозрачность неактивного глифа — `fill-opacity="0.9"` из его SVG
+    /// (макет обновлён 2026-10-12; в §5 разведки было 0.7).
+    static let inactiveGlyphOpacity: Double = 0.9
+
+    /// Внутренние тени глифа — набор «service icon» `2004:9170` (глифы `2004:9175…9186`,
+    /// `2004:9281/9356`, сердце `2463:79197/79223`); одни и те же у активных и неактивных.
+    /// Значения — в координатах иконки 32×32, в тайле умножаются на `AppTab.glyphScale`.
+    /// Радиус — σ из SVG-фильтра (stdDeviation), он же `radius` SwiftUI (конвенция проекта).
+    /// Порядок как в макете: первая тень лежит под второй.
+    /// Третий слой макета — inner shadow со spread 3.066 (y +0.511, белый 10 %) — в
+    /// SVG-экспорте даёт ноль (dilate перекрывает исходник), поэтому не воспроизводим.
+    static let glyphInnerShadows: [(opacity: Double, radius: CGFloat, y: CGFloat)] = [
+        (0.1, 1.022, 1.022),
+        (0.2, 0.511, -0.204),
+    ]
 
     /// Миниатюра добавленной обложки вместо сердца на табе «Моё». Четыре инстанса
     /// `Tab=Collection-*, State=inactive`, 32×32 (бокс сердца), миниатюра — по центру
@@ -259,6 +272,24 @@ private struct TabBarItem: View {
         .animation(TabBarMotion.activation, value: isActive)
     }
 
+    /// Заливка глифа с белыми внутренними тенями макета (`TabBarGeometry.glyphInnerShadows`),
+    /// смещение и радиус — в масштабе глифа. Глиф остаётся векторным template.
+    private func glyphFill<Base: ShapeStyle>(_ base: Base) -> AnyShapeStyle {
+        let scale = tab.glyphScale
+        let shadows = TabBarGeometry.glyphInnerShadows
+        return AnyShapeStyle(
+            base
+                .shadow(.inner(
+                    color: .white.opacity(shadows[0].opacity),
+                    radius: shadows[0].radius * scale, x: 0, y: shadows[0].y * scale
+                ))
+                .shadow(.inner(
+                    color: .white.opacity(shadows[1].opacity),
+                    radius: shadows[1].radius * scale, x: 0, y: shadows[1].y * scale
+                ))
+        )
+    }
+
     private var tile: some View {
         let shape = RoundedRectangle(cornerRadius: PlusRadius.iconTile, style: .continuous)
         let glyph = tab.glyphFrame
@@ -277,14 +308,14 @@ private struct TabBarItem: View {
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: glyph.size.width, height: glyph.size.height)
-                .foregroundStyle(PlusGradient.inactiveTabGlyph)
+                .foregroundStyle(glyphFill(PlusGradient.inactiveTabGlyph))
                 .opacity(isActive ? 0 : TabBarGeometry.inactiveGlyphOpacity)
                 .overlay {
                     Image(tab.glyphAsset)
                         .renderingMode(.template)
                         .resizable()
                         .frame(width: glyph.size.width, height: glyph.size.height)
-                        .foregroundStyle(whiteActive ? AnyShapeStyle(Color.fillOne) : AnyShapeStyle(PlusGradient.activeTabGlyph))
+                        .foregroundStyle(whiteActive ? glyphFill(Color.fillOne) : glyphFill(PlusGradient.activeTabGlyph))
                         .opacity(isActive ? 1 : 0)
                 }
                 // Сердце уступает миниатюре: прозрачность и утопление, оба слоя всегда в дереве.
