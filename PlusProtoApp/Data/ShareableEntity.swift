@@ -16,6 +16,17 @@ struct ShareableEntity {
         case book(aspect: CGFloat?)
     }
 
+    /// Вид заголовка на карточке шеринга: одна строка влево или ступени до трёх строк.
+    /// Задаётся фабрикой, а не формой обложки: у альбома и плейлиста форма одна, заголовок разный.
+    enum TitleKind: Equatable {
+        /// Одна строка, влево (плейлист, артист)
+        case single
+        /// Ступенями до трёх строк, влево (альбом)
+        case stepped
+        /// Ступенями до трёх строк, по центру (фильм, книга)
+        case steppedCentered
+    }
+
     let title: String
     /// Исполнитель, владелец плейлиста, автор
     let subtitle: String?
@@ -24,6 +35,7 @@ struct ShareableEntity {
     /// Аватар в мета-строке — только у альбома (фото исполнителя)
     let avatar: ArtworkSource?
     let shape: Shape
+    let titleLayout: TitleKind
 
     /// Под обложкой есть мета-строка (подпись, год или аватар).
     var hasMetaRow: Bool { subtitle != nil || year != nil || avatar != nil }
@@ -41,7 +53,8 @@ struct ShareableEntity {
             year: year,
             cover: cover,
             avatar: artistPicture,
-            shape: .square
+            shape: .square,
+            titleLayout: .stepped
         )
     }
 
@@ -52,7 +65,8 @@ struct ShareableEntity {
             year: nil,
             cover: cover,
             avatar: nil,
-            shape: .square
+            shape: .square,
+            titleLayout: .single
         )
     }
 
@@ -68,7 +82,8 @@ struct ShareableEntity {
             year: nil,
             cover: cover,
             avatar: nil,
-            shape: .book(aspect: aspect)
+            shape: .book(aspect: aspect),
+            titleLayout: .steppedCentered
         )
     }
 
@@ -79,7 +94,8 @@ struct ShareableEntity {
             year: year,
             cover: poster,
             avatar: nil,
-            shape: .poster
+            shape: .poster,
+            titleLayout: .steppedCentered
         )
     }
 
@@ -90,7 +106,8 @@ struct ShareableEntity {
             year: nil,
             cover: photo,
             avatar: nil,
-            shape: .circle
+            shape: .circle,
+            titleLayout: .single
         )
     }
 }

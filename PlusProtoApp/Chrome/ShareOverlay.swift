@@ -106,16 +106,17 @@ enum ShareCardLayout {
         }
     }
 
-    /// Заголовок фильма и книги — ступенями до трёх строк, по центру; у остальных видов
-    /// одна строка влево.
+    /// Заголовок альбома, фильма и книги — ступенями до трёх строк (у фильма и книги по центру,
+    /// у альбома влево); у плейлиста и артиста одна строка влево. Вид задаёт сущность
+    /// (`ShareableEntity.titleLayout`), а не форма обложки.
     static func hasSteppedTitle(_ entity: ShareableEntity) -> Bool {
-        switch entity.shape {
-        case .poster, .book: true
-        case .square, .circle: false
+        switch entity.titleLayout {
+        case .stepped, .steppedCentered: true
+        case .single: false
         }
     }
 
-    /// Предел строк заголовка фильма и книги.
+    /// Предел строк ступенчатого заголовка.
     static let steppedTitleMaxLines = 3
 
     /// Колонка заголовка: карточка без полей.
@@ -149,7 +150,8 @@ enum ShareCardLayout {
         // дробная погрешность замера не должна дать лишнюю строку.
         let measured = Int((rect.height / font.lineHeight).rounded())
         let lines = min(steppedTitleMaxLines, max(1, measured))
-        return TitleLayout(style: style, maxLines: steppedTitleMaxLines, lines: lines, isCentered: true)
+        return TitleLayout(style: style, maxLines: steppedTitleMaxLines, lines: lines,
+                           isCentered: entity.titleLayout == .steppedCentered)
     }
 
     static func height(for entity: ShareableEntity) -> CGFloat {
