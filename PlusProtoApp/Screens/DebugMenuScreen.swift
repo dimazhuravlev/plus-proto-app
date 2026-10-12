@@ -72,12 +72,9 @@ struct DebugMenuScreen: View {
                     optionsIsland
                         .padding(.horizontal, ProfileLayout.side)
 
-                    note("Все разделы в одной ленте, сверху фильтры.")
-
                     title("Громкость музыки", top: Layout.sectionGap)
                     volumeIsland
                         .padding(.horizontal, ProfileLayout.side)
-                    note("30-секундные превью Deezer, общая громкость для всей музыки.")
 
                     title("Прозрачность навигации", top: Layout.sectionGap)
                     sliderIsland(
@@ -87,7 +84,7 @@ struct DebugMenuScreen: View {
                         accessibility: "Затемнение фона под стеклом хрома"
                     )
                     .padding(.horizontal, ProfileLayout.side)
-                    note("Затемнение под стеклом таббара, action bar, тостов и кнопок навбаров.")
+                    note("Затемнение под стеклом таббара, action bar, тостов и кнопок навбаров")
 
                     title("Таббар", top: Layout.sectionGap)
                     toggleIsland(
@@ -96,7 +93,7 @@ struct DebugMenuScreen: View {
                         accessibility: "Активный таб: белая иконка без свечения"
                     )
                     .padding(.horizontal, ProfileLayout.side)
-                    note("Белая иконка активного таба вместо фиолетового свечения.")
+                    note("Белая иконка активного таба вместо фиолетового свечения")
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)
