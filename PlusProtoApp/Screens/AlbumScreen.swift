@@ -4,13 +4,16 @@ import UIKit
 // MARK: - Геометрия
 
 /// Числа из макета `2079:11226` (файл витрины). Холст макета — 375, прототип живёт
-/// на 402: по ширине тянется зона кавера и разделители, фиксированные размеры
-/// (кавер 247, карточка карусели 159, поля 16) перенесены как есть.
+/// на 402 (база формул): кавер и карточка карусели масштабируются по ширине экрана
+/// (`widthScale`, `CarouselFit`), поля 16 и зазоры — как есть.
 enum AlbumLayout {
-    /// Кавер `736:108655`: 247×247, скругление 18. Шапка вокруг него — общая
-    /// с книгой (`EntityCoverHeader`, `EntityCoverLayout`).
-    static let coverSize: CGFloat = 247
-    static let coverRadius: CGFloat = 18
+    /// Кавер `736:108655`: 247×247 на 402 и `247·k` на других ширинах (k — `widthScale`),
+    /// скругление 18 масштабируется вместе с ним. Шапка вокруг него — общая с книгой
+    /// (`EntityCoverHeader`, `EntityCoverLayout`).
+    @MainActor
+    static var coverSize: CGFloat { EntityCoverLayout.referenceCover * PlusMetrics.widthScale }
+    @MainActor
+    static var coverRadius: CGFloat { 18 * PlusMetrics.widthScale }
 
     /// Поля контента. У экрана альбома они 16, а не хромовые 24: так стоит
     /// и весь контент карточки фильма (`MovieLayout.sectionSide`).
@@ -41,6 +44,7 @@ enum AlbumLayout {
     static let cardGap: CGFloat = 8
 
     /// Пороги навбара — общие с книгой, от верха названия (`EntityCoverLayout`).
+    @MainActor
     static var navBarThresholds: EntityNavBarThresholds {
         EntityCoverLayout.navBarThresholds(coverHeight: coverSize)
     }

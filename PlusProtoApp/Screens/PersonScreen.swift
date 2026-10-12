@@ -3,14 +3,17 @@ import SwiftUI
 // MARK: - Геометрия
 
 /// Экран персоны — макет `2455:32136` (исполнитель, «Taylor Swift»). Холст макета 375,
-/// у проекта 402: фото во всю ширину остаётся квадратом, поля 16 — как есть.
+/// у проекта 402 (база формул): фото во всю ширину экрана остаётся квадратом,
+/// поля 16 — как есть.
 private enum PersonLayout {
     static let side: CGFloat = EntityCoverLayout.side
     /// Фото — квадрат во всю ширину экрана, от физического верха (`. / cover` 375×375)
-    static var photoSize: CGFloat { PlusMetrics.designWidth }
+    @MainActor
+    static var photoSize: CGFloat { PlusMetrics.screenWidth }
     /// Блок названия наезжает на фото на 79 (`mb-[-79px]` макета)
     static let titleOverlap: CGFloat = 79
     /// Сколько фото занимает в потоке — до верха блока названия
+    @MainActor
     static var photoZoneHeight: CGFloat { photoSize - titleOverlap }
     /// Затемнение к чёрному — нижние 35.73 % фото (`inset 64.27% 0 0 0` макета)
     static let scrimShare: CGFloat = 0.3573
@@ -19,9 +22,13 @@ private enum PersonLayout {
     // (`carousel / Music / opened playlist`).
     static let tracksPerColumn = 3
     static let trackColumnGap: CGFloat = 16
-    /// Следующая колонка начинается на `side + ширина + зазор` = 402 − peek: ширина — от
-    /// ширины экрана без полей и без выглядывающей части (`EntitySectionLayout.trackColumnPeek`).
-    static var trackColumnWidth: CGFloat { photoSize - side * 2 - EntitySectionLayout.trackColumnPeek }
+    /// Следующая колонка начинается на `side + ширина + зазор` = ширина экрана − peek:
+    /// выглядывает всегда `EntitySectionLayout.trackColumnPeek` (24, как на 402), ширина
+    /// колонки растёт с экраном. Зазор между колонками входит в левую часть.
+    @MainActor
+    static var trackColumnWidth: CGFloat {
+        PlusGrid.columnWidth(side: side + trackColumnGap, peek: EntitySectionLayout.trackColumnPeek)
+    }
 
     static let skeletonCards = 3
     static let skeletonRows = 6
@@ -30,6 +37,7 @@ private enum PersonLayout {
 
     /// Пороги навбара — в той же связке с названием, что у альбома и книги:
     /// подложка — когда шапка почти ушла под бар, имя — когда под бар уходит оно.
+    @MainActor
     static var navBarThresholds: EntityNavBarThresholds {
         EntityNavBarThresholds(
             backgroundStart: photoZoneHeight - 122,
