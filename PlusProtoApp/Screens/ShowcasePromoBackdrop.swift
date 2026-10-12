@@ -19,8 +19,9 @@ enum ShowcasePromoBackdropStyle {
 /// над промо, под навигацией, не стоит пустой чёрной.
 ///
 /// Ставится фоном промо по нижней кромке: `height` — от верха экрана до низа промо.
-/// При оттяге ленты фон растёт вверх ровно на его величину — сверху не открывается
-/// чёрное (правка пользователя 2026-10-04 для Книг).
+/// Ширина — вся ширина экрана (`screenWidth`), а не холст 402: на широком телефоне фон
+/// иначе не доходил до правого края. При оттяге ленты фон растёт вверх ровно на его
+/// величину — сверху не открывается чёрное (правка пользователя 2026-10-04 для Книг).
 struct ShowcasePromoBackdrop: View {
     let source: ArtworkSource?
     /// Слайд — от него кроссфейд смены
@@ -38,14 +39,14 @@ struct ShowcasePromoBackdrop: View {
         ZStack {
             if let source, let id {
                 SkeletonArtwork(source: source)
-                    .frame(width: PlusMetrics.designWidth, height: height)
+                    .frame(width: PlusMetrics.screenWidth, height: height)
                     .blur(radius: ShowcasePromoBackdropStyle.blur, opaque: true)
                     .overlay { Color.black.opacity(ShowcasePromoBackdropStyle.dim) }
                     .id(id)
                     .transition(.opacity)
             }
         }
-        .frame(width: PlusMetrics.designWidth, height: height)
+        .frame(width: PlusMetrics.screenWidth, height: height)
         .clipped()
         .mask {
             LinearGradient(stops: maskStops, startPoint: .top, endPoint: .bottom)

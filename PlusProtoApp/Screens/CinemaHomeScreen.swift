@@ -3,6 +3,11 @@ import SwiftUI
 /// Числа главной Кинопоиска — макет `2269:16939`. Кадр в макете 375: поля и размеры
 /// карточек перенесены как есть (описание компонента: «меняйте размер карусели,
 /// а не постера»), на холсте 402 следующая карточка просто выглядывает больше.
+///
+/// Адаптивность (правило 4 CLAUDE.md): карточки «Смотреть дальше» и постеры считает
+/// `CarouselFit` — на любой ширине столько же целых карточек, сколько на 402 (1 и 2),
+/// торчащий край следующей прежний (126 и 74), карточка меняет ширину, высота идёт тем же
+/// масштабом. На 402 числа прежние: 252×141.75 и 148×222.
 enum CinemaLayout {
     /// Лента начинается под навигацией: ряд 56 и зазор 4 (`content` на y 104 при `top` 100)
     static let contentTop: CGFloat = ServiceTopNavLayout.rowHeight + 4
@@ -18,9 +23,13 @@ enum CinemaLayout {
     static let captionTrailing: CGFloat = 8
     static var captionLine: CGFloat { PlusTextSize.textS.lineHeight }
 
-    /// «Смотреть дальше» — кадр 16:9 шириной 252 (`card / watching / history`)
-    static let historyWidth: CGFloat = 252
-    static let historyHeight: CGFloat = historyWidth * 270 / 480
+    /// «Смотреть дальше» — кадр 16:9 шириной 252 на 402 (`card / watching / history`):
+    /// одна целая карточка, справа торчит 126 следующей.
+    static let historyFit = CarouselFit(designCard: 252, whole: 1, side: side, gap: cardGap)
+    @MainActor
+    static var historyWidth: CGFloat { historyFit.cardWidth }
+    @MainActor
+    static var historyHeight: CGFloat { historyWidth * 270 / 480 }
     static let historyLabelPadding: CGFloat = 8
     static let historyProgressHeight: CGFloat = 4
     /// Затемнение под временем — 80 снизу: 40 полосы прогресса и 40 над ней
@@ -29,9 +38,13 @@ enum CinemaLayout {
     /// `accent/sugar-grape` — цвет прогресса Кинопоиска
     static let historyProgressFill = Color(red: 0x9C / 255, green: 0x38 / 255, blue: 1)
 
-    /// Постер 2:3 шириной 148 (`card / poster / default`), подпись — до двух строк
-    static let posterWidth: CGFloat = 148
-    static let posterHeight: CGFloat = posterWidth * 3 / 2
+    /// Постер 2:3 шириной 148 на 402 (`card / poster / default`): две целые, справа
+    /// торчит 74 третьего. Подпись — до двух строк.
+    static let posterFit = CarouselFit(designCard: 148, whole: 2, side: side, gap: cardGap)
+    @MainActor
+    static var posterWidth: CGFloat { posterFit.cardWidth }
+    @MainActor
+    static var posterHeight: CGFloat { posterWidth * 3 / 2 }
     static let posterTitleLines = 2
     static let skeletonPosters = 3
 }
