@@ -8,6 +8,8 @@ enum MyVibeLayout {
     /// Шейдер — квадрат шире экрана с центром у названия: пятно в кадре занимает
     /// ~70 %, и на скриншоте оно почти во всю ширину
     static let shaderSize: CGFloat = 500
+    /// Непрозрачность шейдера — приглушено по правке пользователя 2026-10-12
+    static let shaderOpacity: Double = 0.9
     /// Кнопка — белый круг 96 на 118 ниже центра названия, глиф 34 градиентом
     static let playSize: CGFloat = 96
     static let playIcon: CGFloat = 34
@@ -159,7 +161,7 @@ private struct VibeShader: View {
         LoopingVideoLayer(player: playback.queue) {
             isReady = true
         }
-        .opacity(isReady ? 1 : 0)
+        .opacity(isReady ? MyVibeLayout.shaderOpacity : 0)
         .animation(.easeOut(duration: 0.4), value: isReady)
         .allowsHitTesting(false)
         .onAppear { playback.start(bundled: "my-vibe-shader") }
