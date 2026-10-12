@@ -24,6 +24,8 @@ enum ProfileLayout {
     /// Виджеты — стекло: белый 8 %, бордер 0.67 × белый 15 %, блюр 20, скругление 16
     static let widgetGap: CGFloat = 8
     static let widgetRadius: CGFloat = 16
+    /// «Подписка» и «Баллы Плюса» скруглены на 12 — макет `2463:78558`; «Семья» и промо — 16
+    static let subscriptionWidgetRadius: CGFloat = 12
     static let widgetPadding: CGFloat = 12
     static let widgetBlur: CGFloat = 20
     static let widgetBorder = Color.white.opacity(0.15)
@@ -138,6 +140,7 @@ struct ProfileScreen: View {
                 Text(ProfileMock.name)
                     .plusHeadline(.m)
                     .foregroundStyle(Color.fillOne)
+                    .lineLimit(1)
                 Text("Редактировать")
                     .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillSubtitle)
@@ -263,9 +266,8 @@ enum ProfileMock {
     /// его круг в семейной группе (правка пользователя 2026-10-04). Фото — из макета
     /// навигации (`userpics` `2455:75985`).
     static let avatar = "avatarProfile"
-    /// Имя — сербское и короткое, под мужскую аватарку (правка пользователя 2026-10-04;
-    /// в макете — «Мила Йовович» с другим фото).
-    static let name = "Марко Илич"
+    /// Имя задано пользователем 2026-10-12 (в макете — «Мила Йовович»).
+    static let name = "Джет Ли Виноградов"
     static let subscriptionEnd = "29 декабря 2026"
     static let points = "5000"
 }
@@ -327,7 +329,7 @@ private struct ProfileWidget<Content: View>: View {
             ProfilePill(title: button)
                 .padding(ProfileLayout.widgetPadding - ProfileLayout.borderWidth)
         }
-        .profileGlass()
+        .profileGlass(radius: ProfileLayout.subscriptionWidgetRadius)
     }
 }
 
@@ -507,6 +509,9 @@ private struct ProfileIsland: View {
             }
         }
         .padding(.vertical, ProfileLayout.islandPadding)
+        // Подсветка нажатия — прямоугольник во всю строку: у первой и последней строки
+        // углы вылезали за скругление островка
+        .clipShape(RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
                 .fill(Color.fillNine)
@@ -541,10 +546,11 @@ private struct ProfileIsland: View {
 }
 
 private extension View {
-    /// Стекло виджетов профиля — белый 8 %, бордер 0.67 × белый 15 %, блюр 20, r16.
-    func profileGlass() -> some View {
+    /// Стекло виджетов профиля — белый 8 %, бордер 0.67 × белый 15 %, блюр 20, r16
+    /// (у «Подписки» и «Баллов Плюса» — r12, `subscriptionWidgetRadius`).
+    func profileGlass(radius: CGFloat = ProfileLayout.widgetRadius) -> some View {
         glassSurface(
-            RoundedRectangle(cornerRadius: ProfileLayout.widgetRadius, style: .continuous),
+            RoundedRectangle(cornerRadius: radius, style: .continuous),
             blur: ProfileLayout.widgetBlur,
             fill: .fillNine,
             border: ProfileLayout.widgetBorder,
