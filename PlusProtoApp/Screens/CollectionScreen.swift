@@ -84,9 +84,6 @@ enum CollectionLayout {
 }
 
 enum CollectionMotion {
-    /// Смена полки — кроссфейдом: два набора секций разной высоты не переезжают
-    /// друг в друга
-    static let shelfSwap: Animation = .smooth(duration: 0.3)
     /// Отмеченное или снятое встаёт и уходит в карусели плавно
     static let itemsChange: Animation = .smooth(duration: 0.35)
 }
@@ -104,16 +101,21 @@ struct CollectionScreen: View {
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Выбранная полка — ею подсвечена пилюля, сразу по тапу.
     @State private var shelfIndex = 0
+    /// Показанная полка — догоняет выбранную, когда старая погасла: по ней контент,
+    /// виды, кнопка порядка и режим порядка.
+    @State private var shownShelf: CollectionStore.Shelf = .favorites
+    @State private var feedOpacity: Double = 1
+    @State private var shelfSwap: Task<Void, Never>?
+    /// Где оставили каждую полку (вертикаль, 0 — верх ленты). Пишется в момент подмены,
+    /// не покадрово; живёт, пока экран смонтирован.
+    @State private var shelfOffsets: [CollectionStore.Shelf: CGFloat] = [:]
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition(edge: .top)
     /// Режим «изменить порядок»: рабочий порядок, захват и сдвиги блока — одним объектом,
     /// чтобы палец, двигающий блок, перерисовывал только этот блок, а не весь экран.
     @State private var reorder = CollectionReorderState()
-
-    private var shelf: CollectionStore.Shelf {
-        CollectionStore.Shelf(rawValue: shelfIndex) ?? .favorites
-    }
 
     /// Виды полки, в которых есть записи, — в порядке пользователя. В режиме порядка —
     /// в рабочем (`draftOrder`): он меняется на глазах, а в хранилище уходит по «Готово».
@@ -132,13 +134,10 @@ struct CollectionScreen: View {
             // полки была своя, на смене обе разом докладывали свой сдвиг, и подложка
             // навигации моргала (жалоба пользователя 2026-10-04).
             ScrollView {
-                ZStack(alignment: .top) {
-                    shelfContent(shelf)
-                        .id(shelf)
-                        .transition(.opacity)
-                }
-                .animation(CollectionMotion.shelfSwap, value: shelf)
-                .padding(.bottom, CollectionLayout.feedBottom)
+                shelfContent(shownShelf)
+                    .id(shownShelf)
+                    .opacity(feedOpacity)
+                    .padding(.bottom, CollectionLayout.feedBottom)
             }
             .scrollIndicators(.hidden)
             // Блок в руке — лента стоит: палец двигает блок, а не прокручивает её.
@@ -159,7 +158,7 @@ struct CollectionScreen: View {
                 holdsBackdrop: reorder.heldKind != nil,
                 trailingAccessory: AnyView(
                     CollectionReorderButton(
-                        isEnabled: reorder.isReordering || visibleKinds(shelf).count > 1,
+                        isEnabled: reorder.isReordering || visibleKinds(shownShelf).count > 1,
                         action: toggleReordering
                     )
                 )
@@ -179,8 +178,7 @@ struct CollectionScreen: View {
             // Полку сменили посреди редактирования — порядок прежней сохраняется, режим
             // выключается: у новой полки свой порядок и своё «изменить».
             finishReordering()
-            // Новая полка — с начала, тем же движением, что смена содержимого.
-            withAnimation(CollectionMotion.shelfSwap) { scrollPosition.scrollTo(edge: .top) }
+            swapShelf(to: CollectionStore.Shelf(rawValue: shelfIndex) ?? .favorites)
         }
         // Уход с экрана (другой таб, пуш) и фон приложения выключают режим и сохраняют
         // порядок: перестановка уже сделана на глазах, терять её молча — хуже.
@@ -204,7 +202,7 @@ struct CollectionScreen: View {
             Self.didDebugOpenList = true
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
-            navigation.push(CollectionListRoute(kind: kind, shelf: shelf))
+            navigation.push(CollectionListRoute(kind: kind, shelf: shownShelf))
         }
         // `-debugCollectionReorder 1` — через 2 с войти в режим порядка (как кнопка
         // в навбаре), через 4 с поставить первый блок на второе место (тот же свап, что
@@ -223,13 +221,82 @@ struct CollectionScreen: View {
             guard !Task.isCancelled else { return }
             toggleReordering()
         }
+        // `-debugCollectionShelf <pt>` — через 1.5 с прокрутить «Любимое» на <pt>, через
+        // 3.5 с выбрать «Скачанное», через 6 с — снова «Любимое» (выбор — тем же путём,
+        // что тап). Строки `[shelf] save/restore/actual …` — в лог. Один раз за процесс.
+        .task {
+            guard !Self.didDebugShelf,
+                  UserDefaults.standard.object(forKey: "debugCollectionShelf") != nil else { return }
+            Self.didDebugShelf = true
+            let target = CGFloat(UserDefaults.standard.double(forKey: "debugCollectionShelf"))
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { scrollPosition.scrollTo(y: target) }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(ServiceTopNavMotion.select) { shelfIndex = CollectionStore.Shelf.downloads.rawValue }
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(ServiceTopNavMotion.select) { shelfIndex = CollectionStore.Shelf.favorites.rawValue }
+        }
         #endif
     }
 
     #if DEBUG
     private static var didDebugOpenList = false
     private static var didDebugReorder = false
+    private static var didDebugShelf = false
+    /// `-debugCollectionShelf <pt>` включает и строки `[shelf] …` в лог.
+    private static let tracesShelf = UserDefaults.standard.object(forKey: "debugCollectionShelf") != nil
     #endif
+
+    // MARK: Смена полки
+
+    /// У каждой полки своя позиция скролла, а смена — последовательная, как у полных
+    /// списков (`CollectionListScreen.swapList`): старая гаснет, в паузе подменяется
+    /// и встаёт туда, где её оставили, новая проявляется. Позиция уходящей пишется в момент
+    /// подмены, не покадрово. Быстрые тапы подряд прерывают незаконченную смену: показана
+    /// всегда последняя выбранная.
+    private func swapShelf(to selected: CollectionStore.Shelf) {
+        shelfSwap?.cancel()
+        guard selected != shownShelf else {
+            withAnimation(CollectionListMotion.fadeIn) { feedOpacity = 1 }
+            return
+        }
+        shelfSwap = Task { @MainActor in
+            withAnimation(CollectionListMotion.fadeOut) { feedOpacity = 0 }
+            try? await Task.sleep(for: CollectionListMotion.fadeOutDuration)
+            guard !Task.isCancelled else { return }
+            let leaving = shownShelf
+            shelfOffsets[leaving] = scrollOffset
+            let saved = shelfOffsets[selected] ?? 0
+            #if DEBUG
+            if Self.tracesShelf {
+                NSLog("[shelf] save %@=%.1f", String(describing: leaving), scrollOffset)
+                NSLog("[shelf] restore %@ target=%.1f", String(describing: selected), saved)
+            }
+            #endif
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                shownShelf = selected
+                if saved > 0.5 {
+                    scrollPosition.scrollTo(y: saved)
+                } else {
+                    scrollPosition.scrollTo(edge: .top)
+                }
+            }
+            withAnimation(CollectionListMotion.fadeIn) { feedOpacity = 1 }
+            #if DEBUG
+            if Self.tracesShelf {
+                try? await Task.sleep(for: .milliseconds(400))
+                NSLog("[shelf] actual %@=%.1f", String(describing: selected), scrollOffset)
+            }
+            #endif
+        }
+    }
 
     // MARK: Режим порядка
 
@@ -239,7 +306,7 @@ struct CollectionScreen: View {
         if reorder.isReordering {
             finishReordering()
         } else {
-            reorder.start(shelf: shelf, order: visibleKinds(shelf))
+            reorder.start(shelf: shownShelf, order: visibleKinds(shownShelf))
         }
     }
 
