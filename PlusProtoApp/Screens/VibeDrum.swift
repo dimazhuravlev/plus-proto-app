@@ -142,8 +142,12 @@ struct VibeDrum: View {
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.viewAligned)
-            .contentMargins(.horizontal, (PlusMetrics.designWidth - Layout.step) / 2, for: .scrollContent)
-            .scrollPosition(id: $page, anchor: .center)
+            // Поля — от ширины экрана: слот в центре на любой ширине. Геометрия лепестков
+            // (радиус, шаг, масштабы) фиксирована — на широком экране видно больше соседей.
+            // Якорь — левый край: при симметричных полях он ложится в центр точно, `.center`
+            // промахивался на ~3 pt (грабли `scrollPosition`, как у промо Кино).
+            .contentMargins(.horizontal, (PlusMetrics.screenWidth - Layout.step) / 2, for: .scrollContent)
+            .scrollPosition(id: $page, anchor: .leading)
             .scrollIndicators(.hidden)
             // Лепестки шире шага и выходят за кадр ленты — их видно.
             .scrollClipDisabled()
@@ -221,7 +225,7 @@ struct VibeDrum: View {
         guard abs(geometry.position - CGFloat(target)) > 0.01 else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
-        withTransaction(instant) { proxy.scrollTo(target, anchor: .center) }
+        withTransaction(instant) { proxy.scrollTo(target, anchor: .leading) }
     }
 }
 
