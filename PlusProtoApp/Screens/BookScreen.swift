@@ -231,13 +231,12 @@ struct BookScreen: View {
         )
     }
 
-    /// «Поделиться»: автор и год — если уже известны, обложка своих пропорций — если
+    /// «Поделиться»: автор — если уже известен, обложка своих пропорций — если
     /// они уже приехали.
     private func share() {
         ShareState.shared.present(.book(
             title: entity.title,
             author: author ?? "",
-            year: text.year,
             cover: entity.artwork,
             aspect: coverAspect ?? nil
         ))

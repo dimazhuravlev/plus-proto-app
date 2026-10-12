@@ -72,7 +72,8 @@ enum ShareCardLayout {
     /// Отступ логотипа сверху и снизу.
     static let logoInset: CGFloat = 24
     static let coverGap: CGFloat = 8
-    static let titleHeight = PlusHeadline.l.lineHeight
+    /// Заголовок альбома, плейлиста и исполнителя: одна строка этой ступени, влево.
+    static let titleStyle = PlusHeadline.l
     static let titleToMeta: CGFloat = 4
     static let metaHeight: CGFloat = 40
     static let metaGap: CGFloat = 8
@@ -105,10 +106,56 @@ enum ShareCardLayout {
         }
     }
 
+    /// Заголовок фильма и книги — ступенями до трёх строк, по центру; у остальных видов
+    /// одна строка влево.
+    static func hasSteppedTitle(_ entity: ShareableEntity) -> Bool {
+        switch entity.shape {
+        case .poster, .book: true
+        case .square, .circle: false
+        }
+    }
+
+    /// Предел строк заголовка фильма и книги.
+    static let steppedTitleMaxLines = 3
+
+    /// Колонка заголовка: карточка без полей.
+    static let titleWidth = width - 2 * side
+
+    /// Ступень, число строк и высота заголовка. Число строк считается замером строки
+    /// шрифтом, а не вью (правило 120 fps): та же колонка и тот же шрифт, что у `Text`
+    /// на карточке, поэтому перенос совпадает; запас по высоте не нужен.
+    struct TitleLayout {
+        let style: PlusHeadline
+        let maxLines: Int
+        let lines: Int
+        let isCentered: Bool
+
+        var height: CGFloat { CGFloat(lines) * style.lineHeight }
+    }
+
+    static func titleLayout(for entity: ShareableEntity) -> TitleLayout {
+        guard hasSteppedTitle(entity) else {
+            return TitleLayout(style: titleStyle, maxLines: 1, lines: 1, isCentered: false)
+        }
+        let style = MovieHeaderLayout.titleStep(for: entity.title)
+        let font = style.uiFont
+        let rect = (entity.title as NSString).boundingRect(
+            with: CGSize(width: titleWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        // Высота рамки кратна натуральной строке шрифта; округляем, а не `ceil`:
+        // дробная погрешность замера не должна дать лишнюю строку.
+        let measured = Int((rect.height / font.lineHeight).rounded())
+        let lines = min(steppedTitleMaxLines, max(1, measured))
+        return TitleLayout(style: style, maxLines: steppedTitleMaxLines, lines: lines, isCentered: true)
+    }
+
     static func height(for entity: ShareableEntity) -> CGFloat {
         var height = logoInset + logoHeight + logoInset
         height += coverSize(for: entity.shape).height + coverGap
-        height += titleHeight
+        height += titleLayout(for: entity).height
         if entity.hasMetaRow { height += titleToMeta + metaHeight }
         return height + bottomInset
     }
@@ -263,7 +310,8 @@ struct ShareOverlay: View {
     }
 
     private var shareCardContent: some View {
-        VStack(spacing: 0) {
+        let title = ShareCardLayout.titleLayout(for: entity)
+        return VStack(spacing: 0) {
             Image("logoYandexPlus")
                 .resizable()
                 .scaledToFit()
@@ -274,12 +322,13 @@ struct ShareOverlay: View {
                 .padding(.bottom, ShareCardLayout.coverGap)
 
             Text(entity.title)
-                .plusHeadline(.l)
+                .plusHeadline(title.style)
                 .foregroundStyle(Color.fillOne)
-                .lineLimit(1)
+                .multilineTextAlignment(title.isCentered ? .center : .leading)
+                .lineLimit(title.maxLines)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: ShareCardLayout.titleHeight)
+                .frame(maxWidth: .infinity, alignment: title.isCentered ? .center : .leading)
+                .frame(height: title.height, alignment: .top)
                 .padding(.horizontal, ShareCardLayout.side)
                 .padding(.bottom, entity.hasMetaRow ? ShareCardLayout.titleToMeta : 0)
 
@@ -294,14 +343,15 @@ struct ShareOverlay: View {
     }
 
     private var metaRow: some View {
-        HStack(spacing: ShareCardLayout.metaGap) {
+        let isCentered = ShareCardLayout.titleLayout(for: entity).isCentered
+        return HStack(spacing: ShareCardLayout.metaGap) {
             if let avatar = entity.avatar {
                 Color.clear
                     .frame(width: ShareCardLayout.avatarSize, height: ShareCardLayout.avatarSize)
                     .overlay { ArtworkImage(source: avatar).scaledToFill() }
                     .clipShape(Circle())
             }
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: isCentered ? .center : .leading, spacing: 0) {
                 if let subtitle = entity.subtitle {
                     Text(subtitle)
                         .plusText(.textM, .medium)
@@ -315,7 +365,8 @@ struct ShareOverlay: View {
                         .lineLimit(1)
                 }
             }
-            Spacer(minLength: 0)
+            // Вместо `Spacer`: у альбома текст прижат влево, у фильма и книги — по центру.
+            .frame(maxWidth: .infinity, alignment: isCentered ? .center : .leading)
         }
         .frame(height: ShareCardLayout.metaHeight)
         .padding(.horizontal, ShareCardLayout.side)
