@@ -232,10 +232,11 @@ struct AlbumScreen: View {
     }
 
     /// Аватар исполнителя: пока детали едут — скелетон круга (моковое фото здесь было
-    /// бы чужим лицом); пришли — фото, а без фото у Deezer — аватарки нет.
+    /// бы чужим лицом); пришли — фото, а без фото у Deezer или при ошибке сети — аватарки нет
+    /// (вечный скелетон — «мёртвый» элемент).
     private var artistAvatar: EntityPersonRow.Picture {
         if let picture = details.artistPicture { return .artwork(picture) }
-        return store.details == nil && entity.deezerID != nil ? .loading : .none
+        return artistRowReady ? .none : .loading
     }
 
     private func openArtist() {
