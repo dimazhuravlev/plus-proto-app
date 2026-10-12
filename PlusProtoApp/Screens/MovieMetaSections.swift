@@ -3,7 +3,9 @@ import SwiftUI
 // MARK: - Персоны тайтла
 
 /// `2101:22652` — 393×287.5: шапка 52 + карусель 219.5 (`padding-x 16`, gap 8).
-/// Карточка 109 шириной: фото 2:3, под ним белое имя и серое пояснение под ним.
+/// Карточка 109 шириной на 402: фото 2:3, под ним белое имя и серое пояснение под ним.
+/// На другой ширине целых карточек столько же (три), торчащий край следующей — 35, как на 402,
+/// а карточка и фото растут (`CarouselFit`); подпись — те же стили, кегль не масштабируется.
 ///
 /// Одна вью на обе карусели экрана — «В главных ролях» и «Съёмочная группа»
 /// (решение пользователя 2026-08-29). Вёрстка у них общая до пикселя, различаются
@@ -27,7 +29,9 @@ struct MoviePersonSection: View {
     @Environment(\.entityZoomNamespace) private var zoomNamespace
 
     private enum Layout {
-        static let cardWidth: CGFloat = 109
+        /// Макет: карточка 109, три целых, поле 16, зазор 8 → торчит 35
+        static let fit = CarouselFit(designCard: 109, whole: 3, side: MovieLayout.sectionSide, gap: gap)
+        @MainActor static var cardWidth: CGFloat { fit.cardWidth }
         static let photoAspect: CGFloat = 2.0 / 3.0
         static let gap: CGFloat = 8
         /// Отступ подписи от фотографии (решение пользователя 2026-08-29, было 8)
@@ -202,8 +206,9 @@ private enum MovieDirectorDebug {
 #endif
 
 /// `2104:22862` «You Might Also Like» — сетка 3×N: постер 2:3, подпись 18pt.
-/// Ширина карточки считается от ширины холста прототипа (402), а не от замера вью:
-/// читать размер вью, от которого зависит её же раскладка, запрещено (CLAUDE.md).
+/// Ширина карточки считается от ширины экрана (`PlusGrid.column`: поля 16 и зазор 6
+/// постоянные, три колонки делят остаток), а не от замера вью: читать размер вью,
+/// от которого зависит её же раскладка, запрещено (CLAUDE.md).
 ///
 /// **Высота карточки — своя у каждой** (правка пользователя 2026-08-29): однострочное
 /// название занимает одну строку, год прижат к нему, и карточка на строку ниже той,
@@ -229,9 +234,8 @@ struct MovieSimilarSection: View {
         /// Максимум строк на название, дальше — многоточие
         static let titleLines = 2
 
-        static var cardWidth: CGFloat {
-            let available = PlusMetrics.designWidth - MovieLayout.sectionSide * 2
-            return (available - columnGap * CGFloat(columns - 1)) / CGFloat(columns)
+        @MainActor static var cardWidth: CGFloat {
+            PlusGrid.column(columns: columns, side: MovieLayout.sectionSide, gap: columnGap)
         }
     }
 
