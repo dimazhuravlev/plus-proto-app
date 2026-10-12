@@ -89,11 +89,12 @@ private enum TabBarGeometry {
 /// до середины зазора к соседям, крайние — до кромки экрана; по высоте — от низа бара
 /// до низа экрана (зона home indicator — тоже таббар). Раскладка не едет: зона —
 /// `contentShape` под отрицательным отступом, кадр кнопки остаётся 60×62.
+@MainActor
 private enum TabBarHitArea {
     /// Зазор между кнопками при space-between — от ширины экрана, а не замером ряда.
     static var gap: CGFloat {
         let count = CGFloat(AppTab.allCases.count)
-        let free = PlusChromeMetrics.screenWidth - 2 * PlusMetrics.screenMargin - count * PlusMetrics.tabItemWidth
+        let free = PlusMetrics.screenWidth - 2 * PlusMetrics.screenMargin - count * PlusMetrics.tabItemWidth
         return max(0, free / (count - 1))
     }
 

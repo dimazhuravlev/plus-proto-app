@@ -56,9 +56,38 @@ enum PlusRadius {
     static let progress: CGFloat = 8
 }
 
-/// Отступы и размеры из макета. Ширина холста — 402 (iPhone 16 Pro).
+/// Отступы и размеры из макета. Ширина холста — 402 (iPhone 17 Pro).
 enum PlusMetrics {
+    /// База макета: все числа Figma сняты на 402 pt. Не ширина экрана — для неё `screenWidth`.
     static let designWidth: CGFloat = 402
+
+    private static var cachedScreenWidth: CGFloat?
+
+    /// Ширина экрана устройства — константа процесса (приложение заперто в портрете).
+    /// От неё считается адаптивная вёрстка (правила 2 и 4 CLAUDE.md): размер вью,
+    /// от которого зависит её же раскладка, не читаем.
+    ///
+    /// Источник — окно-сцена (`effectiveGeometry.coordinateSpace.bounds`), ключевое окно не нужно;
+    /// `min(width, height)` — страховка портрета. Нет сцены (самый ранний кадр) —
+    /// `designWidth`, и этот фолбэк не кэшируется: следующий вызов спросит сцену снова.
+    /// Изоляция: `@MainActor` — `UIApplication.shared` главного потока; все потребители — вью.
+    @MainActor
+    static var screenWidth: CGFloat {
+        if let cachedScreenWidth { return cachedScreenWidth }
+        guard let bounds = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first?.effectiveGeometry.coordinateSpace.bounds
+        else { return designWidth }
+        let width = min(bounds.width, bounds.height)
+        cachedScreenWidth = width
+        return width
+    }
+
+    /// `screenWidth / designWidth` — множитель для композиций, которые масштабируются
+    /// целиком (геометрия, не шрифты). На 402 — 1. Карусели и сетки считают через
+    /// `CarouselFit` / `PlusGrid` (поля и зазоры у них постоянные).
+    @MainActor
+    static var widthScale: CGFloat { screenWidth / designWidth }
 
     /// Горизонтальные поля экрана: хедер, ряд табов, action bar
     static let screenMargin: CGFloat = 24
