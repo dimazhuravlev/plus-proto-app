@@ -73,7 +73,8 @@ enum ShareCardLayout {
     static let logoInset: CGFloat = 24
     static let coverGap: CGFloat = 8
     /// Заголовок альбома, плейлиста и исполнителя: одна строка этой ступени, влево.
-    static let titleStyle = PlusHeadline.l
+    /// На ступень мельче экрана фильма — правка пользователя 2026-10-12.
+    static let titleStyle = PlusHeadline.m
     static let titleToMeta: CGFloat = 4
     static let metaHeight: CGFloat = 40
     static let metaGap: CGFloat = 8
@@ -138,7 +139,8 @@ enum ShareCardLayout {
         guard hasSteppedTitle(entity) else {
             return TitleLayout(style: titleStyle, maxLines: 1, lines: 1, isCentered: false)
         }
-        let style = MovieHeaderLayout.titleStep(for: entity.title)
+        // На ступень мельче экрана фильма — правка пользователя 2026-10-12.
+        let style = MovieHeaderLayout.titleStep(for: entity.title).smaller
         let font = style.uiFont
         let rect = (entity.title as NSString).boundingRect(
             with: CGSize(width: titleWidth, height: .greatestFiniteMagnitude),

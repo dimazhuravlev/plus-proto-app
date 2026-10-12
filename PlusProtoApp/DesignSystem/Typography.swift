@@ -169,6 +169,18 @@ enum PlusHeadline: CaseIterable {
     /// Интерлиньяж 100 %: высота строки равна кеглю.
     var lineHeight: CGFloat { size }
 
+    /// Следующая ступень шкалы вниз; у самой мелкой остаётся она же.
+    var smaller: PlusHeadline {
+        switch self {
+        case .xxxl: .xxl
+        case .xxl: .xl
+        case .xl: .l
+        case .l: .m
+        case .m: .s
+        case .s: .s
+        }
+    }
+
     /// Насколько глифы выходят за рамку строк по вертикали — запас области отрисовки
     /// (`HeadlineInkRenderer`). Нужен и тем, кто сам маскирует или клипует заголовок:
     /// маска по рамке срежет хвосты так же, как срезал их рендер iOS.
