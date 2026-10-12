@@ -415,7 +415,8 @@ final class ShowcaseCatalog {
             id: "dz-\(picked.album.id)",
             cover: .remote(picked.cover, fallback: "mockAlbumCover"),
             title: picked.artist,
-            subtitle: picked.album.title
+            subtitle: picked.album.title,
+            artistID: picked.artistID
         )))
 
         // «Моя Волна» — не сущность каталога: живой у неё только кавер, и он берётся
@@ -453,7 +454,8 @@ final class ShowcaseCatalog {
                     cover: .remote(cover, fallback: "mockAlbumCover"),
                     title: candidate.name,
                     subtitle: album.title,
-                    artistPicture: .remote(photo)
+                    artistPicture: .remote(photo),
+                    artistID: candidate.id
                 ))
             }
         }
@@ -821,7 +823,8 @@ final class ShowcaseCatalog {
                     cover: .remote(cover, fallback: "mockAlbumCover"),
                     title: seed.name,
                     subtitle: album.title,
-                    artistPicture: photo.map { ArtworkSource.remote($0) }
+                    artistPicture: photo.map { ArtworkSource.remote($0) },
+                    artistID: seed.id
                 )))
             }
         }

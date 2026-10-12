@@ -104,3 +104,20 @@ extension ShowcaseBlock {
         }
     }
 }
+
+extension AlbumBlock {
+    /// Экран исполнителя, который открывает подпись альбома промо. `nil` — id исполнителя
+    /// неизвестен, переходить некуда. Фото в маршруте — то, что в аватаре подписи (~250 px),
+    /// поднятое до 1000×1000, как обложки: на шапке экрана во всю ширину оно иначе мыльное.
+    var artistRoute: EntityRoute? {
+        guard let artistID else { return nil }
+        let artwork: ArtworkSource
+        switch artistPicture {
+        case .remote(let url, let fallback):
+            artwork = .remote(url.absoluteString.deezerUpscaled ?? url, fallback: fallback)
+        case .asset, nil:
+            artwork = artistPicture ?? .asset("")
+        }
+        return .artist(EntityRef(id: "dz-\(artistID)", title: title, subtitle: "", artwork: artwork))
+    }
+}

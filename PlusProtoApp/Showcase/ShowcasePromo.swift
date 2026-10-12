@@ -362,6 +362,18 @@ struct ShowcasePromo: View {
                     try? await Task.sleep(for: cycleInterval)
                 }
             }
+            // `-debugHomePromoArtist 1` — через 6 с тап по подписи центрального альбома:
+            // тот же `openArtist`, что у кнопки. Центральный не альбом (или без id
+            // исполнителя) — ничего.
+            .task {
+                guard UserDefaults.standard.bool(forKey: "debugHomePromoArtist") else { return }
+                try? await Task.sleep(for: .seconds(6))
+                let promo = liveItems
+                guard !Task.isCancelled, !promo.isEmpty, let current = page else { return }
+                let item = promo[Self.wrap(current, promo.count)]
+                guard case .album(let album) = item, album.artistRoute != nil else { return }
+                openArtist(item)
+            }
             // `-debugHomePromoDismiss <n>` — ✕ у центральной карточки n раз подряд: первый
             // через 6 с, дальше раз в 2.5 с. Тот же `dismiss()` пары, что у тапа.
             .task {
@@ -438,11 +450,13 @@ struct ShowcasePromo: View {
                 // Высота подписи — ровно аватар: от низа обложки она сдвинута на зазор
                 // и свою высоту. `alignmentGuide` в оверлее не сработал (кадр 2026-10-08:
                 // подпись легла на обложку).
-                PromoAlbumCaption(album: album)
+                // Подпись — отдельная кнопка в оверлее, не внутри кнопки карточки: тап
+                // по ней открывает исполнителя, по обложке — альбом. Нажимаема только
+                // пока видна (`PromoReveal`).
+                PromoAlbumCaption(album: album, onArtist: album.artistRoute == nil ? nil : { openArtist(item) })
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
-                    .allowsHitTesting(false)
             }
         }
     }
@@ -455,13 +469,29 @@ struct ShowcasePromo: View {
     /// Тап по центральной — её экран; по соседу — сосед доезжает в центр.
     private func tap(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) {
         guard removal == nil else { return }
-        UIImpactFeedbackGenerator(style: .medium)
-            .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+        tapHaptic()
         guard isCurrent else {
             withAnimation(ShowcasePromoMotion.step) { page = slotIndex }
             return
         }
         if let route = item.entityRoute { navigation.open(route) }
+    }
+
+    /// Тап по подписи альбома — экран исполнителя. Пока карточку убирают по ✕ или она
+    /// меняется — не открывается. Источника зума нет, как в `AlbumScreen.openArtist`.
+    private func openArtist(_ item: ShowcaseBlock) {
+        guard removal == nil,
+              !feedback.state(for: item.id).isSwapping,
+              case .album(let album) = item,
+              let route = album.artistRoute
+        else { return }
+        tapHaptic()
+        navigation.open(route)
+    }
+
+    private func tapHaptic() {
+        UIImpactFeedbackGenerator(style: .medium)
+            .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
     }
 
     // MARK: ✕ — айтем уходит из круга
@@ -786,10 +816,33 @@ private struct PromoCardFace: View {
 /// и исполнитель. Без фото исполнителя — без аватара: выдумывать его нельзя.
 private struct PromoAlbumCaption: View {
     let album: AlbumBlock
+    /// Тап по подписи — экран исполнителя. `nil` — id исполнителя нет: подпись не
+    /// нажимается и пропускает касание, как была.
+    var onArtist: (() -> Void)?
 
     private typealias Layout = ShowcasePromoLayout
 
     var body: some View {
+        tappable
+            .frame(width: Layout.albumCaptionWidth, height: Layout.albumAvatar, alignment: .leading)
+    }
+
+    /// Кнопка — по размеру содержимого: просадка идёт от его центра, а внешний кадр
+    /// подписи остаётся прежним.
+    @ViewBuilder
+    private var tappable: some View {
+        if let onArtist {
+            Button(action: onArtist) {
+                content.contentShape(.rect)
+            }
+            .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+            .accessibilityLabel(album.title)
+        } else {
+            content.allowsHitTesting(false)
+        }
+    }
+
+    private var content: some View {
         HStack(spacing: Layout.albumCaptionSpacing) {
             if let picture = album.artistPicture {
                 PlusSkeleton.fill
@@ -810,7 +863,6 @@ private struct PromoAlbumCaption: View {
             .lineLimit(1)
         }
         .padding(.trailing, Layout.albumCaptionTrailing)
-        .frame(width: Layout.albumCaptionWidth, height: Layout.albumAvatar, alignment: .leading)
     }
 }
 

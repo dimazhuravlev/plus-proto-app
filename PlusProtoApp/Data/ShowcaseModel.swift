@@ -116,6 +116,9 @@ struct AlbumBlock {
     /// Фото исполнителя — аватар в подписи альбома промо «Главной» (макет `2537:27595`).
     /// У альбома ленты его нет: карточке оно не нужно.
     var artistPicture: ArtworkSource? = nil
+    /// Id исполнителя в Deezer — по нему подпись альбома промо «Главной» открывает его
+    /// экран. Нет id — подпись не нажимается.
+    var artistID: Int? = nil
 }
 
 struct BookBlock {
@@ -308,7 +311,8 @@ extension ShowcaseFeed {
                 subtitle: "Равноденствие",
                 // Фото группы у Deezer (id 4179081): без сети — серый круг скелетона.
                 artistPicture: URL(string: "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg")
-                    .map { ArtworkSource.remote($0) }
+                    .map { ArtworkSource.remote($0) },
+                artistID: 4179081
             )),
             // Книги промо — не та, что в ленте ниже, и их две: без живых книг в круге
             // стояла одна, та же, что в ленте (жалоба 2026-10-09). Подписи — по аннотациям
