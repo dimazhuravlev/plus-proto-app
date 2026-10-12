@@ -170,13 +170,17 @@ enum ShareCardLayout {
 private struct ShareChannel {
     let icon: String
     let title: String
+    var action: (@MainActor () -> Void)?
 }
 
-/// Действий у кнопок нет: ссылки на сущность в прототипе нет.
+/// Действие только у «Ссылки» — тост; в буфер ничего не пишем: ссылок на сущности в прототипе
+/// нет. У остальных каналов действий нет.
 private let shareChannels: [ShareChannel] = [
     ShareChannel(icon: "iconTelegram", title: "Telegram"),
     ShareChannel(icon: "iconWhatsapp", title: "WhatsApp"),
-    ShareChannel(icon: "iconCopyLink", title: "Ссылка"),
+    ShareChannel(icon: "iconCopyLink", title: "Ссылка", action: {
+        ToastCenter.shared.show(title: "Ссылка скопирована", graphic: .icon("iconDone"))
+    }),
     ShareChannel(icon: "iconMore", title: "Ещё"),
 ]
 
@@ -357,9 +361,10 @@ struct ShareOverlay: View {
             }
             VStack(alignment: isCentered ? .center : .leading, spacing: 0) {
                 if let subtitle = entity.subtitle {
+                    // Автор книги и год фильма — серым; у альбома исполнитель белым.
                     Text(subtitle)
                         .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillOne)
+                        .foregroundStyle(entity.titleLayout == .steppedCentered ? Color.fillSubtitle : Color.fillOne)
                         .lineLimit(1)
                 }
                 if let year = entity.year {
@@ -513,7 +518,7 @@ struct ShareOverlay: View {
                 .opacity(bottomShown ? 1 : 0)
             HStack(spacing: 16) {
                 ForEach(Array(shareChannels.enumerated()), id: \.offset) { index, channel in
-                    ShareChannelButton(icon: channel.icon, title: channel.title)
+                    ShareChannelButton(icon: channel.icon, title: channel.title, action: channel.action)
                         .opacity(buttonShown[index] ? 1 : 0)
                         .offset(y: buttonRestOffset(index))
                 }
@@ -628,13 +633,18 @@ struct ShareOverlay: View {
 
 // MARK: - Кнопка канала
 
-/// Круг 52 и подпись. Действия нет, но отклик нажатия и хаптика — как у любой кнопки.
+/// Круг 52 и подпись. Отклик нажатия и хаптика — как у любой кнопки (`ToastCenter.show` хаптику
+/// не играет, поэтому её играет сама кнопка); действие — необязательное.
 private struct ShareChannelButton: View {
     let icon: String
     let title: String
+    var action: (@MainActor () -> Void)?
 
     var body: some View {
-        Button(action: PlayerHaptics.tap) {
+        Button {
+            PlayerHaptics.tap()
+            action?()
+        } label: {
             VStack(spacing: 6) {
                 Image(icon)
                     .resizable()
