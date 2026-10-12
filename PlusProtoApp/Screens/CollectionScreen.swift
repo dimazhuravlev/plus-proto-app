@@ -2,7 +2,9 @@ import SwiftUI
 import UIKit
 
 /// Числа коллекции «Моё» — макет `2351:17327`. Кадр макета 375, карточки и поля
-/// перенесены как есть: на холсте 402 следующая карточка просто выглядывает больше.
+/// перенесены как есть; на холсте 402 — четыре целых карточки и торчащий край пятой 10.
+/// На другой ширине целых по-прежнему четыре и край тот же (`CarouselFit`): растёт
+/// карточка, а с ней — обложки и высоты лент (правило 4 CLAUDE.md).
 enum CollectionLayout {
     /// Лента — сразу под навигацией: контент на y 101 при высоте `top` 100
     static let contentTop: CGFloat = ServiceTopNavLayout.rowHeight + 1
@@ -19,12 +21,18 @@ enum CollectionLayout {
     /// Подпись под кругом исполнителя — с полем 8 справа, как в компоненте макета
     static let artistCaptionTrailing: CGFloat = 8
 
-    /// Карточки — 86: постер 2:3 (86 × 129), квадрат альбома и плейлиста, круг исполнителя
-    static let cardWidth: CGFloat = 86
-    static let posterHeight: CGFloat = (cardWidth * 3 / 2).rounded()
+    /// Карточки на 402 — 86: постер 2:3 (86 × 129), квадрат альбома и плейлиста, круг
+    /// исполнителя. Целых — 4, торчащий край следующей — 10 (инвариант на любой ширине).
+    static let carousel = CarouselFit(designCard: 86, whole: 4, side: side, gap: cardGap)
+    @MainActor static var cardWidth: CGFloat { carousel.cardWidth }
+    @MainActor static var posterHeight: CGFloat { cardWidth * 3 / 2 }
+    /// Радиус — токен карточки, от ширины не зависит
     static let cardRadius: CGFloat = 8
-    /// Книга — та же проекция, что карточка выдачи: обложка 128 (`book card small`)
-    static let book = BookFigureGeometry(coverHeight: 128)
+    /// Книга — та же проекция, что карточка выдачи: обложка 128 на 402 (`book card small`),
+    /// на другой ширине — тем же масштабом, что карточка.
+    @MainActor static var book: BookFigureGeometry {
+        BookFigureGeometry(coverHeight: 128 * carousel.scale)
+    }
 
     /// Название карточки — до двух строк, деталь (год, автор, исполнитель) — в одну
     /// (правка пользователя 2026-10-04)
@@ -32,19 +40,23 @@ enum CollectionLayout {
     /// Высоты лент — карточка с подписью на пределе строк: название и деталь у
     /// альбомов, одно название у исполнителей и плейлистов. У кино и книг подписей нет
     /// вовсе (правка пользователя 2026-10-10) — лента ровно в обложку.
-    static var posterRowHeight: CGFloat { posterHeight }
-    static var bookRowHeight: CGFloat { book.frameSize(coverWidth: 0).height }
+    @MainActor static var posterRowHeight: CGFloat { posterHeight }
+    @MainActor static var bookRowHeight: CGFloat { book.frameSize(coverWidth: 0).height }
     /// Нижний отступ полок кино и книг (правка пользователя 2026-10-10: без подписей
     /// блок ниже прилипал). Высоты рядов не трогаем — отступ вне ленты, зум и клип целы.
     static let coverOnlyShelfBottom: CGFloat = 16
-    static var squareRowHeight: CGFloat { cardWidth + captionGap + 3 * captionLine }
-    static var titleOnlyRowHeight: CGFloat { cardWidth + captionGap + 2 * captionLine }
+    /// Подпись — шрифт UI kit, от ширины не масштабируется: растёт только обложка.
+    @MainActor static var squareRowHeight: CGFloat { cardWidth + captionGap + 3 * captionLine }
+    @MainActor static var titleOnlyRowHeight: CGFloat { cardWidth + captionGap + 2 * captionLine }
 
     /// Треки — колонки по три строки (`track stack`), строка — обложка 48 r6 и поля 8
     /// между строками. Колонка с собственными полями 16 по бокам: следующая начинается
     /// на `ширина + 16`, и её обложка выглядывает из-под правого края на
-    /// `trackColumnPeek` (24; было 335 → выглядывало 51) — ширина = экран − peek − поле.
-    static var trackColumnWidth: CGFloat { PlusMetrics.designWidth - EntitySectionLayout.trackColumnPeek - side }
+    /// `trackColumnPeek` (24; было 335 → выглядывало 51) — ширина = экран − peek − поле,
+    /// от ширины экрана: следующая колонка выглядывает на 24 на любой ширине.
+    @MainActor static var trackColumnWidth: CGFloat {
+        PlusGrid.columnWidth(side: side, peek: EntitySectionLayout.trackColumnPeek)
+    }
     static let tracksPerColumn = 3
     static let trackCover: CGFloat = 48
     static let trackCoverRadius: CGFloat = 6
