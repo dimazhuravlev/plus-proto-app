@@ -99,6 +99,10 @@ struct MovieVideoSection: View {
         static let gap: CGFloat = 16
         /// Первая карточка стоит на y 32 от верха секции, последняя — в 16 от низа
         static let top: CGFloat = 32
+        /// Без карточек мета → описание 88 → 44, правка пользователя 2026-10-12;
+        /// минус уходит в пустой `infoBottom` титульного блока. Во время загрузки
+        /// карточки-скелетоны есть (`shownCards` не пуст) — там 32, каркас не прыгает.
+        static let topWithoutCards: CGFloat = top - 44
         static let bottom: CGFloat = 16
 
         /// Текстовый блок между второй и третьей карточкой
@@ -128,7 +132,6 @@ struct MovieVideoSection: View {
             rows(isGlowLayer: true) { index, _ in glow(index) }
             rows { index, card in cardView(index, card) }
         }
-        .padding(.top, Layout.top)
         .padding(.bottom, Layout.bottom)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: stillURLs) { await loadStills() }
@@ -187,6 +190,9 @@ struct MovieVideoSection: View {
                 }
             }
         }
+        // Верхний отступ внутри раскладки: меняется вместе со срезом каркаса
+        // одной анимацией ниже, а не скачком.
+        .padding(.top, shownCards.isEmpty ? Layout.topWithoutCards : Layout.top)
         // Каркас режется, когда детали доехали: лишние болванки растворяются
         // тем же фейдом, каким карточки оживают.
         .animation(
