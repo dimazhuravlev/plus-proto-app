@@ -106,10 +106,12 @@ enum ToastLayout {
     static let trailingWithButton: CGFloat = 12
     static let trailingNoButton: CGFloat = 24
 
-    /// `graphic=image`, `3350:51044`: квадрат 83 вплотную к левому краю, обрезан пилюлей
-    /// (поэтому видна верхняя часть картинки); текст — после него без зазора.
-    static let imageSize: CGFloat = 83
-    static let imageTextInset: CGFloat = imageSize + PlusMetrics.hairline
+    /// Круглая аватарка артиста. Макетный `graphic=image` (`3350:51044`) — квадрат 83 вплотную
+    /// к торцу: у фото артиста он давал полукруг с прямым правым краем и срезанное лицо; круг —
+    /// по правке пользователя 2026-10-12. Размеры — концентрично торцу пилюли: радиус торца 28,
+    /// центр круга 40 на x = 28 (как слот иконки), то есть слева 8, по вертикали по центру.
+    static let avatarSize: CGFloat = 40
+    static let avatarLeading: CGFloat = 8
 
     /// `graphic=cover`, `3350:51043`: слева 14; рамка 35.17 вокруг обложки 32 r4,
     /// повёрнутой на 6° (32·(cos 6° + sin 6°)); зазор до текста 8; тень 0 1 6 чёрный 20 %.
@@ -141,10 +143,10 @@ enum ToastLayout {
 
     // MARK: Ширина по тексту
 
-    /// Левый отступ до графики (у `image` — до текста: картинка лежит поверх отступа).
+    /// Левый отступ до графики.
     static func leadingInset(for graphic: ToastGraphic) -> CGFloat {
         switch graphic {
-        case .image: imageTextInset
+        case .avatar: avatarLeading
         case .cover, .poster: coverLeading
         case .icon: iconLeading
         case .none: noneLeading
@@ -157,7 +159,8 @@ enum ToastLayout {
         case .cover: coverFrame + coverGap
         case .poster: posterFrameWidth + coverGap
         case .icon: iconSlot + gap
-        case .image, .none: 0
+        case .avatar: avatarSize + gap
+        case .none: 0
         }
     }
 
@@ -208,7 +211,7 @@ enum ToastLayout {
 
 // MARK: - Вид
 
-/// Пилюля тоста по компоненту `toast` из Library: графика слева (обложка / картинка /
+/// Пилюля тоста по компоненту `toast` из Library: графика слева (обложка / аватарка /
 /// иконка / ничего), фраза до двух строк, кнопка-шеврон — только если у тоста есть действие.
 struct ToastView: View {
     let config: ToastConfig
@@ -252,7 +255,10 @@ struct ToastView: View {
             case .icon(let name):
                 icon(name)
                     .padding(.trailing, ToastLayout.gap)
-            case .image, .none:
+            case .avatar(let source):
+                avatar(source)
+                    .padding(.trailing, ToastLayout.gap)
+            case .none:
                 EmptyView()
             }
 
@@ -272,16 +278,6 @@ struct ToastView: View {
         .padding(.leading, leadingInset)
         .padding(.trailing, trailingInset)
         .frame(width: ToastLayout.pillWidth(for: config), height: ToastLayout.height, alignment: .leading)
-        .overlay(alignment: .topLeading) {
-            if case .image(let source) = config.graphic {
-                // Картинка 83×83 от левого верхнего угла, пилюля обрезает её по высоте 56.
-                Color.clear
-                    .frame(width: ToastLayout.imageSize, height: ToastLayout.imageSize)
-                    .overlay { ArtworkImage(source: source).scaledToFill() }
-                    .clipped()
-                    .transition(.opacity)
-            }
-        }
         .clipShape(Capsule(style: .continuous))
         .chromeGlass(Capsule(style: .continuous))
     }
@@ -307,6 +303,19 @@ struct ToastView: View {
             .rotationEffect(.degrees(coverRotation))
             .offset(y: coverOffsetY)
             .frame(width: frameWidth, height: frameHeight)
+            .transition(.opacity)
+    }
+
+    /// Круглое фото: кадр задаёт распорка, картинка — `scaledToFill` в overlay; под ней заливка
+    /// на время загрузки, обводка внутрь hairline белый 8 % (как миниатюра артиста на табе «Моё»).
+    private func avatar(_ source: ArtworkSource) -> some View {
+        Color.fillNine
+            .frame(width: ToastLayout.avatarSize, height: ToastLayout.avatarSize)
+            .overlay { ArtworkImage(source: source).scaledToFill() }
+            .clipShape(Circle())
+            .overlay {
+                Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
+            }
             .transition(.opacity)
     }
 
@@ -586,6 +595,18 @@ struct OverlayLayer: View {
         // `-debugToast 1` — четыре тоста подряд: лайк (прямоугольная обложка фильма + кнопка) через 2 с, ✓ (иконка,
         // без кнопки) через 6 с, простой текст через 10 с, короткий «Да!» с обложкой и кнопкой через 14 с
         // (узкая пилюля).
+        // `-debugToastArtist 1` — через 2 с лайк первого артиста коллекции тем же путём, что тап по
+        // сердцу (`CollectionStore.update`): тост с круглой аватаркой и кружок на табе «Моё». Если
+        // артист уже в избранном, лайк сперва снимается.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugToastArtist") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            let store = CollectionStore.shared
+            guard let artist = store.items.first(where: { $0.kind == .artist }) else { return }
+            if store.isFavorite(artist.id) { store.setFavorite(artist, false) }
+            store.setFavorite(artist, true)
+        }
         // `-debugShare 1` — экран шеринга альбома через 2 с.
         .task {
             guard UserDefaults.standard.bool(forKey: "debugShare") else { return }

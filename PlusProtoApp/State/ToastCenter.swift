@@ -8,8 +8,9 @@ enum ToastGraphic: Equatable {
     case cover(ArtworkSource)
     /// `graphic=cover` с прямоугольной обложкой 32×44 (фильм, книга), тот же наклон 6°.
     case poster(ArtworkSource)
-    /// `graphic=image`: картинка вплотную к левому краю пилюли (у артиста — фото).
-    case image(ArtworkSource)
+    /// Круглая аватарка 40 внутри пилюли (у артиста — фото). В макете `graphic=image` — квадрат
+    /// вплотную к торцу, у фото артиста он выходил полукругом с прямым краем (правка 2026-10-12).
+    case avatar(ArtworkSource)
     /// `graphic=icon`: иконка из ассетов (template, `fillOne`).
     case icon(String)
 }

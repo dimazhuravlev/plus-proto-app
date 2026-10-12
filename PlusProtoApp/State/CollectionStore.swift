@@ -56,7 +56,8 @@ struct CollectionItem: Codable, Identifiable, Equatable {
     mutating func refresh(from fresh: CollectionItem) {
         if !fresh.title.isEmpty { title = fresh.title }
         if !fresh.subtitle.isEmpty { subtitle = fresh.subtitle }
-        artwork = fresh.artwork ?? artwork
+        // Артист без фото приходит пустым ассетом `.asset("")` — он не затирает имеющееся фото.
+        if let freshArtwork = fresh.artwork, !freshArtwork.isEmptyAsset { artwork = freshArtwork }
         route = fresh.route ?? route
         playable = fresh.playable ?? playable
         aspect = fresh.aspect ?? aspect
@@ -402,12 +403,12 @@ final class CollectionStore {
         }
         // Тост — только на «нравится» и «Позже»; скачивание тихое.
         if becameFavorite {
-            // Артист — фото вплотную к краю (`graphic=image`), фильм и книга — прямоугольная
-            // обложка с наклоном, остальное — квадратная обложка с наклоном.
+            // Артист — круглая аватарка (без фото — тост без графики: нет данных — нет элемента),
+            // фильм и книга — прямоугольная обложка с наклоном, остальное — квадратная обложка с наклоном.
             var graphic = ToastGraphic.none
             if let artwork = record.artwork {
                 switch record.kind {
-                case .artist: graphic = .image(artwork)
+                case .artist: if !artwork.isEmptyAsset { graphic = .avatar(artwork) }
                 case .movie, .book: graphic = .poster(artwork)
                 case .track, .album, .playlist: graphic = .cover(artwork)
                 }
@@ -441,5 +442,13 @@ enum CollectionCopy {
         if units == 1 { return one }
         if (2...4).contains(units) { return few }
         return many
+    }
+}
+
+private extension ArtworkSource {
+    /// Артист без фото: пустой ассет вместо картинки (`.asset("")`).
+    var isEmptyAsset: Bool {
+        if case .asset(let name) = self { return name.isEmpty }
+        return false
     }
 }
