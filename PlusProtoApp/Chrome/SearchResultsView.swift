@@ -23,7 +23,7 @@ struct SearchResultsView: View {
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.stackZoomNamespace) private var zoom
     /// Вид выдачи — карусели или сетка; переключается в дебаг-меню профиля.
-    @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = .carousels
+    @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = SearchResultsStyle.defaultStyle
 
     /// Что в слое — выдача или «Искали недавно». Следует за запросом, пока поиск
     /// открыт; на закрытии замирает: «Назад» стирает запрос тем же движением, что

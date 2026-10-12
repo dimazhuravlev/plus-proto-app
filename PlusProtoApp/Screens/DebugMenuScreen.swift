@@ -10,6 +10,9 @@ enum SearchResultsStyle: String, CaseIterable, Identifiable {
     case masonry
 
     static let storageKey = "searchResultsStyle"
+    /// По умолчанию — единая лента (правка пользователя 2026-10-12); выбор в дебаг-меню
+    /// сохраняется и перекрывает умолчание.
+    static let defaultStyle: SearchResultsStyle = .masonry
 
     var id: Self { self }
 
@@ -24,7 +27,7 @@ enum SearchResultsStyle: String, CaseIterable, Identifiable {
 /// Дебаг-меню — переключатели прототипа. Вход — ячейка профиля над «Настройками».
 /// Своего макета нет: собрано из островков профиля и навбара внутренних экранов.
 struct DebugMenuScreen: View {
-    @AppStorage(SearchResultsStyle.storageKey) private var searchStyle: SearchResultsStyle = .carousels
+    @AppStorage(SearchResultsStyle.storageKey) private var searchStyle: SearchResultsStyle = SearchResultsStyle.defaultStyle
     /// Громкость звука музыки — превью Deezer (`MusicAudio`), по умолчанию 50 %.
     @AppStorage(MusicAudio.volumeKey) private var musicVolume = MusicAudio.defaultVolume
     /// Затемнение фона под стеклом хрома (`ChromeGlass`), по умолчанию 40 %.
