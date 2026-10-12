@@ -3,15 +3,19 @@ import SwiftUI
 // MARK: - Геометрия
 
 /// Числа макета `2427:26464` и правок пользователя 2026-10-04. Холст макета — 375,
-/// у проекта 402: поля 16 остаются, колонка становится шире.
+/// у проекта 402 (база формул): поля 16 остаются, колонка становится шире, обложка
+/// и полка писателя масштабируются по ширине экрана.
 private enum BookScreenLayout {
     static let sideInset: CGFloat = EntityCoverLayout.side
 
     /// Шапка — общая с альбомом (`EntityCoverHeader`, правки 2026-10-04): фон — размытая
     /// копия обложки, обложка тянется за оттягом. Обложка — книга в проекции, как
     /// в выдаче поиска: высота обложки — прежняя макетная 324, ширина — по пропорциям.
-    static let book = BookFigureGeometry(coverHeight: 324)
+    /// На других ширинах высота растёт с экраном: `324·widthScale`.
+    @MainActor
+    static var book: BookFigureGeometry { BookFigureGeometry(coverHeight: 324 * PlusMetrics.widthScale) }
     /// Книга с блоком страниц над обложкой.
+    @MainActor
     static var bookHeight: CGFloat { book.frameSize(coverWidth: 0).height }
 
     /// Описание: сразу под блоком названия (его 24 снизу — как у альбома до треклиста),
@@ -28,10 +32,24 @@ private enum BookScreenLayout {
     static let sectionChevronBox: CGFloat = 20
     /// Строка заголовка секции — 28, как у заголовков выдачи (Headline M при 100 %).
     static let sectionHeaderLine: CGFloat = 28
-    /// Книга карусели — тот же рисунок, высота обложки 186: в экран входит две
-    /// книги с половиной, как у карточек «Других альбомов» (159).
-    static let shelfBook = BookFigureGeometry(coverHeight: 186)
+    /// Книга карусели — тот же рисунок, высота обложки 186 на 402: в экран входит две
+    /// книги с торчащим краем третьей. Эталон — книга 2:3 (кадр ≈ 127); на других
+    /// ширинах высота растёт так, чтобы две целые и край третьей остались теми же.
     static let shelfGap: CGFloat = 8
+    private static let shelfDesign = BookFigureGeometry(coverHeight: 186)
+    @MainActor
+    static var shelfFit: CarouselFit {
+        CarouselFit(
+            designCard: shelfDesign.frameSize(coverWidth: shelfDesign.coverWidth(aspect: nil)).width,
+            whole: 2,
+            side: sideInset,
+            gap: shelfGap
+        )
+    }
+    @MainActor
+    static var shelfBook: BookFigureGeometry {
+        BookFigureGeometry(coverHeight: shelfDesign.coverHeight * shelfFit.scale)
+    }
     static let shelfTextGap: CGFloat = 6
     static let shelfTextTrailing: CGFloat = 8
     static let shelfTitleLines = 2
@@ -52,6 +70,7 @@ private enum BookScreenLayout {
     static var bottomClearance: CGFloat { AlbumLayout.bottomClearance }
 
     /// Пороги навбара — общие с альбомом, от верха названия.
+    @MainActor
     static var navBarThresholds: EntityNavBarThresholds {
         EntityCoverLayout.navBarThresholds(coverHeight: bookHeight)
     }

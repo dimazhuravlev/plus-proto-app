@@ -24,16 +24,22 @@ enum EntitySectionLayout {
     static let titleGap: CGFloat = 2
     static let chevronBox: CGFloat = 20
     static let cardGap: CGFloat = 8
-    /// Карточка альбома — 159 (`2079:11242`)
-    static let albumCardWidth: CGFloat = 159
+    /// Карточка альбома — 159 на 402 (`2079:11242`): две целые и край третьей (52);
+    /// на других ширинах карточка растёт, край остаётся.
+    static let albumFit = CarouselFit(designCard: 159, whole: 2, side: side, gap: cardGap)
+    @MainActor
+    static var albumCardWidth: CGFloat { albumFit.cardWidth }
     static let cardTextGap: CGFloat = 6
     static let cardTextTrailing: CGFloat = 8
     static let badgeBox: CGFloat = 16
     static let badgeGap: CGFloat = 4
     /// Отрицательный зазор двухстрочного текстового лейбла (`mb-[-2px]` в макете)
     static let textStackGap: CGFloat = -2
-    /// Карточка исполнителя — круг 109, ширина колонки карусели выдачи (`regular`)
-    static let personCardWidth: CGFloat = 109
+    /// Карточка исполнителя — круг 109 на 402, ширина колонки карусели выдачи (`regular`):
+    /// три целые и край четвёртой (35); на других ширинах круг растёт, край остаётся.
+    static let personFit = CarouselFit(designCard: 109, whole: 3, side: side, gap: cardGap)
+    @MainActor
+    static var personCardWidth: CGFloat { personFit.cardWidth }
     /// Скелетоны — полосы 12 по центрам строк Text M
     static let skeletonBar: CGFloat = 12
     static let skeletonHeaderWidth: CGFloat = 140

@@ -4,11 +4,21 @@ import SwiftUI
 
 /// Числа шапки экранов альбома и книги — одни на оба (правка пользователя 2026-10-04:
 /// «логично сделать единый шерред компонент»). Сняты с альбома `2079:11226`: холст
-/// макета 375, прототип 402, кавер стоит под навбаром.
+/// макета 375, прототип 402 (база формул; на других ширинах кавер и зона масштабируются
+/// на `widthScale`), кавер стоит под навбаром.
 enum EntityCoverLayout {
+    /// Эталонный кавер макета — 247, от него отсчитан верх обложки.
+    static let referenceCover: CGFloat = 247
     /// Верх обложки в покое — под навбаром. У альбома это был центр квадратной зоны
-    /// 402, опущенный на 29 (`top: calc(50% + 29px)`), при кавере 247: 106.5.
-    static let coverTop: CGFloat = 106.5
+    /// ширины экрана, опущенный на 29 (`top: calc(50% + 29px)`), при кавере 247:
+    /// `screenWidth/2 + 29·k − 247·k/2` (k — `widthScale`), на 402 — 106.5. Кавер растёт
+    /// с экраном (`247·k`), а потому его центр остаётся там же относительно центра зоны.
+    /// Книга стоит на той же отметке (верх не от её высоты — на 402 она не двигалась).
+    @MainActor
+    static var coverTop: CGFloat {
+        let k = PlusMetrics.widthScale
+        return PlusMetrics.screenWidth / 2 + 29 * k - referenceCover * k / 2
+    }
     /// Зазор от низа обложки до названия — 16, в линию с полями экрана (правки
     /// пользователя 2026-08-29).
     static let coverToTitle: CGFloat = 16
@@ -24,6 +34,7 @@ enum EntityCoverLayout {
     static let side: CGFloat = 16
 
     /// Сколько шапка занимает в потоке: от верха экрана до названия.
+    @MainActor
     static func zoneHeight(coverHeight: CGFloat) -> CGFloat {
         coverTop + coverHeight + coverToTitle
     }
@@ -32,18 +43,21 @@ enum EntityCoverLayout {
     /// пользователя 2026-10-04: размытие кончается в районе кнопок; прежде — 48.5
     /// под обложкой). Градиент к чёрному растянут на ту же высоту, поэтому полностью
     /// чёрным фон становится ровно у низа ряда.
+    @MainActor
     static func backdropHeight(coverHeight: CGFloat, actionsBottom: CGFloat) -> CGFloat {
         zoneHeight(coverHeight: coverHeight) + actionsBottom
     }
 
     /// Обложка растёт за оттягом до ширины экрана минус поля 16, дальше стоит.
+    @MainActor
     static func maxCoverScale(coverWidth: CGFloat) -> CGFloat {
-        (PlusMetrics.designWidth - side * 2) / max(coverWidth, 1)
+        (PlusMetrics.screenWidth - side * 2) / max(coverWidth, 1)
     }
 
     /// Пороги навбара: подложка приезжает, когда шапка почти ушла под бар,
     /// название — когда под бар уходит сам заголовок. Отсчёт — от верха названия
     /// (низ зоны): у альбома это были 247.5 и 347.5 при зоне 369.5.
+    @MainActor
     static func navBarThresholds(coverHeight: CGFloat) -> EntityNavBarThresholds {
         let titleTop = zoneHeight(coverHeight: coverHeight)
         return EntityNavBarThresholds(
@@ -125,7 +139,7 @@ struct EntityCoverHeader<Cover: View>: View {
     private func backdrop(height: CGFloat) -> some View {
         ArtworkImage(source: artwork)
             .scaledToFill()
-            .frame(width: PlusMetrics.designWidth, height: height)
+            .frame(width: PlusMetrics.screenWidth, height: height)
             .clipped()
             .blur(radius: EntityCoverLayout.backdropBlur, opaque: true)
             .overlay(Color.black.opacity(EntityCoverLayout.backdropDim))
