@@ -318,6 +318,14 @@ extension ShowcaseFeed {
     /// и круг мок-исполнителя.
     private static let akvariumPhoto = "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg"
 
+    /// Мок-исполнитель промо — «Аквариум», фото то же, что в подписи мок-альбома, поднятое
+    /// до 1000×1000. Он же — артист мок-волны «в стиле артиста» (задача 68).
+    private static let mockArtist = ArtistBlock(
+        id: 4179081,
+        name: "Аквариум",
+        picture: Self.akvariumPhoto.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("")
+    )
+
     /// Мок-станция «Моей Волны» ленты. У промо своя — первая станция списка (задача 65).
     private static let mockVibe = VibeBlock(
         id: "my-vibe",
@@ -359,13 +367,9 @@ extension ShowcaseFeed {
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
             // Первый круг — фильм, альбом, книга, исполнитель; за ним станция, потом второй
-            // круг (`ShowcaseCatalog.publishPromo`). Исполнитель — тот же «Аквариум», фото
-            // то же, что в подписи альбома, поднятое до 1000×1000.
-            .artist(ArtistBlock(
-                id: 4179081,
-                name: "Аквариум",
-                picture: Self.akvariumPhoto.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("")
-            )),
+            // круг — книга и волна «в стиле артиста» (`ShowcaseCatalog.publishPromo`).
+            // Исполнитель — тот же «Аквариум», что в подписи альбома.
+            .artist(Self.mockArtist),
             .vibe(.promo(VibePromoStation.all[0])),
             .book(BookBlock(
                 id: "fedorova-35-july",
@@ -375,6 +379,9 @@ extension ShowcaseFeed {
                 caption: "Две повести Ани Фёдоровой о детстве на стыке девяностых и нулевых: бабушка, тамагочи, приволжский город",
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
+            // Волна «в стиле артиста» (задача 68) — мок-исполнитель; у живой — артист
+            // из запаса исполнителей круга (`ShowcaseCatalog.pickPromoArtistWave`).
+            .vibe(.promo(.artistWave(Self.mockArtist))),
         ],
         blocks: [
             .movie(MovieBlock(
@@ -452,7 +459,8 @@ extension ShowcaseBlock {
         case .movie(let b): [b.poster, b.still]
         case .album(let b): [b.cover] + [b.artistPicture].compactMap { $0 }
         case .book(let b): [b.render, b.cover]
-        case .vibe(let b): [b.cover]
+        // У волны «в стиле артиста» промо — и фото артиста (задача 68).
+        case .vibe(let b): [b.cover] + [b.station?.artist?.picture].compactMap { $0 }
         case .reading(let b): [b.cover]
         case .watching(let b): [b.still, b.logo]
         case .artist(let b): [b.picture]

@@ -55,10 +55,23 @@ enum PromoStationLayout {
 
     /// Пара ✕/✓ — внутри карточки, левый верхний угол в (61, 214)
     static let pairOrigin = CGPoint(x: 61, y: 214)
+
+    /// Волна «в стиле артиста» — макет `2698:27113`, те же координаты. Фото — круг во весь
+    /// квадрат `artBox`, обводка 1 белым 15 % внутрь и внутреннее свечение белым 50 %
+    /// (в макете inset-блюр 32, в коде радиус вдвое меньше — конвенция проекта).
+    static let artistStroke: CGFloat = 1
+    static let artistStrokeOpacity: Double = 0.15
+    static let artistGlowRadius: CGFloat = 16
+    static let artistGlowOpacity: Double = 0.5
+    /// «Моя волна» и «в стиле артиста» — две строки, имя артиста под ними — до двух.
+    static let artistTitleLines = 2
+    static let artistNameLines = 2
 }
 
 /// Карточка станции в промо «Главной»: капля цвета станции, над ней иллюстрация агента,
-/// в капле — «Моя волна» и название станции. Пару ✕/✓ кладёт слайдер — оверлеем
+/// в капле — «Моя волна» и название станции. У волны «в стиле артиста» (задача 68) вместо
+/// иллюстрации — круглое фото артиста, текст — «Моя волна / в стиле артиста» и имя артиста.
+/// Пару ✕/✓ кладёт слайдер — оверлеем
 /// на `PromoStationLayout.pairOrigin` (`ShowcasePromo.card`); подписи под карточкой нет.
 ///
 /// Кадр — распорка 208×249: кнопке и касаниям — ровно он, капля уходит за него фоном.
@@ -77,25 +90,23 @@ struct PromoStationCard: View {
                 PromoStationPetal(station: station)
             }
             .overlay(alignment: .topLeading) {
-                Image(station.asset)
-                    .resizable()
-                    .frame(width: (Layout.art.width + 2 * Layout.artBlurPad) * scale,
-                           height: (Layout.art.height + 2 * Layout.artBlurPad) * scale)
+                art
                     .frame(width: Layout.artBox * scale, height: Layout.artBox * scale)
                     .showcaseSwappable()
                     .offset(x: Layout.artOrigin.x * scale, y: Layout.artOrigin.y * scale)
                     .accessibilityHidden(true)
             }
             .overlay(alignment: .topLeading) {
+                let isArtist = station.artist != nil
                 VStack(spacing: Layout.textGap * scale) {
                     Text(title)
                         .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillOne)
-                        .lineLimit(1)
+                        .lineLimit(isArtist ? Layout.artistTitleLines : 1)
                     Text(station.name)
                         .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillSubtitle)
-                        .lineLimit(Layout.nameLines)
+                        .lineLimit(isArtist ? Layout.artistNameLines : Layout.nameLines)
                 }
                 .multilineTextAlignment(.center)
                 .frame(width: Layout.textWidth * scale)
@@ -103,6 +114,108 @@ struct PromoStationCard: View {
                 .offset(x: Layout.textLeading * scale, y: Layout.textTop * scale)
             }
             .contentShape(.rect)
+    }
+
+    /// Иллюстрация агента — с прозрачным полем под запечённый блюр угла; фото артиста —
+    /// круг во весь квадрат.
+    @ViewBuilder
+    private var art: some View {
+        let scale = ShowcasePromoLayout.scale
+        switch station.kind {
+        case .genre(let asset):
+            Image(asset)
+                .resizable()
+                .frame(width: (Layout.art.width + 2 * Layout.artBlurPad) * scale,
+                       height: (Layout.art.height + 2 * Layout.artBlurPad) * scale)
+        case .artist(let artist):
+            PromoArtistWavePhoto(picture: artist.picture, diameter: Layout.artBox * scale)
+        }
+    }
+}
+
+/// Фото артиста волны «в стиле артиста» (макет `2698:27113`): круг, внутреннее белое
+/// свечение и обводка внутрь. Фото — через скелетон (`SkeletonArtwork`: из памяти —
+/// с первого кадра), свечение — готовый растр (`PromoArtistGlow`), а не блюр на кадре:
+/// живой блюр пересчитывался бы у каждой копии круга.
+private struct PromoArtistWavePhoto: View {
+    let picture: ArtworkSource
+    let diameter: CGFloat
+
+    private typealias Layout = PromoStationLayout
+
+    var body: some View {
+        PlusSkeleton.fill
+            .overlay { SkeletonArtwork(source: picture) }
+            .frame(width: diameter, height: diameter)
+            .clipShape(Circle())
+            .overlay {
+                if let glow = PromoArtistGlow.image(diameter: diameter) {
+                    Image(uiImage: glow)
+                        .resizable()
+                        .frame(width: diameter, height: diameter)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(
+                        Color.white.opacity(Layout.artistStrokeOpacity),
+                        lineWidth: Layout.artistStroke * ShowcasePromoLayout.scale
+                    )
+                    .allowsHitTesting(false)
+            }
+    }
+}
+
+/// Внутреннее свечение фото артиста — белое кольцо, размытое к центру и срезанное кругом:
+/// растр, посчитанный один раз на диаметр. Масштаб промо и экрана — константы процесса.
+@MainActor
+private enum PromoArtistGlow {
+    private static var images: [CGFloat: UIImage] = [:]
+
+    static func image(diameter: CGFloat) -> UIImage? {
+        if let hit = images[diameter] { return hit }
+        let renderer = ImageRenderer(content: PromoArtistGlowShape(diameter: diameter))
+        renderer.scale = PromoPetalCache.displayScale
+        guard let image = renderer.uiImage else { return nil }
+        let prepared = image.preparingForDisplay() ?? image
+        images[diameter] = prepared
+        return prepared
+    }
+}
+
+/// Кольцо свечения: белая заливка снаружи круга (чётно-нечётная — сам круг пустой)
+/// с полем в три радиуса блюра, размытая и срезанная по кругу.
+private struct PromoArtistGlowShape: View {
+    let diameter: CGFloat
+
+    private typealias Layout = PromoStationLayout
+
+    var body: some View {
+        let radius = Layout.artistGlowRadius * ShowcasePromoLayout.scale
+        let side = diameter + radius * 6
+        Ring(diameter: diameter)
+            .fill(Color.white.opacity(Layout.artistGlowOpacity), style: FillStyle(eoFill: true))
+            .frame(width: side, height: side)
+            .blur(radius: radius)
+            .frame(width: diameter, height: diameter)
+            .clipShape(Circle())
+    }
+
+    /// Квадрат кадра с вырезанным по центру кругом.
+    private struct Ring: Shape {
+        let diameter: CGFloat
+
+        func path(in rect: CGRect) -> Path {
+            var path = Path(rect)
+            path.addEllipse(in: CGRect(
+                x: rect.midX - diameter / 2,
+                y: rect.midY - diameter / 2,
+                width: diameter,
+                height: diameter
+            ))
+            return path
+        }
     }
 }
 
@@ -135,10 +248,15 @@ struct PromoStationPetal: View {
 
     /// Растры капель станций среди айтемов — заранее: под заставкой (`AppRootView`)
     /// и в подготовке замены по ✕ (`ShowcaseCatalog`), а не на первом кадре показа.
+    /// У волны «в стиле артиста» — и растр свечения фото; само фото греет `ArtworkLoader`
+    /// по `ShowcaseBlock.artworks`.
     static func prewarm(_ blocks: [ShowcaseBlock]) {
         for case .vibe(let vibe) in blocks {
             guard let station = vibe.station else { continue }
             _ = PromoPetalCache.image(for: station)
+            if station.artist != nil {
+                _ = PromoArtistGlow.image(diameter: PromoStationLayout.artBox * ShowcasePromoLayout.scale)
+            }
         }
     }
 }
@@ -171,7 +289,7 @@ private enum PromoPetalCache {
     }
 
     /// Масштаб экрана — со сцены; без неё (самый ранний кадр) — 3, как у iPhone проекта.
-    private static var displayScale: CGFloat {
+    static var displayScale: CGFloat {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.traitCollection.displayScale ?? 3

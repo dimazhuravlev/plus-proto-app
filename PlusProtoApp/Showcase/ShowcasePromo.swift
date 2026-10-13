@@ -392,8 +392,9 @@ struct ShowcasePromo: View {
                     try? await Task.sleep(for: cycleInterval)
                 }
             }
-            // `-debugHomePromoKind <artist|vibe>` — через 3 с поставить в центр первый айтем
-            // вида: исполнителя или станцию «Моей волны». Тем же путём, что `-debugHomePromoStep`.
+            // `-debugHomePromoKind <artist|vibe|artistWave>` — через 3 с поставить в центр первый
+            // айтем вида: исполнителя, станцию «Моей волны» или волну «в стиле артиста» (задача 68).
+            // Тем же путём, что `-debugHomePromoStep`.
             .task {
                 let kind = UserDefaults.standard.string(forKey: "debugHomePromoKind") ?? ""
                 guard !kind.isEmpty else { return }
@@ -403,7 +404,7 @@ struct ShowcasePromo: View {
                 let index = promo.firstIndex { item in
                     switch item {
                     case .artist: kind == "artist"
-                    case .vibe: kind == "vibe"
+                    case .vibe(let vibe): kind == (vibe.promoStation.artist == nil ? "vibe" : "artistWave")
                     case .movie, .album, .book, .reading, .watching: false
                     }
                 }
@@ -1186,13 +1187,14 @@ extension ShowcaseBlock {
     }
 
     /// Картинка фона под слайдером — обложка айтема. У исполнителя — его фото, у станции —
-    /// её иллюстрация в цветах станции, а не кавер плеера.
+    /// её иллюстрация в цветах станции, а не кавер плеера; у волны «в стиле артиста» —
+    /// фото артиста.
     var promoArtwork: ArtworkSource {
         switch self {
         case .movie(let movie): movie.poster
         case .album(let album): album.cover
         case .book(let book): book.cover
-        case .vibe(let vibe): .asset(vibe.promoStation.asset)
+        case .vibe(let vibe): vibe.promoStation.artwork
         case .reading(let reading): reading.cover
         case .watching(let watching): watching.still
         case .artist(let artist): artist.picture
