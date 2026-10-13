@@ -169,6 +169,8 @@ struct AppRootView: View {
     private func prepareShowcase() async {
         let started = ContinuousClock.now
 
+        // Постер начатого фильма для карточки «Продолжить» — до её первого кадра.
+        await actionBar.watchHistory.backfillContinuingPoster()
         if shouldLoadLiveFeed {
             await catalog.loadIfNeeded()
             // Карточки «Продолжить» промо (задача 69) — из истории и бара, не из каталога:

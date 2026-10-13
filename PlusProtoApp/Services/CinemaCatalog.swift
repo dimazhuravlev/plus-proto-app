@@ -231,8 +231,8 @@ final class CinemaCatalog {
                 title: details.title,
                 subtitle: details.playerSubtitle,
                 runtime: details.runtime,
-                // Постер — карточке «Продолжить» промо «Главной» (задача 69).
-                poster: details.poster.map { ArtworkSource.remote($0) }
+                // Постер — карточке «Продолжить» промо «Главной» (задача 69), крупный.
+                poster: (details.coverPoster ?? details.poster).map { ArtworkSource.remote($0) }
             ),
             poster: details.poster.map { ArtworkSource.remote($0) },
             year: details.year
