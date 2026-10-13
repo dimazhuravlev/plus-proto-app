@@ -39,6 +39,10 @@ enum PromoStationLayout {
     /// Иллюстрация агента 112×98 — по центру квадрата 112 с левым верхним углом в (48, −6)
     static let artBox: CGFloat = 112
     static let art = CGSize(width: 112, height: 98)
+    /// Прозрачное поле растра иллюстрации под запечённый прогрессивный блюр её верхнего левого
+    /// угла (в макете — слой фонового блюра, SVG и PNG-экспорт его не передают; запечён
+    /// скриптом из растра с внутренними тенями, правка пользователя 2026-10-13).
+    static let artBlurPad: CGFloat = 10
     static let artOrigin = CGPoint(x: 48, y: -6)
 
     /// Текст — колонка 163 с левым краем на 22.5 и верхом на 119: «Моя волна», под ней
@@ -75,7 +79,8 @@ struct PromoStationCard: View {
             .overlay(alignment: .topLeading) {
                 Image(station.asset)
                     .resizable()
-                    .frame(width: Layout.art.width * scale, height: Layout.art.height * scale)
+                    .frame(width: (Layout.art.width + 2 * Layout.artBlurPad) * scale,
+                           height: (Layout.art.height + 2 * Layout.artBlurPad) * scale)
                     .frame(width: Layout.artBox * scale, height: Layout.artBox * scale)
                     .showcaseSwappable()
                     .offset(x: Layout.artOrigin.x * scale, y: Layout.artOrigin.y * scale)
