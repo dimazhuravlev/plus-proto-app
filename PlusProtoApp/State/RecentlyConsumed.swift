@@ -109,3 +109,28 @@ final class RecentlyConsumed {
         UserDefaults.standard.set(data, forKey: Self.storageKey)
     }
 }
+
+extension MusicNowPlaying {
+    /// Экран, откуда трек, — для плитки ПП: альбом или плейлист по `containerID`
+    /// (`album:dz-…`, `playlist:dz-…`), иначе альбом по id трека `dz-<альбом>-t<трек>`.
+    /// `nil` — альбом неизвестен (трек из выдачи, `track-…`).
+    var containerRoute: EntityRoute? {
+        if let container = containerID {
+            let parts = container.split(separator: ":", maxSplits: 1).map(String.init)
+            if parts.count == 2 {
+                switch parts[0] {
+                case "album":
+                    return .album(EntityRef(id: parts[1], title: album ?? title, subtitle: artist, artwork: cover))
+                case "playlist":
+                    return .playlist(EntityRef(id: parts[1], title: album ?? title, subtitle: "", artwork: cover))
+                default: break
+                }
+            }
+        }
+        if id.hasPrefix("dz-"), let range = id.range(of: "-t") {
+            let albumID = String(id[id.startIndex..<range.lowerBound])
+            return .album(EntityRef(id: albumID, title: album ?? title, subtitle: artist, artwork: cover))
+        }
+        return nil
+    }
+}

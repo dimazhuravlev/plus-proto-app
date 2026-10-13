@@ -315,7 +315,8 @@ enum ShowcaseLayout {
     /// 8 под навигацией, высота 80, до промо 40. Не масштабируются: плитки ряда
     /// фиксированной ширины.
     static let recentlyGap: CGFloat = 8
-    static let recentlyHeight: CGFloat = 80
+    /// Ряд ПП (продолженное потребление) — 72 вместо макетных 80 (правка пользователя 2026-10-13).
+    static let recentlyHeight: CGFloat = 72
     static let recentlyToPromo: CGFloat = 40
     /// Полоса ряда целиком — на столько промо и всё ниже стоят ниже навигации.
     static var recentlyBand: CGFloat { recentlyGap + recentlyHeight + recentlyToPromo }

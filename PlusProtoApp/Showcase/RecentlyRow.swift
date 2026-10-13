@@ -15,6 +15,12 @@ enum RecentlyLayout {
     /// Свечения — копии картинок в блюре 24 панели Figma (в коде вдвое меньше, конвенция
     /// `GlassSurface`).
     static let glowBlur: CGFloat = 12
+    /// Плитки рисуются в числах макета (высота 80) и ужимаются целиком до высоты ряда:
+    /// пропорции, скругления и свечения те же, зазоры и поля ряда — без масштаба (правка
+    /// пользователя 2026-10-13: ряд 72).
+    static let designHeight: CGFloat = 80
+    @MainActor
+    static var tileScale: CGFloat { ShowcaseLayout.recentlyHeight / designHeight }
 
     /// «Моя волна» `2713:26834`: плитка 70×80, капля шире плитки и не обрезается кругом.
     enum Vibe {
@@ -90,8 +96,9 @@ enum RecentlyMotion {
 /// Ряд «продолженного потребления» над промо «Главной» (задача 71): первой — «Моя волна»,
 /// дальше — что начинали смотреть, слушать, читать (`RecentlyConsumed`), свежее первым.
 ///
-/// Тап сразу запускает: фильм — киноплеер с места остановки, трек — музыку, книгу —
-/// читалку, «Моя волна» — волну. Исполнитель — его экран.
+/// Тап: фильм — сразу киноплеер с места остановки, книга — сразу читалка, «Моя волна» —
+/// волна; альбом (плейлист) и исполнитель — их экраны (правка пользователя 2026-10-13).
+/// Трек без известного альбома — играет, экрана у него нет.
 ///
 /// Свечения — статичные блюры копий картинок фоном плиток: раскладку они не раздувают,
 /// а `scrollClipDisabled` не режет их по высоте ряда.
@@ -169,6 +176,7 @@ struct RecentlyRow: View {
                         .allowsHitTesting(false)
                 }
                 .contentShape(.rect)
+                .ppTile(L.size)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .accessibilityLabel(isVibePlaying ? "Пауза" : "Слушать Мою волну")
@@ -198,7 +206,11 @@ struct RecentlyRow: View {
             if let runtime = actionBar.watchHistory.runtime(for: movie.id) { movie.runtime = runtime }
             actionBar.open(.movie(movie))
         case .music(let track):
-            actionBar.open(.music(track))
+            if let route = track.containerRoute {
+                navigation.open(route)
+            } else {
+                actionBar.open(.music(track))
+            }
         case .book(let book):
             actionBar.open(.book(book))
         case .artist(let artist):
@@ -216,11 +228,23 @@ private struct RecentlyTile: View {
     @Environment(ActionBarState.self) private var actionBar
 
     var body: some View {
+        Group {
+            switch item {
+            case .movie(let movie): movieTile(movie)
+            case .music(let track): albumTile(track)
+            case .book(let book): bookTile(book.cover)
+            case .artist(let artist): artistTile(artist)
+            }
+        }
+        .ppTile(designSize)
+    }
+
+    private var designSize: CGSize {
         switch item {
-        case .movie(let movie): movieTile(movie)
-        case .music(let track): albumTile(track.cover)
-        case .book(let book): bookTile(book.cover)
-        case .artist(let artist): artistTile(artist)
+        case .movie: RecentlyLayout.Movie.size
+        case .music: RecentlyLayout.Album.size
+        case .book: RecentlyLayout.Book.size
+        case .artist: CGSize(width: RecentlyLayout.Artist.size, height: RecentlyLayout.Artist.size)
         }
     }
 
@@ -274,14 +298,19 @@ private struct RecentlyTile: View {
 
     // MARK: Альбом / трек
 
-    private func albumTile(_ cover: ArtworkSource) -> some View {
+    private func albumTile(_ track: MusicNowPlaying) -> some View {
         typealias L = RecentlyLayout.Album
+        let cover = track.cover
         let shape = RoundedRectangle(cornerRadius: L.radius, style: .continuous)
         return PlusSkeleton.fill
             .overlay { SkeletonArtwork(source: cover) }
             .frame(width: L.cover, height: L.cover)
             .clipShape(shape)
             .coverBorder(shape)
+            // Экран альбома разворачивается из обложки, как у исполнителя из круга.
+            .matchedTransitionSource(id: track.containerRoute ?? EntityRoute.album(EntityRef(
+                id: "recent-\(track.id)", title: track.title, subtitle: "", artwork: cover
+            )), in: zoom)
             .background {
                 glow(cover, size: CGSize(width: L.glow, height: L.glow), in: Rectangle(), opacity: L.glowOpacity)
             }
@@ -339,5 +368,16 @@ private struct RecentlyTile: View {
             .blur(radius: RecentlyLayout.glowBlur)
             .opacity(opacity)
             .allowsHitTesting(false)
+    }
+}
+
+private extension View {
+    /// Плитка ПП: раскладка — в числах макета (`size`, высота 80), на экране — ужатая до
+    /// высоты ряда целиком (`RecentlyLayout.tileScale`), без смены пропорций.
+    func ppTile(_ size: CGSize) -> some View {
+        let scale = RecentlyLayout.tileScale
+        return frame(width: size.width, height: size.height)
+            .scaleEffect(scale)
+            .frame(width: size.width * scale, height: size.height * scale)
     }
 }
