@@ -740,10 +740,11 @@ final class ShowcaseCatalog {
             dismissedPromoWorks.insert(work)
         }
         upcomingPromo.removeValue(forKey: id)?.cancel()
-        promoMovies.removeAll { $0.id == id }
-        promoAlbums.removeAll { $0.id == id }
-        promoBooks.removeAll { $0.id == id }
-        // У новых видов сверка — по id айтема промо (`artist-…`, `vibe-…`), как в круге.
+        // Сверка — по id айтема промо (`movie-…`, `album-…`, `artist-…`), как в круге:
+        // сырой id блока (`kp-…`) с ним не совпадает, и убранное возвращалось пересборкой.
+        promoMovies.removeAll { ShowcaseBlock.movie($0).id == id }
+        promoAlbums.removeAll { ShowcaseBlock.album($0).id == id }
+        promoBooks.removeAll { ShowcaseBlock.book($0).id == id }
         promoArtistCards.removeAll { ShowcaseBlock.artist($0).id == id }
         promoVibes.removeAll { ShowcaseBlock.vibe($0).id == id }
         feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks)
@@ -764,19 +765,21 @@ final class ShowcaseCatalog {
 
     /// Промо на экран — вперемешку: фильм, альбом, книга, исполнитель, за первым кругом
     /// станция «Моей волны», и снова. Вид, живых айтемов которого нет, — из моковой ленты:
-    /// слайдер не пустеет и не теряет вид. Исполнители и станция, убранные ✕, моком
-    /// не возвращаются.
+    /// слайдер не пустеет и не теряет вид. Убранное ✕ не возвращается ни живым, ни моком.
     private func publishPromo(preload: Bool = true) {
         let fallback = ShowcaseFeed.personal.promo
-        let movies: [ShowcaseBlock] = promoMovies.isEmpty
+        let movies: [ShowcaseBlock] = (promoMovies.isEmpty
             ? fallback.filter { if case .movie = $0 { true } else { false } }
-            : promoMovies.map { .movie($0) }
-        let albums: [ShowcaseBlock] = promoAlbums.isEmpty
+            : promoMovies.map { .movie($0) })
+            .filter { !dismissedPromoIDs.contains($0.id) }
+        let albums: [ShowcaseBlock] = (promoAlbums.isEmpty
             ? fallback.filter { if case .album = $0 { true } else { false } }
-            : promoAlbums.map { .album($0) }
-        let books: [ShowcaseBlock] = promoBooks.isEmpty
+            : promoAlbums.map { .album($0) })
+            .filter { !dismissedPromoIDs.contains($0.id) }
+        let books: [ShowcaseBlock] = (promoBooks.isEmpty
             ? fallback.filter { if case .book = $0 { true } else { false } }
-            : promoBooks.map { .book($0) }
+            : promoBooks.map { .book($0) })
+            .filter { !dismissedPromoIDs.contains($0.id) }
         let artists: [ShowcaseBlock] = (promoArtistCards.isEmpty
             ? fallback.filter { if case .artist = $0 { true } else { false } }
             : promoArtistCards.map { .artist($0) })
@@ -904,7 +907,10 @@ final class ShowcaseCatalog {
 
     /// Альбомы на экране — в ленте и в промо — и убранные из промо: замена их не повторяет.
     private var shownAlbumIDs: Set<String> {
-        var ids = dismissedPromoIDs
+        // Убранные хранятся id айтема промо (`album-dz-…`), альбомы сверяются по id блока.
+        var ids = Set(dismissedPromoIDs.compactMap { id in
+            id.hasPrefix("album-") ? String(id.dropFirst("album-".count)) : nil
+        })
         for case .album(let album) in feed.blocks + feed.promo { ids.insert(album.id) }
         return ids
     }
@@ -920,8 +926,8 @@ final class ShowcaseCatalog {
         for case .book(let book) in feed.blocks + feed.promo {
             excluded.insert(String(book.id.dropFirst("gb-".count)))
         }
-        for id in dismissedPromoIDs where id.hasPrefix("gb-") {
-            excluded.insert(String(id.dropFirst("gb-".count)))
+        for id in dismissedPromoIDs where id.hasPrefix("book-gb-") {
+            excluded.insert(String(id.dropFirst("book-gb-".count)))
         }
         // И по произведению: другое издание той же книги — та же книга.
         let works = shownWorks.union([Self.bookKey(current.title)])
