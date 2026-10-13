@@ -32,8 +32,15 @@ enum RateReactionMotion {
     static let tiltRamp: Double = 0.15
     /// Рост к концу полёта: шарик чуть «надувается», пока растворяется
     static let growth: CGFloat = 0.12
-    /// Доля полёта, после которой шарик начинает таять
-    static let fadeStart: Double = 0.4
+    /// Доля полёта, после которой шарик начинает таять. Было 0.4; сдвинуто за
+    /// `blurStart`: при 0.4 к началу размытия эмодзи уже почти прозрачен и блюр не
+    /// читается (правка пользователя 2026-10-13: в конце пути растворяются блюром).
+    static let fadeStart: Double = 0.55
+    /// Доля полёта, с которой эмодзи начинает размываться: чуть раньше таяния —
+    /// сперва теряет резкость, потом гаснет
+    static let blurStart: Double = 0.45
+    /// Радиус размытия в конце полёта, единицы как у прочих блюров кода (`.blur(radius:)`)
+    static let blurMax: CGFloat = 8
     /// Подъём — пополам линейный и ease-out: шарик срывается с кнопки сразу (скорость
     /// в 1.5 раза выше средней), а к концу не тормозит до нуля — уходит вверх, пока
     /// тает. Чистый ease-out останавливал его наверху, и он читался «приземлившимся»
@@ -157,8 +164,8 @@ private struct BalloonEmoji: View {
 }
 
 /// Полёт по шкале 0…1 — каждый кадр: подъём с ease-out, качание синусоидой
-/// с наклоном в её сторону, снос веером, рост и таяние во второй половине.
-/// Только transform и прозрачность — раскладку полёт не трогает.
+/// с наклоном в её сторону, снос веером, рост, а в конце пути — размытие и таяние.
+/// Только transform, блюр и прозрачность — раскладку полёт не трогает.
 private struct BalloonFlight: ViewModifier, Animatable {
     var progress: Double
     let balloon: Balloon
@@ -180,8 +187,14 @@ private struct BalloonFlight: ViewModifier, Animatable {
         let fade = max(0, (t - RateReactionMotion.fadeStart) / (1 - RateReactionMotion.fadeStart))
         let opacity = pow(1 - fade, 1.5)
         let scale = 1 + RateReactionMotion.growth * CGFloat(1 - pow(1 - t, 2))
+        // Радиус — функция времени: 0 до `blurStart`, дальше smoothstep без излома.
+        // Блюр на самой картинке, до трансформаций; ветвления вью нет — радиус 0 это no-op.
+        let blurT = min(max((t - RateReactionMotion.blurStart) / (1 - RateReactionMotion.blurStart), 0), 1)
+        let blur = RateReactionMotion.blurMax * CGFloat(blurT * blurT * (3 - 2 * blurT))
 
         content
+            // `opaque: false` — у PNG эмодзи есть альфа, края не должны чернеть
+            .blur(radius: blur, opaque: false)
             .scaleEffect(scale)
             .rotationEffect(.degrees(tilt))
             .offset(x: sway + balloon.drift * CGFloat(t), y: -rise)

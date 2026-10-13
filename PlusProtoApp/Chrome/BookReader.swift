@@ -43,9 +43,11 @@ private enum BookReaderLayout {
     static let titleWidth: CGFloat = 155
     /// Затемнение сверху при показанной обвязке `2565:25464`: 402×153, y −1.
     static let chromeTopGradientHeight: CGFloat = 153
-    /// Размер пилюли мини-плеера в читалке `2565:25233`: 354 (поля 24 с обеих сторон,
-    /// рядом нет круга поиска, как в баре, где она 286).
-    static var musicExpandedWidth: CGFloat { PlusMetrics.designWidth - textInset * 2 }
+    /// Размер пилюли мини-плеера в читалке `2565:25233`: 354 на 402 (поля 24 с обеих сторон,
+    /// рядом нет круга поиска, как в баре, где она 286). Поля постоянные, пилюля занимает
+    /// остаток: `screenWidth − 2·24` — 342 на 390, 392 на 440.
+    @MainActor
+    static var musicExpandedWidth: CGFloat { PlusMetrics.screenWidth - textInset * 2 }
     /// Затемнение и блюр снизу: от низа экрана до верхней кромки мини-плеера в показанной
     /// обвязке — 40 + 132 + 60 = 232 (правка пользователя 2026-10-10; в макете
     /// `2565:25526` было 331, градиент начинался выше плеера). Стопы те же, что сверху,
@@ -80,8 +82,10 @@ private enum BookReaderLayout {
     static let controlSize: CGFloat = 48
     static let controlsSide: CGFloat = 32
     static let controlIconSize: CGFloat = 24
-    /// Ширина колонки обвязки: 402 − 2 × 24 = 354.
-    static var barWidth: CGFloat { PlusMetrics.designWidth - bottomBlockSide * 2 }
+    /// Ширина колонки обвязки: `screenWidth − 2 × 24` — 354 на 402 (макет), 342 на 390,
+    /// 392 на 440. Поля 24 постоянные, четыре кнопки внутри разведены поровну.
+    @MainActor
+    static var barWidth: CGFloat { PlusMetrics.screenWidth - bottomBlockSide * 2 }
 
     /// Темп чтения для подписи «осталось ~N мин».
     static let wordsPerMinute: Double = 200
@@ -770,8 +774,8 @@ private struct ReaderMusicPlayer: View {
                 expandedWidth: BookReaderLayout.musicExpandedWidth
             )
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
-            // левый уезжает, внутренности только проявляются. Ширина — макетные 354
-            // (`2565:25233`): круга поиска рядом нет, левый край пилюли на 24.
+            // левый уезжает, внутренности только проявляются. Ширина — экран минус поля 24
+            // (макетные 354 на 402, `2565:25233`): круга поиска рядом нет, левый край пилюли на 24.
             // Анимацию разворота задают места, где `isExpanded` меняется: тап по кругу и
             // прокрутка — `ActionBarMotion.morph`, показ обвязки — её кривая (`BookReaderMotion.chrome`).
             .frame(width: isExpanded ? BookReaderLayout.musicExpandedWidth : PlusMetrics.actionBarCompact)

@@ -25,6 +25,8 @@ enum ShowcaseBlock: Identifiable {
     case vibe(VibeBlock)
     case reading(ReadingBlock)
     case watching(WatchingBlock)
+    /// Карточка исполнителя — только в промо «Главной» (задача 64): в ленте её нет.
+    case artist(ArtistBlock)
 
     var id: String {
         switch self {
@@ -34,6 +36,7 @@ enum ShowcaseBlock: Identifiable {
         case .vibe(let b): "vibe-\(b.id)"
         case .reading(let b): "reading-\(b.id)"
         case .watching(let b): "watching-\(b.id)"
+        case .artist(let b): "artist-\(b.id)"
         }
     }
 
@@ -55,6 +58,10 @@ enum ShowcaseBlock: Identifiable {
             .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
         case .watching(let b):
             .movie(MovieInProgress(id: b.id, still: b.still, title: b.title))
+        case .artist(let b):
+            // Не зовётся: у исполнителя свой экран (`entityRoute`), музыку включает его
+            // кнопка «Слушать». Ветка — ради полноты `switch`.
+            .music(MusicNowPlaying(id: "artist-\(b.id)", cover: b.picture, title: b.name, artist: b.name))
         }
     }
 
@@ -68,6 +75,7 @@ enum ShowcaseBlock: Identifiable {
         case .vibe(let b): b.title
         case .reading(let b): b.title
         case .watching(let b): b.title
+        case .artist(let b): b.name
         }
     }
 
@@ -80,6 +88,9 @@ enum ShowcaseBlock: Identifiable {
         case .vibe: .vibe
         case .reading: .reading
         case .watching: .watching
+        // В ленте исполнителя нет — слот музыкальный, как у альбома; по нему ничего
+        // не подменяется (`apply` и заготовки ✕ ходят только по блокам ленты).
+        case .artist: .album
         }
     }
 }
@@ -106,6 +117,25 @@ struct MovieBlock {
     let caption: String
     /// Подпись тонируется в цвет постера — в макете градиент уводит текст к его палитре.
     let captionTint: Color
+    /// Начатый фильм — карточка «Продолжить» промо «Главной» (задача 69): тап запускает
+    /// киноплеер с места остановки, а не открывает экран тайтла. `nil` — обычная карточка.
+    var resume: MovieInProgress? = nil
+}
+
+extension MovieBlock {
+    /// Карточка «Продолжить» начатого фильма. Id свой — не совпасть с обычным айтемом
+    /// того же фильма; лицо — постер, у записи без него — кадр в кадре постера.
+    init(continuing movie: MovieInProgress) {
+        self.init(
+            id: "continue-\(movie.id)",
+            title: movie.title,
+            poster: movie.poster ?? movie.still,
+            still: movie.still,
+            caption: "",
+            captionTint: .clear,
+            resume: movie
+        )
+    }
 }
 
 struct AlbumBlock {
@@ -116,6 +146,18 @@ struct AlbumBlock {
     /// Фото исполнителя — аватар в подписи альбома промо «Главной» (макет `2537:27595`).
     /// У альбома ленты его нет: карточке оно не нужно.
     var artistPicture: ArtworkSource? = nil
+    /// Id исполнителя в Deezer — по нему подпись альбома промо «Главной» открывает его
+    /// экран. Нет id — подпись не нажимается.
+    var artistID: Int? = nil
+}
+
+/// Исполнитель промо «Главной» (задача 64): круг с фото и имя под ним.
+struct ArtistBlock: Hashable {
+    /// Id исполнителя в Deezer.
+    let id: Int
+    let name: String
+    /// Фото, поднятое до 1000×1000 (`deezerUpscaled`): круг промо — 220 pt.
+    let picture: ArtworkSource
 }
 
 struct BookBlock {
@@ -130,6 +172,25 @@ struct BookBlock {
     let cover: ArtworkSource
     let caption: String
     let captionTint: Color
+    /// Последняя открытая книга — карточка «Продолжить» промо «Главной» (задача 69): тап
+    /// открывает читалку, а не экран книги. `nil` — обычная карточка.
+    var resume: BookInProgress? = nil
+}
+
+extension BookBlock {
+    /// Карточка «Продолжить» последней открытой книги. Id свой — не совпасть с обычным
+    /// айтемом той же книги.
+    init(continuing book: BookInProgress) {
+        self.init(
+            id: "continue-\(book.id)",
+            title: book.title,
+            render: book.cover,
+            cover: book.cover,
+            caption: "",
+            captionTint: .clear,
+            resume: book
+        )
+    }
 }
 
 struct VibeBlock {
@@ -140,6 +201,8 @@ struct VibeBlock {
     let cover: ArtworkSource
     /// Иллюстрация волны и тон свечения под ней: ✕ сменяет их по кругу.
     var art: VibeArt = .classic
+    /// Станция промо «Главной» (задача 65) — лепесток вместо орба. У блока ленты её нет.
+    var station: VibePromoStation? = nil
 }
 
 /// Иллюстрации «Моей Волны» — чтобы новая волна по ✕ не была той же картинкой
@@ -200,13 +263,37 @@ struct WatchingBlock {
 /// Геометрия витрины из `figma-screen1.md`. Координаты абсолютные, в системе кадра
 /// шириной 402 — карточки в макете наезжают друг на друга и выходят за края экрана,
 /// поэтому вертикальный стек с отступами их не воспроизводит.
+///
+/// Лента — композиция во всю ширину экрана: вся геометрия (слоты, зазоры, X и размеры
+/// внутри карточек) умножается на `scale` = `screenWidth / 402` по обеим осям, шрифты
+/// и кнопки 40 — нет (правило 4 CLAUDE.md). Числа в `Slot` и в раскладках карточек —
+/// координаты макета на 402, множитель применяется в месте расстановки.
 enum ShowcaseLayout {
-    static let designWidth: CGFloat = PlusMetrics.designWidth
+    /// Множитель геометрии ленты: 1 на 402.
+    @MainActor
+    static var scale: CGFloat { PlusMetrics.widthScale }
 
-    /// Вертикальный слот блока: `top` — верх бокса в кадре, `height` — его высота.
+    /// Точка и размер макета на текущей ширине экрана.
+    @MainActor
+    static func scaled(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * scale, y: point.y * scale)
+    }
+
+    @MainActor
+    static func scaled(_ size: CGSize) -> CGSize {
+        CGSize(width: size.width * scale, height: size.height * scale)
+    }
+
+    /// Вертикальный слот блока: `top` — верх бокса в кадре, `height` — его высота
+    /// (оба в координатах макета на 402; по ним же блоки отличаются друг от друга —
+    /// ключ слота). Высота кадра на экране — `frameHeight`.
     struct Slot {
         let top: CGFloat
         let height: CGFloat
+
+        /// Высота кадра блока на текущей ширине экрана.
+        @MainActor
+        var frameHeight: CGFloat { height * ShowcaseLayout.scale }
 
         static let movie = Slot(top: 220.48, height: 298.51)
         static let album = Slot(top: 562, height: 206)
@@ -229,14 +316,17 @@ enum ShowcaseLayout {
     /// (правки пользователя). В макете промо карточек ниже нет. Ещё на 32 ближе —
     /// правка пользователя 2026-10-10; не из `belowCards`, чтобы ScrollView промо
     /// не обрезал пару ✕/✓.
-    static let promoToFirstBlock: CGFloat = 35.55 - 32
+    static let designPromoToFirstBlock: CGFloat = 35.55 - 32
+    @MainActor
+    static var promoToFirstBlock: CGFloat { designPromoToFirstBlock * scale }
 
     /// Зазоры между одиночными блоками ленты меньше на 24 — правка пользователя
     /// 2026-10-10. Зазор промо → первый блок (`promoToFirstBlock`) не затрагивает.
     static let blockGapTrim: CGFloat = 24
 
     /// Низ последнего блока — от него считается высота прокручиваемого контента.
-    static let contentBottom: CGFloat = Slot.watching.top + Slot.watching.height
+    @MainActor
+    static var contentBottom: CGFloat { (Slot.watching.top + Slot.watching.height) * scale }
 
     /// Воздух под последним блоком, поверх клиренса нижнего хрома. Без него докрученная
     /// до конца лента упирается последней карточкой прямо в панель действий.
@@ -252,15 +342,36 @@ enum ShowcaseLayout {
     /// Считается именно зазорами, а не абсолютным `offset`: `offset` не влияет на раскладку,
     /// из-за чего все карточки оказывались в одной точке — ломались и каскадное появление,
     /// и параллакс, которым нужна настоящая позиция блока в скролле.
+    @MainActor
     static func gap(above slot: Slot, after previous: Slot?) -> CGFloat {
-        guard let previous else { return slot.top }
-        return slot.top - (previous.top + previous.height) - blockGapTrim
+        guard let previous else { return slot.top * scale }
+        return (slot.top - (previous.top + previous.height) - blockGapTrim) * scale
     }
 }
 
 // MARK: - Демо-данные
 
 extension ShowcaseFeed {
+    /// Фото «Аквариума» у Deezer (id 4179081) — аватар подписи мок-альбома промо
+    /// и круг мок-исполнителя.
+    private static let akvariumPhoto = "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg"
+
+    /// Мок-исполнитель промо — «Аквариум», фото то же, что в подписи мок-альбома, поднятое
+    /// до 1000×1000. Он же — артист мок-волны «в стиле артиста» (задача 68).
+    private static let mockArtist = ArtistBlock(
+        id: 4179081,
+        name: "Аквариум",
+        picture: Self.akvariumPhoto.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("")
+    )
+
+    /// Мок-станция «Моей Волны» ленты. У промо своя — первая станция списка (задача 65).
+    private static let mockVibe = VibeBlock(
+        id: "my-vibe",
+        title: "Моя Волна",
+        subtitle: "Атмосферный постпанк, когда внутри пасмурно",
+        cover: .asset("mockPlayerCover")
+    )
+
     /// Персональная лента — экран `2004:10701` один в один. До Этапа 7 данные моковые.
     static let personal = ShowcaseFeed(
         // Фолбэк промо — текстом макета: фильм в центре, альбом и книга по бокам.
@@ -279,8 +390,8 @@ extension ShowcaseFeed {
                 title: "Аквариум",
                 subtitle: "Равноденствие",
                 // Фото группы у Deezer (id 4179081): без сети — серый круг скелетона.
-                artistPicture: URL(string: "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg")
-                    .map { ArtworkSource.remote($0) }
+                artistPicture: URL(string: Self.akvariumPhoto).map { ArtworkSource.remote($0) },
+                artistID: 4179081
             )),
             // Книги промо — не та, что в ленте ниже, и их две: без живых книг в круге
             // стояла одна, та же, что в ленте (жалоба 2026-10-09). Подписи — по аннотациям
@@ -293,6 +404,11 @@ extension ShowcaseFeed {
                 caption: "Рассказы Татьяны Замировской о катастрофах и о том, как они меняют память, язык и нас самих",
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
+            // Первый круг — фильм, альбом, книга, исполнитель; за ним станция, потом второй
+            // круг — книга и волна «в стиле артиста» (`ShowcaseCatalog.publishPromo`).
+            // Исполнитель — тот же «Аквариум», что в подписи альбома.
+            .artist(Self.mockArtist),
+            .vibe(.promo(VibePromoStation.all[0])),
             .book(BookBlock(
                 id: "fedorova-35-july",
                 title: "35 июля. Но это не точно",
@@ -301,6 +417,9 @@ extension ShowcaseFeed {
                 caption: "Две повести Ани Фёдоровой о детстве на стыке девяностых и нулевых: бабушка, тамагочи, приволжский город",
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
+            // Волна «в стиле артиста» (задача 68) — мок-исполнитель; у живой — артист
+            // из запаса исполнителей круга (`ShowcaseCatalog.pickPromoArtistWave`).
+            .vibe(.promo(.artistWave(Self.mockArtist))),
         ],
         blocks: [
             .movie(MovieBlock(
@@ -326,12 +445,7 @@ extension ShowcaseFeed {
                 // Светлый тон жёлтой обложки — как у живых книг, где тон берётся с обложки.
                 captionTint: Color(red: 0xF6 / 255, green: 0xF1 / 255, blue: 0xB0 / 255)
             )),
-            .vibe(VibeBlock(
-                id: "my-vibe",
-                title: "Моя Волна",
-                subtitle: "Атмосферный постпанк, когда внутри пасмурно",
-                cover: .asset("mockPlayerCover")
-            )),
+            .vibe(Self.mockVibe),
             .reading(ReadingBlock(
                 id: "bullshit-jobs",
                 title: "Бредовая работа",
@@ -366,7 +480,7 @@ extension ShowcaseBlock {
     /// У карточки есть пара ✕/✓, и ✕ меняет её контент (`ShowcaseCatalog.prepareReplacement`).
     var isReplaceable: Bool {
         switch self {
-        case .movie, .album, .book, .vibe: true
+        case .movie, .album, .book, .vibe, .artist: true
         case .reading, .watching: false
         }
     }
@@ -383,9 +497,11 @@ extension ShowcaseBlock {
         case .movie(let b): [b.poster, b.still]
         case .album(let b): [b.cover] + [b.artistPicture].compactMap { $0 }
         case .book(let b): [b.render, b.cover]
-        case .vibe(let b): [b.cover]
+        // У волны «в стиле артиста» промо — и фото артиста (задача 68).
+        case .vibe(let b): [b.cover] + [b.station?.artist?.picture].compactMap { $0 }
         case .reading(let b): [b.cover]
         case .watching(let b): [b.still, b.logo]
+        case .artist(let b): [b.picture]
         }
     }
 }

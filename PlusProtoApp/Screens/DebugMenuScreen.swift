@@ -10,6 +10,9 @@ enum SearchResultsStyle: String, CaseIterable, Identifiable {
     case masonry
 
     static let storageKey = "searchResultsStyle"
+    /// По умолчанию — единая лента (правка пользователя 2026-10-12); выбор в дебаг-меню
+    /// сохраняется и перекрывает умолчание.
+    static let defaultStyle: SearchResultsStyle = .masonry
 
     var id: Self { self }
 
@@ -24,17 +27,22 @@ enum SearchResultsStyle: String, CaseIterable, Identifiable {
 /// Дебаг-меню — переключатели прототипа. Вход — ячейка профиля над «Настройками».
 /// Своего макета нет: собрано из островков профиля и навбара внутренних экранов.
 struct DebugMenuScreen: View {
-    @AppStorage(SearchResultsStyle.storageKey) private var searchStyle: SearchResultsStyle = .carousels
+    @AppStorage(SearchResultsStyle.storageKey) private var searchStyle: SearchResultsStyle = SearchResultsStyle.defaultStyle
     /// Громкость звука музыки — превью Deezer (`MusicAudio`), по умолчанию 50 %.
     @AppStorage(MusicAudio.volumeKey) private var musicVolume = MusicAudio.defaultVolume
     /// Затемнение фона под стеклом хрома (`ChromeGlass`), по умолчанию 40 %.
     @AppStorage(ChromeGlass.dimKey) private var glassDim = ChromeGlass.defaultDim
     /// Белая иконка активного таба без свечения — ключ `tabActiveWhite` (`TabStyleDebug`).
     @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActiveTab = false
+    /// Сколько пунктов ленты ушло вверх — для подложки навбара
+    @State private var scrollOffset: CGFloat = 0
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
         static let noteTop: CGFloat = 8
+        /// Верхний отступ заголовков секций 2–4: общие 16 (`ProfileLayout.titleTop`) + 8,
+        /// секции разнесены дальше, чем в профиле (правка пользователя 2026-10-12)
+        static let sectionGap: CGFloat = ProfileLayout.titleTop + 8
         static let checkIcon: CGFloat = 24
         /// Подпись громкости над слайдером
         static let sliderGap: CGFloat = 8
@@ -44,10 +52,11 @@ struct DebugMenuScreen: View {
         static let glassDimRange: ClosedRange<Double> = 0...0.8
     }
 
-    /// Название раздела видно всегда, подложки нет: экран короче её порога.
+    /// Название раздела видно всегда, подложка (блюр с затемнением) проявляется
+    /// с первых пунктов скролла — как у профиля и списков.
     private static let navThresholds = EntityNavBarThresholds(
-        backgroundStart: .greatestFiniteMagnitude,
-        backgroundRamp: 1,
+        backgroundStart: 0,
+        backgroundRamp: ServiceTopNavMotion.backdropRamp,
         titleStart: -.greatestFiniteMagnitude,
         titleRamp: 0
     )
@@ -58,19 +67,16 @@ struct DebugMenuScreen: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    title("Выдача поиска")
+                    title("Вид поисковой выдачи")
 
                     optionsIsland
                         .padding(.horizontal, ProfileLayout.side)
 
-                    note("Единая лента — вторая версия выдачи: все разделы в одной ленте, сверху фильтры. Выбор сохраняется между запусками.")
-
-                    title("Звук музыки")
+                    title("Громкость музыки", top: Layout.sectionGap)
                     volumeIsland
                         .padding(.horizontal, ProfileLayout.side)
-                    note("Играют 30-секундные превью Deezer, пока плеер в состоянии «играет». Громкость общая для всей музыки прототипа.")
 
-                    title("Стекло хрома")
+                    title("Прозрачность навигации", top: Layout.sectionGap)
                     sliderIsland(
                         "Затемнение фона",
                         value: $glassDim,
@@ -78,33 +84,34 @@ struct DebugMenuScreen: View {
                         accessibility: "Затемнение фона под стеклом хрома"
                     )
                     .padding(.horizontal, ProfileLayout.side)
-                    note("Чёрный слой под заливкой стекла хрома — тост, поиск и плееры в action bar, тайлы табов, круглые кнопки навбаров: на чёрном фоне не виден, светлые обложки под стеклом приглушает. Меняется на лету.")
+                    note("Затемнение под стеклом таббара, action bar, тостов и кнопок навбаров")
 
-                    title("Таббар")
+                    title("Таббар", top: Layout.sectionGap)
                     toggleIsland(
                         "Активный таб без свечения",
                         isOn: $whiteActiveTab,
                         accessibility: "Активный таб: белая иконка без свечения"
                     )
                     .padding(.horizontal, ProfileLayout.side)
-                    note("Активный таб — белая иконка, без фиолетового свечения. Проверка вида, сохраняется между запусками.")
+                    note("Белая иконка активного таба вместо фиолетового свечения")
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)
             }
             .scrollIndicators(.hidden)
+            .trackNavBarScroll(into: $scrollOffset)
         }
         .overlay(alignment: .top) {
-            EntityNavBar(title: "Дебаг меню", thresholds: Self.navThresholds)
+            EntityNavBar(title: "Дебаг меню", scrollOffset: scrollOffset, thresholds: Self.navThresholds)
         }
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func title(_ text: String) -> some View {
+    private func title(_ text: String, top: CGFloat = ProfileLayout.titleTop) -> some View {
         Text(text)
-            .plusHeadline(.m)
+            .plusHeadline(.s)
             .foregroundStyle(Color.fillOne)
-            .padding(.top, ProfileLayout.titleTop)
+            .padding(.top, top)
             .padding(.bottom, ProfileLayout.titleBottom)
             .padding(.horizontal, ProfileLayout.side)
     }

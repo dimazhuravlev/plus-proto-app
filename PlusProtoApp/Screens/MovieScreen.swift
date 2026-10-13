@@ -5,9 +5,10 @@ import VariableBlur
 // MARK: - Геометрия
 
 /// Числа из `docs/research/figma-moviecard.md` (макет `IKXMroHnoO08WT5W6Rd2bs`,
-/// нода `2101:20320`). Холст макета — 393, прототип живёт на 402: по ширине тянется
+/// нода `2101:20320`). Холст макета — 393, база прототипа — 402: по ширине тянется
 /// всё, что в макете растягивалось (кавер, полоса меты, колонки оценки, разделители),
-/// фиксированные размеры перенесены как есть.
+/// фиксированные размеры перенесены как есть. Высота кавера и зеркала считается от
+/// ширины экрана (`PlusMetrics.screenWidth`), чтобы кадр держал 3:4 на любой ширине.
 enum MovieLayout {
     // Кавер `I3806:11014;6787:11638`
     /// 393×523.99 — ровно 3:4
@@ -19,11 +20,11 @@ enum MovieLayout {
     /// (правка пользователя 2026-08-25; в макете инстанс 393×300). Одинаковая высота
     /// делает зеркало точной копией кадра: кроп `scaledToFill` совпадает, и шов
     /// сходится по построению.
-    static var reflectionHeight: CGFloat { coverHeight }
+    @MainActor static var reflectionHeight: CGFloat { coverHeight }
     /// Полоса затемнения и размытия `cover bottom blur` 393×401: заходит на низ
     /// кавера на 101 (y 423 при шве 524) и накрывает зеркало целиком
     static let reflectionFadeOverlap: CGFloat = 101
-    static var reflectionFadeHeight: CGFloat { reflectionFadeOverlap + reflectionHeight }
+    @MainActor static var reflectionFadeHeight: CGFloat { reflectionFadeOverlap + reflectionHeight }
     /// Пик прогрессив-рампы у низа полосы. Очень большой по прямой просьбе
     /// пользователя (2026-08-25): продолжение должно превращаться в цветовое
     /// пятно задолго до того, как утонет в чёрном. Макетные 28-из-панели (= 14)
@@ -34,7 +35,8 @@ enum MovieLayout {
     /// 0.899 → 0.8 → 0.7): чем раньше стоп, тем плотнее затемнение по всей полосе.
     static let reflectionGradientEnd: CGFloat = 0.7
 
-    /// Высота кавера — макетные 3:4, и **только** они.
+    /// Высота кавера — макетные 3:4 от ширины экрана, и **только** они: 536 на 402,
+    /// на других ширинах кадр растёт вместе с экраном и держит пропорцию.
     ///
     /// Раньше она бралась минимумом из 3:4 и того, что оставалось над панелью действий,
     /// чтобы инфо-блок гарантированно помещался на первом экране. Побочно это делало
@@ -44,7 +46,7 @@ enum MovieLayout {
     /// Теперь наоборот: кадр постоянный, а длинный лид просто опускает всё, что идёт
     /// за ним, ниже. Следствие принято сознательно — при длинном лиде низ инфо-блока
     /// уезжает под градиент панели и до него надо доскроллить.
-    static let coverHeight: CGFloat = PlusMetrics.designWidth / coverAspect
+    @MainActor static var coverHeight: CGFloat { PlusMetrics.screenWidth / coverAspect }
 
     // Шапка `I3806:11014;6787:11641`
 
@@ -225,7 +227,9 @@ struct MovieScreen: View {
             still: details.backdrop.map { ArtworkSource.remote($0) } ?? entity.artwork,
             title: details.title,
             subtitle: details.playerSubtitle,
-            runtime: details.runtime
+            runtime: details.runtime,
+            // Постер — карточке «Продолжить» промо «Главной» (задача 69).
+            poster: details.poster.map { ArtworkSource.remote($0) }
         )))
     }
 

@@ -93,16 +93,6 @@ struct VibeStation: Identifiable {
     static let startIndex = 2
 }
 
-private extension Color {
-    init(hex: UInt32) {
-        self.init(
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255
-        )
-    }
-}
-
 /// Барабан станций над action bar: лепестки листаются вбок и катятся по дуге — к краям
 /// уходят вниз-внутрь и мельчают. Положение, масштаб и сдвиг — функция скролла
 /// (`visualEffect`), без стейта на кадре.
@@ -142,8 +132,12 @@ struct VibeDrum: View {
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.viewAligned)
-            .contentMargins(.horizontal, (PlusMetrics.designWidth - Layout.step) / 2, for: .scrollContent)
-            .scrollPosition(id: $page, anchor: .center)
+            // Поля — от ширины экрана: слот в центре на любой ширине. Геометрия лепестков
+            // (радиус, шаг, масштабы) фиксирована — на широком экране видно больше соседей.
+            // Якорь — левый край: при симметричных полях он ложится в центр точно, `.center`
+            // промахивался на ~3 pt (грабли `scrollPosition`, как у промо Кино).
+            .contentMargins(.horizontal, (PlusMetrics.screenWidth - Layout.step) / 2, for: .scrollContent)
+            .scrollPosition(id: $page, anchor: .leading)
             .scrollIndicators(.hidden)
             // Лепестки шире шага и выходят за кадр ленты — их видно.
             .scrollClipDisabled()
@@ -221,7 +215,7 @@ struct VibeDrum: View {
         guard abs(geometry.position - CGFloat(target)) > 0.01 else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
-        withTransaction(instant) { proxy.scrollTo(target, anchor: .center) }
+        withTransaction(instant) { proxy.scrollTo(target, anchor: .leading) }
     }
 }
 
@@ -326,15 +320,6 @@ private struct VibeBlobShape: View {
         )
     }
 
-    /// Доля непрозрачности заливки по ходу градиента — 16 стопов макета. Цвет стопа —
-    /// цвет станции, притушенный на ту же долю: так в макете.
-    private static let fillStops: [(location: CGFloat, opacity: Double)] = [
-        (0, 1), (0.111674, 0.922548), (0.208059, 0.849719), (0.2912, 0.7808),
-        (0.363141, 0.715081), (0.425926, 0.651852), (0.4816, 0.5904), (0.532207, 0.530015),
-        (0.579793, 0.469985), (0.6264, 0.4096), (0.674074, 0.348148), (0.724859, 0.284919),
-        (0.7808, 0.2192), (0.843941, 0.150281), (0.916326, 0.0774519), (1, 0),
-    ]
-
     /// Ось прогрессивного блюра — от чёткого верха-справа к размытому низу-слева, в долях холста
     private static let sharpPoint = UnitPoint(x: 0.82, y: 0.12)
     private static let blurredPoint = UnitPoint(x: 0.2, y: 0.7)
@@ -357,9 +342,7 @@ private struct VibeBlobShape: View {
             // Клип макета — прямоугольник капли 213×244
             context.clip(to: Path(CGRect(x: p, y: p + Layout.blobTop, width: Layout.petal.width, height: Layout.petal.height - Layout.blobTop)))
             context.fill(shape, with: .linearGradient(
-                Gradient(stops: Self.fillStops.map { stop in
-                    .init(color: Self.dimmed(fill, by: stop.opacity).opacity(stop.opacity), location: stop.location)
-                }),
+                VibeBlobFill.gradient(fill),
                 startPoint: CGPoint(x: p + 176.187, y: p + 35.751),
                 endPoint: CGPoint(x: p + 90.064, y: p + 152.698)
             ))
@@ -373,16 +356,6 @@ private struct VibeBlobShape: View {
             ), lineWidth: 2)
         }
         .frame(width: Self.canvas.width, height: Self.canvas.height)
-    }
-
-    /// Цвет, притушенный к чёрному на долю `factor` — стопы макета.
-    private static func dimmed(_ color: Color, by factor: Double) -> Color {
-        let resolved = color.resolve(in: EnvironmentValues())
-        return Color(
-            red: Double(resolved.red) * factor,
-            green: Double(resolved.green) * factor,
-            blue: Double(resolved.blue) * factor
-        )
     }
 
     /// Контур капли — путь SVG макета в координатах кадра лепестка (SVG сдвинут
@@ -399,5 +372,34 @@ private struct VibeBlobShape: View {
         path.addCurve(to: pt(209.527, 188.805), control1: pt(256.607, 56.2737), control2: pt(253.178, 124.304))
         path.closeSubpath()
         return path
+    }
+}
+
+/// Заливка капли «Моей волны» — общая у барабана и станции промо «Главной»
+/// (`PromoStationPetal`): у обеих в макете одни и те же 16 стопов.
+enum VibeBlobFill {
+    /// Доля непрозрачности заливки по ходу градиента — 16 стопов макета. Цвет стопа —
+    /// цвет станции, притушенный на ту же долю: так в макете.
+    private static let stops: [(location: CGFloat, opacity: Double)] = [
+        (0, 1), (0.111674, 0.922548), (0.208059, 0.849719), (0.2912, 0.7808),
+        (0.363141, 0.715081), (0.425926, 0.651852), (0.4816, 0.5904), (0.532207, 0.530015),
+        (0.579793, 0.469985), (0.6264, 0.4096), (0.674074, 0.348148), (0.724859, 0.284919),
+        (0.7808, 0.2192), (0.843941, 0.150281), (0.916326, 0.0774519), (1, 0),
+    ]
+
+    static func gradient(_ fill: Color) -> Gradient {
+        Gradient(stops: stops.map { stop in
+            .init(color: dimmed(fill, by: stop.opacity).opacity(stop.opacity), location: stop.location)
+        })
+    }
+
+    /// Цвет, притушенный к чёрному на долю `factor` — стопы макета.
+    private static func dimmed(_ color: Color, by factor: Double) -> Color {
+        let resolved = color.resolve(in: EnvironmentValues())
+        return Color(
+            red: Double(resolved.red) * factor,
+            green: Double(resolved.green) * factor,
+            blue: Double(resolved.blue) * factor
+        )
     }
 }

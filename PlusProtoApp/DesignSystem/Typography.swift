@@ -169,6 +169,18 @@ enum PlusHeadline: CaseIterable {
     /// Интерлиньяж 100 %: высота строки равна кеглю.
     var lineHeight: CGFloat { size }
 
+    /// Следующая ступень шкалы вниз; у самой мелкой остаётся она же.
+    var smaller: PlusHeadline {
+        switch self {
+        case .xxxl: .xxl
+        case .xxl: .xl
+        case .xl: .l
+        case .l: .m
+        case .m: .s
+        case .s: .s
+        }
+    }
+
     /// Насколько глифы выходят за рамку строк по вертикали — запас области отрисовки
     /// (`HeadlineInkRenderer`). Нужен и тем, кто сам маскирует или клипует заголовок:
     /// маска по рамке срежет хвосты так же, как срезал их рендер iOS.
@@ -182,9 +194,16 @@ enum PlusHeadline: CaseIterable {
     /// макета, хвосты целиком уходили под рамку. Отсюда шеврон выше центра заголовка рядом
     /// с ним, тесный зазор под заголовком и срезанные хвосты (жалобы пользователя 2026-10-03).
     var figmaBaseline: CGFloat {
-        let font = UIFont(name: PlusFont.displaySemibold, size: size)
-            ?? .systemFont(ofSize: size, weight: .bold)
+        let font = uiFont
         return (lineHeight - font.lineHeight) / 2 + font.ascender
+    }
+
+    /// Шрифт стиля для замеров текста до раскладки (число строк, ширина): тот же YS Display
+    /// Bold и тот же кегль, что рисует `plusHeadline`. Натуральный интерлиньяж у него
+    /// 1.172 кегля — строки в замере считать им, а не `lineHeight`.
+    var uiFont: UIFont {
+        UIFont(name: PlusFont.displaySemibold, size: size)
+            ?? .systemFont(ofSize: size, weight: .bold)
     }
 }
 

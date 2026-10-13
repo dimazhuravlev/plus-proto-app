@@ -36,6 +36,17 @@ extension Color {
     static let searchIcon = Color.white.opacity(0.5)
 }
 
+extension Color {
+    /// Цвет по хексу макета `0xRRGGBB` — палитры станций «Моей волны» (барабан, промо «Главной»).
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+}
+
 // MARK: - Геометрия
 
 /// Радиусы из макета. Значения сырые — в Figma переменных для них нет.
@@ -56,9 +67,38 @@ enum PlusRadius {
     static let progress: CGFloat = 8
 }
 
-/// Отступы и размеры из макета. Ширина холста — 402 (iPhone 16 Pro).
+/// Отступы и размеры из макета. Ширина холста — 402 (iPhone 17 Pro).
 enum PlusMetrics {
+    /// База макета: все числа Figma сняты на 402 pt. Не ширина экрана — для неё `screenWidth`.
     static let designWidth: CGFloat = 402
+
+    private static var cachedScreenWidth: CGFloat?
+
+    /// Ширина экрана устройства — константа процесса (приложение заперто в портрете).
+    /// От неё считается адаптивная вёрстка (правила 2 и 4 CLAUDE.md): размер вью,
+    /// от которого зависит её же раскладка, не читаем.
+    ///
+    /// Источник — окно-сцена (`effectiveGeometry.coordinateSpace.bounds`), ключевое окно не нужно;
+    /// `min(width, height)` — страховка портрета. Нет сцены (самый ранний кадр) —
+    /// `designWidth`, и этот фолбэк не кэшируется: следующий вызов спросит сцену снова.
+    /// Изоляция: `@MainActor` — `UIApplication.shared` главного потока; все потребители — вью.
+    @MainActor
+    static var screenWidth: CGFloat {
+        if let cachedScreenWidth { return cachedScreenWidth }
+        guard let bounds = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first?.effectiveGeometry.coordinateSpace.bounds
+        else { return designWidth }
+        let width = min(bounds.width, bounds.height)
+        cachedScreenWidth = width
+        return width
+    }
+
+    /// `screenWidth / designWidth` — множитель для композиций, которые масштабируются
+    /// целиком (геометрия, не шрифты). На 402 — 1. Карусели и сетки считают через
+    /// `CarouselFit` / `PlusGrid` (поля и зазоры у них постоянные).
+    @MainActor
+    static var widthScale: CGFloat { screenWidth / designWidth }
 
     /// Горизонтальные поля экрана: хедер, ряд табов, action bar
     static let screenMargin: CGFloat = 24
@@ -142,7 +182,7 @@ enum PlusGradient {
         endPoint: .bottomTrailing
     )
 
-    /// Заливка глифа неактивного таба — белый с падающей прозрачностью, поверх ещё 0.7 общей непрозрачности
+    /// Заливка глифа неактивного таба — белый с падающей прозрачностью, поверх ещё 0.9 общей непрозрачности (макет обновлён 2026-10-12)
     static let inactiveTabGlyph = LinearGradient(
         colors: [.white.opacity(0.5), .white.opacity(0.25)],
         startPoint: .topTrailing,

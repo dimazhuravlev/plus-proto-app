@@ -4,13 +4,16 @@ import UIKit
 // MARK: - Геометрия
 
 /// Числа из макета `2079:11226` (файл витрины). Холст макета — 375, прототип живёт
-/// на 402: по ширине тянется зона кавера и разделители, фиксированные размеры
-/// (кавер 247, карточка карусели 159, поля 16) перенесены как есть.
+/// на 402 (база формул): кавер и карточка карусели масштабируются по ширине экрана
+/// (`widthScale`, `CarouselFit`), поля 16 и зазоры — как есть.
 enum AlbumLayout {
-    /// Кавер `736:108655`: 247×247, скругление 18. Шапка вокруг него — общая
-    /// с книгой (`EntityCoverHeader`, `EntityCoverLayout`).
-    static let coverSize: CGFloat = 247
-    static let coverRadius: CGFloat = 18
+    /// Кавер `736:108655`: 247×247 на 402 и `247·k` на других ширинах (k — `widthScale`),
+    /// скругление 18 масштабируется вместе с ним. Шапка вокруг него — общая с книгой
+    /// (`EntityCoverHeader`, `EntityCoverLayout`).
+    @MainActor
+    static var coverSize: CGFloat { EntityCoverLayout.referenceCover * PlusMetrics.widthScale }
+    @MainActor
+    static var coverRadius: CGFloat { 18 * PlusMetrics.widthScale }
 
     /// Поля контента. У экрана альбома они 16, а не хромовые 24: так стоит
     /// и весь контент карточки фильма (`MovieLayout.sectionSide`).
@@ -41,6 +44,7 @@ enum AlbumLayout {
     static let cardGap: CGFloat = 8
 
     /// Пороги навбара — общие с книгой, от верха названия (`EntityCoverLayout`).
+    @MainActor
     static var navBarThresholds: EntityNavBarThresholds {
         EntityCoverLayout.navBarThresholds(coverHeight: coverSize)
     }
@@ -64,9 +68,16 @@ struct AlbumScreen: View {
 
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
-    @State private var store = AlbumDetailsStore()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var store: AlbumDetailsStore
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
+
+    init(entity: EntityRef) {
+        self.entity = entity
+        // Детали уже в кэше — стоят с первого кадра, без скелетона в строке исполнителя.
+        _store = State(initialValue: AlbumDetailsStore(entity: entity))
+    }
 
     /// Что показывать прямо сейчас: живые детали, иначе заглушка по данным витрины.
     private var details: AlbumDetails {
@@ -160,11 +171,15 @@ struct AlbumScreen: View {
                 // Строка исполнителя — переход на его экран (2026-10-04), когда
                 // известен его id: детали альбома пришли.
                 Button(action: openArtist) {
+                    // Имя и год проявляются вместе, когда детали пришли (или не придут):
+                    // до этого на их месте две полосы скелетона, место под обе строки держится.
                     EntityPersonRow(
                         picture: artistAvatar,
-                        name: details.artist,
-                        detail: details.year
+                        name: artistRowReady ? details.artist : nil,
+                        detail: artistRowReady ? details.year : nil,
+                        isDetailLoading: !artistRowReady
                     )
+                    .animation(reduceMotion ? nil : EntityMotion.reveal, value: artistRowReady)
                     .contentShape(.rect)
                 }
                 .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
@@ -211,11 +226,17 @@ struct AlbumScreen: View {
             .coverBorder(shape)
     }
 
+    /// Детали альбома разобраны, либо их не будет: не из Deezer (мок) или загрузка упала.
+    private var artistRowReady: Bool {
+        store.details != nil || entity.deezerID == nil || store.failure != nil
+    }
+
     /// Аватар исполнителя: пока детали едут — скелетон круга (моковое фото здесь было
-    /// бы чужим лицом); пришли — фото, а без фото у Deezer — аватарки нет.
+    /// бы чужим лицом); пришли — фото, а без фото у Deezer или при ошибке сети — аватарки нет
+    /// (вечный скелетон — «мёртвый» элемент).
     private var artistAvatar: EntityPersonRow.Picture {
         if let picture = details.artistPicture { return .artwork(picture) }
-        return store.details == nil && entity.deezerID != nil ? .loading : .none
+        return artistRowReady ? .none : .loading
     }
 
     private func openArtist() {

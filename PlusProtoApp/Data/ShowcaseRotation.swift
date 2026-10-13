@@ -39,6 +39,8 @@ enum ShowcaseRotation {
         static let cinema: UInt64 = 4
         /// Главная Книг — свой выбор книг тем (2026-10-04).
         static let booksHome: UInt64 = 5
+        /// Станция «Моей волны» в промо «Главной» (задача 65).
+        static let promoStation: UInt64 = 6
     }
 }
 

@@ -72,7 +72,9 @@ enum ShareCardLayout {
     /// Отступ логотипа сверху и снизу.
     static let logoInset: CGFloat = 24
     static let coverGap: CGFloat = 8
-    static let titleHeight = PlusHeadline.l.lineHeight
+    /// Заголовок альбома, плейлиста и исполнителя: одна строка этой ступени, влево.
+    /// На ступень мельче экрана фильма — правка пользователя 2026-10-12.
+    static let titleStyle = PlusHeadline.m
     static let titleToMeta: CGFloat = 4
     static let metaHeight: CGFloat = 40
     static let metaGap: CGFloat = 8
@@ -105,10 +107,59 @@ enum ShareCardLayout {
         }
     }
 
+    /// Заголовок альбома, фильма и книги — ступенями до трёх строк (у фильма и книги по центру,
+    /// у альбома влево); у плейлиста и артиста одна строка влево. Вид задаёт сущность
+    /// (`ShareableEntity.titleLayout`), а не форма обложки.
+    static func hasSteppedTitle(_ entity: ShareableEntity) -> Bool {
+        switch entity.titleLayout {
+        case .stepped, .steppedCentered: true
+        case .single: false
+        }
+    }
+
+    /// Предел строк ступенчатого заголовка.
+    static let steppedTitleMaxLines = 3
+
+    /// Колонка заголовка: карточка без полей.
+    static let titleWidth = width - 2 * side
+
+    /// Ступень, число строк и высота заголовка. Число строк считается замером строки
+    /// шрифтом, а не вью (правило 120 fps): та же колонка и тот же шрифт, что у `Text`
+    /// на карточке, поэтому перенос совпадает; запас по высоте не нужен.
+    struct TitleLayout {
+        let style: PlusHeadline
+        let maxLines: Int
+        let lines: Int
+        let isCentered: Bool
+
+        var height: CGFloat { CGFloat(lines) * style.lineHeight }
+    }
+
+    static func titleLayout(for entity: ShareableEntity) -> TitleLayout {
+        guard hasSteppedTitle(entity) else {
+            return TitleLayout(style: titleStyle, maxLines: 1, lines: 1, isCentered: false)
+        }
+        // На ступень мельче экрана фильма — правка пользователя 2026-10-12.
+        let style = MovieHeaderLayout.titleStep(for: entity.title).smaller
+        let font = style.uiFont
+        let rect = (entity.title as NSString).boundingRect(
+            with: CGSize(width: titleWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        // Высота рамки кратна натуральной строке шрифта; округляем, а не `ceil`:
+        // дробная погрешность замера не должна дать лишнюю строку.
+        let measured = Int((rect.height / font.lineHeight).rounded())
+        let lines = min(steppedTitleMaxLines, max(1, measured))
+        return TitleLayout(style: style, maxLines: steppedTitleMaxLines, lines: lines,
+                           isCentered: entity.titleLayout == .steppedCentered)
+    }
+
     static func height(for entity: ShareableEntity) -> CGFloat {
         var height = logoInset + logoHeight + logoInset
         height += coverSize(for: entity.shape).height + coverGap
-        height += titleHeight
+        height += titleLayout(for: entity).height
         if entity.hasMetaRow { height += titleToMeta + metaHeight }
         return height + bottomInset
     }
@@ -119,13 +170,17 @@ enum ShareCardLayout {
 private struct ShareChannel {
     let icon: String
     let title: String
+    var action: (@MainActor () -> Void)?
 }
 
-/// Действий у кнопок нет: ссылки на сущность в прототипе нет.
+/// Действие только у «Ссылки» — тост; в буфер ничего не пишем: ссылок на сущности в прототипе
+/// нет. У остальных каналов действий нет.
 private let shareChannels: [ShareChannel] = [
     ShareChannel(icon: "iconTelegram", title: "Telegram"),
     ShareChannel(icon: "iconWhatsapp", title: "WhatsApp"),
-    ShareChannel(icon: "iconCopyLink", title: "Ссылка"),
+    ShareChannel(icon: "iconCopyLink", title: "Ссылка", action: {
+        ToastCenter.shared.show(title: "Ссылка скопирована", graphic: .icon("iconDone"))
+    }),
     ShareChannel(icon: "iconMore", title: "Ещё"),
 ]
 
@@ -263,7 +318,8 @@ struct ShareOverlay: View {
     }
 
     private var shareCardContent: some View {
-        VStack(spacing: 0) {
+        let title = ShareCardLayout.titleLayout(for: entity)
+        return VStack(spacing: 0) {
             Image("logoYandexPlus")
                 .resizable()
                 .scaledToFit()
@@ -274,12 +330,13 @@ struct ShareOverlay: View {
                 .padding(.bottom, ShareCardLayout.coverGap)
 
             Text(entity.title)
-                .plusHeadline(.l)
+                .plusHeadline(title.style)
                 .foregroundStyle(Color.fillOne)
-                .lineLimit(1)
+                .multilineTextAlignment(title.isCentered ? .center : .leading)
+                .lineLimit(title.maxLines)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: ShareCardLayout.titleHeight)
+                .frame(maxWidth: .infinity, alignment: title.isCentered ? .center : .leading)
+                .frame(height: title.height, alignment: .top)
                 .padding(.horizontal, ShareCardLayout.side)
                 .padding(.bottom, entity.hasMetaRow ? ShareCardLayout.titleToMeta : 0)
 
@@ -294,18 +351,20 @@ struct ShareOverlay: View {
     }
 
     private var metaRow: some View {
-        HStack(spacing: ShareCardLayout.metaGap) {
+        let isCentered = ShareCardLayout.titleLayout(for: entity).isCentered
+        return HStack(spacing: ShareCardLayout.metaGap) {
             if let avatar = entity.avatar {
                 Color.clear
                     .frame(width: ShareCardLayout.avatarSize, height: ShareCardLayout.avatarSize)
                     .overlay { ArtworkImage(source: avatar).scaledToFill() }
                     .clipShape(Circle())
             }
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: isCentered ? .center : .leading, spacing: 0) {
                 if let subtitle = entity.subtitle {
+                    // Автор книги и год фильма — серым; у альбома исполнитель белым.
                     Text(subtitle)
                         .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillOne)
+                        .foregroundStyle(entity.titleLayout == .steppedCentered ? Color.fillSubtitle : Color.fillOne)
                         .lineLimit(1)
                 }
                 if let year = entity.year {
@@ -315,7 +374,8 @@ struct ShareOverlay: View {
                         .lineLimit(1)
                 }
             }
-            Spacer(minLength: 0)
+            // Вместо `Spacer`: у альбома текст прижат влево, у фильма и книги — по центру.
+            .frame(maxWidth: .infinity, alignment: isCentered ? .center : .leading)
         }
         .frame(height: ShareCardLayout.metaHeight)
         .padding(.horizontal, ShareCardLayout.side)
@@ -458,7 +518,7 @@ struct ShareOverlay: View {
                 .opacity(bottomShown ? 1 : 0)
             HStack(spacing: 16) {
                 ForEach(Array(shareChannels.enumerated()), id: \.offset) { index, channel in
-                    ShareChannelButton(icon: channel.icon, title: channel.title)
+                    ShareChannelButton(icon: channel.icon, title: channel.title, action: channel.action)
                         .opacity(buttonShown[index] ? 1 : 0)
                         .offset(y: buttonRestOffset(index))
                 }
@@ -573,13 +633,18 @@ struct ShareOverlay: View {
 
 // MARK: - Кнопка канала
 
-/// Круг 52 и подпись. Действия нет, но отклик нажатия и хаптика — как у любой кнопки.
+/// Круг 52 и подпись. Отклик нажатия и хаптика — как у любой кнопки (`ToastCenter.show` хаптику
+/// не играет, поэтому её играет сама кнопка); действие — необязательное.
 private struct ShareChannelButton: View {
     let icon: String
     let title: String
+    var action: (@MainActor () -> Void)?
 
     var body: some View {
-        Button(action: PlayerHaptics.tap) {
+        Button {
+            PlayerHaptics.tap()
+            action?()
+        } label: {
             VStack(spacing: 6) {
                 Image(icon)
                     .resizable()

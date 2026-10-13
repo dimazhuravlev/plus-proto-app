@@ -33,27 +33,40 @@ enum AppTab: Int, CaseIterable, Identifiable {
         }
     }
 
+    /// Во сколько раз глиф в тайле крупнее натурального размера SVG: 1.25 у четырёх
+    /// табов (глиф макета 32 → тайл 40), у сердца «Моё» — 1 (иконка 32 как есть). Тем же
+    /// числом масштабируются внутренние тени глифа (`TabBarGeometry.glyphInnerShadows`).
+    var glyphScale: CGFloat {
+        switch self {
+        case .plus, .music, .kinopoisk, .books: 1.25
+        case .collection: 1
+        }
+    }
+
     /// Размер и положение глифа внутри тайла 40×40 — замеры инстансов в мастере таббара
-    /// (`2004:9396`/`9406`/`9413`/`9420`/`9427`). Глифы не центрированы и у трёх табов
-    /// упираются в край тайла, поэтому тайл их подрезает — это и есть вид из макета.
+    /// (`2004:9396`/`9406`/`9413`/`9420`/`9427`). Размер — натуральный размер SVG
+    /// × `glyphScale`. Глифы не центрированы и у трёх табов упираются в край тайла,
+    /// поэтому тайл их подрезает — это и есть вид из макета.
     ///
     /// У Плюса в таббаре стоит не `PLUS-SYMBOL` (круг 22×22) из мастер-компонента, а
-    /// переопределённый `PLUS-SYMBOL_PLUS-SHAPE` — диагональный крест 32.53×31.25.
+    /// переопределённый `PLUS-SYMBOL_PLUS-SHAPE` — диагональный крест 26.0254×24.999
+    /// (в тайле — 32.53×31.25).
     var glyphFrame: (size: CGSize, origin: CGPoint) {
+        let scale = glyphScale
         switch self {
         case .plus:
-            (CGSize(width: 32.532, height: 31.249), CGPoint(x: 7.468, y: 0))
+            return (CGSize(width: 26.0254 * scale, height: 24.999 * scale), CGPoint(x: 7.468, y: 0))
         case .music:
-            (CGSize(width: 32.5, height: 32.5), CGPoint(x: 3.75, y: 3.75))
+            return (CGSize(width: 26 * scale, height: 26 * scale), CGPoint(x: 3.75, y: 3.75))
         case .kinopoisk:
-            (CGSize(width: 28.75, height: 28.75), CGPoint(x: 11.25, y: 5.625))
+            return (CGSize(width: 23 * scale, height: 23 * scale), CGPoint(x: 11.25, y: 5.625))
         case .books:
-            (CGSize(width: 28.75, height: 32.5), CGPoint(x: 0, y: 7.5))
+            return (CGSize(width: 23 * scale, height: 26 * scale), CGPoint(x: 0, y: 7.5))
         case .collection:
             // Сердце — иконка 32 по центру тайла (макеты `2463:79197` / `2463:79223`,
             // правка пользователя 2026-10-08; прежде бокс был растянут ×1.25 и сдвинут
             // вправо, и тайл срезал сердцу правый край).
-            (CGSize(width: 32, height: 32), CGPoint(x: 4, y: 4))
+            return (CGSize(width: 32 * scale, height: 32 * scale), CGPoint(x: 4, y: 4))
         }
     }
 }

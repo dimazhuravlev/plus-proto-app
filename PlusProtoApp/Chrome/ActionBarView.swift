@@ -95,7 +95,6 @@ struct ActionBarRaise: Equatable {
 /// Не `private`: ширину развёрнутой пилюли читает мини-плеер читалки —
 /// он разворачивается в тот же размер, что и в баре.
 enum ActionBarGeometry {
-    static let searchExpandedWidth: CGFloat = 284
     static let searchPaddingH: CGFloat = 18
     static let searchIconBox: CGFloat = 24
     /// Зазор между полем ввода и крестом очистки.
@@ -140,10 +139,13 @@ enum ActionBarGeometry {
     /// шириной они стоят на своих местах, а морф остаётся чистым: растёт капсула,
     /// внутренности только проявляются.
     ///
-    /// Считается от холста прототипа (402), а не замером вью — то же правило, что
-    /// у сетки «Похожего»: мерить анимируемую ширину запрещено (CLAUDE.md).
+    /// Считается от ширины экрана (`PlusMetrics.screenWidth`), а не замером вью — то же
+    /// правило, что у сетки «Похожего»: мерить анимируемую ширину запрещено (CLAUDE.md).
+    /// Круг поиска и поля постоянные, пилюля занимает весь остаток: на 402 — 286 (макет),
+    /// на 390 — 274, на 440 — 324; левая зона остаётся кругом 60 на любой ширине.
+    @MainActor
     static var miniPlayerExpandedWidth: CGFloat {
-        PlusMetrics.designWidth
+        PlusMetrics.screenWidth
             - PlusMetrics.screenMargin * 2
             - PlusMetrics.actionBarCompact
             - PlusMetrics.actionBarGap
@@ -451,6 +453,7 @@ private struct ActionBarLayout: Equatable {
     /// Зазор между зонами (бывший HStack spacing).
     let gap: CGFloat
 
+    @MainActor
     init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise) {
         let compact = PlusMetrics.actionBarCompact
         isRaised = raise.isRaised
@@ -1384,7 +1387,7 @@ struct MiniPlayerPill: View {
     let onToggleLike: () -> Void
     let onExpand: () -> Void
     /// Ширина, по которой разложено содержимое. В баре рядом с пилюлей стоит круг
-    /// поиска (286); в читалке круга нет, и в макете `2565:25233` пилюля 354.
+    /// поиска (286 на 402); в читалке круга нет, и в макете `2565:25233` пилюля 354 на 402.
     var expandedWidth: CGFloat = ActionBarGeometry.miniPlayerExpandedWidth
 
     /// Вращение обложки — см. `CoverSpin`.

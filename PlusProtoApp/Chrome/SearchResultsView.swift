@@ -23,7 +23,7 @@ struct SearchResultsView: View {
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.stackZoomNamespace) private var zoom
     /// Вид выдачи — карусели или сетка; переключается в дебаг-меню профиля.
-    @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = .carousels
+    @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = SearchResultsStyle.defaultStyle
 
     /// Что в слое — выдача или «Искали недавно». Следует за запросом, пока поиск
     /// открыт; на закрытии замирает: «Назад» стирает запрос тем же движением, что
@@ -78,14 +78,17 @@ struct SearchResultsView: View {
         static let mosaicAppear: Animation = SearchOverlayConfig.fade.delay(0.15)
     }
 
-    /// Габариты, которые зависят от размера карточек выдачи.
+    /// Габариты, которые зависят от размера карточек выдачи. Хранит числа макета на 402;
+    /// ширина карточки и высоты обложек идут от ширины экрана (правило 4 CLAUDE.md):
+    /// целых карточек столько же, сколько на 402, торчащий край следующей — тот же,
+    /// карточка растёт, а высоты обложек — тем же масштабом.
     private struct CardMetrics {
-        /// Ширина колонки карусели
-        let card: CGFloat
-        /// Высота обложки книги — ширина её карточки идёт от неё по пропорциям обложки
-        let bookCoverHeight: CGFloat
-        /// Карточек в скелетоне: видимые целиком и та, что торчит из-под края
-        let skeletonCards: Int
+        /// Ширина колонки карусели на 402
+        let designCard: CGFloat
+        /// Целых карточек на 402
+        let whole: Int
+        /// Высота обложки книги на 402 — ширина её карточки идёт от неё по пропорциям обложки
+        let designBookCoverHeight: CGFloat
         /// Собственное поле секции по вертикали
         let sectionVertical: CGFloat
         /// Правое поле подписи у постеров и книг; у квадратов оно всегда 8
@@ -95,9 +98,9 @@ struct SearchResultsView: View {
         /// три карточки целиком и четвёртая из-под края. Поле секции 2 вместо
         /// макетных 8 — правка пользователя 2026-08-25.
         static let regular = CardMetrics(
-            card: 109,
-            bookCoverHeight: 156,
-            skeletonCards: 4,
+            designCard: 109,
+            whole: 3,
+            designBookCoverHeight: 156,
             sectionVertical: 2,
             posterLabelTrailing: 8
         )
@@ -105,12 +108,28 @@ struct SearchResultsView: View {
         /// (шаг 94 на экране 402). Секции стоят вплотную, подпись постера и книги —
         /// во всю ширину карточки: так в макете.
         static let small = CardMetrics(
-            card: 86,
-            bookCoverHeight: 128,
-            skeletonCards: 5,
+            designCard: 86,
+            whole: 4,
+            designBookCoverHeight: 128,
             sectionVertical: 0,
             posterLabelTrailing: 0
         )
+
+        /// Карусель выдачи: поле слева, зазор между карточками — общие для обоих размеров.
+        var fit: CarouselFit {
+            CarouselFit(designCard: designCard, whole: whole, side: Layout.side, gap: Layout.cardGap)
+        }
+
+        /// Ширина колонки карусели на текущей ширине экрана
+        @MainActor
+        var card: CGFloat { fit.cardWidth }
+
+        /// Высота обложки книги — те же пропорции, что на 402
+        @MainActor
+        var bookCoverHeight: CGFloat { designBookCoverHeight * fit.scale }
+
+        /// Карточек в скелетоне: видимые целиком и та, что торчит из-под края
+        var skeletonCards: Int { whole + 1 }
     }
 
     private enum Layout {
@@ -118,6 +137,7 @@ struct SearchResultsView: View {
         /// `2385:33949`). Прежний остаётся `CardMetrics.regular`.
         static let size = CardMetrics.small
         /// Ширина колонки карусели
+        @MainActor
         static var card: CGFloat { size.card }
         static let cardGap: CGFloat = 8
         /// Боковые поля выдачи — 16, а не общие 24 экрана: в макете `2118:17378`
@@ -158,7 +178,9 @@ struct SearchResultsView: View {
         static let skeletonBarInset: CGFloat = (PlusTextSize.textS.lineHeight - skeletonBar) / 2
         /// Полосы подписи — доли ширины карточки: 88 и 60 у прежней колонки 109,
         /// у small 69 и 47 — иначе верхняя вылезала бы за карточку.
+        @MainActor
         static var skeletonTitleBar: CGFloat { (card * 0.8).rounded() }
+        @MainActor
         static var skeletonSubtitleBar: CGFloat { (card * 0.55).rounded() }
         /// Полоса на месте заголовка секции — 16 по высоте глифов кегля 24 (пропорция
         /// та же, что у полос подписи). Ширина — под название средней длины.
@@ -171,17 +193,21 @@ struct SearchResultsView: View {
         // Карточка книги — макеты `2311:25096` и `2385:33949`: книга в небольшой проекции.
         /// Высота обложки — по размеру карточек; ширина — по её пропорциям, обложка
         /// не режется.
+        @MainActor
         static var bookCoverHeight: CGFloat { size.bookCoverHeight }
         /// Сама книга — общий рисунок `BookFigure` (он же на экране книги и в «Книгах
-        /// писателя»); числа его эталона сняты ровно на этой высоте обложки, 128.
+        /// писателя»); числа его эталона сняты на высоте обложки 128 и растут вместе с ней.
+        @MainActor
         static var book: BookFigureGeometry { BookFigureGeometry(coverHeight: bookCoverHeight) }
         /// Блок страниц над обложкой — в высоту книги.
+        @MainActor
         static var bookPagesTop: CGFloat { book.pagesTop }
 
         /// «Искали недавно» — лента вперемешку: обложки разной высоты стоят на одном
         /// низе, а подписи — на одной линии (`cover` макета: 129 и квадрат внизу).
         /// Бокс — по самой высокой обложке: книга с блоком страниц (130) чуть выше
         /// постера (129).
+        @MainActor
         static var recentsCoverBox: CGFloat {
             max(card / posterAspect, bookCoverHeight + bookPagesTop)
         }

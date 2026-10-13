@@ -52,12 +52,6 @@ enum PlusChromeMetrics {
         keyWindow?.safeAreaInsets.bottom ?? 0
     }
 
-    /// Ширина экрана — от неё зазоры между табами (`TabBarHitArea`): ряд разложен
-    /// space-between, и зазор зависит от устройства.
-    static var screenWidth: CGFloat {
-        keyWindow?.bounds.width ?? PlusMetrics.designWidth
-    }
-
     private static var keyWindow: UIWindow? {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }

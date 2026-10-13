@@ -101,6 +101,40 @@ extension ShowcaseBlock {
             .movie(EntityRef(id: b.id, title: b.title, subtitle: "", artwork: b.still))
         case .vibe:
             nil
+        case .artist(let b):
+            b.route
         }
+    }
+}
+
+extension ArtistBlock {
+    /// Экран исполнителя — как у подписи альбома промо (`AlbumBlock.artistRoute`): тот же
+    /// id `dz-<id>`, фото 1000×1000. Фото карточки уже поднято — подъём повторно ничего
+    /// не меняет, но страхует мок.
+    var route: EntityRoute {
+        let artwork: ArtworkSource = switch picture {
+        case .remote(let url, let fallback):
+            .remote(url.absoluteString.deezerUpscaled ?? url, fallback: fallback)
+        case .asset:
+            picture
+        }
+        return .artist(EntityRef(id: "dz-\(id)", title: name, subtitle: "", artwork: artwork))
+    }
+}
+
+extension AlbumBlock {
+    /// Экран исполнителя, который открывает подпись альбома промо. `nil` — id исполнителя
+    /// неизвестен, переходить некуда. Фото в маршруте — то, что в аватаре подписи (~250 px),
+    /// поднятое до 1000×1000, как обложки: на шапке экрана во всю ширину оно иначе мыльное.
+    var artistRoute: EntityRoute? {
+        guard let artistID else { return nil }
+        let artwork: ArtworkSource
+        switch artistPicture {
+        case .remote(let url, let fallback):
+            artwork = .remote(url.absoluteString.deezerUpscaled ?? url, fallback: fallback)
+        case .asset, nil:
+            artwork = artistPicture ?? .asset("")
+        }
+        return .artist(EntityRef(id: "dz-\(artistID)", title: title, subtitle: "", artwork: artwork))
     }
 }

@@ -36,6 +36,13 @@ final class ArtworkLoader {
     private var inflight: [URL: Task<UIImage?, Never>] = [:]
     /// Тёмный ли логотип — посчитанное на процесс (см. `isDarkLogo`).
     private var darkLogos: [URL: Bool] = [:]
+    /// Цвета теней обложек — посчитанные на процесс (см. `shadowColor`).
+    private var shadowColors: [ShadowKey: Color] = [:]
+
+    private enum ShadowKey: Hashable {
+        case url(URL)
+        case asset(String)
+    }
 
     private init() {}
 
@@ -119,6 +126,47 @@ final class ArtworkLoader {
     /// Ниже этой яркости логотип на тёмном фоне не читается.
     private static let darkLogoLuminance: CGFloat = 0.3
 
+    /// Цвет тени под обложкой — правка пользователя 2026-10-13: средний цвет всей картинки,
+    /// яркость вполовину с небольшим, насыщенность та же. Нужна картинка в памяти: из сети
+    /// за ней не ходим. Нет картинки (скелетон) — `nil`, и тени нет. Бандленный фолбэк
+    /// живого источника не в счёт: его не рисуют (`SkeletonArtwork`).
+    func shadowColor(for source: ArtworkSource) -> Color? {
+        if let url = source.remoteURL {
+            if let known = shadowColors[.url(url)] { return known }
+            guard let image = cached(url) else { return nil }
+            return shadowColor(for: url, image: image)
+        }
+        guard let name = source.fallbackAsset, !name.isEmpty else { return nil }
+        return shadowColor(forAsset: name)
+    }
+
+    /// Цвет тени картинки по адресу: считается один раз на процесс.
+    func shadowColor(for url: URL, image: UIImage) -> Color? {
+        let key = ShadowKey.url(url)
+        if let known = shadowColors[key] { return known }
+        let color = Self.shadowColor(of: image)
+        shadowColors[key] = color
+        return color
+    }
+
+    /// Цвет тени бандленной картинки — по имени ассета.
+    func shadowColor(forAsset name: String) -> Color? {
+        let key = ShadowKey.asset(name)
+        if let known = shadowColors[key] { return known }
+        guard let image = UIImage(named: name) else { return nil }
+        let color = Self.shadowColor(of: image)
+        shadowColors[key] = color
+        return color
+    }
+
+    /// Яркость среднего цвета в тени обложки.
+    private static let shadowBrightness: CGFloat = 0.25
+
+    private static func shadowColor(of image: UIImage) -> Color? {
+        guard let tone = averageTone(of: image, wholeFrame: true) else { return nil }
+        return Color(hue: tone.hue, saturation: tone.saturation, brightness: tone.brightness * shadowBrightness)
+    }
+
     private static func letterLuminance(of image: UIImage) -> CGFloat? {
         guard let cg = image.cgImage else { return nil }
         let extent = CGRect(x: 0, y: 0, width: cg.width, height: cg.height)
@@ -147,11 +195,14 @@ final class ArtworkLoader {
         return 0.2126 * red + 0.7152 * green + 0.0722 * blue
     }
 
-    /// Средний тон верхней половины картинки.
-    private static func averageTone(of image: UIImage) -> (hue: CGFloat, saturation: CGFloat, brightness: CGFloat)? {
+    /// Средний тон верхней половины картинки; `wholeFrame` — всей картинки.
+    private static func averageTone(
+        of image: UIImage,
+        wholeFrame: Bool = false
+    ) -> (hue: CGFloat, saturation: CGFloat, brightness: CGFloat)? {
         guard let cg = image.cgImage else { return nil }
 
-        let extent = CGRect(x: 0, y: 0, width: cg.width, height: cg.height / 2)
+        let extent = CGRect(x: 0, y: 0, width: cg.width, height: wholeFrame ? cg.height : cg.height / 2)
         let input = CIImage(cgImage: cg).cropped(to: extent)
         guard
             let filter = CIFilter(name: "CIAreaAverage", parameters: [

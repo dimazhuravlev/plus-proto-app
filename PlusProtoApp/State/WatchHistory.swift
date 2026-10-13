@@ -63,8 +63,8 @@ final class WatchHistory {
         entries = saved
     }
 
-    /// Фильм запустили. Уже был — поднимается наверх; позиция, хронометраж и подпись
-    /// остаются от прошлого запуска, если новый их не знает (чип бара и витрина
+    /// Фильм запустили. Уже был — поднимается наверх; позиция, хронометраж, подпись
+    /// и постер остаются от прошлого запуска, если новый их не знает (чип бара и витрина
     /// приходят без них).
     func record(_ movie: MovieInProgress) {
         var movie = movie
@@ -73,6 +73,7 @@ final class WatchHistory {
             if movie.position == nil { movie.position = previous.position }
             if movie.runtime == nil { movie.runtime = previous.runtime }
             if movie.subtitle == nil { movie.subtitle = previous.subtitle }
+            if movie.poster == nil { movie.poster = previous.poster }
         }
         entries.insert(Entry(movie: movie, updatedAt: .now), at: 0)
         if entries.count > Self.limit {

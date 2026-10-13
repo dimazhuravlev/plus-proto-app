@@ -61,7 +61,8 @@ struct ShowcaseFeedView: View {
                 // Промо-слайдер — над лентой, свой набор (задача пользователя 2026-10-08).
                 if !feed.promo.isEmpty {
                     ShowcasePromo(
-                        items: feed.promo,
+                        // Впереди — «Продолжить» начатых фильма и книги (задача 69).
+                        items: ShowcasePromo.composed(feed.promo, actionBar: actionBar),
                         zoom: zoom,
                         savedIndex: $promoIndex
                     )
@@ -80,7 +81,7 @@ struct ShowcaseFeedView: View {
                         .showcaseAppear()
                 }
             }
-            .frame(width: ShowcaseLayout.designWidth)
+            .frame(width: PlusMetrics.screenWidth)
             // Клиренс под хромом ленте уже даёт `contentMargins` в корне — это воздух
             // сверх него, чтобы последняя карточка не притиралась к панели действий.
             .padding(.bottom, ShowcaseLayout.feedBottomPadding)
@@ -153,8 +154,8 @@ struct ShowcaseFeedView: View {
         return ShowcaseFeedbackHost(debugIndex: index + 1) { blockView(block) }
             .environment(\.showcaseRefresh, ShowcaseRefresh { await prepareReplacement(block) })
             .frame(
-                width: ShowcaseLayout.designWidth,
-                height: isHidden ? 0 : block.slot.height,
+                width: PlusMetrics.screenWidth,
+                height: isHidden ? 0 : block.slot.frameHeight,
                 alignment: .topLeading
             )
             .allowsHitTesting(!isHidden)
@@ -208,6 +209,8 @@ struct ShowcaseFeedView: View {
         case .vibe(let item): MyVibeCard(block: item)
         case .reading(let item): ContinueReadingCard(block: item)
         case .watching(let item): ContinueWatchingCard(block: item)
+        // Исполнитель — только в промо «Главной», в ленте его нет.
+        case .artist: EmptyView()
         }
     }
 }

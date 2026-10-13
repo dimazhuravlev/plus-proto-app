@@ -98,6 +98,10 @@ struct MovieInProgress: Equatable, Codable {
     /// Где остановились, секунды. Пишется на закрытии плеера: чип бара — это
     /// «продолжить смотреть», и возвращать к началу фильма он не должен.
     var position: TimeInterval? = nil
+    /// Вертикальный постер — лицо карточки «Продолжить» в промо «Главной» (задача 69).
+    /// Заполняют входы, которые его знают (экран тайтла, промо Кинопоиска); у остальных
+    /// и у старых записей его нет — карточка тогда из кадра.
+    var poster: ArtworkSource? = nil
 }
 
 /// Что читали: обложка 36×52 внутри чипа 44×60 (figma-actionbar §4.3).
@@ -147,6 +151,8 @@ final class ActionBarState {
         }
         restore()
         #if DEBUG
+        // Посев «Продолжить» — до режима бара: `-debugActionBar` перекрывает чип книги.
+        applyDebugSeedContinueIfNeeded()
         // Флаг запуска перекрывает восстановленное состояние: прогон обязан начинаться
         // с того, что в нём попросили, а не с того, что осталось от прошлой сессии.
         applyDebugLaunchModeIfNeeded()
@@ -785,6 +791,29 @@ extension ActionBarState {
         cover: .asset("mockChipBookCover"),
         title: "Бредовая работа"
     )
+
+    /// Начатый фильм `-debugSeedContinue`: «Идеальные дни» (124 мин) на 35 %. Id — тот же,
+    /// что у мок-фильма витрины: на `-debugMockFeed` промо прячет обычную карточку
+    /// этого фильма, видно и само исключение.
+    static let debugContinueMovie = MovieInProgress(
+        id: "perfect-days",
+        still: .asset("mockChipMovieStill"),
+        title: "Идеальные дни",
+        runtime: 7_440,
+        position: 2_604,
+        poster: .asset("mockMoviePoster")
+    )
+
+    /// `-debugSeedContinue 1` — начатые фильм и книга для карточек «Продолжить» промо
+    /// «Главной» (задача 69). Тем же API, что настоящий запуск: фильм — в историю
+    /// просмотра (`record`, как после выезда киноплеера), книга — последней открытой
+    /// (`resumeBook`, как после выезда читалки: бар встаёт на её чип). Записи остаются
+    /// на диске; историю стирает `-debugResetWatchHistory 1`.
+    private func applyDebugSeedContinueIfNeeded() {
+        guard UserDefaults.standard.bool(forKey: "debugSeedContinue") else { return }
+        watchHistory.record(Self.debugContinueMovie)
+        resumeBook(Self.debugBook)
+    }
 
     /// `-debugActionBar search|music|movie|book` — см. `PlusProtoAppApp.parseDebugLaunchArguments`.
     private func applyDebugLaunchModeIfNeeded() {
