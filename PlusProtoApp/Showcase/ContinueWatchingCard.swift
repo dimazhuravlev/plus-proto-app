@@ -301,7 +301,25 @@ private struct RateBlock: View {
             height: RateBlockGeometry.designHeight * ShowcaseLayout.scale,
             alignment: .top
         )
+        #if DEBUG
+        // `-debugRateTap <1…4>` — через 2 с один раз тап по n-й кнопке оценки (1 — «Нет»,
+        // 4 — «Шедевр»): тот же `react`, что у настоящего тапа. Снимать на видео.
+        .task {
+            let index = UserDefaults.standard.integer(forKey: "debugRateTap")
+            guard (1...options.count).contains(index), !Self.didDebugTap else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            Self.didDebugTap = true
+            react(options[index - 1])
+        }
+        #endif
     }
+
+    #if DEBUG
+    /// Отладочный тап — один раз за процесс: `.task` перезапускается при возврате на экран,
+    /// а повторный `react` по выбранной кнопке снял бы выбор.
+    private static var didDebugTap = false
+    #endif
 
     private func react(_ option: Option) {
         // Повторный тап по выбранной снимает выбор (правка пользователя 2026-10-09): фон
