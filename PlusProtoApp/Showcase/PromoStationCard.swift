@@ -250,6 +250,19 @@ struct PromoStationPetal: View {
     /// и в подготовке замены по ✕ (`ShowcaseCatalog`), а не на первом кадре показа.
     /// У волны «в стиле артиста» — и растр свечения фото; само фото греет `ArtworkLoader`
     /// по `ShowcaseBlock.artworks`.
+    /// Фон промо под волной «в стиле артиста» — растр её капли (цвет станции), а не фото.
+    /// Источник фона — `ArtworkSource.asset` с этим префиксом и номером цвета палитры.
+    static let backdropPrefix = "promoPetalBackdrop:"
+
+    @MainActor
+    static func backdropImage(paletteIndex: Int) -> UIImage? {
+        guard VibePromoStation.palette.indices.contains(paletteIndex) else { return nil }
+        let color = VibePromoStation.palette[paletteIndex]
+        return PromoPetalCache.image(for: VibePromoStation(
+            id: "palette-\(paletteIndex)", name: "", asset: "", fill: color.fill, rim: color.rim
+        ))
+    }
+
     static func prewarm(_ blocks: [ShowcaseBlock]) {
         for case .vibe(let vibe) in blocks {
             guard let station = vibe.station else { continue }

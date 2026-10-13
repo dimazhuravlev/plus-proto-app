@@ -1282,6 +1282,10 @@ private enum PromoBackdropRaster {
     private static func sourceImage(_ source: ArtworkSource) async -> UIImage? {
         if let url = source.remoteURL { return await ArtworkLoader.shared.image(for: url) }
         guard let name = source.fallbackAsset, !name.isEmpty else { return nil }
+        if name.hasPrefix(PromoStationPetal.backdropPrefix),
+           let index = Int(name.dropFirst(PromoStationPetal.backdropPrefix.count)) {
+            return await MainActor.run { PromoStationPetal.backdropImage(paletteIndex: index) }
+        }
         return UIImage(named: name)
     }
 }
@@ -1316,7 +1320,14 @@ extension ShowcaseBlock {
         case .movie(let movie): movie.poster
         case .album(let album): album.cover
         case .book(let book): book.cover
-        case .vibe(let vibe): vibe.promoStation.artwork
+        // Волна «в стиле артиста» красит фон цветом своей капли, а не фото артиста (правка
+        // пользователя 2026-10-13): источник — растр капли из палитры.
+        case .vibe(let vibe):
+            if case .artist = vibe.promoStation.kind, let index = vibe.promoStation.paletteIndex {
+                .asset("\(PromoStationPetal.backdropPrefix)\(index)")
+            } else {
+                vibe.promoStation.artwork
+            }
         case .reading(let reading): reading.cover
         case .watching(let watching): watching.still
         case .artist(let artist): artist.picture

@@ -60,6 +60,10 @@ extension VibePromoStation {
         )
     }
 
+    /// Место цвета станции в палитре — по нему фон промо волны «в стиле артиста» берёт
+    /// растр её капли.
+    var paletteIndex: Int? { Self.palette.firstIndex { $0.fill == fill && $0.rim == rim } }
+
     /// Палитра «Моя волна 2026» — 16 цветов капли и кромки (файл `ggO4AevC3hbrmBYsNGXq3S`,
     /// нода `11403:7010`): carmine, coral, tangerine, clover, emerald, turquoise, aquamarine,
     /// glacier, slate, sapphire, indigo, amethyst, plum, orchid, raspberry, fuchsia.

@@ -41,7 +41,9 @@ enum RecentlyLayout {
     enum Movie {
         static let size = CGSize(width: 138, height: 80)
         static let frame = CGSize(width: 138, height: 78)
-        static let radius: CGFloat = 6
+        /// Скругление — как у альбома (12; в макете 6): плитки фильма и альбома одинаковые —
+        /// правка пользователя 2026-10-13.
+        static let radius: CGFloat = 12
         /// Полоса 130×3 в (4, 71) кадра — по 4 от левой, правой и нижней кромки.
         static let trackInset: CGFloat = 4
         static let trackHeight: CGFloat = 3
@@ -156,8 +158,10 @@ struct RecentlyRow: View {
                             .blur(radius: RecentlyLayout.glowBlur)
                             .opacity(L.glowOpacity)
                             .offset(L.glowOffset)
-                        Image("vibeRecentDrop")
-                            .resizable()
+                        // Капля — живой шейдер «Моей волны» (тот же ролик, что на экране
+                        // Музыки; правка пользователя 2026-10-13). Чёрный фон ролика убирает
+                        // «экран»; пока ролик не готов — статичная капля макета.
+                        PPVibeShader(placeholder: "vibeRecentDrop")
                             .frame(width: L.drop, height: L.drop)
                             .offset(L.dropOffset)
                     }
@@ -322,16 +326,8 @@ private struct RecentlyTile: View {
     private func bookTile(_ cover: ArtworkSource) -> some View {
         typealias L = RecentlyLayout.Book
         let geometry = L.geometry
-        let coverShape = UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: L.coverRadius,
-            topTrailingRadius: L.coverRadius,
-            style: .continuous
-        )
+        // Без свечения под обложкой — правка пользователя 2026-10-13 (в макете было 0.45).
         return ZStack(alignment: .topLeading) {
-            glow(cover, size: L.cover, in: coverShape, opacity: L.glowOpacity)
-                .padding(.top, L.coverTop)
             // Верх обложки — на 1.01, как в макете: над ней выглядывает блок страниц.
             BookFigure(geometry: geometry, coverWidth: L.cover.width) {
                 SkeletonArtwork(source: cover)
@@ -379,5 +375,31 @@ private extension View {
         return frame(width: size.width, height: size.height)
             .scaleEffect(scale)
             .frame(width: size.width * scale, height: size.height * scale)
+    }
+}
+
+/// Живая капля «Моей волны» в ряду ПП: зацикленный ролик шейдера (`my-vibe-shader`) поверх
+/// фона «экраном» — чёрное поле ролика не видно. Пока первый кадр не готов — статичная
+/// капля; ролик играет, только пока плитка на экране.
+private struct PPVibeShader: View {
+    let placeholder: String
+
+    @State private var playback = LoopingVideoPlayback()
+    @State private var isReady = false
+
+    var body: some View {
+        ZStack {
+            Image(placeholder)
+                .resizable()
+                .opacity(isReady ? 0 : 1)
+            LoopingVideoLayer(player: playback.queue) { isReady = true }
+                .blendMode(.screen)
+                .opacity(isReady ? 1 : 0)
+        }
+        .animation(.easeOut(duration: 0.4), value: isReady)
+        .allowsHitTesting(false)
+        .onAppear { playback.start(bundled: "my-vibe-shader") }
+        .onDisappear { playback.pause() }
+        .accessibilityHidden(true)
     }
 }
