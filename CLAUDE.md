@@ -134,6 +134,7 @@ CI ([.github/workflows/build.yml](.github/workflows/build.yml)) — только
 - Скрытый навбар (`.toolbar(.hidden, for: .navigationBar)`) выключает свайп назад от края — он включён обратно делегатом жеста в `App/SwipeBack.swift`.
 - Новый imageset инкрементальная сборка не подхватывает — `xcodebuild clean`; проверка: `xcrun --sdk iphonesimulator assetutil --info <app>/Assets.car | grep <имя>`.
 - Эмодзи текстом в симуляторе iOS 26.3 — квадраты с «?»: рисовать картинками (`emojiRate*`).
+- Флаги-посевы (`-debugSeedContinue`, `-debugActionBar …`) пишут на диск приложения пользователя в его симуляторе. Перед прогоном копировать plist из контейнера (`xcrun simctl get_app_container <udid> com.dima.PlusProtoApp data` → `Library/Preferences/com.dima.PlusProtoApp.plist`), после — вернуть ключи через `xcrun simctl spawn <udid> defaults write <путь без .plist> …`; `defaults export com.dima.PlusProtoApp` через simctl читает не контейнер приложения и даёт пустой файл (2026-10-13).
 - Worktree-гард отклоняет составные команды с git (heredoc, `cd … && git`, имена файлов с «git») — разбивать на простые отдельные; длинные правки — скриптом из файла.
 
 ## Открытое
