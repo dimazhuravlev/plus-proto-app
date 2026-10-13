@@ -156,10 +156,19 @@ enum ShowcasePromoLayout {
     /// +56 к прежним 64, чтобы фон не укоротился вместе с блоком (правка 2026-10-10).
     @MainActor
     static var backdropTail: CGFloat { 120 * scale }
-    /// Сколько фон уходит выше блока — до физического верха экрана.
-    static var backdropAbove: CGFloat { ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight }
+    /// Сколько фон уходит выше блока — до физического верха экрана: над промо навигация
+    /// и ряд «продолженного» (задача 71), фон лежит и под ним.
+    static var backdropAbove: CGFloat { ShowcaseLayout.promoTop }
     @MainActor
     static var backdropHeight: CGFloat { backdropAbove + height + backdropTail }
+    /// Доля фона в полную силу. Ряд «продолженного» удлинил фон сверху на свою полосу,
+    /// а уход в чёрный остаётся там же относительно промо, что и до ряда: общая доля
+    /// `solidShare` считалась от прежней высоты.
+    @MainActor
+    static var backdropSolidShare: CGFloat {
+        let fade = (1 - ShowcasePromoBackdropStyle.solidShare) * (backdropHeight - ShowcaseLayout.recentlyBand)
+        return 1 - fade / backdropHeight
+    }
     /// Фон — на 60 %: на 10 % прозрачнее фона промо сервисов (правка пользователя
     /// 2026-10-08) и ещё на 10 % (правка 2026-10-09).
     static let backdropOpacity: Double = 0.6
@@ -1187,7 +1196,7 @@ private struct PromoBackdropStack: View, Animatable {
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0),
-                    .init(color: .black, location: ShowcasePromoBackdropStyle.solidShare),
+                    .init(color: .black, location: Layout.backdropSolidShare),
                     .init(color: .clear, location: 1),
                 ],
                 startPoint: .top,

@@ -306,11 +306,23 @@ enum ShowcaseLayout {
         static let watching = Slot(top: 1647, height: 313)
     }
 
-    /// Промо-слайдер — сразу под навигацией «Главной» (`HomeTopNav`): в макете
-    /// `2532:26618` его отсчёт идёт от низа навигации.
-    static var promoTop: CGFloat {
+    /// Низ навигации «Главной» (`HomeTopNav`) — от физического верха экрана.
+    static var navBottom: CGFloat {
         ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight
     }
+
+    /// Ряд «продолженного потребления» (`RecentlyRow`, задача 71, экран `2713:26782`):
+    /// 8 под навигацией, высота 80, до промо 40. Не масштабируются: плитки ряда
+    /// фиксированной ширины.
+    static let recentlyGap: CGFloat = 8
+    static let recentlyHeight: CGFloat = 80
+    static let recentlyToPromo: CGFloat = 40
+    /// Полоса ряда целиком — на столько промо и всё ниже стоят ниже навигации.
+    static var recentlyBand: CGFloat { recentlyGap + recentlyHeight + recentlyToPromo }
+
+    /// Промо-слайдер — под рядом «продолженного». В макете `2532:26618` его отсчёт шёл
+    /// от низа навигации; с задачи 71 между ними ряд.
+    static var promoTop: CGFloat { navBottom + recentlyBand }
     /// Первая карточка ленты — под промо: зазор, что был под заголовком с врезками
     /// (220.48 − 184.93). Добавленные 2026-10-08 ещё 40 убраны на следующий день
     /// (правки пользователя). В макете промо карточек ниже нет. Ещё на 32 ближе —
