@@ -19,6 +19,9 @@ enum ProfileLayout {
     /// Подложка-блюр под крестиком проявляется по скроллу за 24 и сходит на нет на 24 ниже кнопки
     static let headerRamp: CGFloat = 24
     static let headerTail: CGFloat = 24
+    /// Блюр подложки под крестиком — вдвое мягче, чем у навбаров экранов (16): на фиолетовом
+    /// свечении профиля общий был «слишком сильным» (правка пользователя 2026-10-13).
+    static let headerBlur: CGFloat = 8
 
     // MARK: Герой (`hero` `2701:30164`)
 
@@ -110,9 +113,10 @@ enum ProfileLayout {
     static let cellVertical: CGFloat = 14
     static let cellGap: CGFloat = 12
     static let cellIcon: CGFloat = 24
-    /// Заголовок и подпись строки «Подписка» — через 2; строка остаётся 52, блок текста 38
-    /// выходит за высоту иконки поровну вверх и вниз, как в макете
-    static let cellTextGap: CGFloat = 2
+    /// Заголовок и подпись строки «Подписка» — вплотную (в макете 2; минус 2 — правка
+    /// пользователя 2026-10-13); строка остаётся 52, блок текста выходит за высоту иконки
+    /// поровну вверх и вниз
+    static let cellTextGap: CGFloat = 0
     static let chevron: CGFloat = 16
     /// Разделитель ячеек — 0.5 × белый 15 %, от 16 слева до правого края островка
     static let divider = Color.white.opacity(0.15)
@@ -167,7 +171,7 @@ struct ProfileScreen: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    ProfileHero()
+                    ProfileHero(scrollOffset: scrollOffset)
                     widgets
                     cells
                 }
@@ -203,7 +207,7 @@ struct ProfileScreen: View {
         .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
         .background(alignment: .top) {
             VariableBlurView(
-                maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
+                maxBlurRadius: ProfileLayout.headerBlur,
                 direction: .blurredTopClearBottom
             )
             .frame(height: ServiceTopNavLayout.topSafeArea + ProfileLayout.closeButton + ProfileLayout.headerTail)
@@ -344,7 +348,13 @@ private struct ProfileGlow: View {
 /// Герой: баллы слева, аватар с карандашом по центру, имя. Аватар, карандаш и баллы —
 /// отдельными слоями во всю ширину: каждый слой левитирует своим смещением.
 private struct ProfileHero: View {
+    let scrollOffset: CGFloat
+
     var body: some View {
+        // Резиновый отступ до имени: при оттяге ленты баллы, аватар и карандаш отстают от
+        // имени на сдвиг навбаров — четверть хода с мягким потолком (правка пользователя
+        // 2026-10-13), так что зазор чуть растёт и упирается; в покое — ноль.
+        let lag = -ServiceTopNavMotion.pullShift(for: scrollOffset)
         ProfileLevitation { offsets in
             ZStack(alignment: .top) {
                 Text(ProfileMock.name)
@@ -356,10 +366,13 @@ private struct ProfileHero: View {
 
                 ProfilePointsBadge()
                     .offset(offsets.points)
+                    .offset(y: lag)
                 ProfileAvatar()
                     .offset(offsets.avatar)
+                    .offset(y: lag)
                 ProfilePencilButton()
                     .offset(offsets.pencil)
+                    .offset(y: lag)
             }
             .frame(maxWidth: .infinity)
             .frame(height: ProfileLayout.heroHeight, alignment: .top)
@@ -407,7 +420,7 @@ private struct ProfilePencilButton: View {
     var body: some View {
         let size = ProfileLayout.pencil
         let raster = ProfileLayout.pencilRaster
-        Button {} label: {
+        Button(action: PlayerHaptics.tap) {
             ZStack {
                 BackdropBlurView(radius: ProfileLayout.pencilBackdropBlur)
                     .frame(width: size, height: size)
@@ -575,7 +588,7 @@ private struct ProfileFamilyWidget: View {
         return ZStack(alignment: .topLeading) {
             ForEach(ProfileLayout.familyAvatarOrigins.indices, id: \.self) { index in
                 let origin = ProfileLayout.familyAvatarOrigins[index]
-                Button {} label: {
+                Button(action: PlayerHaptics.tap) {
                     Image("iconAdd")
                         .renderingMode(.template)
                         .resizable()
@@ -719,7 +732,7 @@ private struct ProfilePill<Label: View>: View {
     }
 
     var body: some View {
-        Button {} label: {
+        Button(action: PlayerHaptics.tap) {
             label
                 .foregroundStyle(Color.fillOne)
                 .padding(.horizontal, ProfileLayout.pillHorizontal)
@@ -825,8 +838,15 @@ private struct ProfileIsland: View {
             .padding(.vertical, ProfileLayout.cellVertical)
             .contentShape(.rect)
         }
-        .buttonStyle(CellHighlightButtonStyle())
+        // Без нажатого состояния (правка пользователя 2026-10-13): строки профиля не
+        // подсвечиваются и не проседают.
+        .buttonStyle(ProfileCellButtonStyle())
     }
+}
+
+/// Кнопка без отклика нажатия — для строк островков профиля.
+private struct ProfileCellButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { configuration.label }
 }
 
 private extension View {
