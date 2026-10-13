@@ -41,6 +41,13 @@ final class ShowcaseCatalog {
     private var promoMovies: [MovieBlock] = []
     private var promoAlbums: [AlbumBlock] = []
     private var promoBooks: [BookBlock] = []
+    /// Исполнители промо (задача 64) — «похожие» из круга `loadMusic` с фото. Имя
+    /// `promoArtists` занято в `nextAlbum` — там это имена исполнителей промо-альбомов.
+    private var promoArtistCards: [ArtistBlock] = []
+    /// Запас исполнителей того же круга — замены по ✕.
+    private var promoArtistPool: [ArtistBlock] = []
+    /// Станция «Моей волны» промо — тот же блок, что в ленте; по ✕ уходит без замены.
+    private var promoVibes: [VibeBlock] = []
     /// Заготовленные новые айтемы промо на ✕ — по id айтема, который уберут.
     private var upcomingPromo: [String: Task<Replacement?, Never>] = [:]
     /// Убранные из промо по ✕ — новые айтемы их не возвращают.
@@ -428,12 +435,15 @@ final class ShowcaseCatalog {
             if vibeCover != nil { break }
         }
 
-        apply(.vibe(VibeBlock(
+        let vibe = VibeBlock(
             id: "vibe-\(picked.album.id)",
             title: "Моя Волна",
             subtitle: ShowcaseSeeds.vibeSubtitles.randomElement(using: &rng) ?? "",
             cover: .remote(vibeCover ?? picked.cover, fallback: "mockPlayerCover")
-        )))
+        )
+        apply(.vibe(vibe))
+        // Станция промо — тот же блок ленты (задача 64).
+        promoVibes = [vibe]
 
         // Промо — альбомы других исполнителей того же круга, по одному на исполнителя,
         // и только тех, у кого есть фото: в подписи альбома промо оно аватаром
@@ -460,7 +470,27 @@ final class ShowcaseCatalog {
             }
         }
         promoAlbums = promo
+
+        // Исполнители промо (задача 64) — «похожие» из круга: у них фото пришло с кругом,
+        // лишних запросов нет. Только с фото и не те, чьи альбомы уже в промо (по id);
+        // первые — в круг, остальные — запас на ✕.
+        let fallbackAlbums = ShowcaseFeed.personal.promo.compactMap { block -> AlbumBlock? in
+            if case .album(let album) = block { album } else { nil }
+        }
+        let albumArtists = Set((promo.isEmpty ? fallbackAlbums : promo).compactMap(\.artistID))
+        let artists = circle.compactMap { briefs[$0.id] }
+            .filter { $0.hasPhoto && !albumArtists.contains($0.id) }
+            .compactMap(Self.promoArtistBlock)
+            .filter { !dismissedPromoIDs.contains(ShowcaseBlock.artist($0).id) }
+        promoArtistCards = Array(artists.prefix(ShowcaseSeeds.promoPerKind))
+        promoArtistPool = Array(artists.dropFirst(ShowcaseSeeds.promoPerKind))
         publishPromo()
+    }
+
+    /// Исполнитель промо: фото во весь круг 220 pt — самое крупное, поднятое до 1000×1000.
+    private static func promoArtistBlock(_ artist: DeezerArtistBrief) -> ArtistBlock? {
+        guard let picture = (artist.pictureXl ?? artist.pictureBig)?.deezerUpscaled else { return nil }
+        return ArtistBlock(id: artist.id, name: artist.name, picture: .remote(picture))
     }
 
     /// Фото исполнителя для подписи альбома промо: у «похожих» оно пришло с кругом,
@@ -577,6 +607,7 @@ final class ShowcaseCatalog {
         case .book(let book): bookKey(book.title)
         case .reading(let reading): bookKey(reading.title)
         case .album(let album): albumKey(artist: album.title, album: album.subtitle)
+        case .artist(let artist): "artist:\(artist.id)"
         case .movie, .vibe, .watching: nil
         }
     }
@@ -693,7 +724,9 @@ final class ShowcaseCatalog {
         case .movie(let movie): promoMovies.append(movie)
         case .album(let album): promoAlbums.append(album)
         case .book(let book): promoBooks.append(book)
-        case .vibe, .reading, .watching: break
+        case .artist(let artist): promoArtistCards.append(artist)
+        case .vibe(let vibe): promoVibes.append(vibe)
+        case .reading, .watching: break
         }
         feed = ShowcaseFeed(promo: promo, blocks: feed.blocks)
         addition.commit()
@@ -710,6 +743,9 @@ final class ShowcaseCatalog {
         promoMovies.removeAll { $0.id == id }
         promoAlbums.removeAll { $0.id == id }
         promoBooks.removeAll { $0.id == id }
+        // У новых видов сверка — по id айтема промо (`artist-…`, `vibe-…`), как в круге.
+        promoArtistCards.removeAll { ShowcaseBlock.artist($0).id == id }
+        promoVibes.removeAll { ShowcaseBlock.vibe($0).id == id }
         feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks)
     }
 
@@ -718,14 +754,18 @@ final class ShowcaseCatalog {
         case .movie(let current): await nextMovie(after: current, forPromo: true)
         case .album(let current): await nextAlbum(after: current, forPromo: true)
         case .book(let current): await nextBook(after: current, forPromo: true)
+        case .artist(let current): nextArtist(after: current)
+        // Станция по ✕ уходит без замены: вторая «Моя волна» в круге — повтор.
         case .vibe, .reading, .watching: nil
         }
         if let replacement { await ArtworkLoader.shared.prewarm(replacement.block.artworks) }
         return replacement
     }
 
-    /// Промо на экран — вперемешку: фильм, альбом, книга, и снова. Вид, живых айтемов
-    /// которого нет, — из моковой ленты: слайдер не пустеет и не теряет вид.
+    /// Промо на экран — вперемешку: фильм, альбом, книга, исполнитель, за первым кругом
+    /// станция «Моей волны», и снова. Вид, живых айтемов которого нет, — из моковой ленты:
+    /// слайдер не пустеет и не теряет вид. Исполнители и станция, убранные ✕, моком
+    /// не возвращаются.
     private func publishPromo(preload: Bool = true) {
         let fallback = ShowcaseFeed.personal.promo
         let movies: [ShowcaseBlock] = promoMovies.isEmpty
@@ -737,11 +777,21 @@ final class ShowcaseCatalog {
         let books: [ShowcaseBlock] = promoBooks.isEmpty
             ? fallback.filter { if case .book = $0 { true } else { false } }
             : promoBooks.map { .book($0) }
+        let artists: [ShowcaseBlock] = (promoArtistCards.isEmpty
+            ? fallback.filter { if case .artist = $0 { true } else { false } }
+            : promoArtistCards.map { .artist($0) })
+            .filter { !dismissedPromoIDs.contains($0.id) }
+        let vibes: [ShowcaseBlock] = (promoVibes.isEmpty
+            ? fallback.filter { if case .vibe = $0 { true } else { false } }
+            : promoVibes.map { .vibe($0) })
+            .filter { !dismissedPromoIDs.contains($0.id) }
         var promo: [ShowcaseBlock] = []
-        for index in 0..<max(movies.count, albums.count, books.count) {
-            for kind in [movies, albums, books] where index < kind.count {
+        for index in 0..<max(movies.count, albums.count, books.count, artists.count) {
+            for kind in [movies, albums, books, artists] where index < kind.count {
                 promo.append(kind[index])
             }
+            // Станция — между первым и вторым кругом (задача 64).
+            if index == 0 { promo += vibes }
         }
         feed = ShowcaseFeed(promo: promo, blocks: feed.blocks)
         // Прогрев — общий эффект, из `init` его звать нельзя: см. комментарий там.
@@ -754,7 +804,8 @@ final class ShowcaseCatalog {
         case .album(let current): await nextAlbum(after: current)
         case .book(let current): await nextBook(after: current)
         case .vibe(let current): await nextVibe(after: current)
-        case .reading, .watching: nil
+        // Исполнителя в ленте нет — только в промо (`makePromoReplacement`).
+        case .reading, .watching, .artist: nil
         }
         // Картинки — в кэш до смены: новый айтем проявляется уже с обложкой.
         if let replacement { await ArtworkLoader.shared.prewarm(replacement.block.artworks) }
@@ -829,6 +880,26 @@ final class ShowcaseCatalog {
             }
         }
         return nil
+    }
+
+    /// Исполнитель промо на ✕ (задача 64) — следующий из запаса круга `loadMusic`: не в круге
+    /// промо, не убранный раньше и не тот, чей альбом в промо. Запас кончился — `nil`:
+    /// карточка уходит без замены. Фото греет `makePromoReplacement`.
+    private func nextArtist(after current: ArtistBlock) -> Replacement? {
+        var taken: Set<Int> = [current.id]
+        for block in feed.promo {
+            switch block {
+            case .artist(let artist): taken.insert(artist.id)
+            case .album(let album): if let id = album.artistID { taken.insert(id) }
+            case .movie, .book, .vibe, .reading, .watching: break
+            }
+        }
+        guard let next = promoArtistPool.first(where: {
+            !taken.contains($0.id) && !dismissedPromoIDs.contains(ShowcaseBlock.artist($0).id)
+        }) else { return nil }
+        return Replacement(block: .artist(next)) { [weak self] in
+            self?.promoArtistPool.removeAll { $0.id == next.id }
+        }
     }
 
     /// Альбомы на экране — в ленте и в промо — и убранные из промо: замена их не повторяет.

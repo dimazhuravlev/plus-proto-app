@@ -100,6 +100,16 @@ enum ShowcasePromoLayout {
     @MainActor
     static var albumAvatar: CGFloat { 40 * scale }
 
+    /// Подпись исполнителя и станции (задача 64) — одна строка Text M по центру колонки
+    /// шириной с квадрат альбома, на месте верхней строки подписи альбома: полоса подписи
+    /// начинается на `albumCaptionGap` под квадратом, а две строки альбома стоят в ней
+    /// по центру высоты аватара. Отсчёт — от низа квадрата до верха строки.
+    @MainActor
+    static var centeredCaptionTop: CGFloat {
+        let albumLines = 2 * PlusTextSize.textM.lineHeight - albumCaptionLineOverlap
+        return albumCaptionGap + (albumAvatar - albumLines) / 2
+    }
+
     /// Пустое место под самой высокой карточкой, постером. Было 39.4 + 64 под описание;
     /// описание убрано, пустое место ужато на 56 — правка пользователя 2026-10-10.
     @MainActor
@@ -176,7 +186,9 @@ private struct PromoSlotID: Hashable {
 }
 
 /// Промо-слайдер «Главной» (макет `2532:26618`, задача пользователя 2026-10-08):
-/// фильмы, альбомы и книги по кругу, в обе стороны, по одной карточке за свайп.
+/// фильмы, альбомы и книги по кругу, в обе стороны, по одной карточке за свайп. С задачи 64
+/// в круге и исполнители (круг с фото, имя под ним) и станция «Моя волна» (орб, как
+/// у карточки ленты): тап по исполнителю — его экран, по станции — включает волну.
 ///
 /// Центральная крупнее соседей, у каждой карточки свой случайный наклон; масштаб, наклон
 /// и опускание соседей идут за сдвигом ленты кадр в кадр (`visualEffect`, без стейта).
@@ -198,6 +210,7 @@ struct ShowcasePromo: View {
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ShowcaseCatalog.self) private var catalog
+    @Environment(ActionBarState.self) private var actionBar
 
     private typealias Layout = ShowcasePromoLayout
 
@@ -362,17 +375,41 @@ struct ShowcasePromo: View {
                     try? await Task.sleep(for: cycleInterval)
                 }
             }
+            // `-debugHomePromoKind <artist|vibe>` — через 3 с поставить в центр первый айтем
+            // вида: исполнителя или станцию «Моей волны». Тем же путём, что `-debugHomePromoStep`.
+            .task {
+                let kind = UserDefaults.standard.string(forKey: "debugHomePromoKind") ?? ""
+                guard !kind.isEmpty else { return }
+                try? await Task.sleep(for: .seconds(3))
+                let promo = liveItems
+                guard !Task.isCancelled else { return }
+                let index = promo.firstIndex { item in
+                    switch item {
+                    case .artist: kind == "artist"
+                    case .vibe: kind == "vibe"
+                    case .movie, .album, .book, .reading, .watching: false
+                    }
+                }
+                guard let index else { return }
+                withAnimation(ShowcasePromoMotion.step) { page = promo.count + index }
+            }
             // `-debugHomePromoArtist 1` — через 6 с тап по подписи центрального альбома:
-            // тот же `openArtist`, что у кнопки. Центральный не альбом (или без id
-            // исполнителя) — ничего.
+            // тот же `openArtist`, что у кнопки; у карточки исполнителя — тот же `tap`, что
+            // у неё самой. Центральный другого вида (или альбом без id исполнителя) — ничего.
             .task {
                 guard UserDefaults.standard.bool(forKey: "debugHomePromoArtist") else { return }
                 try? await Task.sleep(for: .seconds(6))
                 let promo = liveItems
                 guard !Task.isCancelled, !promo.isEmpty, let current = page else { return }
                 let item = promo[Self.wrap(current, promo.count)]
-                guard case .album(let album) = item, album.artistRoute != nil else { return }
-                openArtist(item)
+                switch item {
+                case .album(let album) where album.artistRoute != nil:
+                    openArtist(item)
+                case .artist:
+                    tap(item, slotIndex: current, isCurrent: true)
+                default:
+                    return
+                }
             }
             // `-debugHomePromoDismiss <n>` — ✕ у центральной карточки n раз подряд: первый
             // через 6 с, дальше раз в 2.5 с. Тот же `dismiss()` пары, что у тапа.
@@ -415,13 +452,18 @@ struct ShowcasePromo: View {
 
     /// Карточка и пара ✕/✓ на её кромке — пара оверлеем на карточке, а не внутри кнопки:
     /// так у неё свои нажатия, а наклон и масштаб — общие с карточкой. У альбома там же
-    /// его подпись.
+    /// его подпись, у исполнителя и станции — имя под кругом.
     private func card(_ item: ShowcaseBlock, slotIndex: Int, isShown: Bool) -> some View {
         let isCurrent = slotIndex == page
-        let isAlbum = item.isAlbum
+        // Квадратный кадр — альбом, исполнитель, станция: пара у них сверху справа.
+        let isSquare = item.hasSquarePromoFrame
+        // Орб станции дышит только у центральной копии; остальным видам флаг не нужен —
+        // их лица не перерисовываются от смены центра.
+        let isOrbAnimating: Bool = if case .vibe = item { isCurrent } else { false }
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
-            PromoCardFace(item: item)
-                .showcaseSwappable()
+            // Смена по ✕ (`showcaseSwappable`) — внутри лица: у орба станции она на слоях
+            // по отдельности (`VibeOrb`).
+            PromoCardFace(item: item, isAnimating: isOrbAnimating)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         // Источник зума — у каждой копии, но адрес экрана — только у центральной:
@@ -429,7 +471,7 @@ struct ShowcasePromo: View {
         // пересоздавала карточку посреди свайпа, и она моргала.
         .matchedTransitionSource(id: zoomID(item, slotIndex: slotIndex, isCurrent: isCurrent), in: zoom)
         .accessibilityLabel(item.title)
-        .overlay(alignment: isAlbum ? .topTrailing : .bottomLeading) {
+        .overlay(alignment: isSquare ? .topTrailing : .bottomLeading) {
             // Пара — у центральной и соседей: стеклянных кнопок у всех 18 слотов не
             // держим. Сосед в окне — чтобы пара ушедшей с центра догасла, а не пропала.
             if abs(slotIndex - (page ?? slotIndex)) <= 1 {
@@ -437,11 +479,11 @@ struct ShowcasePromo: View {
                     .modifier(PromoReveal(
                         isShown: isShown,
                         hiddenScale: ShowcasePromoMotion.pairHiddenScale,
-                        anchor: isAlbum ? .trailing : .leading
+                        anchor: isSquare ? .trailing : .leading
                     ))
                     .offset(
-                        x: isAlbum ? -Layout.albumPairTrailing : Layout.pairLeading,
-                        y: isAlbum ? -Layout.albumPairAbove : Layout.pairBelow
+                        x: isSquare ? -Layout.albumPairTrailing : Layout.pairLeading,
+                        y: isSquare ? -Layout.albumPairAbove : Layout.pairBelow
                     )
             }
         }
@@ -459,6 +501,16 @@ struct ShowcasePromo: View {
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
             }
         }
+        .overlay(alignment: .top) {
+            if let caption = item.promoCaption {
+                // Имя исполнителя или станции — показывается, как подпись альбома: только
+                // у центральной, когда встала. Не нажимается.
+                PromoCenteredCaption(title: caption)
+                    .showcaseSwappable()
+                    .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
+                    .offset(y: Layout.album + Layout.centeredCaptionTop)
+            }
+        }
     }
 
     private func zoomID(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) -> AnyHashable {
@@ -466,12 +518,17 @@ struct ShowcasePromo: View {
         return AnyHashable("showcase-promo-copy-\(slotIndex)")
     }
 
-    /// Тап по центральной — её экран; по соседу — сосед доезжает в центр.
+    /// Тап по центральной — её экран; по соседу — сосед доезжает в центр. Станция «Моей
+    /// волны» своего экрана не имеет: центральная включает волну, как карточка ленты.
     private func tap(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) {
         guard removal == nil else { return }
         tapHaptic()
         guard isCurrent else {
             withAnimation(ShowcasePromoMotion.step) { page = slotIndex }
+            return
+        }
+        if case .vibe = item {
+            actionBar.openMyVibe()
             return
         }
         if let route = item.entityRoute { navigation.open(route) }
@@ -780,35 +837,71 @@ private struct PromoCardLook {
 }
 
 /// Обложка айтема в своих пропорциях: постер фильма 2:3, квадрат альбома, книга
-/// в проекции (`BookFigure`, как в сетке выдачи).
+/// в проекции (`BookFigure`, как в сетке выдачи), круг исполнителя размером с альбом,
+/// орб станции по центру такого же квадрата.
 private struct PromoCardFace: View {
     let item: ShowcaseBlock
+    /// Дышит ли орб станции — только у центральной копии.
+    var isAnimating = false
 
     private typealias Layout = ShowcasePromoLayout
 
     var body: some View {
+        let square = CGSize(width: Layout.album, height: Layout.album)
         switch item {
         case .movie(let movie):
             cover(movie.poster, size: Layout.poster, radius: Layout.posterRadius)
+                .showcaseSwappable()
         case .album(let album):
-            cover(album.cover, size: CGSize(width: Layout.album, height: Layout.album), radius: Layout.albumRadius)
+            cover(album.cover, size: square, radius: Layout.albumRadius)
+                .showcaseSwappable()
         case .book(let book):
             let figure = Layout.book
             BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth) {
                 SkeletonArtwork(source: book.cover)
             }
-        case .vibe, .reading, .watching:
+            .showcaseSwappable()
+        case .artist(let artist):
+            cover(artist.picture, size: square, shape: Circle())
+                .showcaseSwappable()
+        case .vibe(let vibe):
+            // Орб — геометрия ленты на масштабе промо (круг 150.48·s), по центру квадрата
+            // альбома: квадрат — кадр кнопки и зума. Смена по ✕ — на слоях орба, не на нём
+            // целиком: иначе color-dodge зерна сводился бы в серый квадрат (`VibeOrb`).
+            VibeOrb(art: vibe.art, isAnimating: isAnimating, scale: Layout.scale, fadesGrain: true)
+                .frame(width: square.width, height: square.height)
+                .contentShape(.rect)
+        case .reading, .watching:
             EmptyView()
         }
     }
 
     private func cover(_ source: ArtworkSource, size: CGSize, radius: CGFloat) -> some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        return PlusSkeleton.fill
+        cover(source, size: size, shape: RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+
+    private func cover<S: InsettableShape>(_ source: ArtworkSource, size: CGSize, shape: S) -> some View {
+        PlusSkeleton.fill
             .overlay { SkeletonArtwork(source: source) }
             .frame(width: size.width, height: size.height)
             .clipShape(shape)
             .coverBorder(shape)
+    }
+}
+
+/// Подпись исполнителя и станции (задача 64): одна строка Text M по центру колонки шириной
+/// с квадрат альбома. Без кнопок — касание проходит к карточке.
+private struct PromoCenteredCaption: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .plusText(.textM, .medium)
+            .foregroundStyle(Color.fillOne)
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(width: ShowcasePromoLayout.album)
+            .allowsHitTesting(false)
     }
 }
 
@@ -1027,19 +1120,35 @@ private enum PromoBackdropRaster {
 // MARK: - Тексты и картинки айтема
 
 extension ShowcaseBlock {
-    var isAlbum: Bool {
-        if case .album = self { true } else { false }
+    /// Квадратный кадр карточки промо — альбом, исполнитель (круг в квадрате) и станция
+    /// (орб по центру квадрата): пара ✕/✓ у них сверху справа, как у альбома.
+    var hasSquarePromoFrame: Bool {
+        switch self {
+        case .album, .artist, .vibe: true
+        case .movie, .book, .reading, .watching: false
+        }
     }
 
-    /// Картинка фона под слайдером — обложка айтема.
+    /// Строка под кругом исполнителя и станции. У остальных видов её нет.
+    var promoCaption: String? {
+        switch self {
+        case .artist(let artist): artist.name
+        case .vibe(let vibe): vibe.title
+        case .movie, .album, .book, .reading, .watching: nil
+        }
+    }
+
+    /// Картинка фона под слайдером — обложка айтема. У исполнителя — его фото, у станции —
+    /// её иллюстрация (фиолетовые тона), а не кавер плеера.
     var promoArtwork: ArtworkSource {
         switch self {
         case .movie(let movie): movie.poster
         case .album(let album): album.cover
         case .book(let book): book.cover
-        case .vibe(let vibe): vibe.cover
+        case .vibe(let vibe): .asset(vibe.art.glyph)
         case .reading(let reading): reading.cover
         case .watching(let watching): watching.still
+        case .artist(let artist): artist.picture
         }
     }
 }

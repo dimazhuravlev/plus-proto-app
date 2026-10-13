@@ -208,6 +208,8 @@ struct ShowcaseFeedView: View {
         case .vibe(let item): MyVibeCard(block: item)
         case .reading(let item): ContinueReadingCard(block: item)
         case .watching(let item): ContinueWatchingCard(block: item)
+        // Исполнитель — только в промо «Главной», в ленте его нет.
+        case .artist: EmptyView()
         }
     }
 }

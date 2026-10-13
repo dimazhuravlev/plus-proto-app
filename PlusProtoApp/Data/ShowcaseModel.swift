@@ -25,6 +25,8 @@ enum ShowcaseBlock: Identifiable {
     case vibe(VibeBlock)
     case reading(ReadingBlock)
     case watching(WatchingBlock)
+    /// Карточка исполнителя — только в промо «Главной» (задача 64): в ленте её нет.
+    case artist(ArtistBlock)
 
     var id: String {
         switch self {
@@ -34,6 +36,7 @@ enum ShowcaseBlock: Identifiable {
         case .vibe(let b): "vibe-\(b.id)"
         case .reading(let b): "reading-\(b.id)"
         case .watching(let b): "watching-\(b.id)"
+        case .artist(let b): "artist-\(b.id)"
         }
     }
 
@@ -55,6 +58,10 @@ enum ShowcaseBlock: Identifiable {
             .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
         case .watching(let b):
             .movie(MovieInProgress(id: b.id, still: b.still, title: b.title))
+        case .artist(let b):
+            // Не зовётся: у исполнителя свой экран (`entityRoute`), музыку включает его
+            // кнопка «Слушать». Ветка — ради полноты `switch`.
+            .music(MusicNowPlaying(id: "artist-\(b.id)", cover: b.picture, title: b.name, artist: b.name))
         }
     }
 
@@ -68,6 +75,7 @@ enum ShowcaseBlock: Identifiable {
         case .vibe(let b): b.title
         case .reading(let b): b.title
         case .watching(let b): b.title
+        case .artist(let b): b.name
         }
     }
 
@@ -80,6 +88,9 @@ enum ShowcaseBlock: Identifiable {
         case .vibe: .vibe
         case .reading: .reading
         case .watching: .watching
+        // В ленте исполнителя нет — слот музыкальный, как у альбома; по нему ничего
+        // не подменяется (`apply` и заготовки ✕ ходят только по блокам ленты).
+        case .artist: .album
         }
     }
 }
@@ -119,6 +130,15 @@ struct AlbumBlock {
     /// Id исполнителя в Deezer — по нему подпись альбома промо «Главной» открывает его
     /// экран. Нет id — подпись не нажимается.
     var artistID: Int? = nil
+}
+
+/// Исполнитель промо «Главной» (задача 64): круг с фото и имя под ним.
+struct ArtistBlock: Hashable {
+    /// Id исполнителя в Deezer.
+    let id: Int
+    let name: String
+    /// Фото, поднятое до 1000×1000 (`deezerUpscaled`): круг промо — 220 pt.
+    let picture: ArtworkSource
 }
 
 struct BookBlock {
@@ -292,6 +312,18 @@ enum ShowcaseLayout {
 // MARK: - Демо-данные
 
 extension ShowcaseFeed {
+    /// Фото «Аквариума» у Deezer (id 4179081) — аватар подписи мок-альбома промо
+    /// и круг мок-исполнителя.
+    private static let akvariumPhoto = "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg"
+
+    /// Мок-станция «Моей Волны» — одна в ленте и в промо: станция промо — блок ленты.
+    private static let mockVibe = VibeBlock(
+        id: "my-vibe",
+        title: "Моя Волна",
+        subtitle: "Атмосферный постпанк, когда внутри пасмурно",
+        cover: .asset("mockPlayerCover")
+    )
+
     /// Персональная лента — экран `2004:10701` один в один. До Этапа 7 данные моковые.
     static let personal = ShowcaseFeed(
         // Фолбэк промо — текстом макета: фильм в центре, альбом и книга по бокам.
@@ -310,8 +342,7 @@ extension ShowcaseFeed {
                 title: "Аквариум",
                 subtitle: "Равноденствие",
                 // Фото группы у Deezer (id 4179081): без сети — серый круг скелетона.
-                artistPicture: URL(string: "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg")
-                    .map { ArtworkSource.remote($0) },
+                artistPicture: URL(string: Self.akvariumPhoto).map { ArtworkSource.remote($0) },
                 artistID: 4179081
             )),
             // Книги промо — не та, что в ленте ниже, и их две: без живых книг в круге
@@ -325,6 +356,15 @@ extension ShowcaseFeed {
                 caption: "Рассказы Татьяны Замировской о катастрофах и о том, как они меняют память, язык и нас самих",
                 captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
+            // Первый круг — фильм, альбом, книга, исполнитель; за ним станция, потом второй
+            // круг (`ShowcaseCatalog.publishPromo`). Исполнитель — тот же «Аквариум», фото
+            // то же, что в подписи альбома, поднятое до 1000×1000.
+            .artist(ArtistBlock(
+                id: 4179081,
+                name: "Аквариум",
+                picture: Self.akvariumPhoto.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("")
+            )),
+            .vibe(Self.mockVibe),
             .book(BookBlock(
                 id: "fedorova-35-july",
                 title: "35 июля. Но это не точно",
@@ -358,12 +398,7 @@ extension ShowcaseFeed {
                 // Светлый тон жёлтой обложки — как у живых книг, где тон берётся с обложки.
                 captionTint: Color(red: 0xF6 / 255, green: 0xF1 / 255, blue: 0xB0 / 255)
             )),
-            .vibe(VibeBlock(
-                id: "my-vibe",
-                title: "Моя Волна",
-                subtitle: "Атмосферный постпанк, когда внутри пасмурно",
-                cover: .asset("mockPlayerCover")
-            )),
+            .vibe(Self.mockVibe),
             .reading(ReadingBlock(
                 id: "bullshit-jobs",
                 title: "Бредовая работа",
@@ -398,7 +433,7 @@ extension ShowcaseBlock {
     /// У карточки есть пара ✕/✓, и ✕ меняет её контент (`ShowcaseCatalog.prepareReplacement`).
     var isReplaceable: Bool {
         switch self {
-        case .movie, .album, .book, .vibe: true
+        case .movie, .album, .book, .vibe, .artist: true
         case .reading, .watching: false
         }
     }
@@ -418,6 +453,7 @@ extension ShowcaseBlock {
         case .vibe(let b): [b.cover]
         case .reading(let b): [b.cover]
         case .watching(let b): [b.still, b.logo]
+        case .artist(let b): [b.picture]
         }
     }
 }
