@@ -163,6 +163,8 @@ struct VibeBlock {
     let cover: ArtworkSource
     /// Иллюстрация волны и тон свечения под ней: ✕ сменяет их по кругу.
     var art: VibeArt = .classic
+    /// Станция промо «Главной» (задача 65) — лепесток вместо орба. У блока ленты её нет.
+    var station: VibePromoStation? = nil
 }
 
 /// Иллюстрации «Моей Волны» — чтобы новая волна по ✕ не была той же картинкой
@@ -316,7 +318,7 @@ extension ShowcaseFeed {
     /// и круг мок-исполнителя.
     private static let akvariumPhoto = "https://cdn-images.dzcdn.net/images/artist/7235346cb03b024ce187eca16aad019f/250x250-000000-80-0-0.jpg"
 
-    /// Мок-станция «Моей Волны» — одна в ленте и в промо: станция промо — блок ленты.
+    /// Мок-станция «Моей Волны» ленты. У промо своя — первая станция списка (задача 65).
     private static let mockVibe = VibeBlock(
         id: "my-vibe",
         title: "Моя Волна",
@@ -364,7 +366,7 @@ extension ShowcaseFeed {
                 name: "Аквариум",
                 picture: Self.akvariumPhoto.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("")
             )),
-            .vibe(Self.mockVibe),
+            .vibe(.promo(VibePromoStation.all[0])),
             .book(BookBlock(
                 id: "fedorova-35-july",
                 title: "35 июля. Но это не точно",

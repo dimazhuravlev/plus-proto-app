@@ -2,8 +2,8 @@ import SwiftUI
 
 // MARK: - Геометрия
 
-/// Орб карточки «Моя Волна» — `2004:10733`, figma-screen1 §3.5. Общий у карточки ленты
-/// (`MyVibeCard`) и станции промо «Главной» (`ShowcasePromo`, задача 64).
+/// Орб карточки «Моя Волна» — `2004:10733`, figma-screen1 §3.5. Только у карточки ленты
+/// (`MyVibeCard`): у станции промо «Главной» с задачи 65 лепесток (`PromoStationCard`).
 /// Координаты — в системе кадра карточки ленты: по X — кадра витрины (орб уходит за левый
 /// край на 15), по Y из спеки вычтен верх слота. Числа — макет на 402; на экране они
 /// умножаются на масштаб места применения (`VibeOrb.scale`).
@@ -35,12 +35,6 @@ enum VibeOrbGeometry {
     static let glyphOffset = CGSize(
         width: glyphOrigin.x + glyphSize / 2 - haloCenter.x,
         height: glyphOrigin.y + glyphSize / 2 - haloCenter.y
-    )
-
-    /// Центр орба в кадре зерна, в долях: маска зерна (`fadesGrain`) считается от него.
-    static let grainMaskCenter = UnitPoint(
-        x: 0.5 - grainOffset.width / grainBox.width,
-        y: 0.5 - grainOffset.height / grainBox.height
     )
 }
 
@@ -95,17 +89,11 @@ private func wave(
 /// по пустому месту, а просадка под пальцем считалась бы вокруг чужого центра.
 struct VibeOrb: View {
     let art: VibeArt
-    /// Дышит ли орб. Не дышит — таймлайн на паузе, стоит последний кадр: в ленте — пока
-    /// карточка за экраном, в промо — у всех копий, кроме центральной.
+    /// Дышит ли орб. Не дышит — таймлайн на паузе, стоит последний кадр: пока карточка
+    /// ленты за экраном.
     let isAnimating: Bool
-    /// Множитель геометрии макета: у ленты `ShowcaseLayout.scale`, у промо
-    /// `ShowcasePromoLayout.scale`.
+    /// Множитель геометрии макета — `ShowcaseLayout.scale` ленты.
     let scale: CGFloat
-    /// Зерно под радиальной маской — в промо «Главной». В ленте под орбом чёрный, и
-    /// color-dodge по нему — no-op; в промо под ним размытый фон, и прямоугольник зерна
-    /// высветлял бы его целиком. Маска непрозрачна на круге гало и уходит в прозрачность
-    /// к краю его спилла (`haloBleed / 2`).
-    var fadesGrain = false
 
     var body: some View {
         ZStack {
@@ -153,9 +141,9 @@ struct VibeOrb: View {
     }
 
     /// Зерно: текстура шума поверх гало в color-dodge. Фон текстуры чёрный, а color-dodge
-    /// по чёрному — no-op, поэтому в ленте маска не нужна и прямоугольник кладётся на весь
-    /// кадр (в промо — см. `fadesGrain`). Сдвигаем ассет, взятый с запасом, и режем по
-    /// кадру — так дрейф не открывает край текстуры.
+    /// по чёрному — no-op, поэтому маска не нужна и прямоугольник кладётся на весь кадр.
+    /// Сдвигаем ассет, взятый с запасом, и режем по кадру — так дрейф не открывает край
+    /// текстуры.
     private func grain(_ t: TimeInterval) -> some View {
         let drift = VibeOrbMotion.grainDrift
         let dx = drift * CGFloat(wave(t, period: VibeOrbMotion.grainPeriodX, -1...1))
@@ -170,37 +158,9 @@ struct VibeOrb: View {
             .offset(x: dx, y: dy)
             .frame(width: VibeOrbGeometry.grainBox.width * scale, height: VibeOrbGeometry.grainBox.height * scale)
             .clipped()
-            .modifier(VibeGrainFade(isOn: fadesGrain, scale: scale))
             .opacity(wave(t, period: VibeOrbMotion.grainPeriodOpacity, VibeOrbMotion.grainOpacity))
             .showcaseSwappable()
             .blendMode(.colorDodge)
             .offset(x: VibeOrbGeometry.grainOffset.width * scale, y: VibeOrbGeometry.grainOffset.height * scale)
-    }
-}
-
-/// Радиальная маска зерна вокруг центра орба (`VibeOrb.fadesGrain`): на круге гало
-/// зерно как в ленте, дальше — в прозрачность к краю спилла гало. Вешается на сам слой
-/// зерна, до наложения. Выключена — слой без маски, ровно как в ленте.
-private struct VibeGrainFade: ViewModifier {
-    let isOn: Bool
-    let scale: CGFloat
-
-    func body(content: Content) -> some View {
-        if isOn {
-            content.mask {
-                RadialGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: VibeOrbGeometry.haloSize / VibeOrbGeometry.haloBleed),
-                        .init(color: .clear, location: 1),
-                    ],
-                    center: VibeOrbGeometry.grainMaskCenter,
-                    startRadius: 0,
-                    endRadius: VibeOrbGeometry.haloBleed / 2 * scale
-                )
-            }
-        } else {
-            content
-        }
     }
 }
