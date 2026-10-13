@@ -860,18 +860,22 @@ private struct PromoCardFace: View {
         switch item {
         case .movie(let movie):
             cover(movie.poster, size: Layout.poster, radius: Layout.posterRadius)
+                .promoCoverShadow(item)
                 .showcaseSwappable()
         case .album(let album):
             cover(album.cover, size: square, radius: Layout.albumRadius)
+                .promoCoverShadow(item)
                 .showcaseSwappable()
         case .book(let book):
             let figure = Layout.book
             BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth) {
                 SkeletonArtwork(source: book.cover)
             }
+            .promoCoverShadow(item)
             .showcaseSwappable()
         case .artist(let artist):
             cover(artist.picture, size: square, shape: Circle())
+                .promoCoverShadow(item)
                 .showcaseSwappable()
         case .vibe(let vibe):
             // Смена по ✕ — на слоях лепестка по отдельности, внутри него.
