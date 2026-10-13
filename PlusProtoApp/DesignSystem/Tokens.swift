@@ -36,6 +36,17 @@ extension Color {
     static let searchIcon = Color.white.opacity(0.5)
 }
 
+extension Color {
+    /// Цвет по хексу макета `0xRRGGBB` — палитры станций «Моей волны» (барабан, промо «Главной»).
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+}
+
 // MARK: - Геометрия
 
 /// Радиусы из макета. Значения сырые — в Figma переменных для них нет.

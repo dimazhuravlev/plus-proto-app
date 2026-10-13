@@ -173,6 +173,9 @@ struct AppRootView: View {
             await catalog.loadIfNeeded()
             await ArtworkLoader.shared.prewarm(catalog.feed.artworks)
         }
+        // Капля станции промо — растр на цвет: считается под заставкой, а не на первом
+        // кадре показа. И на моках: станция в круге есть всегда.
+        PromoStationPetal.prewarm(catalog.feed.promo)
 
         // Минимальная выдержка: когда всё пришло из кэша за сотню миллисекунд,
         // заставка не должна мигнуть и пропасть — это читается сбоем, а не запуском.

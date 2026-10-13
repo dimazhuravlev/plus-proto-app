@@ -46,7 +46,8 @@ final class ShowcaseCatalog {
     private var promoArtistCards: [ArtistBlock] = []
     /// Запас исполнителей того же круга — замены по ✕.
     private var promoArtistPool: [ArtistBlock] = []
-    /// Станция «Моей волны» промо — тот же блок, что в ленте; по ✕ уходит без замены.
+    /// Станция «Моей волны» промо (задача 65) — своя, со станцией (`VibePromoStation`), не блок
+    /// ленты: случайная на холодный запуск (`pickPromoStation`), по ✕ — следующая станция списка.
     private var promoVibes: [VibeBlock] = []
     /// Заготовленные новые айтемы промо на ✕ — по id айтема, который уберут.
     private var upcomingPromo: [String: Task<Replacement?, Never>] = [:]
@@ -126,6 +127,9 @@ final class ShowcaseCatalog {
             await MoviePool.shared.reset()
         }
         #endif
+
+        // Станция промо — до сети: она не из каталогов сервисов и встаёт сразу.
+        pickPromoStation()
 
         // Три независимых заказа: домен, который упал или отвечает медленно,
         // не задерживает остальные.
@@ -442,8 +446,6 @@ final class ShowcaseCatalog {
             cover: .remote(vibeCover ?? picked.cover, fallback: "mockPlayerCover")
         )
         apply(.vibe(vibe))
-        // Станция промо — тот же блок ленты (задача 64).
-        promoVibes = [vibe]
 
         // Промо — альбомы других исполнителей того же круга, по одному на исполнителя,
         // и только тех, у кого есть фото: в подписи альбома промо оно аватаром
@@ -686,6 +688,9 @@ final class ShowcaseCatalog {
     }
 
     private func prefetchPromoAdditions() {
+        // Без живой сборки (`-debugMockFeed`) сеть не трогаем: заготовки фильмов, альбомов
+        // и книг ходят в неё. Замену станции и тогда собирает сам ✕ (`preparePromoAddition`).
+        guard hasLoaded else { return }
         for block in feed.promo where block.isReplaceable && upcomingPromo[block.id] == nil {
             upcomingPromo[block.id] = Task { await self.makePromoReplacement(for: block) }
         }
@@ -697,7 +702,9 @@ final class ShowcaseCatalog {
     /// из набора и не из убранных раньше. `nil` — пополнить нечем: моковая лента без
     /// сети или сеть не ответила вовремя.
     func preparePromoAddition(for removed: ShowcaseBlock) async -> ShowcasePromoAddition? {
-        guard hasLoaded, removed.isReplaceable else { return nil }
+        // Станция сети не трогает — её замена есть и на моковой ленте.
+        let isStation = if case .vibe(let vibe) = removed { vibe.station != nil } else { false }
+        guard hasLoaded || isStation, removed.isReplaceable else { return nil }
         let task = upcomingPromo.removeValue(forKey: removed.id)
             ?? Task { await self.makePromoReplacement(for: removed) }
         var replacement = await Self.value(of: task, within: Self.replacementTimeout)
@@ -756,11 +763,40 @@ final class ShowcaseCatalog {
         case .album(let current): await nextAlbum(after: current, forPromo: true)
         case .book(let current): await nextBook(after: current, forPromo: true)
         case .artist(let current): nextArtist(after: current)
-        // Станция по ✕ уходит без замены: вторая «Моя волна» в круге — повтор.
-        case .vibe, .reading, .watching: nil
+        case .vibe(let current): nextStation(after: current)
+        case .reading, .watching: nil
         }
-        if let replacement { await ArtworkLoader.shared.prewarm(replacement.block.artworks) }
+        if let replacement {
+            // Капля станции — растр на цвет: считается здесь, а не на первом кадре показа.
+            PromoStationPetal.prewarm([replacement.block])
+            await ArtworkLoader.shared.prewarm(replacement.block.artworks)
+        }
         return replacement
+    }
+
+    /// Станция промо на холодный запуск (задача 65) — случайная, своей солью; в процессе
+    /// стабильна: выбирается один раз. Без живой сборки (`-debugMockFeed`, нет ключей)
+    /// сюда не доходит — в круге мок-промо, первая станция списка.
+    private func pickPromoStation() {
+        guard promoVibes.isEmpty else { return }
+        var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.promoStation)
+        guard let station = VibePromoStation.all.randomElement(using: &rng) else { return }
+        promoVibes = [.promo(station)]
+        // Картинки промо греет заставка (`AppRootView.prepareShowcase`).
+        publishPromo(preload: false)
+    }
+
+    /// Станция на ✕ (задача 65) — следующая по списку, ещё не показанная в этой сессии
+    /// и не убранная: показанные — убранные ✕ и та, что в круге. Список кончился — `nil`:
+    /// станция уходит без замены.
+    private func nextStation(after current: VibeBlock) -> Replacement? {
+        let all = VibePromoStation.all
+        let start = current.station.flatMap { all.firstIndex(of: $0) } ?? -1
+        for step in 1...all.count {
+            let block = ShowcaseBlock.vibe(.promo(all[(start + step) % all.count]))
+            if !isPromoTaken(block.id) { return Replacement(block: block) }
+        }
+        return nil
     }
 
     /// Промо на экран — вперемешку: фильм, альбом, книга, исполнитель, за первым кругом

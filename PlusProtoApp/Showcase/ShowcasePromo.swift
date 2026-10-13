@@ -81,6 +81,22 @@ enum ShowcasePromoLayout {
     @MainActor
     static var albumPairAbove: CGFloat { 22.5 * scale }
 
+    /// У исполнителя пара — по касательной к кругу (правка пользователя 2026-10-13): центры
+    /// обеих кнопок на окружности, середина пары — на φ по часовой от 12 часов, пара
+    /// вместе с иконками повёрнута на φ.
+    static let artistPairAngle: Angle = .degrees(26)
+    /// Сдвиг середины пары от центра круга: `(d·sin φ, −d·cos φ)`, ось y вниз. `d` — до
+    /// середины хорды между центрами кнопок, `sqrt(r² − 23²)`: 23 — половина расстояния
+    /// между ними (40 + 6), и оба центра ровно на окружности. Кнопки не масштабируются.
+    @MainActor
+    static var artistPairOffset: CGSize {
+        let radius = album / 2
+        let halfSpan = (PlusMetrics.circleButton + PlusMetrics.circleButtonGap) / 2
+        let distance = (radius * radius - halfSpan * halfSpan).squareRoot()
+        let angle = artistPairAngle.radians
+        return CGSize(width: distance * CGFloat(sin(angle)), height: -distance * CGFloat(cos(angle)))
+    }
+
     /// Подпись альбома (макет `2537:27595`) — аватар исполнителя 40, справа название
     /// альбома и исполнитель Text M. Наклонена вместе с обложкой: левый край на 3.3
     /// правее её левой кромки, верх — на 7.2 ниже низа (замер в системе обложки).
@@ -100,7 +116,7 @@ enum ShowcasePromoLayout {
     @MainActor
     static var albumAvatar: CGFloat { 40 * scale }
 
-    /// Подпись исполнителя и станции (задача 64) — одна строка Text M по центру колонки
+    /// Подпись исполнителя (задача 64) — одна строка Text M по центру колонки
     /// шириной с квадрат альбома, на месте верхней строки подписи альбома: полоса подписи
     /// начинается на `albumCaptionGap` под квадратом, а две строки альбома стоят в ней
     /// по центру высоты аватара. Отсчёт — от низа квадрата до верха строки.
@@ -187,8 +203,8 @@ private struct PromoSlotID: Hashable {
 
 /// Промо-слайдер «Главной» (макет `2532:26618`, задача пользователя 2026-10-08):
 /// фильмы, альбомы и книги по кругу, в обе стороны, по одной карточке за свайп. С задачи 64
-/// в круге и исполнители (круг с фото, имя под ним) и станция «Моя волна» (орб, как
-/// у карточки ленты): тап по исполнителю — его экран, по станции — включает волну.
+/// в круге и исполнители (круг с фото, имя под ним) и станция «Моей волны» (с задачи 65 —
+/// лепесток, `PromoStationCard`): тап по исполнителю — его экран, по станции — включает волну.
 ///
 /// Центральная крупнее соседей, у каждой карточки свой случайный наклон; масштаб, наклон
 /// и опускание соседей идут за сдвигом ленты кадр в кадр (`visualEffect`, без стейта).
@@ -452,18 +468,14 @@ struct ShowcasePromo: View {
 
     /// Карточка и пара ✕/✓ на её кромке — пара оверлеем на карточке, а не внутри кнопки:
     /// так у неё свои нажатия, а наклон и масштаб — общие с карточкой. У альбома там же
-    /// его подпись, у исполнителя и станции — имя под кругом.
+    /// его подпись, у исполнителя — имя под кругом.
     private func card(_ item: ShowcaseBlock, slotIndex: Int, isShown: Bool) -> some View {
         let isCurrent = slotIndex == page
-        // Квадратный кадр — альбом, исполнитель, станция: пара у них сверху справа.
-        let isSquare = item.hasSquarePromoFrame
-        // Орб станции дышит только у центральной копии; остальным видам флаг не нужен —
-        // их лица не перерисовываются от смены центра.
-        let isOrbAnimating: Bool = if case .vibe = item { isCurrent } else { false }
+        let pair = PromoPairPlacement(item)
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
-            // Смена по ✕ (`showcaseSwappable`) — внутри лица: у орба станции она на слоях
-            // по отдельности (`VibeOrb`).
-            PromoCardFace(item: item, isAnimating: isOrbAnimating)
+            // Смена по ✕ (`showcaseSwappable`) — внутри лица: у станции она на слоях
+            // по отдельности (`PromoStationCard`).
+            PromoCardFace(item: item)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         // Источник зума — у каждой копии, но адрес экрана — только у центральной:
@@ -471,7 +483,7 @@ struct ShowcasePromo: View {
         // пересоздавала карточку посреди свайпа, и она моргала.
         .matchedTransitionSource(id: zoomID(item, slotIndex: slotIndex, isCurrent: isCurrent), in: zoom)
         .accessibilityLabel(item.title)
-        .overlay(alignment: isSquare ? .topTrailing : .bottomLeading) {
+        .overlay(alignment: pair.alignment) {
             // Пара — у центральной и соседей: стеклянных кнопок у всех 18 слотов не
             // держим. Сосед в окне — чтобы пара ушедшей с центра догасла, а не пропала.
             if abs(slotIndex - (page ?? slotIndex)) <= 1 {
@@ -479,12 +491,10 @@ struct ShowcasePromo: View {
                     .modifier(PromoReveal(
                         isShown: isShown,
                         hiddenScale: ShowcasePromoMotion.pairHiddenScale,
-                        anchor: isSquare ? .trailing : .leading
+                        anchor: pair.anchor
                     ))
-                    .offset(
-                        x: isSquare ? -Layout.albumPairTrailing : Layout.pairLeading,
-                        y: isSquare ? -Layout.albumPairAbove : Layout.pairBelow
-                    )
+                    .rotationEffect(pair.rotation)
+                    .offset(pair.offset)
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -503,8 +513,8 @@ struct ShowcasePromo: View {
         }
         .overlay(alignment: .top) {
             if let caption = item.promoCaption {
-                // Имя исполнителя или станции — показывается, как подпись альбома: только
-                // у центральной, когда встала. Не нажимается.
+                // Имя исполнителя — показывается, как подпись альбома: только у центральной,
+                // когда встала. Не нажимается.
                 PromoCenteredCaption(title: caption)
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
@@ -838,11 +848,9 @@ private struct PromoCardLook {
 
 /// Обложка айтема в своих пропорциях: постер фильма 2:3, квадрат альбома, книга
 /// в проекции (`BookFigure`, как в сетке выдачи), круг исполнителя размером с альбом,
-/// орб станции по центру такого же квадрата.
+/// лепесток станции (`PromoStationCard`, кадр 208×249).
 private struct PromoCardFace: View {
     let item: ShowcaseBlock
-    /// Дышит ли орб станции — только у центральной копии.
-    var isAnimating = false
 
     private typealias Layout = ShowcasePromoLayout
 
@@ -865,12 +873,8 @@ private struct PromoCardFace: View {
             cover(artist.picture, size: square, shape: Circle())
                 .showcaseSwappable()
         case .vibe(let vibe):
-            // Орб — геометрия ленты на масштабе промо (круг 150.48·s), по центру квадрата
-            // альбома: квадрат — кадр кнопки и зума. Смена по ✕ — на слоях орба, не на нём
-            // целиком: иначе color-dodge зерна сводился бы в серый квадрат (`VibeOrb`).
-            VibeOrb(art: vibe.art, isAnimating: isAnimating, scale: Layout.scale, fadesGrain: true)
-                .frame(width: square.width, height: square.height)
-                .contentShape(.rect)
+            // Смена по ✕ — на слоях лепестка по отдельности, внутри него.
+            PromoStationCard(title: vibe.title, station: vibe.promoStation)
         case .reading, .watching:
             EmptyView()
         }
@@ -889,7 +893,7 @@ private struct PromoCardFace: View {
     }
 }
 
-/// Подпись исполнителя и станции (задача 64): одна строка Text M по центру колонки шириной
+/// Подпись исполнителя (задача 64): одна строка Text M по центру колонки шириной
 /// с квадрат альбома. Без кнопок — касание проходит к карточке.
 private struct PromoCenteredCaption: View {
     let title: String
@@ -974,6 +978,53 @@ private struct PromoReveal: ViewModifier {
             .opacity(isShown ? 1 : 0)
             .allowsHitTesting(isShown)
             .accessibilityHidden(!isShown)
+    }
+}
+
+/// Где пара ✕/✓ у карточки вида: угол кадра лица, сдвиг от него, край, от которого она
+/// проявляется (`PromoReveal`), и поворот. Фильм и книга — у нижней кромки слева, альбом —
+/// у верхней справа, исполнитель — по касательной к кругу, станция — внутри лепестка.
+private struct PromoPairPlacement {
+    let alignment: Alignment
+    let offset: CGSize
+    let anchor: UnitPoint
+    let rotation: Angle
+
+    private typealias Layout = ShowcasePromoLayout
+
+    @MainActor
+    init(_ item: ShowcaseBlock) {
+        switch item {
+        case .album:
+            self.init(
+                alignment: .topTrailing,
+                offset: CGSize(width: -Layout.albumPairTrailing, height: -Layout.albumPairAbove),
+                anchor: .trailing
+            )
+        case .artist:
+            // От центра круга; проявляется от своей середины.
+            self.init(alignment: .center, offset: Layout.artistPairOffset, anchor: .center, rotation: Layout.artistPairAngle)
+        case .vibe:
+            let origin = PromoStationLayout.pairOrigin
+            self.init(
+                alignment: .topLeading,
+                offset: CGSize(width: origin.x * Layout.scale, height: origin.y * Layout.scale),
+                anchor: .center
+            )
+        case .movie, .book, .reading, .watching:
+            self.init(
+                alignment: .bottomLeading,
+                offset: CGSize(width: Layout.pairLeading, height: Layout.pairBelow),
+                anchor: .leading
+            )
+        }
+    }
+
+    private init(alignment: Alignment, offset: CGSize, anchor: UnitPoint, rotation: Angle = .zero) {
+        self.alignment = alignment
+        self.offset = offset
+        self.anchor = anchor
+        self.rotation = rotation
     }
 }
 
@@ -1120,32 +1171,23 @@ private enum PromoBackdropRaster {
 // MARK: - Тексты и картинки айтема
 
 extension ShowcaseBlock {
-    /// Квадратный кадр карточки промо — альбом, исполнитель (круг в квадрате) и станция
-    /// (орб по центру квадрата): пара ✕/✓ у них сверху справа, как у альбома.
-    var hasSquarePromoFrame: Bool {
-        switch self {
-        case .album, .artist, .vibe: true
-        case .movie, .book, .reading, .watching: false
-        }
-    }
-
-    /// Строка под кругом исполнителя и станции. У остальных видов её нет.
+    /// Строка под кругом исполнителя. У остальных видов её нет: «Моя волна» и название
+    /// станции — внутри лепестка (`PromoStationCard`).
     var promoCaption: String? {
         switch self {
         case .artist(let artist): artist.name
-        case .vibe(let vibe): vibe.title
-        case .movie, .album, .book, .reading, .watching: nil
+        case .movie, .album, .book, .vibe, .reading, .watching: nil
         }
     }
 
     /// Картинка фона под слайдером — обложка айтема. У исполнителя — его фото, у станции —
-    /// её иллюстрация (фиолетовые тона), а не кавер плеера.
+    /// её иллюстрация в цветах станции, а не кавер плеера.
     var promoArtwork: ArtworkSource {
         switch self {
         case .movie(let movie): movie.poster
         case .album(let album): album.cover
         case .book(let book): book.cover
-        case .vibe(let vibe): .asset(vibe.art.glyph)
+        case .vibe(let vibe): .asset(vibe.promoStation.asset)
         case .reading(let reading): reading.cover
         case .watching(let watching): watching.still
         case .artist(let artist): artist.picture
