@@ -160,7 +160,7 @@ final class ArtworkLoader {
     }
 
     /// Яркость среднего цвета в тени обложки.
-    private static let shadowBrightness: CGFloat = 0.55
+    private static let shadowBrightness: CGFloat = 0.25
 
     private static func shadowColor(of image: UIImage) -> Color? {
         guard let tone = averageTone(of: image, wholeFrame: true) else { return nil }
