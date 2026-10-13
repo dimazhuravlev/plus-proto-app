@@ -780,8 +780,9 @@ final class ShowcaseCatalog {
     private func pickPromoStation() {
         guard promoVibes.isEmpty else { return }
         var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.promoStation)
-        guard let station = VibePromoStation.all.randomElement(using: &rng) else { return }
-        promoVibes = [.promo(station)]
+        let stations = VibePromoStation.all.shuffled(using: &rng).prefix(ShowcaseSeeds.promoPerKind)
+        guard !stations.isEmpty else { return }
+        promoVibes = stations.map { .promo($0) }
         // Картинки промо греет заставка (`AppRootView.prepareShowcase`).
         publishPromo(preload: false)
     }
@@ -799,8 +800,8 @@ final class ShowcaseCatalog {
         return nil
     }
 
-    /// Промо на экран — вперемешку: фильм, альбом, книга, исполнитель, за первым кругом
-    /// станция «Моей волны», и снова. Вид, живых айтемов которого нет, — из моковой ленты:
+    /// Промо на экран — вперемешку: фильм, альбом, книга, исполнитель, станция «Моей волны»,
+    /// и снова. Вид, живых айтемов которого нет, — из моковой ленты:
     /// слайдер не пустеет и не теряет вид. Убранное ✕ не возвращается ни живым, ни моком.
     private func publishPromo(preload: Bool = true) {
         let fallback = ShowcaseFeed.personal.promo
@@ -825,12 +826,10 @@ final class ShowcaseCatalog {
             : promoVibes.map { .vibe($0) })
             .filter { !dismissedPromoIDs.contains($0.id) }
         var promo: [ShowcaseBlock] = []
-        for index in 0..<max(movies.count, albums.count, books.count, artists.count) {
-            for kind in [movies, albums, books, artists] where index < kind.count {
+        for index in 0..<max(movies.count, albums.count, books.count, artists.count, vibes.count) {
+            for kind in [movies, albums, books, artists, vibes] where index < kind.count {
                 promo.append(kind[index])
             }
-            // Станция — между первым и вторым кругом (задача 64).
-            if index == 0 { promo += vibes }
         }
         feed = ShowcaseFeed(promo: promo, blocks: feed.blocks)
         // Прогрев — общий эффект, из `init` его звать нельзя: см. комментарий там.
