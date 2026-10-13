@@ -169,6 +169,9 @@ final class ActionBarState {
     /// «Смотреть дальше» главной Кинопоиска — всё, что запускали в киноплеере.
     /// Живёт здесь, потому что вход в плеер один — `watch` (2026-10-04).
     let watchHistory = WatchHistory()
+    /// Ряд «продолженного потребления» «Главной» (задача 71) — пишется отсюда же,
+    /// из единого входа плееров (`open`).
+    let recently = RecentlyConsumed()
 
     /// Транспорт музыки — отдельными свойствами, а не полями `music`: они меняются
     /// на каждом тике плеера, и при вложении в структуру тик инвалидировал бы
@@ -582,11 +585,16 @@ final class ActionBarState {
                 toggleMusicPlayback()
             } else {
                 startMusic(item, queue: list, at: index)
+                // Волна — поток с закреплённой плиткой в начале ряда, в ряд не пишется.
+                if !MyVibeTracks.isVibe(item.id) { recently.record(.music(item)) }
             }
         case .movie(let item):
             watch(item)
+            // В ряд — под выехавшим плеером, вместе с баром (`applyPendingResume`).
+            pendingRecent = .movie(item)
         case .book(let item):
             read(item)
+            pendingRecent = .book(item)
         }
     }
 
@@ -676,6 +684,9 @@ final class ActionBarState {
     }
 
     @ObservationIgnored private var pendingResume: PendingResume?
+    /// Запуск из `open` для ряда «продолженного»: фильм и книга встают в его начало
+    /// под плеером, а не переставляют ряд на глазах, пока плеер едет снизу.
+    @ObservationIgnored private var pendingRecent: RecentItem?
     @ObservationIgnored private var pendingResumeFallback: Task<Void, Never>?
 
     /// Запасной срок: презентер сообщает о конце выезда сам (`contentPlayerDidPresent`),
@@ -701,6 +712,10 @@ final class ActionBarState {
     private func applyPendingResume() {
         pendingResumeFallback?.cancel()
         pendingResumeFallback = nil
+        if let recent = pendingRecent {
+            pendingRecent = nil
+            recently.record(recent)
+        }
         guard let pending = pendingResume else { return }
         pendingResume = nil
         switch pending {

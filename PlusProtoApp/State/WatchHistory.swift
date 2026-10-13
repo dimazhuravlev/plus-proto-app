@@ -66,6 +66,26 @@ final class WatchHistory {
     /// Фильм запустили. Уже был — поднимается наверх; позиция, хронометраж, подпись
     /// и постер остаются от прошлого запуска, если новый их не знает (чип бара и витрина
     /// приходят без них).
+    /// Постер записи — без смены порядка и даты: дозаполнение старых записей.
+    func setPoster(_ poster: ArtworkSource, for id: String) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].movie.poster = poster
+    }
+
+    /// Карточке «Продолжить» промо «Главной» нужен постер, а записи, сделанные до того,
+    /// как его стали сохранять (задача 69), хранят только кадр. Дозаполняем из дискового
+    /// пула Кинопоиска (детали фильма туда легли, когда открывали экран тайтла) — под
+    /// заставкой, до первого кадра витрины. Деталей нет — карточка остаётся с кадром.
+    func backfillContinuingPoster() async {
+        guard let movie = continuing.first?.movie, movie.poster == nil,
+              movie.id.hasPrefix("kp-"), let kp = Int(movie.id.dropFirst(3)),
+              let details = await MoviePool.shared.details(id: kp),
+              let raw = details.poster?.url(size: .medium)
+        else { return }
+        let url = TMDBImageProxy.rewrite(raw, width: 600) ?? raw
+        setPoster(.remote(url), for: movie.id)
+    }
+
     func record(_ movie: MovieInProgress) {
         var movie = movie
         if let index = entries.firstIndex(where: { $0.id == movie.id }) {

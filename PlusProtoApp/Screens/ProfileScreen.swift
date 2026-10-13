@@ -158,13 +158,16 @@ struct ProfileScreen: View {
 
     private var profile: some View {
         ZStack(alignment: .top) {
-            // Свечение — от верха экрана, уезжает вместе с лентой; при оттяге стоит.
+            // Свечение — от верха экрана, уезжает вместе с лентой; при оттяге чуть сползает вниз.
             // Оверлеем на фоне, а не слоем стопки: кадр свечения шире экрана, и слоем
             // он раздвигал бы всю стопку (кадр 2026-10-04).
             Color.black
                 .overlay(alignment: .top) {
                     ProfileGlow()
-                        .offset(y: ServiceTopNavLayout.topSafeArea - ProfileLayout.designStatusBar - max(0, scrollOffset))
+                        // При оттяге — немного вниз, как ряд навбара: четверть хода с мягким
+                        // потолком (правка пользователя 2026-10-13).
+                        .offset(y: ServiceTopNavLayout.topSafeArea - ProfileLayout.designStatusBar
+                                - max(0, scrollOffset) + ServiceTopNavMotion.pullShift(for: scrollOffset))
                         .allowsHitTesting(false)
                 }
                 .ignoresSafeArea()

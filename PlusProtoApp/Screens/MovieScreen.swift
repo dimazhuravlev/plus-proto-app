@@ -228,8 +228,9 @@ struct MovieScreen: View {
             title: details.title,
             subtitle: details.playerSubtitle,
             runtime: details.runtime,
-            // Постер — карточке «Продолжить» промо «Главной» (задача 69).
-            poster: details.poster.map { ArtworkSource.remote($0) }
+            // Постер — карточке «Продолжить» промо «Главной» (задача 69): крупный, как
+            // у обложки экрана, — карточка 210 pt, малый постер на ней мылится.
+            poster: (details.coverPoster ?? details.poster).map { ArtworkSource.remote($0) }
         )))
     }
 

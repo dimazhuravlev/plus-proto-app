@@ -169,13 +169,18 @@ struct AppRootView: View {
     private func prepareShowcase() async {
         let started = ContinuousClock.now
 
+        // Постер начатого фильма для карточки «Продолжить» — до её первого кадра.
+        await actionBar.watchHistory.backfillContinuingPoster()
         if shouldLoadLiveFeed {
             await catalog.loadIfNeeded()
             // Карточки «Продолжить» промо (задача 69) — из истории и бара, не из каталога:
             // первая из них — стартовый центр слайдера.
             let resumes = ShowcasePromo.composed(catalog.feed.promo, actionBar: actionBar)
                 .filter { $0.promoResume != nil }
-            await ArtworkLoader.shared.prewarm(catalog.feed.artworks + resumes.flatMap(\.artworks))
+            // И ряд «продолженного» над промо (задача 71) — он на первом экране.
+            await ArtworkLoader.shared.prewarm(
+                catalog.feed.artworks + resumes.flatMap(\.artworks) + actionBar.recently.artworks
+            )
         }
         // Капля станции промо — растр на цвет: считается под заставкой, а не на первом
         // кадре показа. И на моках: станция в круге есть всегда.

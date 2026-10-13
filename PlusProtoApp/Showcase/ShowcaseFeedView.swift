@@ -58,6 +58,13 @@ struct ShowcaseFeedView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
+                // Ряд «продолженного потребления» — между навигацией и промо (задача 71).
+                RecentlyRow(zoom: zoom)
+                    .padding(.top, ShowcaseLayout.navBottom + ShowcaseLayout.recentlyGap)
+                    .showcaseAppear()
+                    // Поверх фона промо: тот лежит слоем под промо от самого верха экрана.
+                    .zIndex(1)
+
                 // Промо-слайдер — над лентой, свой набор (задача пользователя 2026-10-08).
                 if !feed.promo.isEmpty {
                     ShowcasePromo(
@@ -66,7 +73,7 @@ struct ShowcaseFeedView: View {
                         zoom: zoom,
                         savedIndex: $promoIndex
                     )
-                    .padding(.top, ShowcaseLayout.promoTop)
+                    .padding(.top, ShowcaseLayout.recentlyToPromo)
                     .showcaseAppear()
                 }
 
@@ -190,11 +197,12 @@ struct ShowcaseFeedView: View {
         actionBar.open(block.player)
     }
 
-    /// Зазор над блоком: для первого — от низа промо, дальше — от низа предыдущего.
+    /// Зазор над блоком: для первого — от низа промо (без промо — от низа ряда
+    /// «продолженного», как если бы промо было нулевой высоты), дальше — от низа предыдущего.
     private func gap(before index: Int) -> CGFloat {
         guard index > 0 else {
             return feed.promo.isEmpty
-                ? ShowcaseLayout.promoTop + ShowcaseLayout.promoToFirstBlock
+                ? ShowcaseLayout.recentlyToPromo + ShowcaseLayout.promoToFirstBlock
                 : ShowcaseLayout.promoToFirstBlock
         }
         return ShowcaseLayout.gap(above: feed.blocks[index].slot, after: feed.blocks[index - 1].slot)
