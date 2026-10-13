@@ -81,6 +81,18 @@ enum ShowcasePromoLayout {
     @MainActor
     static var albumPairAbove: CGFloat { 22.5 * scale }
 
+    /// Кнопка «Продолжить» у начатого фильма и книги (задача 69, макет `2698:28639`) —
+    /// вместо пары: левый край на 15.2 от левой кромки постера (у книги — обложки),
+    /// середина высоты — на нижней кромке. Сама капсула не масштабируется, её место — да.
+    @MainActor
+    static var continueLeading: CGFloat { 15.2 * scale }
+    /// Капсула 40: иконка 20, зазор 6, поля 16 слева и 20 справа.
+    static let continueHeight: CGFloat = 40
+    static let continueIconBox: CGFloat = 20
+    static let continueGap: CGFloat = 6
+    static let continuePaddingLeading: CGFloat = 16
+    static let continuePaddingTrailing: CGFloat = 20
+
     /// У исполнителя пара — по касательной к кругу (правка пользователя 2026-10-13): центры
     /// обеих кнопок на окружности, середина пары — на φ по часовой от 12 часов, пара
     /// вместе с иконками повёрнута на φ.
@@ -218,6 +230,10 @@ private struct PromoSlotID: Hashable {
 ///
 /// Круг — три копии набора, как у промо Книг и Кинопоиска: работает средняя, а когда
 /// свайп остановился в крайней, лента перескакивает на ту же карточку средней.
+///
+/// С задачи 69 набор открывают карточки «Продолжить» — начатый фильм и последняя
+/// открытая книга (`composed`): у них вместо пары кнопка «Продолжить», тап по центральной
+/// или по кнопке сразу запускает киноплеер с места остановки или читалку.
 struct ShowcasePromo: View {
     let items: [ShowcaseBlock]
     let zoom: Namespace.ID
@@ -299,8 +315,30 @@ struct ShowcasePromo: View {
     }
 
     /// Набор как он есть сейчас — в отложенных шагах ✕ и в замыканиях задач: `items`
-    /// там с того прохода, на котором их создали.
-    private var liveItems: [ShowcaseBlock] { catalog.feed.promo }
+    /// там с того прохода, на котором их создали. Тот же состав, что у `items`
+    /// (`composed`): с карточками «Продолжить».
+    private var liveItems: [ShowcaseBlock] { Self.composed(catalog.feed.promo, actionBar: actionBar) }
+
+    /// Набор слайдера (задача 69): впереди «Продолжить» — последний недосмотренный фильм
+    /// истории просмотра и последняя открытая книга, по одной карточке, если есть; за ними
+    /// промо каталога без айтемов того же фильма и той же книги. История и бар меняются
+    /// (вернулись из плеера) — меняется и набор, центр держит `recenter`.
+    static func composed(_ promo: [ShowcaseBlock], actionBar: ActionBarState) -> [ShowcaseBlock] {
+        let movie = actionBar.watchHistory.continuing.first?.movie
+        let book = actionBar.book
+        guard movie != nil || book != nil else { return promo }
+        let head: [ShowcaseBlock] = [
+            movie.map { .movie(MovieBlock(continuing: $0)) },
+            book.map { .book(BookBlock(continuing: $0)) },
+        ].compactMap { $0 }
+        return head + promo.filter { block in
+            switch block {
+            case .movie(let shown): shown.id != movie?.id
+            case .book(let shown): shown.id != book?.id
+            case .album, .vibe, .reading, .watching, .artist: true
+            }
+        }
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -392,8 +430,9 @@ struct ShowcasePromo: View {
                     try? await Task.sleep(for: cycleInterval)
                 }
             }
-            // `-debugHomePromoKind <artist|vibe|artistWave>` — через 3 с поставить в центр первый
-            // айтем вида: исполнителя, станцию «Моей волны» или волну «в стиле артиста» (задача 68).
+            // `-debugHomePromoKind <artist|vibe|artistWave|continueMovie|continueBook>` — через 3 с
+            // поставить в центр первый айтем вида: исполнителя, станцию «Моей волны», волну
+            // «в стиле артиста» (задача 68) или «Продолжить» фильма и книги (задача 69).
             // Тем же путём, что `-debugHomePromoStep`.
             .task {
                 let kind = UserDefaults.standard.string(forKey: "debugHomePromoKind") ?? ""
@@ -405,7 +444,9 @@ struct ShowcasePromo: View {
                     switch item {
                     case .artist: kind == "artist"
                     case .vibe(let vibe): kind == (vibe.promoStation.artist == nil ? "vibe" : "artistWave")
-                    case .movie, .album, .book, .reading, .watching: false
+                    case .movie(let movie): kind == "continueMovie" && movie.resume != nil
+                    case .book(let book): kind == "continueBook" && book.resume != nil
+                    case .album, .reading, .watching: false
                     }
                 }
                 guard let index else { return }
@@ -488,7 +529,8 @@ struct ShowcasePromo: View {
         .overlay(alignment: pair.alignment) {
             // Пара — у центральной и соседей: стеклянных кнопок у всех 18 слотов не
             // держим. Сосед в окне — чтобы пара ушедшей с центра догасла, а не пропала.
-            if abs(slotIndex - (page ?? slotIndex)) <= 1 {
+            // У карточки «Продолжить» пары нет — на её месте кнопка (ниже).
+            if item.promoResume == nil, abs(slotIndex - (page ?? slotIndex)) <= 1 {
                 ShowcaseFeedbackPair()
                     .modifier(PromoReveal(
                         isShown: isShown,
@@ -497,6 +539,19 @@ struct ShowcasePromo: View {
                     ))
                     .rotationEffect(pair.rotation)
                     .offset(pair.offset)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            // «Продолжить» (задача 69): середина капсулы — на нижней кромке постера или
+            // обложки книги (низ кадра `BookFigure` — низ обложки). Показ — как у пары.
+            if let resume = item.promoResume, abs(slotIndex - (page ?? slotIndex)) <= 1 {
+                PromoContinueButton(target: resume) { play(item) }
+                    .modifier(PromoReveal(
+                        isShown: isShown,
+                        hiddenScale: ShowcasePromoMotion.pairHiddenScale,
+                        anchor: .leading
+                    ))
+                    .offset(x: Layout.continueLeading, y: Layout.continueHeight / 2)
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -526,12 +581,14 @@ struct ShowcasePromo: View {
     }
 
     private func zoomID(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) -> AnyHashable {
-        if isCurrent, let route = item.entityRoute { return AnyHashable(route) }
+        // «Продолжить» экрана не открывает — источником зума не становится.
+        if isCurrent, item.promoResume == nil, let route = item.entityRoute { return AnyHashable(route) }
         return AnyHashable("showcase-promo-copy-\(slotIndex)")
     }
 
     /// Тап по центральной — её экран; по соседу — сосед доезжает в центр. Станция «Моей
     /// волны» своего экрана не имеет: центральная включает волну, как карточка ленты.
+    /// «Продолжить» — сразу киноплеер с места остановки или читалка, как его кнопка.
     private func tap(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) {
         guard removal == nil else { return }
         tapHaptic()
@@ -539,11 +596,22 @@ struct ShowcasePromo: View {
             withAnimation(ShowcasePromoMotion.step) { page = slotIndex }
             return
         }
+        if let resume = item.promoResume {
+            actionBar.open(resume)
+            return
+        }
         if case .vibe = item {
             actionBar.openMyVibe()
             return
         }
         if let route = item.entityRoute { navigation.open(route) }
+    }
+
+    /// «Продолжить» (задача 69): фильм — киноплеер с места остановки, книга — читалка.
+    private func play(_ item: ShowcaseBlock) {
+        guard removal == nil, let resume = item.promoResume else { return }
+        tapHaptic()
+        actionBar.open(resume)
     }
 
     /// Тап по подписи альбома — экран исполнителя. Пока карточку убирают по ✕ или она
@@ -602,7 +670,10 @@ struct ShowcasePromo: View {
             let next = current[(removedIndex + 1) % current.count]
             if let addition {
                 editSet {
-                    catalog.insertPromo(addition, after: next.id)
+                    // Соседка — карточка «Продолжить» (✕ у последнего айтема каталога):
+                    // в наборе каталога её нет, новый айтем — в его начало, сразу за ними.
+                    // Иначе каталог дописал бы его в конец — между убранным и соседкой.
+                    catalog.insertPromo(addition, after: next.promoResume == nil ? next.id : nil)
                     center(on: removed.id)
                     removal = page
                 }
@@ -899,6 +970,37 @@ private struct PromoCardFace: View {
     }
 }
 
+/// Кнопка «Продолжить» карточки начатого фильма и книги (задача 69, макет `2698:28639`):
+/// стеклянная капсула Buttons/Secondary, ▶ у фильма, книга у книги, Text M Semibold.
+private struct PromoContinueButton: View {
+    let target: ShowcasePlayerTarget
+    let action: () -> Void
+
+    private typealias Layout = ShowcasePromoLayout
+
+    private var icon: String {
+        if case .book = target { "iconRead" } else { "iconPlay" }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Layout.continueGap) {
+                MovieIcon(name: icon, box: Layout.continueIconBox)
+                Text("Продолжить")
+                    .plusText(.textM, .semibold)
+                    .foregroundStyle(Color.fillOne)
+                    .fixedSize()
+            }
+            .padding(.leading, Layout.continuePaddingLeading)
+            .padding(.trailing, Layout.continuePaddingTrailing)
+            .frame(height: Layout.continueHeight)
+            .secondaryButtonSurface(Capsule(style: .continuous), fill: .buttonsSecondary)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(PressScaleButtonStyle())
+    }
+}
+
 /// Подпись исполнителя (задача 64): одна строка Text M по центру колонки шириной
 /// с квадрат альбома. Без кнопок — касание проходит к карточке.
 private struct PromoCenteredCaption: View {
@@ -1177,6 +1279,16 @@ private enum PromoBackdropRaster {
 // MARK: - Тексты и картинки айтема
 
 extension ShowcaseBlock {
+    /// Что запускает карточка «Продолжить» (задача 69): киноплеер с места остановки или
+    /// читалку. `nil` — обычная карточка.
+    var promoResume: ShowcasePlayerTarget? {
+        switch self {
+        case .movie(let movie): movie.resume.map { .movie($0) }
+        case .book(let book): book.resume.map { .book($0) }
+        case .album, .vibe, .reading, .watching, .artist: nil
+        }
+    }
+
     /// Строка под кругом исполнителя. У остальных видов её нет: «Моя волна» и название
     /// станции — внутри лепестка (`PromoStationCard`).
     var promoCaption: String? {

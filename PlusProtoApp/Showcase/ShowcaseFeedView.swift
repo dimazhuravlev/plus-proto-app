@@ -61,7 +61,8 @@ struct ShowcaseFeedView: View {
                 // Промо-слайдер — над лентой, свой набор (задача пользователя 2026-10-08).
                 if !feed.promo.isEmpty {
                     ShowcasePromo(
-                        items: feed.promo,
+                        // Впереди — «Продолжить» начатых фильма и книги (задача 69).
+                        items: ShowcasePromo.composed(feed.promo, actionBar: actionBar),
                         zoom: zoom,
                         savedIndex: $promoIndex
                     )

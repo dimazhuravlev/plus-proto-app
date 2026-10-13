@@ -117,6 +117,25 @@ struct MovieBlock {
     let caption: String
     /// Подпись тонируется в цвет постера — в макете градиент уводит текст к его палитре.
     let captionTint: Color
+    /// Начатый фильм — карточка «Продолжить» промо «Главной» (задача 69): тап запускает
+    /// киноплеер с места остановки, а не открывает экран тайтла. `nil` — обычная карточка.
+    var resume: MovieInProgress? = nil
+}
+
+extension MovieBlock {
+    /// Карточка «Продолжить» начатого фильма. Id свой — не совпасть с обычным айтемом
+    /// того же фильма; лицо — постер, у записи без него — кадр в кадре постера.
+    init(continuing movie: MovieInProgress) {
+        self.init(
+            id: "continue-\(movie.id)",
+            title: movie.title,
+            poster: movie.poster ?? movie.still,
+            still: movie.still,
+            caption: "",
+            captionTint: .clear,
+            resume: movie
+        )
+    }
 }
 
 struct AlbumBlock {
@@ -153,6 +172,25 @@ struct BookBlock {
     let cover: ArtworkSource
     let caption: String
     let captionTint: Color
+    /// Последняя открытая книга — карточка «Продолжить» промо «Главной» (задача 69): тап
+    /// открывает читалку, а не экран книги. `nil` — обычная карточка.
+    var resume: BookInProgress? = nil
+}
+
+extension BookBlock {
+    /// Карточка «Продолжить» последней открытой книги. Id свой — не совпасть с обычным
+    /// айтемом той же книги.
+    init(continuing book: BookInProgress) {
+        self.init(
+            id: "continue-\(book.id)",
+            title: book.title,
+            render: book.cover,
+            cover: book.cover,
+            caption: "",
+            captionTint: .clear,
+            resume: book
+        )
+    }
 }
 
 struct VibeBlock {

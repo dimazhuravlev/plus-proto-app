@@ -171,13 +171,17 @@ struct AppRootView: View {
 
         if shouldLoadLiveFeed {
             await catalog.loadIfNeeded()
-            await ArtworkLoader.shared.prewarm(catalog.feed.artworks)
+            // Карточки «Продолжить» промо (задача 69) — из истории и бара, не из каталога:
+            // первая из них — стартовый центр слайдера.
+            let resumes = ShowcasePromo.composed(catalog.feed.promo, actionBar: actionBar)
+                .filter { $0.promoResume != nil }
+            await ArtworkLoader.shared.prewarm(catalog.feed.artworks + resumes.flatMap(\.artworks))
         }
         // Капля станции промо — растр на цвет: считается под заставкой, а не на первом
         // кадре показа. И на моках: станция в круге есть всегда.
         PromoStationPetal.prewarm(catalog.feed.promo)
         // Растры теней под кавером и их цвета — там же, по тем же причинам.
-        PromoCoverShadow.prewarm(catalog.feed.promo)
+        PromoCoverShadow.prewarm(ShowcasePromo.composed(catalog.feed.promo, actionBar: actionBar))
 
         // Минимальная выдержка: когда всё пришло из кэша за сотню миллисекунд,
         // заставка не должна мигнуть и пропасть — это читается сбоем, а не запуском.

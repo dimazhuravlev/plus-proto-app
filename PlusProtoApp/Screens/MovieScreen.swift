@@ -227,7 +227,9 @@ struct MovieScreen: View {
             still: details.backdrop.map { ArtworkSource.remote($0) } ?? entity.artwork,
             title: details.title,
             subtitle: details.playerSubtitle,
-            runtime: details.runtime
+            runtime: details.runtime,
+            // Постер — карточке «Продолжить» промо «Главной» (задача 69).
+            poster: details.poster.map { ArtworkSource.remote($0) }
         )))
     }
 

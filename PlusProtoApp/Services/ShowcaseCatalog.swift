@@ -725,10 +725,11 @@ final class ShowcaseCatalog {
     }
 
     /// Новый айтем — в круг сразу за айтемом `id`. И в набор своего вида, чтобы поздняя
-    /// сборка (`publishPromo`) его не потеряла.
-    func insertPromo(_ addition: ShowcasePromoAddition, after id: String) {
+    /// сборка (`publishPromo`) его не потеряла. `nil` — в начало набора: в круге там стоят
+    /// карточки «Продолжить» (задача 69), которых в наборе каталога нет.
+    func insertPromo(_ addition: ShowcasePromoAddition, after id: String?) {
         var promo = feed.promo
-        let index = promo.firstIndex { $0.id == id }.map { $0 + 1 } ?? promo.count
+        let index = id.map { id in promo.firstIndex { $0.id == id }.map { $0 + 1 } ?? promo.count } ?? 0
         promo.insert(addition.block, at: index)
         switch addition.block {
         case .movie(let movie): promoMovies.append(movie)
