@@ -315,7 +315,8 @@ enum ShowcaseLayout {
     /// 8 под навигацией, высота 80, до промо 40. Не масштабируются: плитки ряда
     /// фиксированной ширины.
     static let recentlyGap: CGFloat = 8
-    static let recentlyHeight: CGFloat = 80
+    /// Ряд ПП (продолженное потребление) — 72 вместо макетных 80 (правка пользователя 2026-10-13).
+    static let recentlyHeight: CGFloat = 72
     static let recentlyToPromo: CGFloat = 40
     /// Полоса ряда целиком — на столько промо и всё ниже стоят ниже навигации.
     static var recentlyBand: CGFloat { recentlyGap + recentlyHeight + recentlyToPromo }
@@ -327,8 +328,8 @@ enum ShowcaseLayout {
     /// (220.48 − 184.93). Добавленные 2026-10-08 ещё 40 убраны на следующий день
     /// (правки пользователя). В макете промо карточек ниже нет. Ещё на 32 ближе —
     /// правка пользователя 2026-10-10; не из `belowCards`, чтобы ScrollView промо
-    /// не обрезал пару ✕/✓.
-    static let designPromoToFirstBlock: CGFloat = 35.55 - 32
+    /// не обрезал пару ✕/✓. И на 24 дальше — правка пользователя 2026-10-13.
+    static let designPromoToFirstBlock: CGFloat = 35.55 - 32 + 24
     @MainActor
     static var promoToFirstBlock: CGFloat { designPromoToFirstBlock * scale }
 
