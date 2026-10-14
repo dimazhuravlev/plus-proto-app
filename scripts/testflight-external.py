@@ -6,12 +6,13 @@
 JWT подписывается системным openssl (ES256), сторонних пакетов не нужно.
 
 python3 -I scripts/testflight-external.py groups
-python3 -I scripts/testflight-external.py distribute [--group <имя>] [--whats-new <текст>] [--build <номер>]
+python3 -I scripts/testflight-external.py distribute [--group <имя>] [--whats-new <текст>] [--build <номер>] [--since-minutes <N>]
 
 `distribute` ждёт, пока Apple обработает сборку (до 30 мин), пишет «Что тестировать» (ru),
 добавляет сборку во внешнюю группу и отправляет на Beta App Review (повтор — не ошибка).
 """
 import base64, json, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+from datetime import datetime
 
 BUNDLE_ID = "com.dima.PlusProtoApp"
 API = "https://api.appstoreconnect.apple.com"
@@ -97,15 +98,25 @@ def groups(c, app):
     return [(g["id"], g["attributes"]["name"], g["attributes"].get("isInternalGroup")) for g in data["data"]]
 
 
-def latest_build(c, app, number=None):
+def latest_build(c, app, number=None, since=None):
+    """Последняя сборка (или сборка `number`). `since` — сборка должна быть выгружена не
+    раньше этой метки (unix-время): только что выгруженная появляется в API не сразу,
+    и без этого раздалась бы предыдущая. Нет такой — `None`."""
     q = {"filter[app]": app, "sort": "-uploadedDate", "limit": "1",
          "fields[builds]": "version,processingState,uploadedDate"}
     if number:
         q["filter[version]"] = number
     status, data = c.call("GET", "/v1/builds?" + urllib.parse.urlencode(q))
-    if status != 200 or not data.get("data"):
-        sys.exit(f"сборка не найдена: {status} {data}")
+    if status != 200:
+        sys.exit(f"сборки: {status} {data}")
+    if not data.get("data"):
+        return None
     b = data["data"][0]
+    if since is not None:
+        uploaded = b["attributes"].get("uploadedDate", "")
+        stamp = datetime.fromisoformat(uploaded.replace("Z", "+00:00")).timestamp()
+        if stamp < since:
+            return None
     return b["id"], b["attributes"]["version"], b["attributes"]["processingState"]
 
 
@@ -128,9 +139,18 @@ def main():
     if not external:
         sys.exit("внешних групп не найдено")
 
-    build, number, state = latest_build(c, app, opts.get("--build"))
-    print(f"сборка {number}: {state}")
+    # `--since-minutes N` — ждать сборку, выгруженную за последние N минут (сразу после выгрузки).
+    since = time.time() - float(opts["--since-minutes"]) * 60 if "--since-minutes" in opts else None
     deadline = time.time() + 30 * 60
+    found = latest_build(c, app, opts.get("--build"), since)
+    while found is None:
+        if time.time() > deadline:
+            sys.exit("свежая сборка так и не появилась в App Store Connect")
+        print("сборка ещё не видна в App Store Connect — жду")
+        time.sleep(30)
+        found = latest_build(c, app, opts.get("--build"), since)
+    build, number, state = found
+    print(f"сборка {number}: {state}")
     while state != "VALID":
         if state in ("FAILED", "INVALID") or time.time() > deadline:
             sys.exit(f"сборка {number} не готова: {state}")
