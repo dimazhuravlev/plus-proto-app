@@ -591,14 +591,16 @@ struct ShowcasePromo: View {
     }
 
     private func zoomID(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) -> AnyHashable {
-        // «Продолжить» экрана не открывает — источником зума не становится.
-        if isCurrent, item.promoResume == nil, let route = item.entityRoute { return AnyHashable(route) }
+        // «Продолжить» книги экрана не открывает — источником зума не становится; фильм
+        // открывает экран тайтла, как обычная карточка.
+        if isCurrent, item.opensPlayerOnTap == false, let route = item.entityRoute { return AnyHashable(route) }
         return AnyHashable("showcase-promo-copy-\(slotIndex)")
     }
 
     /// Тап по центральной — её экран; по соседу — сосед доезжает в центр. Станция «Моей
     /// волны» своего экрана не имеет: центральная включает волну, как карточка ленты.
-    /// «Продолжить» — сразу киноплеер с места остановки или читалка, как его кнопка.
+    /// «Продолжить» фильма — экран тайтла, плеер только по кнопке (правка пользователя
+    /// 2026-10-14); «Продолжить» книги — сразу читалка, как его кнопка.
     private func tap(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) {
         guard removal == nil else { return }
         tapHaptic()
@@ -606,7 +608,7 @@ struct ShowcasePromo: View {
             withAnimation(ShowcasePromoMotion.step) { page = slotIndex }
             return
         }
-        if let resume = item.promoResume {
+        if item.opensPlayerOnTap, let resume = item.promoResume {
             actionBar.open(resume)
             return
         }
@@ -1295,6 +1297,13 @@ private enum PromoBackdropRaster {
 extension ShowcaseBlock {
     /// Что запускает карточка «Продолжить» (задача 69): киноплеер с места остановки или
     /// читалку. `nil` — обычная карточка.
+    /// Тап по карточке «Продолжить» сразу запускает: только книга — у фильма тап открывает
+    /// экран тайтла, плеер — по кнопке «Продолжить».
+    var opensPlayerOnTap: Bool {
+        if case .book(let book) = self { return book.resume != nil }
+        return false
+    }
+
     var promoResume: ShowcasePlayerTarget? {
         switch self {
         case .movie(let movie): movie.resume.map { .movie($0) }

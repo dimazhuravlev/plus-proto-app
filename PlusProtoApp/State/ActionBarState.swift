@@ -721,6 +721,9 @@ final class ActionBarState {
         switch pending {
         case .movie(let item):
             watchHistory.record(item)
+            // Постер для «Продолжить» промо — под выехавшим плеером, если запуск пришёл
+            // без него (ПП, «Смотреть дальше», чип бара).
+            Task { await watchHistory.backfillContinuingPoster() }
             resumeMovie(item)
         case .book(let item):
             resumeBook(item)
