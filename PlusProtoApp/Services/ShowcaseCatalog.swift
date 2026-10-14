@@ -64,8 +64,13 @@ final class ShowcaseCatalog {
     func hideBlock(id: String) {
         hiddenBlockIDs.insert(id)
     }
-    /// Айтем промо на месте — помнится на сессию, как у промо Кинопоиска и Книг.
-    var promoIndex = 0
+    /// Айтем промо на месте — помнится на сессию, как у промо Кинопоиска и Книг. Старт —
+    /// случайная карточка на каждый холодный запуск (правка пользователя 2026-10-14: всегда
+    /// стартовало кино); число берётся по модулю набора, зерно — `ShowcaseRotation`.
+    var promoIndex: Int = {
+        var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.promoStart)
+        return Int.random(in: 0..<10_000, using: &rng)
+    }()
 
     /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
     /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после

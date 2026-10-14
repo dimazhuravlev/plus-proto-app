@@ -750,7 +750,10 @@ struct ShowcasePromo: View {
         // Центральный айтем — по ключу слота: каталог уже сменил набор, и номер места
         // в новом наборе указывал бы на чужой айтем.
         let centered = pageID?.item
-        let index = centered.flatMap { new.firstIndex(of: $0) } ?? 0
+        // Центрального айтема в новом наборе нет (мок сменился живым, порция каталога) —
+        // то же место ряда, а не начало: иначе случайный старт (2026-10-14) всякий раз
+        // съезжал на первую карточку.
+        let index = centered.flatMap { new.firstIndex(of: $0) } ?? (savedIndex % new.count)
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant) {
