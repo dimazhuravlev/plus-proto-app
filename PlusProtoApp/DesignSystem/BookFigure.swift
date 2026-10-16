@@ -38,6 +38,9 @@ struct BookFigureGeometry {
     /// Ноль везде, кроме промо «Главной» (`ShowcasePromoLayout.book`).
     var radiusTrim: CGFloat = 0
     /// Скошенный верх корешка у подложки: 4.1 % её ширины по горизонтали, 1.93 вниз.
+    /// Бордер обложки (`CoverBorder`). Свой — у рисунков, которые потом ужимаются целиком
+    /// (ряд ПП): там толщина задаётся с поправкой на масштаб.
+    var borderWidth: CGFloat = CoverBorder.width
     var spineBevel: CGSize { CGSize(width: 0.0406, height: 1.93 * scale) }
     var hingeWidth: CGFloat { 10 * scale }
 
@@ -114,8 +117,8 @@ struct BookFigure<Cover: View>: View {
                 .overlay {
                     // Бордер обложки (`CoverBorder`) — только сверху, справа и снизу:
                     // слева корешок. Контур сам отступает внутрь на полтолщины.
-                    BookCoverEdge(radius: geometry.coverRadius)
-                        .stroke(CoverBorder.color.opacity(layerOpacity), lineWidth: CoverBorder.width)
+                    BookCoverEdge(radius: geometry.coverRadius, lineWidth: geometry.borderWidth)
+                        .stroke(CoverBorder.color.opacity(layerOpacity), lineWidth: geometry.borderWidth)
                         .allowsHitTesting(false)
                 }
                 .padding(.top, geometry.pagesTop)

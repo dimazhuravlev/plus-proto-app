@@ -89,7 +89,8 @@ struct AppRootView: View {
                 if navigation.coveredRoute == nil, !navigation.isProfileShown {
                     actionBar.closeAllPlayers()
                 }
-                // 4. Таб — мгновенно, без анимации; слои уходят штатно.
+                // 4. Таб — мгновенно, без анимации; слой фильма — тоже без зума: его источник
+                // уходит вместе с табом (`AppNavigationState.withoutLayerZoom`).
                 navigation.showRoot(of: .collection)
                 TabBarMotion.tapHaptic()
             }

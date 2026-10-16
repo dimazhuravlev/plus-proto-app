@@ -24,6 +24,14 @@ enum RecentlyLayout {
     @MainActor
     static var tileScale: CGFloat { ShowcaseLayout.recentlyHeight / designHeight }
 
+    /// Скругление плиток — 6 на экране у всех видов (у книги — правые углы), бордер —
+    /// 0.67 `fill/9` (правка пользователя 2026-10-16). Плитки ужимаются целиком, поэтому
+    /// в числах плитки оба значения — с поправкой на `tileScale`.
+    @MainActor
+    static var radius: CGFloat { 6 / tileScale }
+    @MainActor
+    static var borderWidth: CGFloat { CoverBorder.width / tileScale }
+
     /// Фильм `2713:26839`: кадр 138×78 по центру плитки 138×80, таймлайн у низа кадра.
     /// Ширина плитки и кадра — 85 % макетной, высота та же (правка пользователя 2026-10-16):
     /// кадр `scaledToFill` срезается по бокам.
@@ -31,9 +39,6 @@ enum RecentlyLayout {
         static let widthShare: CGFloat = 0.85
         static let size = CGSize(width: 138 * widthShare, height: 80)
         static let frame = CGSize(width: 138 * widthShare, height: 78)
-        /// Скругление — как у альбома (12; в макете 6): плитки фильма и альбома одинаковые —
-        /// правка пользователя 2026-10-13.
-        static let radius: CGFloat = 12
         /// Полоса 3 в высоту в (4, 71) кадра — по 4 от левой, правой и нижней кромки.
         static let trackInset: CGFloat = 4
         static let trackHeight: CGFloat = 3
@@ -46,7 +51,6 @@ enum RecentlyLayout {
     enum Album {
         static let size = CGSize(width: 78, height: 80)
         static let cover: CGFloat = 78
-        static let radius: CGFloat = 12
         static let glow: CGFloat = 74
         static let glowOpacity: Double = 0.25
     }
@@ -58,13 +62,14 @@ enum RecentlyLayout {
         static let size = CGSize(width: 54, height: 80)
         static let cover = CGSize(width: 52.66, height: 78.99)
         static let coverTop: CGFloat = 1.01
-        /// Скругление обложки макета — меньше, чем дала бы `BookFigure` на этой высоте (4.94).
-        static let coverRadius: CGFloat = 4.05
         static let glowOpacity: Double = 0.45
 
+        /// Скругление и бордер — общие для ряда (`RecentlyLayout.radius`, `borderWidth`).
+        @MainActor
         static var geometry: BookFigureGeometry {
             var geometry = BookFigureGeometry(coverHeight: cover.height)
-            geometry.radiusTrim = geometry.coverRadius - coverRadius
+            geometry.radiusTrim = geometry.coverRadius - RecentlyLayout.radius
+            geometry.borderWidth = RecentlyLayout.borderWidth
             return geometry
         }
     }
@@ -201,7 +206,7 @@ private struct RecentlyTile: View {
 
     private func movieTile(_ movie: MovieInProgress) -> some View {
         typealias L = RecentlyLayout.Movie
-        let shape = RoundedRectangle(cornerRadius: L.radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: RecentlyLayout.radius, style: .continuous)
         return PlusSkeleton.fill
             .overlay { SkeletonArtwork(source: movie.still) }
             .overlay(alignment: .bottomLeading) {
@@ -211,7 +216,7 @@ private struct RecentlyTile: View {
             }
             .frame(width: L.frame.width, height: L.frame.height)
             .clipShape(shape)
-            .coverBorder(shape)
+            .ppBorder(shape)
             .frame(width: L.size.width, height: L.size.height)
     }
 
@@ -239,12 +244,12 @@ private struct RecentlyTile: View {
     private func albumTile(_ track: MusicNowPlaying) -> some View {
         typealias L = RecentlyLayout.Album
         let cover = track.cover
-        let shape = RoundedRectangle(cornerRadius: L.radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: RecentlyLayout.radius, style: .continuous)
         return PlusSkeleton.fill
             .overlay { SkeletonArtwork(source: cover) }
             .frame(width: L.cover, height: L.cover)
             .clipShape(shape)
-            .coverBorder(shape)
+            .ppBorder(shape)
             // Экран альбома разворачивается из обложки, как у исполнителя из круга.
             .matchedTransitionSource(id: track.containerRoute ?? EntityRoute.album(EntityRef(
                 id: "recent-\(track.id)", title: track.title, subtitle: "", artwork: cover
@@ -279,7 +284,7 @@ private struct RecentlyTile: View {
             .overlay { SkeletonArtwork(source: artist.artwork) }
             .frame(width: L.size, height: L.size)
             .clipShape(Circle())
-            .coverBorder(Circle())
+            .ppBorder(Circle())
             // Источник зума — только круг: свечение снаружи, в портлет перехода не попадает.
             .matchedTransitionSource(id: EntityRoute.artist(artist), in: zoom)
             .background {
@@ -302,6 +307,15 @@ private struct RecentlyTile: View {
 }
 
 private extension View {
+    /// Бордер плитки — `CoverBorder` толщиной 0.67 на экране, а не в числах плитки.
+    func ppBorder<S: InsettableShape>(_ shape: S) -> some View {
+        overlay {
+            shape
+                .strokeBorder(CoverBorder.color, lineWidth: RecentlyLayout.borderWidth)
+                .allowsHitTesting(false)
+        }
+    }
+
     /// Плитка ПП: раскладка — в числах макета (`size`, высота 80), на экране — ужатая до
     /// высоты ряда целиком (`RecentlyLayout.tileScale`), без смены пропорций.
     func ppTile(_ size: CGSize) -> some View {

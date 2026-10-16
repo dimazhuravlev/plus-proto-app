@@ -780,11 +780,7 @@ private struct MovieMainButtons: View {
 
     /// «Позже» — закладка в «Любимом» коллекции: в коллекции — залитая.
     private var watchLaterButton: some View {
-        Button {
-            guard let collectionItem else { return }
-            PlayerHaptics.tap()
-            collection.toggleFavorite(collectionItem)
-        } label: {
+        Button(action: toggleLater) {
             label(title: "Позже") {
                 BookmarkGlyph(isSaved: isSaved, box: MovieLayout.buttonIconBox)
             }
@@ -795,6 +791,29 @@ private struct MovieMainButtons: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel(isSaved ? "Убрать из «Позже»" : "Позже")
+        #if DEBUG
+        // `-debugLaterToast 1` — через 3 с «Позже» тем же путём, что кнопка (тайтл уже
+        // в «Любимом» — сперва снимается), ещё через 1.5 с — тап по тосту (`activate`, как
+        // палец): «Моё» из слоя фильма (крэш 2026-10-16). Один раз на процесс.
+        .task(id: collectionItem?.id) {
+            guard UserDefaults.standard.bool(forKey: "debugLaterToast"), collectionItem != nil,
+                  !MovieLaterToastDebug.fired else { return }
+            MovieLaterToastDebug.fired = true
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            if isSaved { toggleLater() }
+            toggleLater()
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            ToastCenter.shared.activate()
+        }
+        #endif
+    }
+
+    private func toggleLater() {
+        guard let collectionItem else { return }
+        PlayerHaptics.tap()
+        collection.toggleFavorite(collectionItem)
     }
 
     /// «Скачать» — «Скачанное» коллекции: скачанное — фиолетовым.
@@ -847,3 +866,11 @@ struct MovieIcon: View {
             .foregroundStyle(Color.fillOne)
     }
 }
+
+#if DEBUG
+/// `-debugLaterToast` уже сработал в этом процессе.
+@MainActor
+private enum MovieLaterToastDebug {
+    static var fired = false
+}
+#endif
