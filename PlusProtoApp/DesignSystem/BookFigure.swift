@@ -111,13 +111,6 @@ struct BookFigure<Cover: View>: View {
     private var layerOpacity: Double { Cover.self == EmptyView.self ? 0.5 : 1 }
 
     var body: some View {
-        let coverShape = UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: geometry.coverRadius,
-            topTrailingRadius: geometry.coverRadius,
-            style: .continuous
-        )
         let pages = BookPagesShape(radius: geometry.pagesRadius, bevel: geometry.spineBevel)
         let frame = geometry.frameSize(coverWidth: coverWidth)
 
@@ -142,18 +135,42 @@ struct BookFigure<Cover: View>: View {
                 // вместе с обложкой, а у скелетона его нет (правка пользователя 2026-10-09).
                 .overlay { cover.environment(\.bookHingeWidth, geometry.hingeWidth) }
                 .frame(width: coverWidth, height: geometry.coverHeight)
-                .clipShape(coverShape)
-                .overlay {
-                    // Бордер обложки (`CoverBorder`) — только сверху, справа и снизу:
-                    // слева корешок. Контур сам отступает внутрь на полтолщины.
-                    BookCoverEdge(radius: geometry.coverRadius, lineWidth: geometry.borderWidth)
-                        .stroke(CoverBorder.color.opacity(layerOpacity), lineWidth: geometry.borderWidth)
-                        .allowsHitTesting(false)
-                }
+                .bookCoverShape(
+                    radius: geometry.coverRadius,
+                    borderWidth: geometry.borderWidth,
+                    borderOpacity: layerOpacity
+                )
                 .padding(.top, geometry.pagesTop)
         }
         // Кадр книги — вместе с правым выступом подложки (`frameSize`).
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    }
+}
+
+// MARK: - Форма обложки
+
+extension View {
+    /// Обложка книги как у всех книг приложения: скруглены только правые углы, слева
+    /// корешок; бордер (`CoverBorder`) — сверху, справа и снизу. Без блока страниц —
+    /// для мелких обложек вне `BookFigure` (навбар читалки; правка пользователя 2026-10-16).
+    func bookCoverShape(
+        radius: CGFloat,
+        borderWidth: CGFloat = CoverBorder.width,
+        borderOpacity: Double = 1
+    ) -> some View {
+        clipShape(UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: radius,
+            topTrailingRadius: radius,
+            style: .continuous
+        ))
+        .overlay {
+            // Контур сам отступает внутрь на полтолщины.
+            BookCoverEdge(radius: radius, lineWidth: borderWidth)
+                .stroke(CoverBorder.color.opacity(borderOpacity), lineWidth: borderWidth)
+                .allowsHitTesting(false)
+        }
     }
 }
 

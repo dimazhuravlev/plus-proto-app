@@ -143,10 +143,11 @@ private struct MyVibeHero: View {
     }
 
     /// Настоящий трек волны (`MyVibeTracks`); волна уже в баре — пауза и снятие с неё.
+    /// Это главная волна — заигравшая, она встаёт плиткой в ряд ПП «Главной».
     private func play() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.openMyVibe()
+        actionBar.openMainVibe()
     }
 }
 

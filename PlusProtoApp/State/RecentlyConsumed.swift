@@ -10,6 +10,9 @@ enum RecentItem: Codable, Equatable, Identifiable {
     case book(BookInProgress)
     /// Исполнитель — только из стартового набора: его не «запускают», тап открывает экран.
     case artist(EntityRef)
+    /// Главная «Моя волна» — после того как её включили кнопкой таба Музыки или плиткой
+    /// ряда (`openMainVibe`; правка пользователя 2026-10-16). Станции волны сюда не пишутся.
+    case myVibe
 
     /// Повтор поднимается наверх, а не дублируется. Музыка — по альбому или плейлисту,
     /// из которого трек играл (`containerID`): разные треки одного альбома — одна плитка
@@ -20,6 +23,7 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .music(let track): "music:" + (track.containerID ?? track.id)
         case .book(let book): "book:" + book.id
         case .artist(let artist): "artist:" + artist.id
+        case .myVibe: "myVibe"
         }
     }
 
@@ -30,6 +34,7 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .music(let track): "\(track.title), \(track.artist)"
         case .book(let book): book.title
         case .artist(let artist): artist.title
+        case .myVibe: "Моя волна"
         }
     }
 
@@ -41,13 +46,15 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .music(let track): track.cover
         case .book(let book): book.cover
         case .artist(let artist): artist.artwork
+        case .myVibe: .asset("vibeRecentDrop")
         }
     }
 }
 
 /// «Продолженное потребление» — ряд над промо «Главной» (задача 71): всё, что запускали
 /// в плеерах, свежее — первым. Пишется из единого входа плееров — `ActionBarState.open`;
-/// треки «Моей волны» не пишутся: у волны своя закреплённая плитка в начале ряда.
+/// треки «Моей волны» не пишутся — у главной волны своя плитка `.myVibe`, её пишет
+/// `ActionBarState.openMainVibe`.
 ///
 /// На свежей установке — стартовый набор (`RecentlySeeds`), чтобы ряд не стоял пустым.
 /// Сеется один раз: удалённые и вытесненные из ряда не возвращаются.

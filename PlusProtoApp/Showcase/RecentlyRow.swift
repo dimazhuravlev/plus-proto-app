@@ -8,9 +8,10 @@ import UIKit
 /// а не карусель с выглядывающей карточкой (задача 71). Высота ряда, отступ от навигации
 /// и до промо — в `ShowcaseLayout`.
 enum RecentlyLayout {
-    static let spacing: CGFloat = 8
+    /// Зазор между плитками — 6 на экране (правка пользователя 2026-10-16; было 8).
+    static let spacing: CGFloat = 6
     /// Поля ленты — поле экрана с обеих сторон (правка пользователя 2026-10-16: в макете
-    /// `pl 4` — под каплю «Моей волны», её из ряда убрали). Поля — у содержимого скролла,
+    /// `pl 4` — под каплю «Моей волны»). Поля — у содержимого скролла,
     /// а сам скролл во всю ширину: плитки уезжают ровно за кромки экрана.
     static let leading: CGFloat = 16
     static let trailing: CGFloat = 16
@@ -32,13 +33,28 @@ enum RecentlyLayout {
     @MainActor
     static var borderWidth: CGFloat { CoverBorder.width / tileScale }
 
-    /// Фильм `2713:26839`: кадр 138×78 по центру плитки 138×80, таймлайн у низа кадра.
-    /// Ширина плитки и кадра — 85 % макетной, высота та же (правка пользователя 2026-10-16):
-    /// кадр `scaledToFill` срезается по бокам.
+    /// «Моя волна» `2785:32127`: плитка 80×80; капля и свечение шире плитки, ▶ 32 по центру.
+    enum Vibe {
+        static let size = CGSize(width: 80, height: 80)
+        /// Капля `wave` 111 — центр на (−0.5, −0.5) от центра плитки.
+        static let drop: CGFloat = 111
+        static let dropOffset = CGSize(width: -0.5, height: -0.5)
+        /// Свечение — та же капля 138×137, центр на (+6, −0.5), 14 %, блюр 8.
+        static let glow = CGSize(width: 138, height: 137)
+        static let glowOffset = CGSize(width: 6, height: -0.5)
+        static let glowOpacity: Double = 0.14
+        static let glowBlur: CGFloat = 8
+        static let icon: CGFloat = 32
+    }
+
+    /// Фильм `2713:26839`: кадр во всю плитку, таймлайн у низа кадра. Ширина — 85 % макетной
+    /// (правка пользователя 2026-10-16, кадр `scaledToFill` срезается по бокам); высота —
+    /// вся плитка, как у остальных видов (правка пользователя 2026-10-16: в макете 78 из 80,
+    /// и кадр выходил ниже соседей).
     enum Movie {
         static let widthShare: CGFloat = 0.85
         static let size = CGSize(width: 138 * widthShare, height: 80)
-        static let frame = CGSize(width: 138 * widthShare, height: 78)
+        static let frame = size
         /// Полоса 3 в высоту в (4, 71) кадра — по 4 от левой, правой и нижней кромки.
         static let trackInset: CGFloat = 4
         static let trackHeight: CGFloat = 3
@@ -47,28 +63,28 @@ enum RecentlyLayout {
         static let trackBlur: CGFloat = 3
     }
 
-    /// Альбом/трек `2713:26844`: квадрат 78 в плитке 78×80, позади — копия 74 в блюре.
+    /// Альбом/трек `2713:26844`: квадрат во всю высоту плитки (в макете 78 из 80 — правка
+    /// пользователя 2026-10-16: высоты всех видов одинаковые), позади — копия 74 в блюре.
     enum Album {
-        static let size = CGSize(width: 78, height: 80)
-        static let cover: CGFloat = 78
+        static let size = CGSize(width: 80, height: 80)
+        static let cover: CGFloat = 80
         static let glow: CGFloat = 74
         static let glowOpacity: Double = 0.25
     }
 
-    /// Книга `2713:26847`: обложка высотой 78.99 с верхом на 1.01 в плитке высотой 80 —
-    /// рисунок `BookFigure` (блок страниц, сгиб у корешка, бордер с трёх сторон). Ширина —
-    /// от пропорций обложки, как у остальных книг приложения (правка пользователя
-    /// 2026-10-16; в макете — 54 под обложку 2:3).
+    /// Книга `2713:26847`: рисунок `BookFigure` (блок страниц, сгиб у корешка, бордер
+    /// с трёх сторон) во всю высоту плитки — от верха блока страниц до низа обложки, как
+    /// у остальных видов (правка пользователя 2026-10-16; в макете обложка 78.99 на 1.01).
+    /// Ширина — от пропорций обложки, как у остальных книг приложения.
     enum Book {
         static let height: CGFloat = 80
-        static let cover = CGSize(width: 52.66, height: 78.99)
-        static let coverTop: CGFloat = 1.01
-        static let glowOpacity: Double = 0.45
+        /// Обложка — высота плитки без выступа блока страниц (`pagesTop` = 2/128 обложки).
+        static let coverHeight: CGFloat = height / (1 + 2 / BookFigureGeometry.referenceHeight)
 
         /// Скругление и бордер — общие для ряда (`RecentlyLayout.radius`, `borderWidth`).
         @MainActor
         static var geometry: BookFigureGeometry {
-            var geometry = BookFigureGeometry(coverHeight: cover.height)
+            var geometry = BookFigureGeometry(coverHeight: coverHeight)
             geometry.radiusTrim = geometry.coverRadius - RecentlyLayout.radius
             geometry.borderWidth = RecentlyLayout.borderWidth
             return geometry
@@ -92,11 +108,12 @@ enum RecentlyMotion {
 // MARK: - Ряд
 
 /// Ряд «продолженного потребления» над промо «Главной» (задача 71): что начинали смотреть,
-/// слушать, читать (`RecentlyConsumed`), свежее первым. Плитки «Моей волны» первой больше
-/// нет (правка пользователя 2026-10-16).
+/// слушать, читать (`RecentlyConsumed`), свежее первым. «Моя волна» — не закреплённой
+/// первой, а в общем порядке, и только после главной волны таба Музыки (правки
+/// пользователя 2026-10-16).
 ///
-/// Тап: фильм — сразу киноплеер с места остановки, книга — сразу читалка; альбом
-/// (плейлист) и исполнитель — их экраны (правка пользователя 2026-10-13).
+/// Тап: фильм — сразу киноплеер с места остановки, книга — сразу читалка, «Моя волна» —
+/// волна; альбом (плейлист) и исполнитель — их экраны (правка пользователя 2026-10-13).
 /// Трек без известного альбома — играет, экрана у него нет.
 ///
 /// Свечения — статичные блюры копий картинок фоном плиток: раскладку они не раздувают,
@@ -159,6 +176,9 @@ struct RecentlyRow: View {
             actionBar.open(.book(book))
         case .artist(let artist):
             navigation.open(.artist(artist))
+        case .myVibe:
+            // Поток, а не трек: настоящий трек волны; волна уже играет — пауза.
+            actionBar.openMainVibe()
         }
     }
 }
@@ -189,6 +209,7 @@ private struct RecentlyTile: View {
             case .music(let track): albumTile(track)
             case .book(let book): bookTile(book.cover)
             case .artist(let artist): artistTile(artist)
+            case .myVibe: vibeTile
             }
         }
         .ppTile(designSize)
@@ -206,7 +227,51 @@ private struct RecentlyTile: View {
         case .music: RecentlyLayout.Album.size
         case .book: CGSize(width: bookFrame.width, height: RecentlyLayout.Book.height)
         case .artist: CGSize(width: RecentlyLayout.Artist.size, height: RecentlyLayout.Artist.size)
+        case .myVibe: RecentlyLayout.Vibe.size
         }
+    }
+
+    // MARK: «Моя волна»
+
+    /// Волна играет — на плитке пауза: тап по ней ставит волну на паузу (`openMyVibe`),
+    /// и ▶ обещал бы обратное.
+    private var isVibePlaying: Bool {
+        actionBar.isMiniPlayerVisible && MyVibeTracks.isVibe(actionBar.music?.id) && actionBar.isMusicPlaying
+    }
+
+    private var vibeTile: some View {
+        typealias L = RecentlyLayout.Vibe
+        // Капля и свечение шире плитки — фоном распорки, раскладку не раздувают.
+        return Color.clear
+            .frame(width: L.size.width, height: L.size.height)
+            .background {
+                ZStack {
+                    Image("vibeRecentDrop")
+                        .resizable()
+                        .frame(width: L.glow.width, height: L.glow.height)
+                        .blur(radius: L.glowBlur)
+                        .opacity(L.glowOpacity)
+                        .offset(L.glowOffset)
+                    // Капля — живой шейдер «Моей волны» (тот же ролик, что на экране Музыки;
+                    // правка пользователя 2026-10-13). Чёрный фон ролика убирает «экран»;
+                    // пока ролик не готов — статичная капля макета.
+                    PPVibeShader(placeholder: "vibeRecentDrop")
+                        .frame(width: L.drop, height: L.drop)
+                        .offset(L.dropOffset)
+                }
+                .allowsHitTesting(false)
+            }
+            .overlay {
+                // Тени ▶ — четыре видимых из пяти макета; радиус — половина блюра панели.
+                PlayPauseGlyph(isPlaying: isVibePlaying, box: L.icon)
+                    .foregroundStyle(Color.fillOne)
+                    .shadow(color: .black.opacity(0.10), radius: 1, x: -1, y: 1)
+                    .shadow(color: .black.opacity(0.09), radius: 2, x: -3, y: 3)
+                    .shadow(color: .black.opacity(0.05), radius: 3, x: -6, y: 7)
+                    .shadow(color: .black.opacity(0.01), radius: 3.5, x: -11, y: 13)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(.rect)
     }
 
     // MARK: Фильм
@@ -292,12 +357,8 @@ private struct RecentlyTile: View {
         typealias L = RecentlyLayout.Book
         let geometry = L.geometry
         // Без свечения под обложкой — правка пользователя 2026-10-13 (в макете было 0.45).
-        return ZStack(alignment: .topLeading) {
-            // Верх обложки — на 1.01, как в макете: над ней выглядывает блок страниц.
-            BookFigure(geometry: geometry, coverWidth: bookCoverWidth) {
-                SkeletonArtwork(source: cover)
-            }
-            .offset(y: L.coverTop - geometry.pagesTop)
+        return BookFigure(geometry: geometry, coverWidth: bookCoverWidth) {
+            SkeletonArtwork(source: cover)
         }
         .frame(width: bookFrame.width, height: L.height, alignment: .topLeading)
     }
@@ -349,5 +410,31 @@ private extension View {
         return frame(width: size.width, height: size.height)
             .scaleEffect(scale)
             .frame(width: size.width * scale, height: size.height * scale)
+    }
+}
+
+/// Живая капля «Моей волны» в ряду ПП: зацикленный ролик шейдера (`my-vibe-shader`) поверх
+/// фона «экраном» — чёрное поле ролика не видно. Пока первый кадр не готов — статичная
+/// капля; ролик играет, только пока плитка на экране.
+private struct PPVibeShader: View {
+    let placeholder: String
+
+    @State private var playback = LoopingVideoPlayback()
+    @State private var isReady = false
+
+    var body: some View {
+        ZStack {
+            Image(placeholder)
+                .resizable()
+                .opacity(isReady ? 0 : 1)
+            LoopingVideoLayer(player: playback.queue) { isReady = true }
+                .blendMode(.screen)
+                .opacity(isReady ? 1 : 0)
+        }
+        .animation(.easeOut(duration: 0.4), value: isReady)
+        .allowsHitTesting(false)
+        .onAppear { playback.start(bundled: "my-vibe-shader") }
+        .onDisappear { playback.pause() }
+        .accessibilityHidden(true)
     }
 }

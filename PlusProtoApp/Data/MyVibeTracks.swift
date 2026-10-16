@@ -51,4 +51,12 @@ extension ActionBarState {
             open(.music(MyVibeTracks.random()))
         }
     }
+
+    /// Главная «Моя волна» — кнопка таба Музыки и плитка ряда ПП: волна заиграла — её плитка
+    /// встаёт в начало ряда «Главной» (правка пользователя 2026-10-16). Станции, карточки
+    /// «Главной» и промо зовут `openMyVibe` и ряд не пишут; пауза тоже не пишет.
+    func openMainVibe() {
+        openMyVibe()
+        if isMusicPlaying, MyVibeTracks.isVibe(music?.id) { recently.record(.myVibe) }
+    }
 }
