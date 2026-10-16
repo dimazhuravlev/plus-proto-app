@@ -287,9 +287,11 @@ final class ActionBarState {
     private var progressTicker: Task<Void, Never>?
 
     /// Очередь треков: список, из которого запустили трек (альбом, плейлист, коллекция,
-    /// выдача). Конец превью переключает на следующий, в конце — снова первый. Пустая —
-    /// очереди нет (одиночный запуск, холодный старт): трек повторяется. На диск не
-    /// пишется: после холодного старта очереди нет.
+    /// выдача). Конец превью переключает на следующий, в конце — снова первый. Запустили
+    /// без списка, но альбом трека известен — очередь из его треклиста
+    /// (`fillQueueFromAlbum`); нет и альбома — трек повторяется. Пишется в снимок бара:
+    /// после холодного старта очередь та же (правка пользователя 2026-10-16: «по
+    /// завершении трек не переключается на следующий»).
     private(set) var queue: [MusicNowPlaying] = []
     /// Позиция играющего трека в очереди — числом, а не по id: в плейлисте один
     /// трек бывает дважды.
@@ -297,6 +299,8 @@ final class ActionBarState {
     /// Следующий трек «Моей волны», выбранный при старте текущего: звук успевает
     /// найти его превью заранее, и «Дальше» играет тот же трек.
     @ObservationIgnored private var vibeNext: MusicNowPlaying?
+    /// Сборка очереди из альбома трека — одна на трек.
+    @ObservationIgnored private var albumQueueTask: Task<Void, Never>?
 
     /// Мини-плеер на экране: круг (`.search`) или капсула (`.music`) с играющим треком.
     var isMiniPlayerVisible: Bool {
@@ -362,6 +366,41 @@ final class ActionBarState {
         if let next = nextTrack() {
             Task { @MainActor in await MusicAudio.shared.prefetch(next.item) }
         }
+        fillQueueFromAlbum(item)
+    }
+
+    /// Трек запущен без очереди (экран исполнителя, плитка трека, колдунщик поиска,
+    /// старый снимок), но из альбома: id `dz-<альбом>-t<трек>` — очередь из треклиста
+    /// этого альбома, с позиции трека. Тем же загрузчиком, что экран альбома (Deezer,
+    /// без квоты, общий кэш), и тем же видом треков — пилюля экрана альбома их узнает.
+    private func fillQueueFromAlbum(_ item: MusicNowPlaying) {
+        albumQueueTask?.cancel()
+        guard queue.isEmpty, !MyVibeTracks.isVibe(item.id),
+              let albumID = Self.albumEntityID(of: item) else { return }
+        albumQueueTask = Task { @MainActor [weak self] in
+            let ref = EntityRef(id: albumID, title: item.album ?? "", subtitle: item.artist, artwork: item.cover)
+            let store = AlbumDetailsStore(entity: ref)
+            await store.load(ref)
+            guard !Task.isCancelled, let self, let details = store.details,
+                  self.queue.isEmpty, self.music?.id == item.id else { return }
+            let list = details.allTracks.map { details.nowPlaying($0, albumID: albumID, cover: item.cover) }
+            guard list.count > 1, let index = list.firstIndex(where: { $0.id == item.id }) else { return }
+            self.queue = list
+            self.queueIndex = index
+            self.persist()
+            if let next = self.nextTrack() {
+                await MusicAudio.shared.prefetch(next.item)
+            }
+        }
+    }
+
+    /// Альбом трека: `album:<id>` источника или `<id>` из `dz-<альбом>-t<трек>`.
+    private static func albumEntityID(of item: MusicNowPlaying) -> String? {
+        if let container = item.containerID, container.hasPrefix("album:") {
+            return String(container.dropFirst("album:".count))
+        }
+        guard let match = item.id.firstMatch(of: #/^(dz-\d+)-t\d+$/#) else { return nil }
+        return String(match.1)
     }
 
     /// Что играет после текущего: «Моя волна» — случайный трек волны (выбранный один
@@ -447,6 +486,9 @@ final class ActionBarState {
         var book: BookInProgress?
         var musicProgress: Double
         var isMusicPlaying: Bool
+        /// Очередь и позиция в ней. Опциональны: снимок, записанный до них, читается как есть.
+        var queue: [MusicNowPlaying]?
+        var queueIndex: Int?
     }
 
     private static let storageKey = "actionBarState"
@@ -463,7 +505,9 @@ final class ActionBarState {
             movie: movie,
             book: book,
             musicProgress: musicProgress,
-            isMusicPlaying: isMusicPlaying
+            isMusicPlaying: isMusicPlaying,
+            queue: queue.isEmpty ? nil : queue,
+            queueIndex: queue.isEmpty ? nil : queueIndex
         )
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -483,6 +527,14 @@ final class ActionBarState {
         music = snapshot.music?.id == "my-vibe" ? MyVibeTracks.random() : snapshot.music
         movie = snapshot.movie
         book = snapshot.book
+        // Очередь — только если трек в ней на своём месте; иначе (старый снимок) — из альбома.
+        if let music, let list = snapshot.queue, let index = snapshot.queueIndex,
+           list.indices.contains(index), list[index].id == music.id {
+            queue = list
+            queueIndex = index
+        } else if let music {
+            fillQueueFromAlbum(music)
+        }
         musicProgress = snapshot.musicProgress
         // Плеер возвращается на паузе, как у любого музыкального приложения: с тех пор
         // как у музыки есть звук (2026-10-05), сам он на холодном старте не включается.

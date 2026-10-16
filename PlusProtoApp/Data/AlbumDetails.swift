@@ -183,3 +183,25 @@ struct AlbumDetails {
         return .remote(url)
     }
 }
+
+extension AlbumDetails {
+    /// Все треки подряд, без деления на диски: плееру оно не нужно.
+    var allTracks: [Track] { disks.flatMap { $0 } }
+
+    /// Трек альбома для плеера бара — один вид на экран альбома и на очередь, которую бар
+    /// собирает сам (`ActionBarState.fillQueueFromAlbum`). id `<альбом>-t<трек>`: `open`
+    /// с тем же id — пауза, поэтому он уникален на трек, а не на альбом.
+    func nowPlaying(_ track: Track, albumID: String, cover: ArtworkSource) -> MusicNowPlaying {
+        MusicNowPlaying(
+            id: "\(albumID)-t\(track.id)",
+            cover: cover,
+            title: track.title,
+            artist: artist,
+            album: title,
+            year: year,
+            artistPicture: artistPicture,
+            isExplicit: track.isExplicit,
+            containerID: "album:\(albumID)"
+        )
+    }
+}

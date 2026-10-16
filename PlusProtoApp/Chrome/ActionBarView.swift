@@ -391,10 +391,19 @@ struct ActionBarView: View {
         .task {
             // `-debugTrackEnd 1` — конец превью через 3 с после старта: следующий трек
             // очереди тем же путём, что от звука, — ждать 30 с иначе незачем.
+            // Трек на паузе (холодный старт) — сперва play, как кнопка. В лог — что было
+            // и что стало: `[queue] <трек> → <трек> (позиция/длина очереди)`.
             guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugTrackEnd") else { return }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
+            if !actionBar.isMusicPlaying, actionBar.music != nil {
+                actionBar.toggleMusicPlayback()
+                try? await Task.sleep(for: .seconds(1))
+            }
+            let before = actionBar.music?.title ?? "—"
             actionBar.musicTrackDidEnd()
+            NSLog("[queue] %@ → %@ (%d/%d)", before, actionBar.music?.title ?? "—",
+                  actionBar.queueIndex, actionBar.queue.count)
         }
         .task {
             // `-debugTapChip 1` — тап по чипу кино или книги: киноплеер и читалку
