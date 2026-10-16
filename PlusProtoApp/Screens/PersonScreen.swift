@@ -200,6 +200,9 @@ struct PersonScreen: View {
             if let photo {
                 ArtworkImage(source: photo)
                     .scaledToFill()
+                    // Режиссёр — чёрно-белым, как его портрет в «Съёмочной группе» фильма
+                    // (правка пользователя 2026-10-16).
+                    .grayscale(role == .director ? 1 : 0)
                     .transition(.opacity)
             } else if !store.isLoaded {
                 PlusSkeleton.fill
