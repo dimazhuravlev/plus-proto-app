@@ -301,12 +301,23 @@ final class KeyboardObserver {
 
     init() {
         let center = NotificationCenter.default
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "debugKeyboardTrace") {
+            for name in [UIApplication.willResignActiveNotification, UIApplication.didEnterBackgroundNotification,
+                         UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
+                observers.append(center.addObserver(forName: name, object: nil, queue: .main) { note in
+                    NSLog("[life] %@", note.name.rawValue)
+                })
+            }
+        }
+        #endif
         observers.append(
             center.addObserver(
                 forName: UIResponder.keyboardWillChangeFrameNotification,
                 object: nil,
                 queue: .main
             ) { [weak self] note in
+                Self.trace(note)
                 guard
                     Self.isOwnKeyboard(note),
                     let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
@@ -322,6 +333,7 @@ final class KeyboardObserver {
                 object: nil,
                 queue: .main
             ) { [weak self] note in
+                Self.trace(note)
                 guard Self.isOwnKeyboard(note) else { return }
                 // Обратный переход обязан совпасть с кривой клавиатуры так же, как прямой.
                 self?.drive(overlap: 0, up: false, from: note)
@@ -336,6 +348,26 @@ final class KeyboardObserver {
     /// поймано записью возврата из «Настроек» с поднятой клавиатурой).
     private static func isOwnKeyboard(_ note: Notification) -> Bool {
         note.userInfo?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool ?? true
+    }
+
+    /// `-debugKeyboardTrace 1` — каждое уведомление клавиатуры в лог: имя, своя ли,
+    /// конечный кадр, длительность и состояние приложения (разбор дёрганья бара при
+    /// возврате из переключателя приложений, 2026-10-16).
+    private static func trace(_ note: Notification) {
+        #if DEBUG
+        guard UserDefaults.standard.bool(forKey: "debugKeyboardTrace") else { return }
+        let info = note.userInfo
+        let frame = (info?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect).map { "\($0)" } ?? "—"
+        let local = (info?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool).map { "\($0)" } ?? "—"
+        let duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? -1
+        let state = switch UIApplication.shared.applicationState {
+        case .active: "active"
+        case .inactive: "inactive"
+        case .background: "background"
+        @unknown default: "?"
+        }
+        NSLog("[kb] %@ local=%@ end=%@ dur=%.3f app=%@", note.name.rawValue, local, frame, duration, state)
+        #endif
     }
 
     deinit {

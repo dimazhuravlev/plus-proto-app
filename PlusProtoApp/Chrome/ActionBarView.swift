@@ -290,6 +290,16 @@ struct ActionBarView: View {
         // Иначе бар шёл своей `.smooth(0.32)` против её ~0.25 с другой кривой, она
         // уходила вверх быстрее и на мгновение накрывала его собой.
         .animation(raise.motion ?? ActionBarMotion.morph, value: layout)
+        #if DEBUG
+        // `-debugKeyboardTrace 1` — каждая смена раскладки бара в лог (разбор дёрганья
+        // при возврате из переключателя приложений, 2026-10-16).
+        .onChange(of: layout) { old, new in
+            guard UserDefaults.standard.bool(forKey: "debugKeyboardTrace") else { return }
+            NSLog("[bar] trailing %.0f→%.0f raised %@→%@ lift %.0f→%.0f mode=%@ app=%d",
+                  old.trailingWidth, new.trailingWidth, "\(old.isRaised)", "\(new.isRaised)",
+                  old.lift, new.lift, "\(actionBar.mode)", UIApplication.shared.applicationState.rawValue)
+        }
+        #endif
         .onChange(of: searchFocused) { _, focused in
             // Бар под слоем решений не принимает: его поле теряет фокус само, уходя
             // с окна вместе с экраном, — это не выход из поиска на верхнем экране.
@@ -572,6 +582,8 @@ private struct SearchPill: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Мягкий уход клавиатуры по «Найти» (`dismissSmoothly`).
     @Environment(KeyboardObserver.self) private var keyboard
+    /// «Люмен в поиске» (дебаг-меню): голова Люмена вместо лупы и своя серия фраз.
+    @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
     /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
@@ -606,7 +618,7 @@ private struct SearchPill: View {
         // лупа уезжала на 4pt влево (замер: 15.67 вместо 20.0).
         HStack(spacing: 0) {
             searchIcon
-                .padding(.trailing, layout.searchIconOnly ? 0 : 8)
+                .padding(.trailing, layout.searchIconOnly ? 0 : iconTextGap)
 
             ZStack(alignment: .leading) {
                 if !layout.searchIconOnly {
@@ -666,6 +678,10 @@ private struct SearchPill: View {
         // Ролями зоны больше не меняются — см. `ActionBarLayout.trailingWidth`.
         .frame(maxWidth: .infinity)
         .frame(height: PlusMetrics.actionBarHeight + stretch)
+        // Свечение Люмена — между стеклом и содержимым, капсула его обрезает (как в макете).
+        .background(alignment: .topLeading) {
+            if lumenInSearch { lumenGlow }
+        }
         .glassPill()
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
@@ -922,12 +938,45 @@ private struct SearchPill: View {
         .accessibilityLabel("Стереть запрос")
     }
 
+    @ViewBuilder
     private var searchIcon: some View {
-        Image("iconSearch")
-            .renderingMode(.template)
+        if lumenInSearch {
+            // Голова Люмена 60×60 вместо лупы (макет `2777:32103`): кадр ролика — во всю
+            // высоту поля от его левой кромки, центр там же, где у лупы (18 + 12 = 30).
+            // Место в раскладке — бокс лупы, кадр выходит за него оверлеем: в круге 60
+            // голова встаёт ровно в круг, а лишняя ширина не уводит её влево.
+            Color.clear
+                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+                .overlay {
+                    LumenHeadVideo()
+                        .frame(width: LumenSearchLayout.head, height: LumenSearchLayout.head)
+                }
+        } else {
+            Image("iconSearch")
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+                .foregroundStyle(Color.searchIcon)
+        }
+    }
+
+    /// Зазор иконка → текст: у лупы 8, у Люмена текст стоит на 54 от кромки (макет).
+    private var iconTextGap: CGFloat {
+        lumenInSearch ? LumenSearchLayout.textGap : 8
+    }
+
+    /// Свечение под головой — растр размытого эллипса из макета (`lumenSearchGlow`,
+    /// с полями под блюр), повёрнутый вокруг своего центра.
+    private var lumenGlow: some View {
+        Image("lumenSearchGlow")
             .resizable()
-            .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-            .foregroundStyle(Color.searchIcon)
+            .frame(width: LumenSearchLayout.glowCanvas.width, height: LumenSearchLayout.glowCanvas.height)
+            .rotationEffect(.degrees(LumenSearchLayout.glowRotation))
+            .offset(
+                x: LumenSearchLayout.glowCenter.x - LumenSearchLayout.glowCanvas.width / 2,
+                y: LumenSearchLayout.glowCenter.y - LumenSearchLayout.glowCanvas.height / 2
+            )
+            .allowsHitTesting(false)
     }
 
     /// «Поиск по всему» — в фокусе, пока поле пустое (правка пользователя 2026-10-03).
@@ -964,13 +1013,36 @@ private struct SearchPill: View {
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
             // Пауза совпадает с гашением плейсхолдера — значит по раскладке.
-            SearchPlaceholderTicker(isPaused: layout.isRaised || isBrowsing)
+            SearchPlaceholderTicker(
+                isPaused: layout.isRaised || isBrowsing,
+                phrases: lumenInSearch ? SearchPlaceholderTicker.lumenPhrases : SearchPlaceholderTicker.phrases,
+                color: lumenInSearch ? LumenSearchLayout.placeholderColor : .searchPlaceholder
+            )
+            // Другая серия — цикл и номер фразы с начала.
+            .id(lumenInSearch)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Без `clipped()`: он срезал бы 4pt хода подмены. Границу и так держит
         // капсула поля, а фразы заведомо уже доступной ширины.
         .allowsHitTesting(false)
     }
+}
+
+/// Поле поиска с Люменом — макет `2777:32103` (пилюля 60 в высоту, координаты от её
+/// левой верхней кромки).
+private enum LumenSearchLayout {
+    /// Голова — кадр 60×60 в левом верхнем углу поля.
+    static let head: CGFloat = 60
+    /// Текст — с x 54: 18 поля + 24 бокса лупы + 12.
+    static let textGap: CGFloat = 12
+    /// Растр свечения — холст SVG макета с полями под блюр (эллипс 204.69×48.93
+    /// в линейном градиенте `#187DF5` → 0, блюр 80 панели Figma).
+    static let glowCanvas = CGSize(width: 364.687, height: 208.933)
+    /// Центр эллипса и поворот — из макета.
+    static let glowCenter = CGPoint(x: 64.2, y: 26.4)
+    static let glowRotation: Double = -9.69
+    /// Фразы Люмена — голубые 30 % (`rgba(111, 218, 238, 0.3)` макета), а не белые.
+    static let placeholderColor = Color(red: 111 / 255, green: 218 / 255, blue: 238 / 255).opacity(0.3)
 }
 
 /// Подмена плейсхолдера поиска.
@@ -1017,6 +1089,8 @@ private enum SearchPlaceholderMotion {
 /// текст подменился, пока прозрачность 0 → выехала сверху и проявилась.
 private struct SearchPlaceholderTicker: View {
     var isPaused: Bool
+    var phrases: [String] = Self.phrases
+    var color: Color = .searchPlaceholder
 
     /// Где строка находится сейчас. `.above` и `.below` — одно и то же невидимое
     /// состояние, отличаются только стороной, с которой строка входит и выходит.
@@ -1032,17 +1106,24 @@ private struct SearchPlaceholderTicker: View {
 
     /// По глаголу на сервис — и только они (правка пользователя 2026-10-03: «Найти»
     /// и «Создать» убраны).
-    private static let phrases = [
+    static let phrases = [
         "Послушать",
         "Посмотреть",
         "Почитать",
+    ]
+
+    /// С Люменом в поле — разговор с ним (правка пользователя 2026-10-16).
+    static let lumenPhrases = [
+        "Обсудить кино",
+        "Посоветовать музыку",
+        "Найти книгу",
     ]
 
     @State private var activeIndex = 0
     @State private var phase: Phase = .visible
 
     var body: some View {
-        phrase(Self.phrases[activeIndex])
+        phrase(phrases[activeIndex % phrases.count])
             .opacity(phase == .visible ? 1 : 0)
             .offset(y: offsetY)
             .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
@@ -1078,7 +1159,9 @@ private struct SearchPlaceholderTicker: View {
     private func phrase(_ text: String) -> some View {
         Text(text + "...")
             .plusHeadline(.s)
-            .foregroundStyle(Color.searchPlaceholder)
+            .foregroundStyle(color)
+            // Длинная фраза в узком поле (чип справа) не переносится на вторую строку.
+            .lineLimit(1)
     }
 
     private func runPlaceholderLoop() async {
@@ -1096,7 +1179,7 @@ private struct SearchPlaceholderTicker: View {
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                activeIndex = (activeIndex + 1) % Self.phrases.count
+                activeIndex = (activeIndex + 1) % phrases.count
                 phase = .above
             }
 

@@ -9,8 +9,10 @@ import UIKit
 /// и до промо — в `ShowcaseLayout`.
 enum RecentlyLayout {
     static let spacing: CGFloat = 8
-    /// Поля ленты: в макете ряд начинается с `pl 4`; справа — поле экрана.
-    static let leading: CGFloat = 4
+    /// Поля ленты — поле экрана с обеих сторон (правка пользователя 2026-10-16: в макете
+    /// `pl 4` — под каплю «Моей волны», её из ряда убрали). Поля — у содержимого скролла,
+    /// а сам скролл во всю ширину: плитки уезжают ровно за кромки экрана.
+    static let leading: CGFloat = 16
     static let trailing: CGFloat = 16
     /// Свечения — копии картинок в блюре 24 панели Figma (в коде вдвое меньше, конвенция
     /// `GlassSurface`).
@@ -21,21 +23,6 @@ enum RecentlyLayout {
     static let designHeight: CGFloat = 80
     @MainActor
     static var tileScale: CGFloat { ShowcaseLayout.recentlyHeight / designHeight }
-
-    /// «Моя волна» `2713:26834`: плитка 70×80, капля шире плитки и не обрезается кругом.
-    enum Vibe {
-        static let size = CGSize(width: 70, height: 80)
-        /// Капля `wave` 107.1 — центр на (+6.05, −0.45) от центра плитки.
-        static let drop: CGFloat = 107.1
-        static let dropOffset = CGSize(width: 6.05, height: -0.45)
-        /// Свечение — та же капля 138×137, центр на (+6, −0.5), 14 %.
-        static let glow = CGSize(width: 138, height: 137)
-        static let glowOffset = CGSize(width: 6, height: -0.5)
-        static let glowOpacity: Double = 0.14
-        /// ▶ 32 — центр на (+7, 0) от центра плитки.
-        static let icon: CGFloat = 32
-        static let iconOffset = CGSize(width: 7, height: 0)
-    }
 
     /// Фильм `2713:26839`: кадр 138×78 по центру плитки 138×80, таймлайн у низа кадра.
     enum Movie {
@@ -95,11 +82,12 @@ enum RecentlyMotion {
 
 // MARK: - Ряд
 
-/// Ряд «продолженного потребления» над промо «Главной» (задача 71): первой — «Моя волна»,
-/// дальше — что начинали смотреть, слушать, читать (`RecentlyConsumed`), свежее первым.
+/// Ряд «продолженного потребления» над промо «Главной» (задача 71): что начинали смотреть,
+/// слушать, читать (`RecentlyConsumed`), свежее первым. Плитки «Моей волны» первой больше
+/// нет (правка пользователя 2026-10-16).
 ///
-/// Тап: фильм — сразу киноплеер с места остановки, книга — сразу читалка, «Моя волна» —
-/// волна; альбом (плейлист) и исполнитель — их экраны (правка пользователя 2026-10-13).
+/// Тап: фильм — сразу киноплеер с места остановки, книга — сразу читалка; альбом
+/// (плейлист) и исполнитель — их экраны (правка пользователя 2026-10-13).
 /// Трек без известного альбома — играет, экрана у него нет.
 ///
 /// Свечения — статичные блюры копий картинок фоном плиток: раскладку они не раздувают,
@@ -116,7 +104,6 @@ struct RecentlyRow: View {
         let items = actionBar.recently.items
         ScrollView(.horizontal) {
             LazyHStack(spacing: RecentlyLayout.spacing) {
-                vibeTile
                 ForEach(items) { item in
                     Button { open(item) } label: {
                         RecentlyTile(item: item, zoom: zoom)
@@ -136,68 +123,12 @@ struct RecentlyRow: View {
         .frame(height: ShowcaseLayout.recentlyHeight)
     }
 
-    // MARK: «Моя волна»
-
-    /// Волна играет — на плитке пауза: тап по ней ставит волну на паузу (`openMyVibe`),
-    /// и ▶ обещал бы обратное.
-    private var isVibePlaying: Bool {
-        actionBar.isMiniPlayerVisible && MyVibeTracks.isVibe(actionBar.music?.id) && actionBar.isMusicPlaying
-    }
-
-    private var vibeTile: some View {
-        typealias L = RecentlyLayout.Vibe
-        return Button(action: playVibe) {
-            // Капля и свечение шире плитки — фоном распорки, раскладку не раздувают.
-            Color.clear
-                .frame(width: L.size.width, height: L.size.height)
-                .background {
-                    ZStack {
-                        Image("vibeRecentDrop")
-                            .resizable()
-                            .frame(width: L.glow.width, height: L.glow.height)
-                            .blur(radius: RecentlyLayout.glowBlur)
-                            .opacity(L.glowOpacity)
-                            .offset(L.glowOffset)
-                        // Капля — живой шейдер «Моей волны» (тот же ролик, что на экране
-                        // Музыки; правка пользователя 2026-10-13). Чёрный фон ролика убирает
-                        // «экран»; пока ролик не готов — статичная капля макета.
-                        PPVibeShader(placeholder: "vibeRecentDrop")
-                            .frame(width: L.drop, height: L.drop)
-                            .offset(L.dropOffset)
-                    }
-                    .allowsHitTesting(false)
-                }
-                .overlay {
-                    // Тени ▶ (`2713:26838`) — четыре видимых из пяти макета; радиус —
-                    // половина блюра панели.
-                    PlayPauseGlyph(isPlaying: isVibePlaying, box: L.icon)
-                        .foregroundStyle(Color.fillOne)
-                        .shadow(color: .black.opacity(0.10), radius: 1, x: -1, y: 1)
-                        .shadow(color: .black.opacity(0.09), radius: 2, x: -3, y: 3)
-                        .shadow(color: .black.opacity(0.05), radius: 3, x: -6, y: 7)
-                        .shadow(color: .black.opacity(0.01), radius: 3.5, x: -11, y: 13)
-                        .offset(L.iconOffset)
-                        .allowsHitTesting(false)
-                }
-                .contentShape(.rect)
-                .ppTile(L.size)
-        }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
-        .accessibilityLabel(isVibePlaying ? "Пауза" : "Слушать Мою волну")
-    }
-
     // MARK: Тап
 
     /// Хаптика — как у карточек ленты.
     private func haptic() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-    }
-
-    /// «Моя волна» — поток: включает настоящий трек волны, повторный тап — пауза.
-    private func playVibe() {
-        haptic()
-        actionBar.openMyVibe()
     }
 
     private func open(_ item: RecentItem) {
@@ -375,31 +306,5 @@ private extension View {
         return frame(width: size.width, height: size.height)
             .scaleEffect(scale)
             .frame(width: size.width * scale, height: size.height * scale)
-    }
-}
-
-/// Живая капля «Моей волны» в ряду ПП: зацикленный ролик шейдера (`my-vibe-shader`) поверх
-/// фона «экраном» — чёрное поле ролика не видно. Пока первый кадр не готов — статичная
-/// капля; ролик играет, только пока плитка на экране.
-private struct PPVibeShader: View {
-    let placeholder: String
-
-    @State private var playback = LoopingVideoPlayback()
-    @State private var isReady = false
-
-    var body: some View {
-        ZStack {
-            Image(placeholder)
-                .resizable()
-                .opacity(isReady ? 0 : 1)
-            LoopingVideoLayer(player: playback.queue) { isReady = true }
-                .blendMode(.screen)
-                .opacity(isReady ? 1 : 0)
-        }
-        .animation(.easeOut(duration: 0.4), value: isReady)
-        .allowsHitTesting(false)
-        .onAppear { playback.start(bundled: "my-vibe-shader") }
-        .onDisappear { playback.pause() }
-        .accessibilityHidden(true)
     }
 }

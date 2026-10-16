@@ -34,6 +34,8 @@ struct DebugMenuScreen: View {
     @AppStorage(ChromeGlass.dimKey) private var glassDim = ChromeGlass.defaultDim
     /// Белая иконка активного таба без свечения — ключ `tabActiveWhite` (`TabStyleDebug`).
     @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActiveTab = false
+    /// Голова Люмена в поле поиска вместо навигации «Главной» — ключ `lumenInSearch` (`LumenDebug`).
+    @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
     /// Сколько пунктов ленты ушло вверх — для подложки навбара
     @State private var scrollOffset: CGFloat = 0
 
@@ -94,6 +96,15 @@ struct DebugMenuScreen: View {
                     )
                     .padding(.horizontal, ProfileLayout.side)
                     note("Белая иконка активного таба вместо фиолетового свечения")
+
+                    title("Люмен", top: Layout.sectionGap)
+                    toggleIsland(
+                        "Люмен в поиске",
+                        isOn: $lumenInSearch,
+                        accessibility: "Люмен в поле поиска"
+                    )
+                    .padding(.horizontal, ProfileLayout.side)
+                    note("Голова Люмена в поле поиска вместо навигации «Главной», свои фразы плейсхолдера")
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)

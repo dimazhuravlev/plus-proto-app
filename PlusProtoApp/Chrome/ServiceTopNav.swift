@@ -390,6 +390,8 @@ struct ProfileAvatarButton: View {
 /// тот же, что у сервисных табов (`TopNavRow`): аватар стоит ровно там же.
 struct HomeTopNav: View {
     var scrollOffset: CGFloat = 0
+    /// «Люмен в поиске» (дебаг-меню): голова уходит в поле поиска, аватар остаётся на месте.
+    @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
 
     private enum Layout {
         /// Логотип — 161.52 × 24 (`.header-logo`)
@@ -412,14 +414,17 @@ struct HomeTopNav: View {
                 .padding(.leading, ServiceTopNavLayout.side)
             Spacer(minLength: 0)
             HStack(spacing: 0) {
-                // Люмен — маскот в макете без действия: видео, а не кнопка.
-                Color.clear
-                    .frame(width: Layout.lumenVideo, height: Layout.lumenSlotHeight)
-                    .overlay {
-                        LumenHeadVideo()
-                            .frame(width: Layout.lumenVideo, height: Layout.lumenVideo)
-                    }
-                    .accessibilityHidden(true)
+                // Люмен — маскот в макете без действия: видео, а не кнопка. Слот слева
+                // от аватара: без него аватар стоит там же, у поля экрана.
+                if !lumenInSearch {
+                    Color.clear
+                        .frame(width: Layout.lumenVideo, height: Layout.lumenSlotHeight)
+                        .overlay {
+                            LumenHeadVideo()
+                                .frame(width: Layout.lumenVideo, height: Layout.lumenVideo)
+                        }
+                        .accessibilityHidden(true)
+                }
                 ProfileAvatarButton()
             }
             .padding(.trailing, ServiceTopNavLayout.side)
@@ -463,31 +468,5 @@ private struct ActiveTabPill: View {
                     .mask(shape)
             }
             .clipShape(shape)
-    }
-}
-
-/// Живая голова Люмена: зацикленный ролик с прозрачностью (`lumenHead.mov`, HEVC с альфой —
-/// из `fox_loop_alpha_prores4444.mov` пользователя, 2026-10-16). Пока ролик не готов — его же первый кадр картинкой
-/// (`lumenHeadPoster`), подмена не видна; ролик идёт по кругу с паузой 5 с между проходами
-/// и только пока навигация на экране.
-private struct LumenHeadVideo: View {
-    /// Между проходами ролика — 5 с покоя (правка пользователя 2026-10-16).
-    private static let pauseBetweenPasses: Duration = .seconds(5)
-
-    @State private var playback = PausingLoopPlayback()
-    @State private var isReady = false
-
-    var body: some View {
-        ZStack {
-            Image("lumenHeadPoster")
-                .resizable()
-                .opacity(isReady ? 0 : 1)
-            LoopingVideoLayer(player: playback.queue, videoGravity: .resizeAspect) { isReady = true }
-                .opacity(isReady ? 1 : 0)
-        }
-        .animation(.easeOut(duration: 0.3), value: isReady)
-        .allowsHitTesting(false)
-        .onAppear { playback.start(bundled: "lumenHead", extension: "mov", pause: Self.pauseBetweenPasses) }
-        .onDisappear { playback.stop() }
     }
 }
