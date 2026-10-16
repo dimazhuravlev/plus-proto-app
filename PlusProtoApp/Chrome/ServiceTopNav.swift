@@ -468,9 +468,13 @@ private struct ActiveTabPill: View {
 
 /// Живая голова Люмена: зацикленный ролик с прозрачностью (`lumenHead.mov`, HEVC с альфой —
 /// из `fox_loop_alpha_prores4444.mov` пользователя, 2026-10-16). Пока ролик не готов — его же первый кадр картинкой
-/// (`lumenHeadPoster`), подмена не видна; ролик играет, только пока навигация на экране.
+/// (`lumenHeadPoster`), подмена не видна; ролик идёт по кругу с паузой 5 с между проходами
+/// и только пока навигация на экране.
 private struct LumenHeadVideo: View {
-    @State private var playback = LoopingVideoPlayback()
+    /// Между проходами ролика — 5 с покоя (правка пользователя 2026-10-16).
+    private static let pauseBetweenPasses: Duration = .seconds(5)
+
+    @State private var playback = PausingLoopPlayback()
     @State private var isReady = false
 
     var body: some View {
@@ -483,7 +487,7 @@ private struct LumenHeadVideo: View {
         }
         .animation(.easeOut(duration: 0.3), value: isReady)
         .allowsHitTesting(false)
-        .onAppear { playback.start(bundled: "lumenHead", extension: "mov") }
-        .onDisappear { playback.pause() }
+        .onAppear { playback.start(bundled: "lumenHead", extension: "mov", pause: Self.pauseBetweenPasses) }
+        .onDisappear { playback.stop() }
     }
 }

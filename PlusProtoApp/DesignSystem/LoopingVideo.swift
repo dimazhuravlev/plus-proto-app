@@ -51,6 +51,65 @@ final class LoopingVideoPlayback {
     }
 }
 
+/// Клип по кругу с паузой между проходами: сыграл — встал на первом кадре, через `pause`
+/// снова. Для маскота в навигации, который не должен двигаться без остановки (правка
+/// пользователя 2026-10-16: между циклами 5 с).
+@MainActor
+final class PausingLoopPlayback {
+    let queue = AVQueuePlayer()
+    private var source: URL?
+    private var pause: Duration = .zero
+    private var isRunning = false
+    private var endObserver: NSObjectProtocol?
+    private var resume: Task<Void, Never>?
+
+    func start(bundled name: String, extension ext: String = "mp4", pause: Duration) {
+        guard let url = LoopingVideoPlayback.bundled(name, extension: ext) else { return }
+        self.pause = pause
+        if source != url {
+            source = url
+            AppAudioSession.useAmbientForSilentVideo()
+            queue.isMuted = true
+            queue.preventsDisplaySleepDuringVideoPlayback = false
+            // На конце — стоп, а не переход к следующему элементу очереди: элемент один.
+            queue.actionAtItemEnd = .pause
+            let item = AVPlayerItem(url: url)
+            queue.removeAllItems()
+            queue.insert(item, after: nil)
+            if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+            endObserver = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.finishedPass() }
+            }
+        }
+        isRunning = true
+        queue.play()
+    }
+
+    func stop() {
+        isRunning = false
+        resume?.cancel()
+        queue.pause()
+    }
+
+    /// Проход доиграл: на первый кадр (у петли он же последний — скачка нет) и пауза.
+    private func finishedPass() {
+        queue.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        resume?.cancel()
+        let pause = pause
+        resume = Task { [weak self] in
+            try? await Task.sleep(for: pause)
+            guard !Task.isCancelled, let self, self.isRunning else { return }
+            self.queue.play()
+        }
+    }
+
+    deinit {
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+    }
+}
+
 /// Видео как `AVPlayerLayer`: `VideoPlayer` тянет за собой системный контрол-оверлей,
 /// которого в фоне экрана быть не должно.
 struct LoopingVideoLayer: UIViewRepresentable {
