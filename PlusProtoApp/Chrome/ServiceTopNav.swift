@@ -467,7 +467,7 @@ private struct ActiveTabPill: View {
 }
 
 /// Живая голова Люмена: зацикленный ролик с прозрачностью (`lumenHead.mov`, HEVC с альфой —
-/// из `lumen_alpha.webm` пользователя). Пока ролик не готов — его же первый кадр картинкой
+/// из `fox_loop_alpha_prores4444.mov` пользователя, 2026-10-16). Пока ролик не готов — его же первый кадр картинкой
 /// (`lumenHeadPoster`), подмена не видна; ролик играет, только пока навигация на экране.
 private struct LumenHeadVideo: View {
     @State private var playback = LoopingVideoPlayback()
