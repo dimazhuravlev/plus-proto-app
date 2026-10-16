@@ -31,8 +31,8 @@ final class LoopingVideoPlayback {
         looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(url: url))
     }
 
-    func start(bundled name: String) {
-        guard let url = Self.bundled(name) else { return }
+    func start(bundled name: String, extension ext: String = "mp4") {
+        guard let url = Self.bundled(name, extension: ext) else { return }
         start(url: url)
     }
 
@@ -45,8 +45,9 @@ final class LoopingVideoPlayback {
         queue.pause()
     }
 
-    static func bundled(_ name: String) -> URL? {
-        Bundle.main.url(forResource: name, withExtension: "mp4")
+    /// Ролики с альфой (HEVC с прозрачностью) лежат в `.mov`, остальные — `.mp4`.
+    static func bundled(_ name: String, extension ext: String = "mp4") -> URL? {
+        Bundle.main.url(forResource: name, withExtension: ext)
     }
 }
 

@@ -394,9 +394,13 @@ struct HomeTopNav: View {
     private enum Layout {
         /// Логотип — 161.52 × 24 (`.header-logo`)
         static let logo = CGSize(width: 161.52, height: 24)
-        static let lumen: CGFloat = 40
-        /// Люмен ↔ аватар
-        static let gap: CGFloat = 16
+        /// Голова Люмена — живое видео 72×72 вплотную к рамке аватара, по центру ряда
+        /// (макет `2768:36304`: кадр видео в группе `right` с аватаром, 2026-10-16).
+        /// Голова внутри кадра меньше: вокруг — прозрачное поле ролика.
+        static let lumenVideo: CGFloat = 72
+        /// Высота места в ряду — как у аватара: кадр видео выходит за ряд поровну
+        /// сверху и снизу и раскладку ряда не меняет.
+        static let lumenSlotHeight: CGFloat = 48
     }
 
     var body: some View {
@@ -407,12 +411,14 @@ struct HomeTopNav: View {
                 .accessibilityLabel("Яндекс Плюс")
                 .padding(.leading, ServiceTopNavLayout.side)
             Spacer(minLength: 0)
-            HStack(spacing: Layout.gap) {
-                // Люмен — маскот в макете без действия: картинка, а не кнопка.
-                Image("lumenHead")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: Layout.lumen, height: Layout.lumen)
+            HStack(spacing: 0) {
+                // Люмен — маскот в макете без действия: видео, а не кнопка.
+                Color.clear
+                    .frame(width: Layout.lumenVideo, height: Layout.lumenSlotHeight)
+                    .overlay {
+                        LumenHeadVideo()
+                            .frame(width: Layout.lumenVideo, height: Layout.lumenVideo)
+                    }
                     .accessibilityHidden(true)
                 ProfileAvatarButton()
             }
@@ -457,5 +463,27 @@ private struct ActiveTabPill: View {
                     .mask(shape)
             }
             .clipShape(shape)
+    }
+}
+
+/// Живая голова Люмена: зацикленный ролик с прозрачностью (`lumenHead.mov`, HEVC с альфой —
+/// из `lumen_alpha.webm` пользователя). Пока ролик не готов — его же первый кадр картинкой
+/// (`lumenHeadPoster`), подмена не видна; ролик играет, только пока навигация на экране.
+private struct LumenHeadVideo: View {
+    @State private var playback = LoopingVideoPlayback()
+    @State private var isReady = false
+
+    var body: some View {
+        ZStack {
+            Image("lumenHeadPoster")
+                .resizable()
+                .opacity(isReady ? 0 : 1)
+            LoopingVideoLayer(player: playback.queue, videoGravity: .resizeAspect) { isReady = true }
+                .opacity(isReady ? 1 : 0)
+        }
+        .animation(.easeOut(duration: 0.3), value: isReady)
+        .allowsHitTesting(false)
+        .onAppear { playback.start(bundled: "lumenHead", extension: "mov") }
+        .onDisappear { playback.pause() }
     }
 }
