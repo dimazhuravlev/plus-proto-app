@@ -88,7 +88,7 @@ private struct MyVibeHero: View {
 
     /// Верх action bar от низа экрана: безопасная зона, ряд табов, зазор, сам бар.
     private var actionBarTop: CGFloat {
-        PlusChromeMetrics.bottomSafeArea + PlusChromeMetrics.tabsRowHeight
+        PlusChromeMetrics.chromeBottom + PlusChromeMetrics.tabsRowHeight
             + PlusChromeMetrics.actionBarToTabsGap + PlusMetrics.actionBarHeight
     }
 

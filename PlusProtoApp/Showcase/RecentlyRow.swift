@@ -25,13 +25,16 @@ enum RecentlyLayout {
     static var tileScale: CGFloat { ShowcaseLayout.recentlyHeight / designHeight }
 
     /// Фильм `2713:26839`: кадр 138×78 по центру плитки 138×80, таймлайн у низа кадра.
+    /// Ширина плитки и кадра — 85 % макетной, высота та же (правка пользователя 2026-10-16):
+    /// кадр `scaledToFill` срезается по бокам.
     enum Movie {
-        static let size = CGSize(width: 138, height: 80)
-        static let frame = CGSize(width: 138, height: 78)
+        static let widthShare: CGFloat = 0.85
+        static let size = CGSize(width: 138 * widthShare, height: 80)
+        static let frame = CGSize(width: 138 * widthShare, height: 78)
         /// Скругление — как у альбома (12; в макете 6): плитки фильма и альбома одинаковые —
         /// правка пользователя 2026-10-13.
         static let radius: CGFloat = 12
-        /// Полоса 130×3 в (4, 71) кадра — по 4 от левой, правой и нижней кромки.
+        /// Полоса 3 в высоту в (4, 71) кадра — по 4 от левой, правой и нижней кромки.
         static let trackInset: CGFloat = 4
         static let trackHeight: CGFloat = 3
         static var trackWidth: CGFloat { frame.width - 2 * trackInset }

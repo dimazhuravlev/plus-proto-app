@@ -1015,8 +1015,7 @@ private struct SearchPill: View {
             // Пауза совпадает с гашением плейсхолдера — значит по раскладке.
             SearchPlaceholderTicker(
                 isPaused: layout.isRaised || isBrowsing,
-                phrases: lumenInSearch ? SearchPlaceholderTicker.lumenPhrases : SearchPlaceholderTicker.phrases,
-                color: lumenInSearch ? LumenSearchLayout.placeholderColor : .searchPlaceholder
+                phrases: lumenInSearch ? SearchPlaceholderTicker.lumenPhrases : SearchPlaceholderTicker.phrases
             )
             // Другая серия — цикл и номер фразы с начала.
             .id(lumenInSearch)
@@ -1041,8 +1040,6 @@ private enum LumenSearchLayout {
     /// Центр эллипса и поворот — из макета.
     static let glowCenter = CGPoint(x: 64.2, y: 26.4)
     static let glowRotation: Double = -9.69
-    /// Фразы Люмена — голубые 30 % (`rgba(111, 218, 238, 0.3)` макета), а не белые.
-    static let placeholderColor = Color(red: 111 / 255, green: 218 / 255, blue: 238 / 255).opacity(0.3)
 }
 
 /// Подмена плейсхолдера поиска.
@@ -1090,7 +1087,6 @@ private enum SearchPlaceholderMotion {
 private struct SearchPlaceholderTicker: View {
     var isPaused: Bool
     var phrases: [String] = Self.phrases
-    var color: Color = .searchPlaceholder
 
     /// Где строка находится сейчас. `.above` и `.below` — одно и то же невидимое
     /// состояние, отличаются только стороной, с которой строка входит и выходит.
@@ -1159,7 +1155,7 @@ private struct SearchPlaceholderTicker: View {
     private func phrase(_ text: String) -> some View {
         Text(text + "...")
             .plusHeadline(.s)
-            .foregroundStyle(color)
+            .foregroundStyle(Color.searchPlaceholder)
             // Длинная фраза в узком поле (чип справа) не переносится на вторую строку.
             .lineLimit(1)
     }
