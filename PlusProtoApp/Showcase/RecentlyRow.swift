@@ -36,8 +36,9 @@ enum RecentlyLayout {
     /// «Моя волна» `2785:32127`: плитка 80×80; капля и свечение шире плитки, ▶ 32 по центру.
     enum Vibe {
         static let size = CGSize(width: 80, height: 80)
-        /// Капля `wave` 111 — центр на (−0.5, −0.5) от центра плитки.
-        static let drop: CGFloat = 111
+        /// Капля `wave` — 100, на 10 % меньше макетных 111 (правка пользователя 2026-10-16);
+        /// центр на (−0.5, −0.5) от центра плитки, как в макете.
+        static let drop: CGFloat = 100
         static let dropOffset = CGSize(width: -0.5, height: -0.5)
         /// Свечение — та же капля 138×137, центр на (+6, −0.5), 14 %, блюр 8.
         static let glow = CGSize(width: 138, height: 137)

@@ -169,9 +169,9 @@ enum ShowcasePromoLayout {
         let fade = (1 - ShowcasePromoBackdropStyle.solidShare) * (backdropHeight - ShowcaseLayout.recentlyBand)
         return 1 - fade / backdropHeight
     }
-    /// Фон — на 60 %: на 10 % прозрачнее фона промо сервисов (правка пользователя
-    /// 2026-10-08) и ещё на 10 % (правка 2026-10-09).
-    static let backdropOpacity: Double = 0.6
+    /// Фон — на 45 %: на 10 % прозрачнее фона промо сервисов (правка пользователя
+    /// 2026-10-08), ещё на 10 % (правка 2026-10-09) и ещё на 15 % (правка 2026-10-16).
+    static let backdropOpacity: Double = 0.45
 
     /// Где слот относительно центра видимой ленты: 0 — по центру, ±1 — на месте соседа.
     /// Считается от рамки скролла, а не экрана: ширина устройства не важна. Шаг приходит
