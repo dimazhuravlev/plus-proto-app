@@ -309,6 +309,31 @@ private enum PromoPetalCache {
     }
 }
 
+/// Второй тон капли станции — тот же цвет, повёрнутый по тону на 10° к жёлтому: зелёный
+/// уходит в салатовый, синий — в бирюзу, лиловый — в мадженту; насыщенность и яркость те же.
+/// Расхождение едва заметное (правка пользователя 2026-10-16).
+enum PromoStationTint {
+    static let hueShift: CGFloat = 10.0 / 360.0
+    /// Жёлтый — 60° круга тонов.
+    private static let yellow: CGFloat = 60.0 / 360.0
+
+    static func neighbor(of color: Color) -> Color {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        guard UIColor(color).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+            return color
+        }
+        // Кратчайший путь по кругу тонов к жёлтому, не дальше самого жёлтого.
+        var delta = yellow - hue
+        if delta > 0.5 { delta -= 1 }
+        if delta < -0.5 { delta += 1 }
+        let step = min(abs(delta), hueShift) * (delta < 0 ? -1 : 1)
+        var shifted = hue + step
+        if shifted < 0 { shifted += 1 }
+        if shifted >= 1 { shifted -= 1 }
+        return Color(hue: Double(shifted), saturation: Double(saturation), brightness: Double(brightness), opacity: Double(alpha))
+    }
+}
+
 /// Несвёрнутая капля с полем под блюр: эллипс макета, заливка цветом станции, к середине
 /// уходящая в прозрачность (стопы — общие с барабаном, `VibeBlobFill`), и кромка 1.44
 /// изнутри — светлый тон, тающий туда же. Холст — только верх эллипса, до конца заливки:
@@ -375,7 +400,7 @@ private struct PromoStationBlob: View {
 
     private var shape: some View {
         let canvas = Self.canvas(scale: scale)
-        return Canvas { [fill, rim, scale] context, _ in
+        return Canvas { [fill, rim, scale] context, size in
             let padding = Layout.blobPadding
             func point(_ point: CGPoint) -> CGPoint {
                 CGPoint(x: (padding + point.x) * scale, y: (padding + point.y) * scale)
@@ -386,11 +411,27 @@ private struct PromoStationBlob: View {
                 width: Layout.blob.width * scale,
                 height: Layout.blob.height * scale
             ))
-            context.fill(ellipse, with: .linearGradient(
-                VibeBlobFill.gradient(fill),
-                startPoint: point(Layout.fillStart),
-                endPoint: point(Layout.fillEnd)
-            ))
+            // Заливка — не сплошным цветом станции, а переходом поперёк капли в соседний
+            // оттенок (`PromoStationTint.neighbor`; правка пользователя 2026-10-16). Две
+            // копии под взаимными масками складываются (`plusLighter`): прозрачность капли
+            // та же, меняется только тон.
+            let across = Gradient(colors: [.white, .clear])
+            let left = point(CGPoint(x: 0, y: Layout.blob.height / 2))
+            let right = point(CGPoint(x: Layout.blob.width, y: Layout.blob.height / 2))
+            let bounds = Path(CGRect(origin: .zero, size: size))
+            for (tone, mask) in [(fill, across), (PromoStationTint.neighbor(of: fill), Gradient(colors: [.clear, .white]))] {
+                var half = context
+                half.blendMode = .plusLighter
+                half.drawLayer { layer in
+                    layer.fill(ellipse, with: .linearGradient(
+                        VibeBlobFill.gradient(tone),
+                        startPoint: point(Layout.fillStart),
+                        endPoint: point(Layout.fillEnd)
+                    ))
+                    layer.blendMode = .destinationIn
+                    layer.fill(bounds, with: .linearGradient(mask, startPoint: left, endPoint: right))
+                }
+            }
             // Обводка вдвое толще, срезанная по самому эллипсу, — внутренняя 1.44
             var rimContext = context
             rimContext.clip(to: ellipse)
