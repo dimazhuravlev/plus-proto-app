@@ -42,9 +42,9 @@ struct DebugMenuScreen: View {
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
         static let noteTop: CGFloat = 8
-        /// Верхний отступ заголовков секций 2–4: общие 16 (`ProfileLayout.titleTop`) + 8,
-        /// секции разнесены дальше, чем в профиле (правка пользователя 2026-10-12)
-        static let sectionGap: CGFloat = ProfileLayout.titleTop + 8
+        /// Верхний отступ заголовков секций со второй: общие 16 (`ProfileLayout.titleTop`) + 8 + 16,
+        /// секции разнесены дальше, чем в профиле (правки пользователя 2026-10-12 и 2026-10-16)
+        static let sectionGap: CGFloat = ProfileLayout.titleTop + 8 + 16
         static let checkIcon: CGFloat = 24
         /// Подпись громкости над слайдером
         static let sliderGap: CGFloat = 8
@@ -104,7 +104,6 @@ struct DebugMenuScreen: View {
                         accessibility: "Люмен в поле поиска"
                     )
                     .padding(.horizontal, ProfileLayout.side)
-                    note("Голова Люмена в поле поиска вместо навигации «Главной», свои фразы плейсхолдера")
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)
