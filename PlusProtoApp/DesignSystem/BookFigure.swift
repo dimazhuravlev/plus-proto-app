@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Книга в небольшой проекции — макет `2311:25096`: обложка своих пропорций (ширина
 /// по ней, обложка не режется), за ней выглядывает блок страниц, у корешка —
@@ -65,6 +66,34 @@ struct BookFigureGeometry {
         let height = (width / (clamped + 2 / referenceHeight)).rounded()
         let geometry = BookFigureGeometry(coverHeight: height)
         return (geometry, width - geometry.pagesInset)
+    }
+}
+
+/// Пропорции обложки книги — по самой картинке. Одна логика на все карточки, которым
+/// пропорций не дали данные (экран книги, ряд ПП «Главной»): высота у них задана, ширина
+/// идёт от обложки (`BookFigureGeometry.coverWidth(aspect:)`), как у остальных книг.
+enum BookCoverAspect {
+    /// Из кэша — синхронно, на первом кадре. `nil` — картинка ещё не в памяти;
+    /// `.some(nil)` — картинки нет вовсе, книга встаёт с пропорциями по умолчанию.
+    @MainActor
+    static func cached(of source: ArtworkSource) -> CGFloat?? {
+        if let url = source.remoteURL {
+            return ArtworkLoader.shared.cached(url).map { .some(of($0)) }
+        }
+        return .some(source.fallbackAsset.flatMap { UIImage(named: $0) }.map(of))
+    }
+
+    /// С загрузкой. Не загрузилась — `nil`: книга встанет с пропорциями по умолчанию,
+    /// а на обложке будет заглушка `ArtworkImage`.
+    static func load(of source: ArtworkSource) async -> CGFloat? {
+        if let url = source.remoteURL, let image = await ArtworkLoader.shared.image(for: url) {
+            return of(image)
+        }
+        return await MainActor.run { source.fallbackAsset.flatMap { UIImage(named: $0) }.map(of) }
+    }
+
+    static func of(_ image: UIImage) -> CGFloat {
+        image.size.width / max(image.size.height, 1)
     }
 }
 

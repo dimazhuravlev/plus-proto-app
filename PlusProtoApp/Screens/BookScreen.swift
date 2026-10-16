@@ -113,7 +113,7 @@ struct BookScreen: View {
         self.entity = entity
         // Обложка уже в кэше (книгу открыли из выдачи или с витрины) — книга встаёт
         // сразу своих пропорций, без скелетона на первом кадре.
-        _coverAspect = State(initialValue: Self.cachedAspect(of: entity.artwork))
+        _coverAspect = State(initialValue: BookCoverAspect.cached(of: entity.artwork))
     }
 
     var body: some View {
@@ -158,7 +158,7 @@ struct BookScreen: View {
         .task { await text.load(bookID: entity.id) }
         .task(id: entity.artwork) {
             guard coverAspect == nil else { return }
-            let aspect = await Self.loadAspect(of: entity.artwork)
+            let aspect = await BookCoverAspect.load(of: entity.artwork)
             withAnimation(BookScreenMotion.reveal) { coverAspect = .some(aspect) }
         }
         // «Книги писателя» — когда известен автор: из выдачи он приходит сразу,
@@ -503,29 +503,6 @@ struct BookScreen: View {
             return
         }
         await shelf.load(author: key, excludingVolume: volumeID, title: entity.title)
-    }
-
-    // MARK: Обложка
-
-    /// Пропорции обложки из кэша — синхронно, на первом кадре.
-    private static func cachedAspect(of source: ArtworkSource) -> CGFloat?? {
-        if let url = source.remoteURL {
-            return ArtworkLoader.shared.cached(url).map { .some(aspect(of: $0)) }
-        }
-        return .some(source.fallbackAsset.flatMap { UIImage(named: $0) }.map(aspect(of:)))
-    }
-
-    /// Пропорции обложки — по самой картинке. Не загрузилась — `nil`: книга встанет
-    /// с пропорциями по умолчанию, а на обложке будет заглушка `ArtworkImage`.
-    private static func loadAspect(of source: ArtworkSource) async -> CGFloat? {
-        if let url = source.remoteURL, let image = await ArtworkLoader.shared.image(for: url) {
-            return aspect(of: image)
-        }
-        return source.fallbackAsset.flatMap { UIImage(named: $0) }.map(aspect(of:))
-    }
-
-    private static func aspect(of image: UIImage) -> CGFloat {
-        image.size.width / max(image.size.height, 1)
     }
 
     // MARK: Действия

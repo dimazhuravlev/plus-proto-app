@@ -55,11 +55,12 @@ enum RecentlyLayout {
         static let glowOpacity: Double = 0.25
     }
 
-    /// Книга `2713:26847`: обложка 52.66×78.99 с верхом на 1.01 в плитке 54×80 — рисунок
-    /// `BookFigure` (блок страниц, сгиб у корешка, бордер с трёх сторон); позади — копия
-    /// обложки в блюре.
+    /// Книга `2713:26847`: обложка высотой 78.99 с верхом на 1.01 в плитке высотой 80 —
+    /// рисунок `BookFigure` (блок страниц, сгиб у корешка, бордер с трёх сторон). Ширина —
+    /// от пропорций обложки, как у остальных книг приложения (правка пользователя
+    /// 2026-10-16; в макете — 54 под обложку 2:3).
     enum Book {
-        static let size = CGSize(width: 54, height: 80)
+        static let height: CGFloat = 80
         static let cover = CGSize(width: 52.66, height: 78.99)
         static let coverTop: CGFloat = 1.01
         static let glowOpacity: Double = 0.45
@@ -169,6 +170,17 @@ private struct RecentlyTile: View {
     let zoom: Namespace.ID
 
     @Environment(ActionBarState.self) private var actionBar
+    /// Пропорции обложки книги (`BookCoverAspect`): `nil` — картинка ещё не в памяти, плитка
+    /// стоит 2:3. Обложки ряда грузятся под заставкой, так что почти всегда — с первого кадра.
+    @State private var bookAspect: CGFloat??
+
+    init(item: RecentItem, zoom: Namespace.ID) {
+        self.item = item
+        self.zoom = zoom
+        if case .book(let book) = item {
+            _bookAspect = State(initialValue: BookCoverAspect.cached(of: book.cover))
+        }
+    }
 
     var body: some View {
         Group {
@@ -180,13 +192,19 @@ private struct RecentlyTile: View {
             }
         }
         .ppTile(designSize)
+        .task(id: item.id) {
+            guard case .book(let book) = item, bookAspect == nil else { return }
+            let aspect = await BookCoverAspect.load(of: book.cover)
+            // Обложка приехала после показа — ряд доезжает той же кривой, что перестановка.
+            withAnimation(RecentlyMotion.reorder) { bookAspect = .some(aspect) }
+        }
     }
 
     private var designSize: CGSize {
         switch item {
         case .movie: RecentlyLayout.Movie.size
         case .music: RecentlyLayout.Album.size
-        case .book: RecentlyLayout.Book.size
+        case .book: CGSize(width: bookFrame.width, height: RecentlyLayout.Book.height)
         case .artist: CGSize(width: RecentlyLayout.Artist.size, height: RecentlyLayout.Artist.size)
         }
     }
@@ -262,18 +280,26 @@ private struct RecentlyTile: View {
 
     // MARK: Книга
 
+    private var bookCoverWidth: CGFloat {
+        RecentlyLayout.Book.geometry.coverWidth(aspect: bookAspect ?? nil)
+    }
+
+    private var bookFrame: CGSize {
+        RecentlyLayout.Book.geometry.frameSize(coverWidth: bookCoverWidth)
+    }
+
     private func bookTile(_ cover: ArtworkSource) -> some View {
         typealias L = RecentlyLayout.Book
         let geometry = L.geometry
         // Без свечения под обложкой — правка пользователя 2026-10-13 (в макете было 0.45).
         return ZStack(alignment: .topLeading) {
             // Верх обложки — на 1.01, как в макете: над ней выглядывает блок страниц.
-            BookFigure(geometry: geometry, coverWidth: L.cover.width) {
+            BookFigure(geometry: geometry, coverWidth: bookCoverWidth) {
                 SkeletonArtwork(source: cover)
             }
             .offset(y: L.coverTop - geometry.pagesTop)
         }
-        .frame(width: L.size.width, height: L.size.height, alignment: .topLeading)
+        .frame(width: bookFrame.width, height: L.height, alignment: .topLeading)
     }
 
     // MARK: Исполнитель
