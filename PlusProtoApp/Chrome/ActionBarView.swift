@@ -111,13 +111,34 @@ enum ActionBarGeometry {
     /// Зазор обложка ↔ тексты. В макете он меньше, чем до кнопок.
     static let miniPlayerCoverGap: CGFloat = 8
     static let miniPlayerActionsGap: CGFloat = 18
-    static let bookChipSize = CGSize(width: 44, height: 60)
-    /// Скругление чипа книги — на 1 больше `PlusRadius.bookChip` (правка пользователя 2026-10-10);
-    /// токен делит внутренний кадр чипа кино, его не трогаем.
-    static let bookChipRadius: CGFloat = PlusRadius.bookChip + 1
-    static let bookCoverSize = CGSize(width: 36, height: 52)
+    /// Чип книги `2001:111014`: стекло со скруглением 8 и полями 4 вокруг обложки высотой 52;
+    /// обложка — книжной формы (скругление 4 только справа, `bookCoverShape`). Ширина — от
+    /// пропорций обложки, как у всех книг приложения (правка пользователя 2026-10-16):
+    /// пока их нет — макетные 36.
+    static let bookChipRadius: CGFloat = 8
+    static let bookCoverRadius: CGFloat = 4
+    static let bookChipPadding: CGFloat = 4
+    static let bookCoverHeight: CGFloat = 52
+    static let bookCoverDefaultWidth: CGFloat = 36
+
+    static func bookCoverSize(aspect: CGFloat?) -> CGSize {
+        guard let aspect else { return CGSize(width: bookCoverDefaultWidth, height: bookCoverHeight) }
+        let range = BookFigureGeometry.aspectRange
+        let clamped = min(max(aspect, range.lowerBound), range.upperBound)
+        return CGSize(width: (bookCoverHeight * clamped).rounded(), height: bookCoverHeight)
+    }
+
+    static func bookChipSize(aspect: CGFloat?) -> CGSize {
+        let cover = bookCoverSize(aspect: aspect)
+        return CGSize(width: cover.width + 2 * bookChipPadding, height: cover.height + 2 * bookChipPadding)
+    }
+
     /// AABB повёрнутого чипа книги — ширина для раскладки HStack.
-    static let bookChipAABBWidth: CGFloat = 48.078
+    static func bookChipAABBWidth(aspect: CGFloat?) -> CGFloat {
+        let chip = bookChipSize(aspect: aspect)
+        let angle = CGFloat(chipRotation) * .pi / 180
+        return chip.width * cos(angle) + chip.height * sin(angle)
+    }
     static let movieChipSize = CGSize(width: 88, height: 54)
     static let movieChipPadding: CGFloat = 4
     static let movieFrameSize = CGSize(width: 80, height: 46)
@@ -246,6 +267,7 @@ struct ActionBarView: View {
         let layout = ActionBarLayout(
             mode: actionBar.mode,
             hasMusic: actionBar.music != nil,
+            bookAspect: actionBar.bookCoverAspect,
             raise: raise
         )
 
@@ -473,7 +495,7 @@ private struct ActionBarLayout: Equatable {
     let gap: CGFloat
 
     @MainActor
-    init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise) {
+    init(mode: ActionBarMode, hasMusic: Bool, bookAspect: CGFloat? = nil, raise: ActionBarRaise) {
         let compact = PlusMetrics.actionBarCompact
         isRaised = raise.isRaised
         showsClear = raise.isRaised
@@ -550,7 +572,7 @@ private struct ActionBarLayout: Equatable {
             searchIconOnly = false
             trackInfoOpacity = 0
             progressOpacity = 0
-            trailingWidth = ActionBarGeometry.bookChipAABBWidth
+            trailingWidth = ActionBarGeometry.bookChipAABBWidth(aspect: bookAspect)
             gap = PlusMetrics.actionBarGap
 
         case .movie:
@@ -1314,7 +1336,7 @@ private struct TrailingSlot: View {
             // именно под этот переход).
             if let book = actionBar.book {
                 ChipButton(title: book.title, action: { actionBar.read(book) }) {
-                    BookChip(cover: book.cover)
+                    BookChip(cover: book.cover, aspect: actionBar.bookCoverAspect)
                 }
                 .zoneWidth(layout)
                 .blurReplaceLayer(layout.showBookChip)
@@ -1714,19 +1736,21 @@ private struct ChipButton<Label: View>: View {
 
 private struct BookChip: View {
     let cover: ArtworkSource
+    /// Пропорции обложки (`ActionBarState.bookCoverAspect`); `nil` — макетная ширина.
+    let aspect: CGFloat?
 
     var body: some View {
-        ZStack {
-            ArtworkImage(source: cover)
-                .scaledToFill()
-                .frame(width: ActionBarGeometry.bookCoverSize.width, height: ActionBarGeometry.bookCoverSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
-                .coverBorder(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
-        }
-        .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
-        .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
-        .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
-        .frame(width: ActionBarGeometry.bookChipAABBWidth, height: PlusMetrics.actionBarHeight)
+        let coverSize = ActionBarGeometry.bookCoverSize(aspect: aspect)
+        let chipSize = ActionBarGeometry.bookChipSize(aspect: aspect)
+        // Кадр задаёт распорка, картинка его заполняет.
+        Color.clear
+            .frame(width: coverSize.width, height: coverSize.height)
+            .overlay { ArtworkImage(source: cover).scaledToFill() }
+            .bookCoverShape(radius: ActionBarGeometry.bookCoverRadius)
+            .frame(width: chipSize.width, height: chipSize.height)
+            .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
+            .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
+            .frame(width: ActionBarGeometry.bookChipAABBWidth(aspect: aspect), height: PlusMetrics.actionBarHeight)
     }
 }
 

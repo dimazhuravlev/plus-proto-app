@@ -164,7 +164,35 @@ final class ActionBarState {
     /// оставаться отрисованным до конца анимации, а вернувшийся режим — не мигать пустотой.
     private(set) var music: MusicNowPlaying? { didSet { persist() } }
     private(set) var movie: MovieInProgress? { didSet { persist() } }
-    private(set) var book: BookInProgress? { didSet { persist() } }
+    private(set) var book: BookInProgress? {
+        didSet {
+            persist()
+            if book?.cover != oldValue?.cover { resolveBookCoverAspect() }
+        }
+    }
+
+    /// Пропорции обложки книги в баре — по ним чип меняет ширину, как все книги приложения
+    /// (правка пользователя 2026-10-16). Из кэша — сразу; нет — догружается, и бар доезжает
+    /// своим морфом. `nil` — пропорций нет (ещё едет или картинки нет): макетная ширина.
+    private(set) var bookCoverAspect: CGFloat?
+    @ObservationIgnored private var bookAspectTask: Task<Void, Never>?
+
+    private func resolveBookCoverAspect() {
+        bookAspectTask?.cancel()
+        guard let cover = book?.cover else {
+            bookCoverAspect = nil
+            return
+        }
+        if Thread.isMainThread, let cached = MainActor.assumeIsolated({ BookCoverAspect.cached(of: cover) }) {
+            bookCoverAspect = cached
+            return
+        }
+        bookAspectTask = Task { @MainActor [weak self] in
+            let aspect = await BookCoverAspect.load(of: cover)
+            guard !Task.isCancelled, let self, self.book?.cover == cover else { return }
+            withAnimation(ActionBarMotion.morph) { self.bookCoverAspect = aspect }
+        }
+    }
 
     /// «Смотреть дальше» главной Кинопоиска — всё, что запускали в киноплеере.
     /// Живёт здесь, потому что вход в плеер один — `watch` (2026-10-04).
