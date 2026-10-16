@@ -146,6 +146,22 @@ struct ShowcaseFeedView: View {
                 navigation.open(route)
             }
         }
+        // `-debugLaterToast 1` без `-debugTapBlock` — открыть первый живой фильм ленты (тап
+        // по карточке — тот же `navigation.open`); дальше хук экрана фильма жмёт «Позже»
+        // и тапает тост. Номер блока фильма в живой ленте плавает. Один раз на процесс.
+        .task(id: feed.blocks.map(\.id)) {
+            let defaults = UserDefaults.standard
+            guard defaults.bool(forKey: "debugLaterToast"), defaults.integer(forKey: "debugTapBlock") == 0,
+                  !ShowcaseTapDebug.openedMovie else { return }
+            let movie = feed.blocks.first { block in
+                if case .movie(let b) = block { b.id.hasPrefix("kp-") } else { false }
+            }
+            guard let route = movie?.entityRoute else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            ShowcaseTapDebug.openedMovie = true
+            navigation.open(route)
+        }
         #endif
     }
 
@@ -256,6 +272,8 @@ enum ShowcaseAppearMemory {
 /// Потолок срабатываний `-debugTapBlock` на процесс — см. задачу в `ShowcaseFeedView`.
 private enum ShowcaseTapDebug {
     static var fires = 0
+    /// `-debugLaterToast` уже открыл фильм.
+    static var openedMovie = false
 }
 #endif
 

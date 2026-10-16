@@ -64,8 +64,13 @@ final class ShowcaseCatalog {
     func hideBlock(id: String) {
         hiddenBlockIDs.insert(id)
     }
-    /// Айтем промо на месте — помнится на сессию, как у промо Кинопоиска и Книг.
-    var promoIndex = 0
+    /// Айтем промо на месте — помнится на сессию, как у промо Кинопоиска и Книг. Старт —
+    /// случайная карточка на каждый холодный запуск (правка пользователя 2026-10-14: всегда
+    /// стартовало кино); число берётся по модулю набора, зерно — `ShowcaseRotation`.
+    var promoIndex: Int = {
+        var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.promoStart)
+        return Int.random(in: 0..<10_000, using: &rng)
+    }()
 
     /// Витрина стартует с настоящими фильмами, а не с моковыми: запас лежит на диске
     /// и читается за миллисекунды. Мок остаётся только на самый первый запуск после
@@ -81,7 +86,12 @@ final class ShowcaseCatalog {
     init() {
         var rng = ShowcaseRotation.movieGenerator()
         let snapshot = MoviePool.diskSnapshot()
-        let unseen = snapshot.movies.filter { !snapshot.shown.contains($0.id) }
+        var unseen = snapshot.movies.filter { !snapshot.shown.contains($0.id) }
+        // Запас на мели — первый кадр сразу со второго круга, как его сбросит
+        // асинхронный проход (`MoviePool.rewindIfExhausted`), а не на моках.
+        if unseen.filter(Self.isWatchable).count < MoviePool.refillThreshold {
+            unseen = snapshot.movies
+        }
         // Тот же приём, что и в асинхронном проходе: сперва тайтлы, у которых уже
         // есть кадр, и только если таких нет — любые годные.
         func withStill(_ movies: [KinopoiskMovie]) -> [KinopoiskMovie] {
@@ -162,7 +172,11 @@ final class ShowcaseCatalog {
         // Считаем по «продолжить смотреть»: логотип есть далеко не у всех, и годные
         // для этого блока кончаются первыми.
         if await MoviePool.shared.needsRefill(scarcest: Self.isWatchable) {
-            await refillMoviePool(using: &rng)
+            if await MoviePool.shared.canGrow(lists: ShowcaseSeeds.movieLists) {
+                await refillMoviePool(using: &rng)
+            }
+            // Сеть новых фильмов не дала — запас идёт на второй круг, а не на моки.
+            await MoviePool.shared.rewindIfExhausted(scarcest: Self.isWatchable)
             // Кадры — до выбора: иначе первый запуск после установки покажет фильм
             // без кадра, хотя кадр к тому моменту уже приехал.
             await loadStills()

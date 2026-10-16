@@ -251,27 +251,17 @@ struct AlbumScreen: View {
 
     /// Все треки альбома подряд: дисков в списке больше нет, а плееру они и не нужны.
     private var tracks: [AlbumDetails.Track] {
-        details.disks.flatMap { $0 }
+        details.allTracks
     }
 
     /// Идентификатор трека для плеера. `open` с тем же id работает как пауза,
     /// поэтому он обязан быть уникальным на трек, а не на альбом.
     private func playerID(_ track: AlbumDetails.Track) -> String {
-        "\(entity.id)-t\(track.id)"
+        nowPlaying(track).id
     }
 
     private func nowPlaying(_ track: AlbumDetails.Track) -> MusicNowPlaying {
-        MusicNowPlaying(
-            id: playerID(track),
-            cover: entity.artwork,
-            title: track.title,
-            artist: details.artist,
-            album: details.title,
-            year: details.year,
-            artistPicture: details.artistPicture,
-            isExplicit: track.isExplicit,
-            containerID: containerID
-        )
+        details.nowPlaying(track, albumID: entity.id, cover: entity.artwork)
     }
 
     /// Признак принадлежности для бара: по нему кнопка узнаёт свой альбом (`isPlayingMusic`).

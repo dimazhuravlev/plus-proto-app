@@ -862,8 +862,8 @@ struct SearchEmptyState: View {
         let barTopFromScreenBottom = keyboard.isUp
             // Бар над клавиатурой: её высота, зазор 12 и сам бар.
             ? keyboard.overlap + PlusChromeMetrics.focusKeyboardGap + PlusMetrics.actionBarHeight
-            // Просмотр выдачи: бар опущен на место таббара — низом на безопасную зону.
-            : safeBottom + PlusMetrics.actionBarHeight
+            // Просмотр выдачи: бар опущен на место таббара — низом туда, где низы табов.
+            : PlusChromeMetrics.chromeBottom + PlusMetrics.actionBarHeight
         return max(0, barTopFromScreenBottom - safeBottom)
     }
 }

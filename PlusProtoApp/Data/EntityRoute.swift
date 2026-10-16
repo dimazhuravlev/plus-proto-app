@@ -88,7 +88,8 @@ extension ShowcaseBlock {
     var entityRoute: EntityRoute? {
         switch self {
         case .movie(let b):
-            .movie(EntityRef(id: b.id, title: b.title, subtitle: "", artwork: b.poster))
+            // «Продолжить» — экран того же тайтла: id из истории, а не id карточки.
+            .movie(EntityRef(id: b.resume?.id ?? b.id, title: b.title, subtitle: "", artwork: b.poster))
         case .album(let b):
             // У блока витрины сверху исполнитель, ниже альбом (`AlbumBlock`), а ссылка
             // на альбом везде одна: `title` — альбом, `subtitle` — исполнитель.

@@ -116,7 +116,7 @@ private enum TabBarHitArea {
             // padding-top ряда и зазор до бара: зона доходит до низа бара
             top: PlusChromeMetrics.tabsRowTopPadding + PlusChromeMetrics.actionBarToTabsGap,
             leading: tab == AppTab.allCases.first ? PlusMetrics.screenMargin : gap / 2,
-            bottom: PlusChromeMetrics.bottomSafeArea,
+            bottom: PlusChromeMetrics.chromeBottom,
             trailing: tab == AppTab.allCases.last ? PlusMetrics.screenMargin : gap / 2
         )
     }
@@ -165,7 +165,7 @@ struct TabBarView: View {
                 .contentShape(.rect)
                 .onTapGesture {}
                 .padding(.top, -PlusChromeMetrics.actionBarToTabsGap)
-                .padding(.bottom, -PlusChromeMetrics.bottomSafeArea)
+                .padding(.bottom, -PlusChromeMetrics.chromeBottom)
         }
         .task { await debugTapCycle() }
         #if DEBUG

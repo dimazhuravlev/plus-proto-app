@@ -3,18 +3,24 @@ import SwiftUI
 // MARK: - Геометрия
 
 /// Экран персоны — макет `2455:32136` (исполнитель, «Taylor Swift»). Холст макета 375,
-/// у проекта 402 (база формул): фото во всю ширину экрана остаётся квадратом,
-/// поля 16 — как есть.
+/// у проекта 402 (база формул): фото во всю ширину экрана остаётся квадратом (у режиссёра —
+/// 4:5), поля 16 — как есть.
 private enum PersonLayout {
     static let side: CGFloat = EntityCoverLayout.side
-    /// Фото — квадрат во всю ширину экрана, от физического верха (`. / cover` 375×375)
+    /// Фото — во всю ширину экрана, от физического верха: квадрат (`. / cover` 375×375),
+    /// у режиссёра — вертикальное 4:5, чуть вытянутое вниз (правка пользователя 2026-10-16).
     @MainActor
-    static var photoSize: CGFloat { PlusMetrics.screenWidth }
+    static var photoWidth: CGFloat { PlusMetrics.screenWidth }
+    static let directorPhotoAspect: CGFloat = 5.0 / 4.0
+    @MainActor
+    static func photoHeight(for role: PersonRole) -> CGFloat {
+        photoWidth * (role == .director ? directorPhotoAspect : 1)
+    }
     /// Блок названия наезжает на фото на 79 (`mb-[-79px]` макета)
     static let titleOverlap: CGFloat = 79
     /// Сколько фото занимает в потоке — до верха блока названия
     @MainActor
-    static var photoZoneHeight: CGFloat { photoSize - titleOverlap }
+    static func photoZoneHeight(for role: PersonRole) -> CGFloat { photoHeight(for: role) - titleOverlap }
     /// Затемнение к чёрному — нижние 35.73 % фото (`inset 64.27% 0 0 0` макета)
     static let scrimShare: CGFloat = 0.3573
 
@@ -38,8 +44,9 @@ private enum PersonLayout {
     /// Пороги навбара — в той же связке с названием, что у альбома и книги:
     /// подложка — когда шапка почти ушла под бар, имя — когда под бар уходит оно.
     @MainActor
-    static var navBarThresholds: EntityNavBarThresholds {
-        EntityNavBarThresholds(
+    static func navBarThresholds(for role: PersonRole) -> EntityNavBarThresholds {
+        let photoZoneHeight = photoZoneHeight(for: role)
+        return EntityNavBarThresholds(
             backgroundStart: photoZoneHeight - 122,
             backgroundRamp: 80,
             titleStart: photoZoneHeight - 22,
@@ -99,7 +106,7 @@ struct PersonScreen: View {
                 artwork: photo,
                 isArtworkCircular: true,
                 scrollOffset: scrollOffset,
-                thresholds: PersonLayout.navBarThresholds
+                thresholds: PersonLayout.navBarThresholds(for: role)
             )
         }
         .background(Color.black.ignoresSafeArea())
@@ -166,15 +173,16 @@ struct PersonScreen: View {
     /// компенсирует оттяг (`offset(y: -pull)`) и растёт от верхней кромки на его
     /// величину — низ остаётся приклеен к блоку названия.
     private var photoZone: some View {
-        let size = PersonLayout.photoSize
-        let scale = (size + growth) / size
+        let width = PersonLayout.photoWidth
+        let height = PersonLayout.photoHeight(for: role)
+        let scale = (height + growth) / height
         return ZStack(alignment: .top) {
             photoLayer
-                .frame(width: size, height: size)
+                .frame(width: width, height: height)
                 .clipped()
                 .overlay(alignment: .bottom) {
                     MovieScrim.gradient(peak: 1, from: .top, to: .bottom)
-                        .frame(height: size * PersonLayout.scrimShare)
+                        .frame(height: height * PersonLayout.scrimShare)
                 }
                 .scaleEffect(scale, anchor: .top)
                 .offset(y: -pull)
@@ -182,7 +190,7 @@ struct PersonScreen: View {
         }
         .frame(maxWidth: .infinity)
         // По верху: фото выше своей зоны в потоке и заходит под блок названия.
-        .frame(height: PersonLayout.photoZoneHeight, alignment: .top)
+        .frame(height: PersonLayout.photoZoneHeight(for: role), alignment: .top)
     }
 
     /// Фото, а пока его нет — скелетон; фото не нашлось вовсе — первая буква имени.
@@ -192,6 +200,9 @@ struct PersonScreen: View {
             if let photo {
                 ArtworkImage(source: photo)
                     .scaledToFill()
+                    // Режиссёр — чёрно-белым, как его портрет в «Съёмочной группе» фильма
+                    // (правка пользователя 2026-10-16).
+                    .grayscale(role == .director ? 1 : 0)
                     .transition(.opacity)
             } else if !store.isLoaded {
                 PlusSkeleton.fill

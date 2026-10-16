@@ -105,11 +105,13 @@ final class AppNavigationState {
         // как повторный тап с пуша. Слой переключение таба не переживает и так:
         // он не элемент стека (см. `coveredRoute`).
         if coveredRoute != nil {
-            coveredRoute = nil
-            if tab == activeTab {
-                paths[tab] = NavigationPath()
-            } else {
-                activeTab = tab
+            Self.withoutLayerZoom {
+                coveredRoute = nil
+                if tab == activeTab {
+                    paths[tab] = NavigationPath()
+                } else {
+                    activeTab = tab
+                }
             }
             return
         }
@@ -129,10 +131,24 @@ final class AppNavigationState {
     /// таб» делается одним синхронным вызовом, без анимаций. Профиль и слой с вложенными
     /// экранами UIKit снимает целой стопкой — по одной презентации (см. `coveredRoute`).
     func showRoot(of tab: AppTab) {
-        isProfileShown = false
-        coveredRoute = nil
-        paths[tab] = NavigationPath()
-        activeTab = tab
+        Self.withoutLayerZoom {
+            isProfileShown = false
+            coveredRoute = nil
+            paths[tab] = NavigationPath()
+            activeTab = tab
+        }
+    }
+
+    /// Слой фильма снимается вместе со сменой таба или стека — без анимации. Слой показан
+    /// зумом (`.navigationTransition(.zoom)`) и на закрытии сжимается в миниатюру-источник,
+    /// а та живёт в ленте таба: смена таба или сброс стека в том же апдейте её размонтирует.
+    /// На iOS 27 UIKit на сжатии в источник вне окна падает по assert
+    /// (`_UIZoomTransitionController` → `_morphPreviewFromCurrentState`, SIGABRT — крэш-лог
+    /// TestFlight 2026-10-10: «Позже» на экране фильма → тап по тосту → «Моё»).
+    private static func withoutLayerZoom(_ change: () -> Void) {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant, change)
     }
 
     /// Программный пуш. Нужен и отладке (тапнуть по симулятору из шелла нечем),

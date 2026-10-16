@@ -169,9 +169,9 @@ enum ShowcasePromoLayout {
         let fade = (1 - ShowcasePromoBackdropStyle.solidShare) * (backdropHeight - ShowcaseLayout.recentlyBand)
         return 1 - fade / backdropHeight
     }
-    /// Фон — на 60 %: на 10 % прозрачнее фона промо сервисов (правка пользователя
-    /// 2026-10-08) и ещё на 10 % (правка 2026-10-09).
-    static let backdropOpacity: Double = 0.6
+    /// Фон — на 45 %: на 10 % прозрачнее фона промо сервисов (правка пользователя
+    /// 2026-10-08), ещё на 10 % (правка 2026-10-09) и ещё на 15 % (правка 2026-10-16).
+    static let backdropOpacity: Double = 0.45
 
     /// Где слот относительно центра видимой ленты: 0 — по центру, ±1 — на месте соседа.
     /// Считается от рамки скролла, а не экрана: ширина устройства не важна. Шаг приходит
@@ -591,14 +591,16 @@ struct ShowcasePromo: View {
     }
 
     private func zoomID(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) -> AnyHashable {
-        // «Продолжить» экрана не открывает — источником зума не становится.
-        if isCurrent, item.promoResume == nil, let route = item.entityRoute { return AnyHashable(route) }
+        // «Продолжить» книги экрана не открывает — источником зума не становится; фильм
+        // открывает экран тайтла, как обычная карточка.
+        if isCurrent, item.opensPlayerOnTap == false, let route = item.entityRoute { return AnyHashable(route) }
         return AnyHashable("showcase-promo-copy-\(slotIndex)")
     }
 
     /// Тап по центральной — её экран; по соседу — сосед доезжает в центр. Станция «Моей
     /// волны» своего экрана не имеет: центральная включает волну, как карточка ленты.
-    /// «Продолжить» — сразу киноплеер с места остановки или читалка, как его кнопка.
+    /// «Продолжить» фильма — экран тайтла, плеер только по кнопке (правка пользователя
+    /// 2026-10-14); «Продолжить» книги — сразу читалка, как его кнопка.
     private func tap(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) {
         guard removal == nil else { return }
         tapHaptic()
@@ -606,7 +608,7 @@ struct ShowcasePromo: View {
             withAnimation(ShowcasePromoMotion.step) { page = slotIndex }
             return
         }
-        if let resume = item.promoResume {
+        if item.opensPlayerOnTap, let resume = item.promoResume {
             actionBar.open(resume)
             return
         }
@@ -748,7 +750,10 @@ struct ShowcasePromo: View {
         // Центральный айтем — по ключу слота: каталог уже сменил набор, и номер места
         // в новом наборе указывал бы на чужой айтем.
         let centered = pageID?.item
-        let index = centered.flatMap { new.firstIndex(of: $0) } ?? 0
+        // Центрального айтема в новом наборе нет (мок сменился живым, порция каталога) —
+        // то же место ряда, а не начало: иначе случайный старт (2026-10-14) всякий раз
+        // съезжал на первую карточку.
+        let index = centered.flatMap { new.firstIndex(of: $0) } ?? (savedIndex % new.count)
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant) {
@@ -1295,6 +1300,13 @@ private enum PromoBackdropRaster {
 extension ShowcaseBlock {
     /// Что запускает карточка «Продолжить» (задача 69): киноплеер с места остановки или
     /// читалку. `nil` — обычная карточка.
+    /// Тап по карточке «Продолжить» сразу запускает: только книга — у фильма тап открывает
+    /// экран тайтла, плеер — по кнопке «Продолжить».
+    var opensPlayerOnTap: Bool {
+        if case .book(let book) = self { return book.resume != nil }
+        return false
+    }
+
     var promoResume: ShowcasePlayerTarget? {
         switch self {
         case .movie(let movie): movie.resume.map { .movie($0) }

@@ -77,11 +77,19 @@ final class WatchHistory {
     /// пула Кинопоиска (детали фильма туда легли, когда открывали экран тайтла) — под
     /// заставкой, до первого кадра витрины. Деталей нет — карточка остаётся с кадром.
     func backfillContinuingPoster() async {
-        guard let movie = continuing.first?.movie, movie.poster == nil,
-              movie.id.hasPrefix("kp-"), let kp = Int(movie.id.dropFirst(3)),
-              let details = await MoviePool.shared.details(id: kp),
-              let raw = details.poster?.url(size: .medium)
-        else { return }
+        guard let movie = continuing.first?.movie, movie.poster == nil else { return }
+        // Мок «Идеальные дни» (лента без сети): его ассет и есть постер.
+        if movie.id == "perfect-days" {
+            setPoster(.asset("mockMoviePoster"), for: movie.id)
+            return
+        }
+        guard movie.id.hasPrefix("kp-"), let kp = Int(movie.id.dropFirst(3)) else { return }
+        // Сперва пул; нет в пуле (фильм открывали не с витрины) — один запрос карточки:
+        // постер записывается в историю и больше не запрашивается (правка пользователя
+        // 2026-10-14: в «Продолжить» — постер, а не кадр).
+        var details = await MoviePool.shared.details(id: kp)
+        if details == nil { details = try? await KinopoiskService.shared.movie(id: kp) }
+        guard let raw = details?.poster?.url(size: .medium) else { return }
         let url = TMDBImageProxy.rewrite(raw, width: 600) ?? raw
         setPoster(.remote(url), for: movie.id)
     }

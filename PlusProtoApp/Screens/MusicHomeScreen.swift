@@ -88,7 +88,7 @@ private struct MyVibeHero: View {
 
     /// Верх action bar от низа экрана: безопасная зона, ряд табов, зазор, сам бар.
     private var actionBarTop: CGFloat {
-        PlusChromeMetrics.bottomSafeArea + PlusChromeMetrics.tabsRowHeight
+        PlusChromeMetrics.chromeBottom + PlusChromeMetrics.tabsRowHeight
             + PlusChromeMetrics.actionBarToTabsGap + PlusMetrics.actionBarHeight
     }
 
@@ -143,10 +143,11 @@ private struct MyVibeHero: View {
     }
 
     /// Настоящий трек волны (`MyVibeTracks`); волна уже в баре — пауза и снятие с неё.
+    /// Это главная волна — заигравшая, она встаёт плиткой в ряд ПП «Главной».
     private func play() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        actionBar.openMyVibe()
+        actionBar.openMainVibe()
     }
 }
 

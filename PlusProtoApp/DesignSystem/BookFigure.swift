@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Книга в небольшой проекции — макет `2311:25096`: обложка своих пропорций (ширина
 /// по ней, обложка не режется), за ней выглядывает блок страниц, у корешка —
@@ -38,6 +39,9 @@ struct BookFigureGeometry {
     /// Ноль везде, кроме промо «Главной» (`ShowcasePromoLayout.book`).
     var radiusTrim: CGFloat = 0
     /// Скошенный верх корешка у подложки: 4.1 % её ширины по горизонтали, 1.93 вниз.
+    /// Бордер обложки (`CoverBorder`). Свой — у рисунков, которые потом ужимаются целиком
+    /// (ряд ПП): там толщина задаётся с поправкой на масштаб.
+    var borderWidth: CGFloat = CoverBorder.width
     var spineBevel: CGSize { CGSize(width: 0.0406, height: 1.93 * scale) }
     var hingeWidth: CGFloat { 10 * scale }
 
@@ -65,6 +69,34 @@ struct BookFigureGeometry {
     }
 }
 
+/// Пропорции обложки книги — по самой картинке. Одна логика на все карточки, которым
+/// пропорций не дали данные (экран книги, ряд ПП «Главной»): высота у них задана, ширина
+/// идёт от обложки (`BookFigureGeometry.coverWidth(aspect:)`), как у остальных книг.
+enum BookCoverAspect {
+    /// Из кэша — синхронно, на первом кадре. `nil` — картинка ещё не в памяти;
+    /// `.some(nil)` — картинки нет вовсе, книга встаёт с пропорциями по умолчанию.
+    @MainActor
+    static func cached(of source: ArtworkSource) -> CGFloat?? {
+        if let url = source.remoteURL {
+            return ArtworkLoader.shared.cached(url).map { .some(of($0)) }
+        }
+        return .some(source.fallbackAsset.flatMap { UIImage(named: $0) }.map(of))
+    }
+
+    /// С загрузкой. Не загрузилась — `nil`: книга встанет с пропорциями по умолчанию,
+    /// а на обложке будет заглушка `ArtworkImage`.
+    static func load(of source: ArtworkSource) async -> CGFloat? {
+        if let url = source.remoteURL, let image = await ArtworkLoader.shared.image(for: url) {
+            return of(image)
+        }
+        return await MainActor.run { source.fallbackAsset.flatMap { UIImage(named: $0) }.map(of) }
+    }
+
+    static func of(_ image: UIImage) -> CGFloat {
+        image.size.width / max(image.size.height, 1)
+    }
+}
+
 /// Книга целиком. Обложку подставляет вызывающий — у скелетона на её месте только
 /// заливка `PlusSkeleton`.
 struct BookFigure<Cover: View>: View {
@@ -79,13 +111,6 @@ struct BookFigure<Cover: View>: View {
     private var layerOpacity: Double { Cover.self == EmptyView.self ? 0.5 : 1 }
 
     var body: some View {
-        let coverShape = UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: geometry.coverRadius,
-            topTrailingRadius: geometry.coverRadius,
-            style: .continuous
-        )
         let pages = BookPagesShape(radius: geometry.pagesRadius, bevel: geometry.spineBevel)
         let frame = geometry.frameSize(coverWidth: coverWidth)
 
@@ -110,18 +135,42 @@ struct BookFigure<Cover: View>: View {
                 // вместе с обложкой, а у скелетона его нет (правка пользователя 2026-10-09).
                 .overlay { cover.environment(\.bookHingeWidth, geometry.hingeWidth) }
                 .frame(width: coverWidth, height: geometry.coverHeight)
-                .clipShape(coverShape)
-                .overlay {
-                    // Бордер обложки (`CoverBorder`) — только сверху, справа и снизу:
-                    // слева корешок. Контур сам отступает внутрь на полтолщины.
-                    BookCoverEdge(radius: geometry.coverRadius)
-                        .stroke(CoverBorder.color.opacity(layerOpacity), lineWidth: CoverBorder.width)
-                        .allowsHitTesting(false)
-                }
+                .bookCoverShape(
+                    radius: geometry.coverRadius,
+                    borderWidth: geometry.borderWidth,
+                    borderOpacity: layerOpacity
+                )
                 .padding(.top, geometry.pagesTop)
         }
         // Кадр книги — вместе с правым выступом подложки (`frameSize`).
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    }
+}
+
+// MARK: - Форма обложки
+
+extension View {
+    /// Обложка книги как у всех книг приложения: скруглены только правые углы, слева
+    /// корешок; бордер (`CoverBorder`) — сверху, справа и снизу. Без блока страниц —
+    /// для мелких обложек вне `BookFigure` (навбар читалки; правка пользователя 2026-10-16).
+    func bookCoverShape(
+        radius: CGFloat,
+        borderWidth: CGFloat = CoverBorder.width,
+        borderOpacity: Double = 1
+    ) -> some View {
+        clipShape(UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: radius,
+            topTrailingRadius: radius,
+            style: .continuous
+        ))
+        .overlay {
+            // Контур сам отступает внутрь на полтолщины.
+            BookCoverEdge(radius: radius, lineWidth: borderWidth)
+                .stroke(CoverBorder.color.opacity(borderOpacity), lineWidth: borderWidth)
+                .allowsHitTesting(false)
+        }
     }
 }
 

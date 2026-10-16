@@ -25,7 +25,7 @@ actor MoviePool {
 
     /// Ниже этого порога годных непоказанных — идём за новой пачкой.
     /// Не ноль: пополнение асинхронное, и запас должен пережить сам заход за ним.
-    private static let refillThreshold = 6
+    static let refillThreshold = 6
 
     /// Пачка протухает: подборки Кинопоиска меняются, да и показывать один и тот же
     /// набор неделями незачем. Неделя — компромисс между свежестью и квотой.
@@ -129,6 +129,29 @@ actor MoviePool {
     /// Подборки, из которых уже брали, — чтобы пополнение принесло другое кино.
     func usedSources() -> [String] {
         storage.sources
+    }
+
+    /// Принесёт ли сеть новое кино: запаса нет, он протух или есть подборка, из которой
+    /// ещё не брали. Свежий запас со всеми подборками сеть не пополнит — пачка уйдёт
+    /// в дубли, а запрос из суточных двухсот сгорит впустую.
+    func canGrow(lists: [String]) -> Bool {
+        if storage.movies.isEmpty { return true }
+        if Date().timeIntervalSince(storage.fetchedAt) > Self.maxAge { return true }
+        return lists.contains { !storage.sources.contains($0) }
+    }
+
+    /// Второй круг: годных непоказанных меньше порога, а пополнять нечем — отметки
+    /// о показе сбрасываются. Порог считается по самому дефицитному блоку, как
+    /// в `needsRefill`.
+    ///
+    /// Сброс в `markShown` сюда не дотягивался: он ждёт, пока показанными станут
+    /// **все** фильмы запаса, а фильмы без постера или описания не показываются
+    /// никогда. Запас вставал на мели, и «Главная» до конца недели шла на моках
+    /// (замер 2026-10-16: показано 537 из 648, годных непоказанных — ноль).
+    func rewindIfExhausted(scarcest isEligible: @Sendable (KinopoiskMovie) -> Bool) {
+        guard !storage.movies.isEmpty, unseen(where: isEligible).count < Self.refillThreshold else { return }
+        storage.shown = []
+        save()
     }
 
     // MARK: - Кадры

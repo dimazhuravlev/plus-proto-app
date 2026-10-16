@@ -34,15 +34,17 @@ struct DebugMenuScreen: View {
     @AppStorage(ChromeGlass.dimKey) private var glassDim = ChromeGlass.defaultDim
     /// Белая иконка активного таба без свечения — ключ `tabActiveWhite` (`TabStyleDebug`).
     @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActiveTab = false
+    /// Голова Люмена в поле поиска вместо навигации «Главной» — ключ `lumenInSearch` (`LumenDebug`).
+    @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
     /// Сколько пунктов ленты ушло вверх — для подложки навбара
     @State private var scrollOffset: CGFloat = 0
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
         static let noteTop: CGFloat = 8
-        /// Верхний отступ заголовков секций 2–4: общие 16 (`ProfileLayout.titleTop`) + 8,
-        /// секции разнесены дальше, чем в профиле (правка пользователя 2026-10-12)
-        static let sectionGap: CGFloat = ProfileLayout.titleTop + 8
+        /// Верхний отступ заголовков секций со второй: общие 16 (`ProfileLayout.titleTop`) + 8 + 16,
+        /// секции разнесены дальше, чем в профиле (правки пользователя 2026-10-12 и 2026-10-16)
+        static let sectionGap: CGFloat = ProfileLayout.titleTop + 8 + 16
         static let checkIcon: CGFloat = 24
         /// Подпись громкости над слайдером
         static let sliderGap: CGFloat = 8
@@ -94,6 +96,14 @@ struct DebugMenuScreen: View {
                     )
                     .padding(.horizontal, ProfileLayout.side)
                     note("Белая иконка активного таба вместо фиолетового свечения")
+
+                    title("Люмен", top: Layout.sectionGap)
+                    toggleIsland(
+                        "Люмен в поиске",
+                        isOn: $lumenInSearch,
+                        accessibility: "Люмен в поле поиска"
+                    )
+                    .padding(.horizontal, ProfileLayout.side)
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)

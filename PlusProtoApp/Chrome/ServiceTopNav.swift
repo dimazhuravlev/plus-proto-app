@@ -390,13 +390,19 @@ struct ProfileAvatarButton: View {
 /// тот же, что у сервисных табов (`TopNavRow`): аватар стоит ровно там же.
 struct HomeTopNav: View {
     var scrollOffset: CGFloat = 0
+    /// «Люмен в поиске» (дебаг-меню): голова уходит в поле поиска, аватар остаётся на месте.
+    @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
 
     private enum Layout {
         /// Логотип — 161.52 × 24 (`.header-logo`)
         static let logo = CGSize(width: 161.52, height: 24)
-        static let lumen: CGFloat = 40
-        /// Люмен ↔ аватар
-        static let gap: CGFloat = 16
+        /// Голова Люмена — живое видео 72×72 вплотную к рамке аватара, по центру ряда
+        /// (макет `2768:36304`: кадр видео в группе `right` с аватаром, 2026-10-16).
+        /// Голова внутри кадра меньше: вокруг — прозрачное поле ролика.
+        static let lumenVideo: CGFloat = 72
+        /// Высота места в ряду — как у аватара: кадр видео выходит за ряд поровну
+        /// сверху и снизу и раскладку ряда не меняет.
+        static let lumenSlotHeight: CGFloat = 48
     }
 
     var body: some View {
@@ -407,13 +413,18 @@ struct HomeTopNav: View {
                 .accessibilityLabel("Яндекс Плюс")
                 .padding(.leading, ServiceTopNavLayout.side)
             Spacer(minLength: 0)
-            HStack(spacing: Layout.gap) {
-                // Люмен — маскот в макете без действия: картинка, а не кнопка.
-                Image("lumenHead")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: Layout.lumen, height: Layout.lumen)
-                    .accessibilityHidden(true)
+            HStack(spacing: 0) {
+                // Люмен — маскот в макете без действия: видео, а не кнопка. Слот слева
+                // от аватара: без него аватар стоит там же, у поля экрана.
+                if !lumenInSearch {
+                    Color.clear
+                        .frame(width: Layout.lumenVideo, height: Layout.lumenSlotHeight)
+                        .overlay {
+                            LumenHeadVideo()
+                                .frame(width: Layout.lumenVideo, height: Layout.lumenVideo)
+                        }
+                        .accessibilityHidden(true)
+                }
                 ProfileAvatarButton()
             }
             .padding(.trailing, ServiceTopNavLayout.side)

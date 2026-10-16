@@ -11,10 +11,20 @@ enum PlusChromeMetrics {
     /// Зазор между нижней кромкой action bar (y 2084) и фреймом таббара (y 2088) — figma-screen1 §4
     static let actionBarToTabsGap: CGFloat = 4
 
-    /// Сколько хром занимает над safe area: 60 + 4 + 66. На iPhone с home indicator 34pt
-    /// это те самые 164pt от низа экрана, которые в figma-screen1 §4 должна очистить лента.
+    /// Хром опущен на 4 pt ниже границы safe area: низы табов ближе к home indicator,
+    /// бар едет следом (правка пользователя 2026-10-16).
+    static let chromeDrop: CGFloat = 4
+
+    /// Где стоит низ хрома (низ ряда табов) от физического низа экрана. Все расчёты
+    /// по нижнему хрому — от этой точки, а не от safe area.
+    static var chromeBottom: CGFloat {
+        bottomSafeArea - chromeDrop
+    }
+
+    /// Сколько хром занимает над safe area: 60 + 4 + 66 − опускание 4. Лента очищает
+    /// ровно его, как в figma-screen1 §4.
     static var contentBottomInset: CGFloat {
-        PlusMetrics.actionBarHeight + actionBarToTabsGap + tabsRowHeight
+        PlusMetrics.actionBarHeight + actionBarToTabsGap + tabsRowHeight - chromeDrop
     }
 
     /// Радиус прогрессивного блюра под нижним хромом — общий у таббара и панели кнопок
@@ -34,16 +44,16 @@ enum PlusChromeMetrics {
 
     /// Высота слоя блюра — **ниже градиента**: размытие должно начинаться примерно
     /// с середины action bar, иначе лента мылится ещё до того, как заедет под хром.
-    /// Считается от физического низа: safe area + ряд табов + зазор + половина бара.
+    /// Считается от физического низа: низ хрома + ряд табов + зазор + половина бара.
     static var underlayBlurHeight: CGFloat {
-        bottomSafeArea + tabsRowHeight + actionBarToTabsGap + PlusMetrics.actionBarHeight / 2
+        chromeBottom + tabsRowHeight + actionBarToTabsGap + PlusMetrics.actionBarHeight / 2
     }
 
     /// Блюр в поиске — по верхней кромке поля, опущенного на место таббара (правка
     /// пользователя 2026-10-05): обычная высота считана от бара над таббаром, и в выдаче
     /// мылила полосу в 40 pt над полем.
     static var searchUnderlayBlurHeight: CGFloat {
-        bottomSafeArea + PlusMetrics.actionBarHeight
+        chromeBottom + PlusMetrics.actionBarHeight
     }
 
     /// Нижняя безопасная зона — блюр отмеряется от физического низа экрана,
@@ -118,6 +128,8 @@ struct BottomChrome: View {
                 .animation(keyboard.motion ?? ActionBarMotion.morph, value: isTabBarHidden)
                 .allowsHitTesting(!actionBar.isSearchFocused && !isTabBarHidden)
         }
+        // Ниже границы safe area на `chromeDrop`: оверлей корня прижат к ней.
+        .padding(.bottom, -PlusChromeMetrics.chromeDrop)
         // Системный подъём над клавиатурой выключен: SwiftUI поднял бы весь хром
         // вместе с таббаром, да ещё и сложился бы с нашим сдвигом — бар улетал вдвое выше.
         //
@@ -186,7 +198,7 @@ struct BottomChrome: View {
             }
             return ActionBarRaise(isRaised: true, lift: PlusChromeMetrics.browsingDrop, motion: keyboard.motion)
         }
-        let barBottomFromScreenBottom = PlusChromeMetrics.bottomSafeArea
+        let barBottomFromScreenBottom = PlusChromeMetrics.chromeBottom
             + PlusChromeMetrics.tabsRowHeight
             + PlusChromeMetrics.actionBarToTabsGap
         // min(0,) обязателен: с аппаратной клавиатурой overlap == 0 (или 55pt панели
@@ -301,12 +313,23 @@ final class KeyboardObserver {
 
     init() {
         let center = NotificationCenter.default
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "debugKeyboardTrace") {
+            for name in [UIApplication.willResignActiveNotification, UIApplication.didEnterBackgroundNotification,
+                         UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
+                observers.append(center.addObserver(forName: name, object: nil, queue: .main) { note in
+                    NSLog("[life] %@", note.name.rawValue)
+                })
+            }
+        }
+        #endif
         observers.append(
             center.addObserver(
                 forName: UIResponder.keyboardWillChangeFrameNotification,
                 object: nil,
                 queue: .main
             ) { [weak self] note in
+                Self.trace(note)
                 guard
                     Self.isOwnKeyboard(note),
                     let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
@@ -322,6 +345,7 @@ final class KeyboardObserver {
                 object: nil,
                 queue: .main
             ) { [weak self] note in
+                Self.trace(note)
                 guard Self.isOwnKeyboard(note) else { return }
                 // Обратный переход обязан совпасть с кривой клавиатуры так же, как прямой.
                 self?.drive(overlap: 0, up: false, from: note)
@@ -336,6 +360,26 @@ final class KeyboardObserver {
     /// поймано записью возврата из «Настроек» с поднятой клавиатурой).
     private static func isOwnKeyboard(_ note: Notification) -> Bool {
         note.userInfo?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool ?? true
+    }
+
+    /// `-debugKeyboardTrace 1` — каждое уведомление клавиатуры в лог: имя, своя ли,
+    /// конечный кадр, длительность и состояние приложения (разбор дёрганья бара при
+    /// возврате из переключателя приложений, 2026-10-16).
+    private static func trace(_ note: Notification) {
+        #if DEBUG
+        guard UserDefaults.standard.bool(forKey: "debugKeyboardTrace") else { return }
+        let info = note.userInfo
+        let frame = (info?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect).map { "\($0)" } ?? "—"
+        let local = (info?[UIResponder.keyboardIsLocalUserInfoKey] as? Bool).map { "\($0)" } ?? "—"
+        let duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? -1
+        let state = switch UIApplication.shared.applicationState {
+        case .active: "active"
+        case .inactive: "inactive"
+        case .background: "background"
+        @unknown default: "?"
+        }
+        NSLog("[kb] %@ local=%@ end=%@ dur=%.3f app=%@", note.name.rawValue, local, frame, duration, state)
+        #endif
     }
 
     deinit {

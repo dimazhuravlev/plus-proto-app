@@ -111,13 +111,34 @@ enum ActionBarGeometry {
     /// Зазор обложка ↔ тексты. В макете он меньше, чем до кнопок.
     static let miniPlayerCoverGap: CGFloat = 8
     static let miniPlayerActionsGap: CGFloat = 18
-    static let bookChipSize = CGSize(width: 44, height: 60)
-    /// Скругление чипа книги — на 1 больше `PlusRadius.bookChip` (правка пользователя 2026-10-10);
-    /// токен делит внутренний кадр чипа кино, его не трогаем.
-    static let bookChipRadius: CGFloat = PlusRadius.bookChip + 1
-    static let bookCoverSize = CGSize(width: 36, height: 52)
+    /// Чип книги `2001:111014`: стекло со скруглением 8 и полями 4 вокруг обложки высотой 52;
+    /// обложка — книжной формы (скругление 4 только справа, `bookCoverShape`). Ширина — от
+    /// пропорций обложки, как у всех книг приложения (правка пользователя 2026-10-16):
+    /// пока их нет — макетные 36.
+    static let bookChipRadius: CGFloat = 8
+    static let bookCoverRadius: CGFloat = 4
+    static let bookChipPadding: CGFloat = 4
+    static let bookCoverHeight: CGFloat = 52
+    static let bookCoverDefaultWidth: CGFloat = 36
+
+    static func bookCoverSize(aspect: CGFloat?) -> CGSize {
+        guard let aspect else { return CGSize(width: bookCoverDefaultWidth, height: bookCoverHeight) }
+        let range = BookFigureGeometry.aspectRange
+        let clamped = min(max(aspect, range.lowerBound), range.upperBound)
+        return CGSize(width: (bookCoverHeight * clamped).rounded(), height: bookCoverHeight)
+    }
+
+    static func bookChipSize(aspect: CGFloat?) -> CGSize {
+        let cover = bookCoverSize(aspect: aspect)
+        return CGSize(width: cover.width + 2 * bookChipPadding, height: cover.height + 2 * bookChipPadding)
+    }
+
     /// AABB повёрнутого чипа книги — ширина для раскладки HStack.
-    static let bookChipAABBWidth: CGFloat = 48.078
+    static func bookChipAABBWidth(aspect: CGFloat?) -> CGFloat {
+        let chip = bookChipSize(aspect: aspect)
+        let angle = CGFloat(chipRotation) * .pi / 180
+        return chip.width * cos(angle) + chip.height * sin(angle)
+    }
     static let movieChipSize = CGSize(width: 88, height: 54)
     static let movieChipPadding: CGFloat = 4
     static let movieFrameSize = CGSize(width: 80, height: 46)
@@ -246,6 +267,7 @@ struct ActionBarView: View {
         let layout = ActionBarLayout(
             mode: actionBar.mode,
             hasMusic: actionBar.music != nil,
+            bookAspect: actionBar.bookCoverAspect,
             raise: raise
         )
 
@@ -290,6 +312,16 @@ struct ActionBarView: View {
         // Иначе бар шёл своей `.smooth(0.32)` против её ~0.25 с другой кривой, она
         // уходила вверх быстрее и на мгновение накрывала его собой.
         .animation(raise.motion ?? ActionBarMotion.morph, value: layout)
+        #if DEBUG
+        // `-debugKeyboardTrace 1` — каждая смена раскладки бара в лог (разбор дёрганья
+        // при возврате из переключателя приложений, 2026-10-16).
+        .onChange(of: layout) { old, new in
+            guard UserDefaults.standard.bool(forKey: "debugKeyboardTrace") else { return }
+            NSLog("[bar] trailing %.0f→%.0f raised %@→%@ lift %.0f→%.0f mode=%@ app=%d",
+                  old.trailingWidth, new.trailingWidth, "\(old.isRaised)", "\(new.isRaised)",
+                  old.lift, new.lift, "\(actionBar.mode)", UIApplication.shared.applicationState.rawValue)
+        }
+        #endif
         .onChange(of: searchFocused) { _, focused in
             // Бар под слоем решений не принимает: его поле теряет фокус само, уходя
             // с окна вместе с экраном, — это не выход из поиска на верхнем экране.
@@ -381,10 +413,19 @@ struct ActionBarView: View {
         .task {
             // `-debugTrackEnd 1` — конец превью через 3 с после старта: следующий трек
             // очереди тем же путём, что от звука, — ждать 30 с иначе незачем.
+            // Трек на паузе (холодный старт) — сперва play, как кнопка. В лог — что было
+            // и что стало: `[queue] <трек> → <трек> (позиция/длина очереди)`.
             guard chromeLayer == nil, UserDefaults.standard.bool(forKey: "debugTrackEnd") else { return }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
+            if !actionBar.isMusicPlaying, actionBar.music != nil {
+                actionBar.toggleMusicPlayback()
+                try? await Task.sleep(for: .seconds(1))
+            }
+            let before = actionBar.music?.title ?? "—"
             actionBar.musicTrackDidEnd()
+            NSLog("[queue] %@ → %@ (%d/%d)", before, actionBar.music?.title ?? "—",
+                  actionBar.queueIndex, actionBar.queue.count)
         }
         .task {
             // `-debugTapChip 1` — тап по чипу кино или книги: киноплеер и читалку
@@ -454,7 +495,7 @@ private struct ActionBarLayout: Equatable {
     let gap: CGFloat
 
     @MainActor
-    init(mode: ActionBarMode, hasMusic: Bool, raise: ActionBarRaise) {
+    init(mode: ActionBarMode, hasMusic: Bool, bookAspect: CGFloat? = nil, raise: ActionBarRaise) {
         let compact = PlusMetrics.actionBarCompact
         isRaised = raise.isRaised
         showsClear = raise.isRaised
@@ -531,7 +572,7 @@ private struct ActionBarLayout: Equatable {
             searchIconOnly = false
             trackInfoOpacity = 0
             progressOpacity = 0
-            trailingWidth = ActionBarGeometry.bookChipAABBWidth
+            trailingWidth = ActionBarGeometry.bookChipAABBWidth(aspect: bookAspect)
             gap = PlusMetrics.actionBarGap
 
         case .movie:
@@ -572,6 +613,8 @@ private struct SearchPill: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Мягкий уход клавиатуры по «Найти» (`dismissSmoothly`).
     @Environment(KeyboardObserver.self) private var keyboard
+    /// «Люмен в поиске» (дебаг-меню): голова Люмена вместо лупы и своя серия фраз.
+    @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
 
     /// Натяжение резины 0…1. Живёт здесь, а не в `ActionBarState`: запись 120 раз
     /// в секунду в `@Observable` инвалидировала бы весь хром — плеер, таббар, подложку.
@@ -606,7 +649,7 @@ private struct SearchPill: View {
         // лупа уезжала на 4pt влево (замер: 15.67 вместо 20.0).
         HStack(spacing: 0) {
             searchIcon
-                .padding(.trailing, layout.searchIconOnly ? 0 : 8)
+                .padding(.trailing, layout.searchIconOnly ? 0 : iconTextGap)
 
             ZStack(alignment: .leading) {
                 if !layout.searchIconOnly {
@@ -666,6 +709,10 @@ private struct SearchPill: View {
         // Ролями зоны больше не меняются — см. `ActionBarLayout.trailingWidth`.
         .frame(maxWidth: .infinity)
         .frame(height: PlusMetrics.actionBarHeight + stretch)
+        // Свечение Люмена — между стеклом и содержимым, капсула его обрезает (как в макете).
+        .background(alignment: .topLeading) {
+            if lumenInSearch { lumenGlow }
+        }
         .glassPill()
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
@@ -922,12 +969,45 @@ private struct SearchPill: View {
         .accessibilityLabel("Стереть запрос")
     }
 
+    @ViewBuilder
     private var searchIcon: some View {
-        Image("iconSearch")
-            .renderingMode(.template)
+        if lumenInSearch {
+            // Голова Люмена 60×60 вместо лупы (макет `2777:32103`): кадр ролика — во всю
+            // высоту поля от его левой кромки, центр там же, где у лупы (18 + 12 = 30).
+            // Место в раскладке — бокс лупы, кадр выходит за него оверлеем: в круге 60
+            // голова встаёт ровно в круг, а лишняя ширина не уводит её влево.
+            Color.clear
+                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+                .overlay {
+                    LumenHeadVideo()
+                        .frame(width: LumenSearchLayout.head, height: LumenSearchLayout.head)
+                }
+        } else {
+            Image("iconSearch")
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
+                .foregroundStyle(Color.searchIcon)
+        }
+    }
+
+    /// Зазор иконка → текст: у лупы 8, у Люмена текст стоит на 54 от кромки (макет).
+    private var iconTextGap: CGFloat {
+        lumenInSearch ? LumenSearchLayout.textGap : 8
+    }
+
+    /// Свечение под головой — растр размытого эллипса из макета (`lumenSearchGlow`,
+    /// с полями под блюр), повёрнутый вокруг своего центра.
+    private var lumenGlow: some View {
+        Image("lumenSearchGlow")
             .resizable()
-            .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-            .foregroundStyle(Color.searchIcon)
+            .frame(width: LumenSearchLayout.glowCanvas.width, height: LumenSearchLayout.glowCanvas.height)
+            .rotationEffect(.degrees(LumenSearchLayout.glowRotation))
+            .offset(
+                x: LumenSearchLayout.glowCenter.x - LumenSearchLayout.glowCanvas.width / 2,
+                y: LumenSearchLayout.glowCenter.y - LumenSearchLayout.glowCanvas.height / 2
+            )
+            .allowsHitTesting(false)
     }
 
     /// «Поиск по всему» — в фокусе, пока поле пустое (правка пользователя 2026-10-03).
@@ -964,13 +1044,33 @@ private struct SearchPill: View {
     private var placeholderStack: some View {
         ZStack(alignment: .leading) {
             // Пауза совпадает с гашением плейсхолдера — значит по раскладке.
-            SearchPlaceholderTicker(isPaused: layout.isRaised || isBrowsing)
+            SearchPlaceholderTicker(
+                isPaused: layout.isRaised || isBrowsing,
+                phrases: lumenInSearch ? SearchPlaceholderTicker.lumenPhrases : SearchPlaceholderTicker.phrases
+            )
+            // Другая серия — цикл и номер фразы с начала.
+            .id(lumenInSearch)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Без `clipped()`: он срезал бы 4pt хода подмены. Границу и так держит
         // капсула поля, а фразы заведомо уже доступной ширины.
         .allowsHitTesting(false)
     }
+}
+
+/// Поле поиска с Люменом — макет `2777:32103` (пилюля 60 в высоту, координаты от её
+/// левой верхней кромки).
+private enum LumenSearchLayout {
+    /// Голова — кадр 60×60 в левом верхнем углу поля.
+    static let head: CGFloat = 60
+    /// Текст — с x 54: 18 поля + 24 бокса лупы + 12.
+    static let textGap: CGFloat = 12
+    /// Растр свечения — холст SVG макета с полями под блюр (эллипс 204.69×48.93
+    /// в линейном градиенте `#187DF5` → 0, блюр 80 панели Figma).
+    static let glowCanvas = CGSize(width: 364.687, height: 208.933)
+    /// Центр эллипса и поворот — из макета.
+    static let glowCenter = CGPoint(x: 64.2, y: 26.4)
+    static let glowRotation: Double = -9.69
 }
 
 /// Подмена плейсхолдера поиска.
@@ -1017,6 +1117,7 @@ private enum SearchPlaceholderMotion {
 /// текст подменился, пока прозрачность 0 → выехала сверху и проявилась.
 private struct SearchPlaceholderTicker: View {
     var isPaused: Bool
+    var phrases: [String] = Self.phrases
 
     /// Где строка находится сейчас. `.above` и `.below` — одно и то же невидимое
     /// состояние, отличаются только стороной, с которой строка входит и выходит.
@@ -1032,17 +1133,24 @@ private struct SearchPlaceholderTicker: View {
 
     /// По глаголу на сервис — и только они (правка пользователя 2026-10-03: «Найти»
     /// и «Создать» убраны).
-    private static let phrases = [
+    static let phrases = [
         "Послушать",
         "Посмотреть",
         "Почитать",
+    ]
+
+    /// С Люменом в поле — разговор с ним (правка пользователя 2026-10-16).
+    static let lumenPhrases = [
+        "Обсудить кино",
+        "Посоветовать музыку",
+        "Найти книгу",
     ]
 
     @State private var activeIndex = 0
     @State private var phase: Phase = .visible
 
     var body: some View {
-        phrase(Self.phrases[activeIndex])
+        phrase(phrases[activeIndex % phrases.count])
             .opacity(phase == .visible ? 1 : 0)
             .offset(y: offsetY)
             .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
@@ -1079,6 +1187,8 @@ private struct SearchPlaceholderTicker: View {
         Text(text + "...")
             .plusHeadline(.s)
             .foregroundStyle(Color.searchPlaceholder)
+            // Длинная фраза в узком поле (чип справа) не переносится на вторую строку.
+            .lineLimit(1)
     }
 
     private func runPlaceholderLoop() async {
@@ -1096,7 +1206,7 @@ private struct SearchPlaceholderTicker: View {
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
-                activeIndex = (activeIndex + 1) % Self.phrases.count
+                activeIndex = (activeIndex + 1) % phrases.count
                 phase = .above
             }
 
@@ -1226,7 +1336,7 @@ private struct TrailingSlot: View {
             // именно под этот переход).
             if let book = actionBar.book {
                 ChipButton(title: book.title, action: { actionBar.read(book) }) {
-                    BookChip(cover: book.cover)
+                    BookChip(cover: book.cover, aspect: actionBar.bookCoverAspect)
                 }
                 .zoneWidth(layout)
                 .blurReplaceLayer(layout.showBookChip)
@@ -1626,19 +1736,21 @@ private struct ChipButton<Label: View>: View {
 
 private struct BookChip: View {
     let cover: ArtworkSource
+    /// Пропорции обложки (`ActionBarState.bookCoverAspect`); `nil` — макетная ширина.
+    let aspect: CGFloat?
 
     var body: some View {
-        ZStack {
-            ArtworkImage(source: cover)
-                .scaledToFill()
-                .frame(width: ActionBarGeometry.bookCoverSize.width, height: ActionBarGeometry.bookCoverSize.height)
-                .clipShape(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
-                .coverBorder(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
-        }
-        .frame(width: ActionBarGeometry.bookChipSize.width, height: ActionBarGeometry.bookChipSize.height)
-        .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
-        .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
-        .frame(width: ActionBarGeometry.bookChipAABBWidth, height: PlusMetrics.actionBarHeight)
+        let coverSize = ActionBarGeometry.bookCoverSize(aspect: aspect)
+        let chipSize = ActionBarGeometry.bookChipSize(aspect: aspect)
+        // Кадр задаёт распорка, картинка его заполняет.
+        Color.clear
+            .frame(width: coverSize.width, height: coverSize.height)
+            .overlay { ArtworkImage(source: cover).scaledToFill() }
+            .bookCoverShape(radius: ActionBarGeometry.bookCoverRadius)
+            .frame(width: chipSize.width, height: chipSize.height)
+            .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
+            .rotationEffect(.degrees(ActionBarGeometry.chipRotation))
+            .frame(width: ActionBarGeometry.bookChipAABBWidth(aspect: aspect), height: PlusMetrics.actionBarHeight)
     }
 }
 
