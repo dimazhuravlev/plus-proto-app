@@ -43,6 +43,8 @@ enum ShowcaseRotation {
         static let promoStation: UInt64 = 6
         /// Стартовая карточка промо «Главной» (2026-10-14).
         static let promoStart: UInt64 = 7
+        /// Затравки «Похоже на» витрины «Для вас» таба Музыки (2026-10-17).
+        static let musicForYou: UInt64 = 8
     }
 }
 

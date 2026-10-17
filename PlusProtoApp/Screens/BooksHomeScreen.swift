@@ -40,8 +40,8 @@ enum BooksPromoLayout {
     static var blurbSide: CGFloat { 32 * scale }
     static let blurbToButton: CGFloat = 20
     static let blurbFade: Animation = .smooth(duration: 0.3)
-    static let buttonHeight: CGFloat = 48
-    static let buttonPadding: CGFloat = 32
+    static let buttonSize = PlusButtonSize.l
+    static var buttonHeight: CGFloat { buttonSize.height }
     /// Ширина текста описания на 402 (402 − 2·32) — от неё полосы скелетона
     static let designBlurbWidth: CGFloat = PlusMetrics.designWidth - 2 * 32
     static var blurbWidth: CGFloat { PlusMetrics.screenWidth - 2 * blurbSide }
@@ -86,7 +86,7 @@ struct BooksHomeScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             if filter == 0 {
                 feed
@@ -321,15 +321,7 @@ private struct BooksPromoCarousel: View {
     }
 
     private var readButton: some View {
-        Button(action: read) {
-            Text("Читать книгу")
-                .plusText(.textM, .semibold)
-                .foregroundStyle(Color.fillOne)
-                .padding(.horizontal, BooksPromoLayout.buttonPadding)
-                .frame(height: BooksPromoLayout.buttonHeight)
-                .accentButtonSurface()
-        }
-        .buttonStyle(PressScaleButtonStyle())
+        PlusButton("Читать книгу", type: .accent, size: BooksPromoLayout.buttonSize, haptic: .inAction, action: read)
     }
 
     private func read() {
@@ -383,7 +375,7 @@ private struct BooksPromoSkeleton: View {
             .padding(.bottom, BooksPromoLayout.blurbToButton)
             Capsule()
                 .fill(PlusSkeleton.fill)
-                .frame(width: 180, height: BooksPromoLayout.buttonHeight)
+                .frame(width: BooksPromoLayout.buttonSize.width(title: "Читать книгу"), height: BooksPromoLayout.buttonHeight)
                 .padding(.bottom, BooksPromoLayout.buttonBottom)
         }
         .accessibilityHidden(true)

@@ -52,6 +52,11 @@ struct DebugMenuScreen: View {
         static let sliderStep: Double = 0.05
         /// Предел затемнения стекла: дальше пилюли на любом фоне — чёрные
         static let glassDimRange: ClosedRange<Double> = 0...0.8
+        /// Колонка кегля между «−» и «+» — под три цифры, кнопки не ездят
+        static let headlineValueWidth: CGFloat = 36
+        static let headlineButtonGap: CGFloat = 4
+        /// Сброс кеглей — под островком, на 12 ниже
+        static let resetTop: CGFloat = 12
     }
 
     /// Название раздела видно всегда, подложка (блюр с затемнением) проявляется
@@ -65,11 +70,18 @@ struct DebugMenuScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    title("Вид поисковой выдачи")
+                    title("Настройка заголовков")
+                    headlineIsland
+                        .padding(.horizontal, ProfileLayout.side)
+                    headlineReset
+                        .padding(.top, Layout.resetTop)
+                        .padding(.horizontal, ProfileLayout.side)
+
+                    title("Вид поисковой выдачи", top: Layout.sectionGap)
 
                     optionsIsland
                         .padding(.horizontal, ProfileLayout.side)
@@ -161,7 +173,7 @@ struct DebugMenuScreen: View {
                     .foregroundStyle(Color.fillSubtitle)
             }
             Slider(value: value, in: range, step: Layout.sliderStep)
-                .tint(Color.moviesAccent)
+                .tint(Color.accentPrimary)
                 .accessibilityLabel(accessibility)
         }
         .padding(.horizontal, ProfileLayout.cellHorizontal)
@@ -181,7 +193,7 @@ struct DebugMenuScreen: View {
                 .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillOne)
         }
-        .tint(Color.moviesAccent)
+        .tint(Color.accentPrimary)
         .accessibilityLabel(accessibility)
         .padding(.horizontal, ProfileLayout.cellHorizontal)
         .padding(.vertical, ProfileLayout.cellVertical)
@@ -190,6 +202,87 @@ struct DebugMenuScreen: View {
             RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
                 .fill(Color.fillNine)
         )
+    }
+
+    /// Кегли переменных YS Display (`HeadlineSizes`) — строка на переменную, «−»/«+» по 1 pt.
+    /// Меняются сразу во всём приложении: заголовки читают кегль в своём `body`
+    /// (задача пользователя 2026-10-17).
+    private var headlineIsland: some View {
+        VStack(spacing: 0) {
+            ForEach(PlusHeadline.allCases, id: \.self) { style in
+                headlineRow(style)
+                    .overlay(alignment: .top) {
+                        if style != PlusHeadline.allCases.first {
+                            Rectangle()
+                                .fill(ProfileLayout.divider)
+                                .frame(height: 0.5)
+                                .padding(.leading, ProfileLayout.cellHorizontal)
+                        }
+                    }
+            }
+        }
+        .padding(.vertical, ProfileLayout.islandPadding)
+        .background(
+            RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
+                .fill(Color.fillNine)
+        )
+    }
+
+    private func headlineRow(_ style: PlusHeadline) -> some View {
+        let sizes = HeadlineSizes.shared
+        let size = sizes.size(of: style)
+        return HStack(spacing: ProfileLayout.cellGap) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(style.title)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillOne)
+                Text("по умолчанию \(Int(style.defaultSize))")
+                    .plusText(.textS, .medium)
+                    .foregroundStyle(Color.fillSubtitle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: Layout.headlineButtonGap) {
+                PlusButton(
+                    type: .secondary,
+                    size: .s,
+                    state: size <= HeadlineSizes.range.lowerBound ? .disabled : .normal,
+                    accessibilityTitle: "Уменьшить \(style.title)"
+                ) {
+                    sizes.adjust(style, by: -HeadlineSizes.step)
+                } icon: {
+                    MinusGlyph()
+                }
+                Text("\(Int(size))")
+                    .plusText(.textM, .semibold)
+                    .foregroundStyle(Color.fillOne)
+                    .frame(width: Layout.headlineValueWidth)
+                PlusButton(
+                    icon: "iconAdd",
+                    type: .secondary,
+                    size: .s,
+                    state: size >= HeadlineSizes.range.upperBound ? .disabled : .normal,
+                    accessibilityTitle: "Увеличить \(style.title)"
+                ) {
+                    sizes.adjust(style, by: HeadlineSizes.step)
+                }
+            }
+        }
+        .padding(.horizontal, ProfileLayout.cellHorizontal)
+        .padding(.vertical, ProfileLayout.cellVertical)
+        .accessibilityElement(children: .contain)
+        .accessibilityValue("\(Int(size))")
+    }
+
+    /// Все кегли — обратно к переменным ДС; уже на них — кнопка выключена.
+    private var headlineReset: some View {
+        PlusButton(
+            "Сбросить",
+            type: .secondary,
+            size: .s,
+            state: HeadlineSizes.shared.isDefault ? .disabled : .normal
+        ) {
+            HeadlineSizes.shared.reset()
+        }
     }
 
     /// Островок выбора — как ячейки профиля (`ProfileLayout`): строки с разделителями,
@@ -239,5 +332,18 @@ struct DebugMenuScreen: View {
         }
         .buttonStyle(CellHighlightButtonStyle())
         .accessibilityAddTraits(style == searchStyle ? .isSelected : [])
+    }
+}
+
+/// «−» кнопок кегля: в ДС «🦄 Графика» минуса нет — это горизонтальная черта `iconAdd`
+/// (на холсте 24 — 18.4 × 2.4 по центру), растянутая на бокс иконки кнопки.
+private struct MinusGlyph: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let side = proxy.size.width
+            Rectangle()
+                .frame(width: side * 18.4 / 24, height: side * 2.4 / 24)
+                .frame(width: side, height: side)
+        }
     }
 }

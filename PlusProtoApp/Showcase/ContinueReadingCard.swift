@@ -96,7 +96,7 @@ struct ContinueReadingCard: View {
             readingArea
 
             // Крест — своя кнопка поверх карточки: палец на нём достаётся ему, а не ей.
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть", action: dismiss)
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Скрыть", haptic: .inAction, action: dismiss)
                 .offset(x: ReadingCardLayout.dismissOrigin.x, y: ReadingCardLayout.dismissOrigin.y)
         }
         .frame(
@@ -194,7 +194,7 @@ struct ContinueReadingCard: View {
             alignment: .topLeading
         )
         .clipShape(shape)
-        .glassSurface(shape, blur: PlusMetrics.buttonBlur, border: .white.opacity(0.06))
+        .glassSurface(shape, blur: PlusMetrics.buttonBlur, border: Color.fillTen)
     }
 
     /// Кадр фиксирован по макету, чтобы полтысячи точек текста не перемерялись на скролле,

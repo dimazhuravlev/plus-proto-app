@@ -100,8 +100,7 @@ enum ToastLayout {
     static let maxWidth: CGFloat = 280
     /// Зазор между текстом и кнопкой (и между иконкой и текстом).
     static let gap: CGFloat = 12
-    static let buttonSize: CGFloat = 32
-    static let buttonIcon: CGFloat = 16
+    static var buttonSize: CGFloat { PlusButtonSize.s.height }
     /// Правый отступ: с кнопкой `button=on` — 12, без неё — 24 (`3350:51042`, `3350:66601`).
     static let trailingWithButton: CGFloat = 12
     static let trailingNoButton: CGFloat = 24
@@ -185,9 +184,7 @@ enum ToastLayout {
     /// Шрифт — тот же YS Text Medium 13, что у `plusText(.textS, .medium)`; перенос
     /// здесь и в `Text` с `.frame(width:)` одинаковый, потому что ширина одна и та же.
     static func textWidth(_ title: String, maxWidth: CGFloat) -> CGFloat {
-        let size = PlusTextSize.textS.size
-        let font = UIFont(name: PlusFont.textMedium, size: size)
-            ?? UIFont.systemFont(ofSize: size, weight: .medium)
+        let font = PlusTextSize.textS.uiFont(.medium)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
         let text = NSAttributedString(
@@ -330,17 +327,9 @@ struct ToastView: View {
             .transition(.opacity)
     }
 
+    /// Шеврон — вид `PlusButton` chrome S: нажимается тост целиком.
     private var chevronButton: some View {
-        Color.clear
-            .frame(width: ToastLayout.buttonSize, height: ToastLayout.buttonSize)
-            .overlay {
-                Image("iconChevronRight")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: ToastLayout.buttonIcon, height: ToastLayout.buttonIcon)
-                    .foregroundStyle(Color.fillOne)
-            }
-            .chromeGlass(Circle())
+        PlusButtonLabel(icon: "iconChevronRight", type: .chrome, size: .s)
             .transition(.opacity)
     }
 }

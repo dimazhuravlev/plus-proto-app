@@ -97,6 +97,9 @@ struct ActionBarRaise: Equatable {
 enum ActionBarGeometry {
     static let searchPaddingH: CGFloat = 18
     static let searchIconBox: CGFloat = 24
+    /// Кнопки без подложки (крест поля, play и лайк мини-плеера) — `PlusButton` plain L:
+    /// круг 48 вокруг глифа 24 под отрицательным отступом, раскладка держит глиф.
+    static var plainHitInset: CGFloat { (PlusButtonSize.l.height - PlusButtonSize.l.iconBox) / 2 }
     /// Зазор между полем ввода и крестом очистки.
     static let clearLeadingGap: CGFloat = 8
     /// Во что схлопывается крест, когда поле пустое. Не ноль: из нуля предмет появляется
@@ -913,7 +916,7 @@ private struct SearchPill: View {
             .textFieldStyle(.plain)
             // Каретка — наш фиолетовый, тот же, что у активного чипса (правка
             // пользователя 2026-10-05; была белой).
-            .tint(Color.moviesAccent)
+            .tint(Color.accentPrimary)
             .foregroundStyle(Color.fillOne)
             // Не `plusHeadline`: у поля точная строка срезала хвосты букв снизу.
             .plusHeadlineField(.s)
@@ -948,25 +951,18 @@ private struct SearchPill: View {
     /// оставил бы поиск ни в выдаче, ни во вводе. В макете 24×24 с полем 18 от правого
     /// края поля — на месте общего внутреннего отступа пилюли.
     private var clearButton: some View {
-        Button {
+        // `PlusButton` plain L: белый 100 %, как «Назад» (правка пользователя 2026-10-05) —
+        // приглушена только лупа, она знак поля, а не действие. Круг 48 — под
+        // отрицательным отступом: раскладка поля держит глиф 24.
+        PlusButton(icon: "iconCross", type: .plain, size: .l, accessibilityTitle: "Стереть запрос") {
             // Стёрли заполненное поле — «Поиск по всему» встаёт сразу, без печати:
             // печатается он только на открытии пустого поиска (правка пользователя
             // 2026-10-05).
             didPlayFocusedPlaceholderWave = true
             query = ""
             if !searchFocused { searchFocused = true }
-        } label: {
-            // Белый 100 %, как «Назад» (правка пользователя 2026-10-05): кнопки — белые,
-            // приглушена только лупа — она знак поля, а не действие.
-            Image("iconCross")
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.fillOne)
-                .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Стереть запрос")
+        .padding(-ActionBarGeometry.plainHitInset)
     }
 
     @ViewBuilder
@@ -987,7 +983,7 @@ private struct SearchPill: View {
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.searchIcon)
+                .foregroundStyle(Color.fillSubtitle)
         }
     }
 
@@ -1036,7 +1032,7 @@ private struct SearchPill: View {
             .accessibilityHidden(true)
     }
 
-    /// Бледнее бегущих фраз (`searchPlaceholder`, белый 30 %): те зовут в сервисы,
+    /// Бледнее бегущих фраз (`fillSeven`, белый 30 %): те зовут в сервисы,
     /// а эта только подписывает пустое поле (правка пользователя 2026-10-03).
     private static let focusedPlaceholderColor = Color.white.opacity(0.2)
     fileprivate static let focusedPlaceholderText = "Поиск по всему"
@@ -1088,7 +1084,7 @@ private enum SearchPlaceholderMotion {
     /// читается как «одна фраза сменила другую», а не как проявление сквозь неё.
     static let swapGap: Duration = .milliseconds(100)
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
-    static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
+    static var lineHeight: CGFloat { PlusHeadline.s.lineHeight }
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
     /// фраза погасла вместе с подъёмом, и нахлёста нет. Символы встают резко, без
     /// проявления прозрачностью и без сдвига — как печать (правки пользователя
@@ -1186,7 +1182,7 @@ private struct SearchPlaceholderTicker: View {
     private func phrase(_ text: String) -> some View {
         Text(text + "...")
             .plusHeadline(.s)
-            .foregroundStyle(Color.searchPlaceholder)
+            .foregroundStyle(Color.fillSeven)
             // Длинная фраза в узком поле (чип справа) не переносится на вторую строку.
             .lineLimit(1)
     }
@@ -1234,7 +1230,12 @@ private struct SearchBackButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        // Кастомная (круг 60 — высота бара, вне шкалы ДС), но хаптика и просадка — как
+        // у кнопок ДС (правка пользователя 2026-10-17).
+        Button {
+            PlayerHaptics.tap()
+            action()
+        } label: {
             // Тот же глиф, что у шевронов, — без отзеркаливания он и есть «назад».
             // Белый 100 % (правка пользователя 2026-10-05).
             Image("iconDropleft")
@@ -1371,8 +1372,9 @@ private struct TrailingSlot: View {
             if UserDefaults.standard.bool(forKey: "debugBarProbe") {
                 GeometryReader { proxy in
                     Text("\(actionBar.mode.rawValue) w\(Int(layout.trailingWidth.rounded()))→\(Int(proxy.size.width.rounded()))\(layout.isRaised ? " up" : "")")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.yellow)
+                        .plusText(.textXS, .semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.systemBrightRed)
                         .fixedSize()
                         .offset(y: -12)
                 }
@@ -1523,10 +1525,11 @@ struct MiniPlayerPill: View {
             .frame(height: PlusMetrics.actionBarHeight)
             .glassPill()
             .overlay(alignment: .leading) {
-                MiniPlayerProgressFill(clock: progress, opacity: progressOpacity)
+                MiniPlayerProgressFill(clock: progress)
                     // Заливка гаснет и приходит вместе с остальными внутренностями:
                     // на сужении она иначе доживает до круга полосой в полкруга.
-                    .animation(ActionBarMotion.miniContentFade, value: progressOpacity)
+                    // Своя кривая — только у прозрачности (`MiniPlayerContentFade`).
+                    .modifier(MiniPlayerContentFade(opacity: progressOpacity))
             }
             .overlay(alignment: .leading) { content }
             .clipShape(Capsule(style: .continuous))
@@ -1551,12 +1554,10 @@ struct MiniPlayerPill: View {
             HStack(spacing: ActionBarGeometry.miniPlayerCoverGap) {
                 cover
                 trackInfo
-                    .opacity(trackInfoOpacity)
-                    .animation(ActionBarMotion.miniContentFade, value: trackInfoOpacity)
+                    .modifier(MiniPlayerContentFade(opacity: trackInfoOpacity))
             }
             actions
-                .opacity(trackInfoOpacity)
-                .animation(ActionBarMotion.miniContentFade, value: trackInfoOpacity)
+                .modifier(MiniPlayerContentFade(opacity: trackInfoOpacity))
         }
         .padding(.leading, ActionBarGeometry.miniPlayerPaddingLeading)
         .padding(.trailing, ActionBarGeometry.miniPlayerPaddingTrailing)
@@ -1629,47 +1630,31 @@ struct MiniPlayerPill: View {
     }
 
     private var playPauseButton: some View {
-        Button {
+        // `PlusButton` plain L; круг 48 — под отрицательным отступом, раскладка держит глиф 24.
+        PlusButton(type: .plain, size: .l, accessibilityTitle: isPlaying ? "Пауза" : "Играть", haptic: .inAction) {
             UIImpactFeedbackGenerator(style: .light)
                 .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
             // Угол фиксируем в том же апдейте, что и смену флага, иначе кадр успеет
             // отрисоваться со старой базой. Сеттер идемпотентен — onChange отработает вхолостую.
             spin.set(spinning: !isPlaying)
             onTogglePlay()
-        } label: {
-            PlayPauseGlyph(isPlaying: isPlaying, box: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.fillOne)
-                // Хит-зона крупнее глифа, но раскладка не едет: отрицательный отступ
-                // возвращает кадру исходные 24×24, увеличенной остаётся только contentShape.
-                .padding(.horizontal, 8)
-                .padding(.vertical, 10)
-                .contentShape(.rect)
-                .padding(.horizontal, -8)
-                .padding(.vertical, -10)
+        } icon: {
+            PlayPauseGlyph(isPlaying: isPlaying, box: PlusButtonSize.l.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
+        .padding(-ActionBarGeometry.plainHitInset)
     }
 
     /// Лайк прямо из мини-плеера (просьба пользователя 2026-10-03). Нравится — залитое
     /// белое сердце, как в полноэкранном плеере (правка того же дня: раньше лайк здесь
     /// был акцентным контуром); смена — тем же кросс-попом, что у play/pause.
     private var likeButton: some View {
-        Button {
-            PlayerHaptics.tap()
+        PlusButton(type: .plain, size: .l, accessibilityTitle: isLiked ? "Убрать из любимых" : "Нравится") {
             onToggleLike()
-        } label: {
+        } icon: {
             // Общий рисунок лайка (`LikeGlyph`) — эталон для всех сердец проекта.
-            LikeGlyph(isLiked: isLiked, box: ActionBarGeometry.searchIconBox)
-            // Хит-зона крупнее глифа, раскладка — нет: тот же приём, что у play.
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-            .contentShape(.rect)
-            .padding(.horizontal, -8)
-            .padding(.vertical, -10)
+            LikeGlyph(isLiked: isLiked, box: PlusButtonSize.l.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isLiked ? "Убрать из любимых" : "Нравится")
+        .padding(-ActionBarGeometry.plainHitInset)
     }
 }
 
@@ -1680,7 +1665,6 @@ struct MiniPlayerPill: View {
 /// и любое чтение его размера замкнуло бы цикл раскладки. Форму даёт клип родителя.
 private struct MiniPlayerProgressFill: View {
     let clock: MusicClock
-    let opacity: Double
 
     var body: some View {
         MusicProgressReader(clock: clock) { progress in
@@ -1689,7 +1673,20 @@ private struct MiniPlayerProgressFill: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
         }
-        .opacity(opacity)
+    }
+}
+
+/// Проявление и уход внутренностей пилюли своей кривой (`miniContentFade`) — **только
+/// прозрачность**. `.animation(_:value:)` на них перехватывал всю транзакцию поддерева:
+/// раскладка и сдвиг ехали за 0.2 с, а капсула — кривой морфа или обвязки, и в читалке,
+/// где пилюля одновременно раскрывается и поднимается на 132 вместе с обвязкой,
+/// содержимое обгоняло капсулу (жалоба пользователя 2026-10-17). Движение остаётся
+/// родительским — внутренности едут ровно с капсулой.
+private struct MiniPlayerContentFade: ViewModifier {
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content.animation(ActionBarMotion.miniContentFade) { $0.opacity(opacity) }
     }
 }
 

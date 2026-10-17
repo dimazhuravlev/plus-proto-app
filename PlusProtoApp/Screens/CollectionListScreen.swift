@@ -85,7 +85,7 @@ struct CollectionListScreen: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             ScrollView {
                 // Чипсы — закреплённым заголовком внутри ленты, как у полной выдачи
@@ -241,23 +241,20 @@ private struct CollectionListRow: View {
                         .renderingMode(.template)
                         .resizable()
                         .frame(width: CollectionLayout.downloadIcon, height: CollectionLayout.downloadIcon)
-                        .foregroundStyle(Color.moviesAccent)
+                        .foregroundStyle(Color.accentPrimary)
                         .accessibilityLabel("Скачано")
                 }
                 Menu {
                     CollectionItemMenu(item: item)
                 } label: {
-                    Image("iconMore")
-                        .renderingMode(.template)
-                        .resizable()
-                        .frame(width: CollectionLayout.moreIcon, height: CollectionLayout.moreIcon)
-                        .foregroundStyle(CollectionLayout.more)
-                        .padding(10)
-                        .contentShape(.rect)
-                        // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
-                        .pressScale(GlassIconButtonConfig.pressedScale)
+                    // Вид `PlusButton` plain M; круг 40 — под отрицательным отступом.
+                    // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
+                    TrackMoreLabel()
+                        .pressScale(PressMotion.buttonScale)
                 }
-                .padding(-10)
+                // Хаптика — как у кнопок ДС: меню открывается системой, тап ловим рядом.
+                .simultaneousGesture(TapGesture().onEnded { PlayerHaptics.tap() })
+                .padding(-TrackMoreLabel.hitInset)
                 .accessibilityLabel("Ещё")
             }
         }

@@ -10,7 +10,10 @@ private enum MusicPlayerLayout {
     /// Строка навбара под статус-баром.
     static let barHeight: CGFloat = 44
     static let barSide: CGFloat = 16
-    static let barIcon: CGFloat = 24
+    static var barIcon: CGFloat { PlusButtonSize.l.iconBox }
+    /// Кнопки без подложки — `PlusButton` plain L: круг 48 вокруг глифа 24 стоит под
+    /// отрицательным отступом, раскладка держит только глиф.
+    static var plainHitInset: CGFloat { (PlusButtonSize.l.height - PlusButtonSize.l.iconBox) / 2 }
     /// «Сейчас играет» ↔ название альбома.
     static let barCaptionGap: CGFloat = 2
     /// От навбара до обложки.
@@ -34,7 +37,7 @@ private enum MusicPlayerLayout {
     static let titleBadgeGap: CGFloat = 8
     /// От строки названия до ряда артиста. Меряем по макету паузы от базовой линии:
     /// до верха аватара 9pt. В макете их дают зазор 2 и 6.9pt под базовой линией
-    /// Headline L En (32/32, другой шрифт); у нашего L 28/28 под ней 4.4 — остаётся 4.5
+    /// Headline L En (32/32, другой шрифт); у нашего M 28/28 под ней 4.4 — остаётся 4.5
     /// (жалоба пользователя 2026-10-03: при 2 аватар подпирал название).
     static let titleToArtist: CGFloat = 4.5
     static let artistRowHeight: CGFloat = 40
@@ -44,8 +47,6 @@ private enum MusicPlayerLayout {
     static let textStackGap: CGFloat = -2
     /// Длинное имя артиста не обрывается многоточием, а гаснет на этой ширине.
     static let artistFade: CGFloat = 32
-    static let rowButton: CGFloat = 40
-    static let rowButtonIcon: CGFloat = 20
     static let rowButtonGap: CGFloat = 6
     static let artistToTimeline: CGFloat = 24
     /// Таймлайн: подписи 27 по краям, зазор 6, дорожка 6.
@@ -72,7 +73,6 @@ private enum MusicPlayerLayout {
     /// Повтор и перемешивание висят поверх шапки на 15 от её верха (`6200:280427`).
     static let queueTogglesTop: CGFloat = 15
     static let queueToggleGap: CGFloat = 12
-    static let queueToggleIcon: CGFloat = 24
     static let activeDot: CGFloat = 4
     static let rowVertical: CGFloat = 8
     static let rowCover: CGFloat = 48
@@ -180,7 +180,7 @@ struct MusicPlayerView: View {
             }
             .ignoresSafeArea()
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
     }
 
     // MARK: Навбар
@@ -225,18 +225,9 @@ struct MusicPlayerView: View {
     }
 
     private func barButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button {
-            PlayerHaptics.tap()
-            action()
-        } label: {
-            MovieIcon(name: icon, box: MusicPlayerLayout.barIcon)
-                // Хит-зона шире глифа, раскладка — нет: тот же приём, что у play в мини-плеере.
-                .padding(10)
-                .contentShape(.rect)
-                .padding(-10)
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
+        // `PlusButton` plain L: круг 48 под отрицательным отступом — раскладка держит глиф 24.
+        PlusButton(icon: icon, type: .plain, size: .l, accessibilityTitle: title, action: action)
+        .padding(-MusicPlayerLayout.plainHitInset)
     }
 
     // MARK: Содержимое
@@ -344,17 +335,11 @@ struct MusicPlayerView: View {
             .coverBorder(Circle())
     }
 
-    /// Кнопка 40 на подложке Buttons/Secondary — со стеклом и бордером серых кнопок
-    /// (правка пользователя 2026-10-04; в макете их не было). Текст песни и меню трека
-    /// в прототипе не спроектированы — кнопки только откликаются.
+    /// `PlusButton` secondary M (правка пользователя 2026-10-04: со стеклом и бордером серых
+    /// кнопок; в макете их не было). Текст песни и меню трека в прототипе не спроектированы —
+    /// кнопки только откликаются.
     private func rowButton(icon: String, title: String) -> some View {
-        Button(action: PlayerHaptics.tap) {
-            MovieIcon(name: icon, box: MusicPlayerLayout.rowButtonIcon)
-                .frame(width: MusicPlayerLayout.rowButton, height: MusicPlayerLayout.rowButton)
-                .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
+        PlusButton(icon: icon, type: .secondary, size: .m, accessibilityTitle: title) {}
     }
 
     // MARK: Таймлайн
@@ -569,21 +554,19 @@ struct MusicPlayerView: View {
 
     /// Переключатель с точкой «включено» под глифом — точку рисует код, а не ассет.
     private func queueToggle(icon: String, title: String, isOn: Binding<Bool>) -> some View {
-        Button {
-            PlayerHaptics.tap()
+        // `PlusButton` plain L, круг под отрицательным отступом; точка — под глифом, в круге.
+        PlusButton(type: .plain, size: .l, accessibilityTitle: title) {
             isOn.wrappedValue.toggle()
-        } label: {
-            VStack(spacing: 0) {
-                MovieIcon(name: icon, box: MusicPlayerLayout.queueToggleIcon)
-                Circle()
-                    .fill(Color.fillOne)
-                    .frame(width: MusicPlayerLayout.activeDot, height: MusicPlayerLayout.activeDot)
-                    .opacity(isOn.wrappedValue ? 1 : 0)
-            }
-            .contentShape(.rect)
+        } icon: {
+            PlusButtonAssetIcon(name: icon)
+                .overlay(alignment: .bottom) {
+                    Circle()
+                        .frame(width: MusicPlayerLayout.activeDot, height: MusicPlayerLayout.activeDot)
+                        .opacity(isOn.wrappedValue ? 1 : 0)
+                        .offset(y: MusicPlayerLayout.activeDot)
+                }
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
+        .padding(-MusicPlayerLayout.plainHitInset)
         .accessibilityValue(isOn.wrappedValue ? "Включено" : "Выключено")
     }
 }
@@ -651,7 +634,7 @@ private struct CoverCarousel: View {
 
 // MARK: - Название
 
-/// Название трека — Headline L, у explicit-трека с бейджем 18+. Не влезает в колонку —
+/// Название трека — Headline M, у explicit-трека с бейджем 18+. Не влезает в колонку —
 /// бежит строкой во всю ширину экрана с гаснущими краями, как в макете `6105:61569`;
 /// влезает — стоит у левого поля.
 ///
@@ -666,9 +649,7 @@ private struct MarqueeTitle: View {
     @State private var start = Date.now
 
     private var lineWidth: CGFloat {
-        let font = UIFont(name: PlusFont.displaySemibold, size: PlusHeadline.l.size)
-            ?? .systemFont(ofSize: PlusHeadline.l.size, weight: .bold)
-        let textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        let textWidth = ceil((text as NSString).size(withAttributes: PlusHeadline.m.measureAttributes).width)
         return isExplicit
             ? textWidth + MusicPlayerLayout.titleBadgeGap + MusicPlayerLayout.titleBadge
             : textWidth
@@ -691,7 +672,7 @@ private struct MarqueeTitle: View {
                 marquee
             }
         }
-        .frame(height: PlusHeadline.l.lineHeight)
+        .frame(height: PlusHeadline.m.lineHeight)
         .onChange(of: text) { start = .now }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
@@ -700,7 +681,7 @@ private struct MarqueeTitle: View {
     private var line: some View {
         HStack(spacing: MusicPlayerLayout.titleBadgeGap) {
             Text(text)
-                .plusHeadline(.l)
+                .plusHeadline(.m)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(1)
             if isExplicit {
@@ -709,7 +690,7 @@ private struct MarqueeTitle: View {
                     .resizable()
                     .frame(width: MusicPlayerLayout.titleBadge, height: MusicPlayerLayout.titleBadge)
                     // Белый 15 % из макета; токена нет — оттенок живёт только здесь.
-                    .foregroundStyle(Color.white.opacity(0.15))
+                    .foregroundStyle(Color.fillEight)
             }
         }
         .fixedSize()
@@ -746,7 +727,7 @@ private struct MarqueeTitle: View {
     /// Строка под масками краёв. Маска выше рамки на запас глифов (`inkOutset`):
     /// по рамке строки она срезала бы хвосты «у», «р» и точки «Й».
     private func faded(leading: Double, @ViewBuilder content: () -> some View) -> some View {
-        let outset = PlusHeadline.l.inkOutset
+        let outset = PlusHeadline.m.inkOutset
         return content()
             .padding(.vertical, outset)
             .mask { fadeMask(leading: leading) }
@@ -830,7 +811,7 @@ private struct QueueRow: View {
                         .frame(width: MusicPlayerLayout.rowBadge, height: MusicPlayerLayout.rowBadge)
                         // Белый 60 % из макета; токена нет — оттенок живёт только здесь
                         // (как у «ещё» в треклисте альбома).
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Color.fillFive)
                 }
                 .padding(.leading, MusicPlayerLayout.rowCoverToText)
             }
@@ -863,7 +844,7 @@ private struct QueueRow: View {
                         .resizable()
                         .frame(width: MusicPlayerLayout.rowBadge, height: MusicPlayerLayout.rowBadge)
                         // Белый 30 % — как бейдж в треклисте альбома.
-                        .foregroundStyle(Color.white.opacity(0.3))
+                        .foregroundStyle(Color.fillSeven)
                 }
             }
             Text(item.artist)

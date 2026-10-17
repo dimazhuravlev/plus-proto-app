@@ -145,10 +145,6 @@ final class ActionBarState {
     private(set) var mode: ActionBarMode = .search { didSet { persist() } }
 
     init() {
-        // Конец превью решает очередь: звук только сообщает, что трек доиграл.
-        audio { [weak self] audio in
-            audio.onTrackEnd = { self?.musicTrackDidEnd() }
-        }
         restore()
         #if DEBUG
         // Посев «Продолжить» — до режима бара: `-debugActionBar` перекрывает чип книги.
@@ -442,6 +438,17 @@ final class ActionBarState {
         guard queue.count > 1, queue.indices.contains(queueIndex) else { return nil }
         let index = (queueIndex + 1) % queue.count
         return (queue[index], index)
+    }
+
+    /// Конец превью решает очередь этого бара: звук только сообщает, что трек доиграл.
+    /// Подключает корень (`AppRootView.onAppear`), а не `init`: начальное значение `@State`
+    /// корня пересоздаётся на каждой его инициализации, и лишний экземпляр перезаписывал
+    /// обработчик собой и умирал — конец превью уходил в пустоту, трек вставал в конце,
+    /// очередь не шла (жалоба пользователя 2026-10-17; замер — два `init` за запуск).
+    func attachAudio() {
+        audio { [weak self] audio in
+            audio.onTrackEnd = { self?.musicTrackDidEnd() }
+        }
     }
 
     /// Превью доиграло (от звука или от мок-хода часов): следующий трек очереди,

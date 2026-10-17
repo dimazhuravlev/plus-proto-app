@@ -39,7 +39,7 @@ private enum BookReaderLayout {
     static let topBarTop: CGFloat = 53
     static let topBarSide: CGFloat = 16
     static let barGap: CGFloat = 8
-    static let topBarButton: CGFloat = PlusMetrics.circleButton
+    static var topBarButton: CGFloat { PlusButtonSize.m.height }
     static let titleWidth: CGFloat = 155
     /// Затемнение сверху при показанной обвязке `2565:25464`: 402×153, y −1.
     static let chromeTopGradientHeight: CGFloat = 153
@@ -77,11 +77,9 @@ private enum BookReaderLayout {
     /// Подложка полосы: backdrop-blur 6 из панели Figma → 3 в коде (см. `GlassSurface`),
     /// бордер 0.67 × белый 8 % (`2565:25571`).
     static let timelineTrackBlur: CGFloat = 3
-    /// Ряд из четырёх кнопок `2565:25813`: кнопки 48 без подложки, глиф 24, поля
-    /// ряда 32, между кнопками — поровну (x 32 / 112.67 / 193.33 / 274).
-    static let controlSize: CGFloat = 48
+    /// Ряд из четырёх кнопок `2565:25813` (plain L): поля ряда 32, между кнопками —
+    /// поровну (x 32 / 112.67 / 193.33 / 274).
     static let controlsSide: CGFloat = 32
-    static let controlIconSize: CGFloat = 24
     /// Ширина колонки обвязки: `screenWidth − 2 × 24` — 354 на 402 (макет), 342 на 390,
     /// 392 на 440. Поля 24 постоянные, четыре кнопки внутри разведены поровну.
     @MainActor
@@ -204,7 +202,7 @@ struct BookReaderView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black
+            Color.surfaceOne
             pages
             scrim
             chromeTop
@@ -547,9 +545,8 @@ struct BookReaderView: View {
 
 // MARK: - Обвязка: кнопки и нижний блок
 
-/// Круглая кнопка верхней панели 40×40 (`2565:25465`, `2565:25528`): глиф 20 в едином
-/// стекле хрома (`chromeGlass`; заливка 10 % у всех, а не 8 % у пары справа, как в макете —
-/// правка пользователя 2026-10-10). Действия у пары
+/// Круглая кнопка верхней панели (`2565:25465`, `2565:25528`) — `PlusButton` chrome M
+/// (заливка 10 % у всех, а не 8 % у пары справа, как в макете — правка пользователя 2026-10-10). Действия у пары
 /// у «ещё» нет: отклик есть (просадка и хаптика), логики нет. У «+» два глифа —
 /// `icon` и `activeIcon`, они сменяются кросс-попом, как `LikeGlyph`.
 private struct ReaderCircleButton: View {
@@ -560,37 +557,21 @@ private struct ReaderCircleButton: View {
     var action: () -> Void = {}
 
     var body: some View {
-        Button {
-            PlayerHaptics.tap()
-            action()
-        } label: {
+        // Стекло хрома (правка пользователя 2026-10-10): кнопки читаются над светлой страницей.
+        PlusButton(type: .chrome, size: .m, accessibilityTitle: title, action: action) {
             ZStack {
-                glyph(icon)
+                PlusButtonAssetIcon(name: icon)
                     .opacity(isActive ? 0 : 1)
                     .scaleEffect(isActive ? ActionBarMotion.iconSwapScale : 1)
                 if let activeIcon {
-                    glyph(activeIcon)
+                    PlusButtonAssetIcon(name: activeIcon)
                         .opacity(isActive ? 1 : 0)
                         .scaleEffect(isActive ? 1 : ActionBarMotion.iconSwapScale)
                 }
             }
             .animation(ActionBarMotion.iconSwap, value: isActive)
-            .frame(width: BookReaderLayout.topBarButton, height: BookReaderLayout.topBarButton)
-            // Единое стекло хрома (правка пользователя 2026-10-10): кнопки читаются
-            // над светлой страницей.
-            .chromeGlass(Circle())
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
         .accessibilityAddTraits(isActive ? .isSelected : [])
-    }
-
-    private func glyph(_ name: String) -> some View {
-        Image(name)
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: GlassIconButtonConfig.iconBox, height: GlassIconButtonConfig.iconBox)
-            .foregroundStyle(Color.fillOne)
     }
 }
 
@@ -665,7 +646,7 @@ private struct ReaderBottomBlock: View {
                 .secondaryButtonSurface(Capsule(style: .continuous), blur: BookReaderLayout.timelineTrackBlur)
                 .overlay(alignment: .leading) {
                     Capsule(style: .continuous)
-                        .fill(Color.plusAccent)
+                        .fill(Color.plusSolidOne)
                         .frame(width: BookReaderLayout.barWidth * progress)
                         // Заливка идёт за прокруткой текста — без собственной анимации.
                         .animation(nil, value: progress)
@@ -708,7 +689,7 @@ private struct ReaderBottomBlock: View {
         return "осталось ~\(Int(minutes.rounded()))\u{00A0}мин"
     }
 
-    /// `2565:25813`: четыре кнопки 48 без подложки. Что значит иконка — заметки,
+    /// `2565:25813`: четыре кнопки plain L. Что значит иконка — заметки,
     /// закладки, шрифт, поиск по тексту; действий пока нет.
     private var controls: some View {
         HStack(spacing: 0) {
@@ -724,19 +705,7 @@ private struct ReaderBottomBlock: View {
     }
 
     private func control(_ icon: String, title: String) -> some View {
-        Button {
-            PlayerHaptics.tap()
-        } label: {
-            Image(icon)
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: BookReaderLayout.controlIconSize, height: BookReaderLayout.controlIconSize)
-                .foregroundStyle(Color.fillOne)
-                .frame(width: BookReaderLayout.controlSize, height: BookReaderLayout.controlSize)
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
+        PlusButton(icon: icon, type: .plain, size: .l, accessibilityTitle: title) {}
     }
 }
 

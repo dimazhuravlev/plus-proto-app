@@ -51,22 +51,21 @@ enum RateReactionMotion {
     static let hapticIntensity: CGFloat = 0.8
 }
 
-/// Круг реакции: эмодзи на серой подложке, выбранная — на белой.
+/// Круг реакции — вид `PlusButton` XL, только иконка: эмодзи на secondary, выбранная —
+/// white. Нажимается колонка целиком (круг и подпись под ним) — круг здесь только вид.
 struct RateReactionChip: View {
     let emoji: String
     let isSelected: Bool
-    let diameter: CGFloat
-    let emojiSize: CGFloat
+
+    static let size = PlusButtonSize.xl
 
     var body: some View {
-        Image(emoji)
-            .resizable()
-            .frame(width: emojiSize, height: emojiSize)
-            .frame(width: diameter, height: diameter)
-            // Стекло серых кнопок: блюр фона и бордер 0.67 × белый 8 %; выбранная — белая.
-            .secondaryButtonSurface(Circle(), fill: isSelected ? Color.white : Color.buttonsSecondary)
-            .animation(RateReactionMotion.select, value: isSelected)
-            .accessibilityHidden(true)
+        PlusButtonLabel(type: isSelected ? .white : .secondary, size: Self.size) {
+            Image(emoji)
+                .resizable()
+        }
+        .animation(RateReactionMotion.select, value: isSelected)
+        .accessibilityHidden(true)
     }
 }
 

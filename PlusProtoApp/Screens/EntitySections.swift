@@ -19,8 +19,9 @@ enum EntitySectionLayout {
     static let trackColumnPeek: CGFloat = 24
     static let headerTop: CGFloat = 16
     static let headerBottom: CGFloat = 12
-    /// Строка заголовка — 28, как у заголовков выдачи (Headline M при 100 %)
-    static let headerLine: CGFloat = 28
+    /// Строка заголовка — как у заголовков выдачи: Headline S с полями по 2 (28 на 24)
+    static var headerLine: CGFloat { PlusHeadline.s.lineHeight + 2 * headerLinePad }
+    static let headerLinePad: CGFloat = 2
     static let titleGap: CGFloat = 2
     static let chevronBox: CGFloat = 20
     static let cardGap: CGFloat = 8
@@ -46,7 +47,7 @@ enum EntitySectionLayout {
     static let skeletonHeaderBar: CGFloat = 16
 }
 
-/// Заголовок секции — `header / static`: Headline M и шеврон сразу за текстом.
+/// Заголовок секции — `header / static`: Headline S и шеврон сразу за текстом.
 /// Полного списка за ним в прототипе нет — заголовок не нажимается, как «Другие
 /// альбомы». У плоских списков (фильмы режиссёра, книги писателя — список и есть
 /// весь раздел) шеврона нет: вести некуда.
@@ -58,14 +59,14 @@ struct EntitySectionHeader: View {
     /// Шеврон уступил место иконке-хвату режима порядка («Моё») — гаснет кросс-попом,
     /// место за ним остаётся.
     var isChevronCollapsed = false
-    /// Высота строки заголовка. У каруселей главной Кинопоиска она 24 — Headline M
+    /// Высота строки заголовка. У каруселей главной Кинопоиска она 24 — Headline S
     /// при 100 % (`carousel / Movies`, шапка 52 = 16 + 24 + 12).
     var lineHeight: CGFloat = EntitySectionLayout.headerLine
 
     var body: some View {
         HStack(spacing: EntitySectionLayout.titleGap) {
             Text(title)
-                .plusHeadline(.m)
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
 
             if showsChevron {
@@ -110,7 +111,8 @@ struct EntitySectionHeaderSkeleton: View {
 }
 
 /// Карточка альбома в карусели — `2079:11242`: квадратная обложка 159, название
-/// в строку, под ним год, бейдж explicit справа.
+/// в строку, под ним год, бейдж explicit справа. Рисует общая карточка музыки (`MusicCard`,
+/// ступень Medium — подпись Text M), здесь только ширина карусели экранов сущностей.
 struct EntityAlbumCard: View {
     let cover: ArtworkSource?
     let title: String
@@ -118,104 +120,45 @@ struct EntityAlbumCard: View {
     var isExplicit = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
-        VStack(alignment: .leading, spacing: EntitySectionLayout.cardTextGap) {
-            PlusSkeleton.fill
-                .frame(width: EntitySectionLayout.albumCardWidth, height: EntitySectionLayout.albumCardWidth)
-                .overlay {
-                    if let cover {
-                        SkeletonArtwork(source: cover)
-                    }
-                }
-                .clipShape(shape)
-                .coverBorder(shape)
-
-            HStack(alignment: .top, spacing: EntitySectionLayout.badgeGap) {
-                VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
-                    Text(title)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillOne)
-                        .lineLimit(1)
-
-                    if let detail {
-                        Text(detail)
-                            .plusText(.textM, .medium)
-                            .foregroundStyle(Color.fillSubtitle)
-                    }
-                }
-
-                if isExplicit {
-                    Spacer(minLength: 0)
-                    EntityExplicitBadge()
-                        .padding(.top, 1)
-                }
-            }
-            .padding(.trailing, EntitySectionLayout.cardTextTrailing)
-        }
-        .frame(width: EntitySectionLayout.albumCardWidth, alignment: .leading)
-        .contentShape(.rect)
+        MusicCard(
+            size: .medium,
+            width: EntitySectionLayout.albumCardWidth,
+            cover: cover,
+            title: title,
+            subtitle: detail,
+            isExplicit: isExplicit
+        )
     }
 }
 
 /// Скелетон карточки альбома — того же габарита.
 struct EntityAlbumCardSkeleton: View {
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
-        VStack(alignment: .leading, spacing: EntitySectionLayout.cardTextGap) {
-            shape
-                .plusSkeleton()
-                .frame(width: EntitySectionLayout.albumCardWidth, height: EntitySectionLayout.albumCardWidth)
-            EntitySkeletonLines(widths: [EntitySectionLayout.albumCardWidth * 0.7, EntitySectionLayout.albumCardWidth * 0.3])
-        }
-        .frame(width: EntitySectionLayout.albumCardWidth, alignment: .leading)
-        .accessibilityHidden(true)
+        MusicCardSkeleton(size: .medium, width: EntitySectionLayout.albumCardWidth)
     }
 }
 
 /// Карточка исполнителя — круг 109 и имя по центру (как исполнитель в карусели
-/// выдачи, только колонки `regular`).
+/// выдачи, только колонки `regular`). Общая карточка музыки, ступень Small.
 struct EntityPersonCard: View {
     let photo: ArtworkSource?
     let name: String
 
     var body: some View {
-        VStack(spacing: EntitySectionLayout.cardTextGap) {
-            PlusSkeleton.fill
-                .frame(width: EntitySectionLayout.personCardWidth, height: EntitySectionLayout.personCardWidth)
-                .overlay {
-                    if let photo {
-                        SkeletonArtwork(source: photo)
-                    }
-                }
-                .clipShape(Circle())
-                .coverBorder(Circle())
-
-            Text(name)
-                .plusText(.textS, .medium)
-                .foregroundStyle(Color.fillOne)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(width: EntitySectionLayout.personCardWidth)
-        .contentShape(.rect)
+        MusicCard(
+            size: .small,
+            width: EntitySectionLayout.personCardWidth,
+            shape: .circle,
+            cover: photo,
+            title: name
+        )
     }
 }
 
 /// Скелетон карточки исполнителя.
 struct EntityPersonCardSkeleton: View {
     var body: some View {
-        VStack(spacing: EntitySectionLayout.cardTextGap) {
-            Circle()
-                .fill(PlusSkeleton.fill)
-                .frame(width: EntitySectionLayout.personCardWidth, height: EntitySectionLayout.personCardWidth)
-            RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
-                .fill(PlusSkeleton.fill)
-                .frame(width: EntitySectionLayout.personCardWidth * 0.6, height: EntitySectionLayout.skeletonBar)
-                .frame(height: PlusTextSize.textS.lineHeight)
-        }
-        .frame(width: EntitySectionLayout.personCardWidth)
-        .accessibilityHidden(true)
+        MusicCardSkeleton(size: .small, width: EntitySectionLayout.personCardWidth, shape: .circle)
     }
 }
 
@@ -264,15 +207,7 @@ struct EntityTrackRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             // Меню трека в прототипе не спроектировано — кнопка только откликается.
-            Button {} label: {
-                Image("iconMore")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
-                    // Белый 60 % из макета, как в треклисте альбома
-                    .foregroundStyle(Color.white.opacity(0.6))
-            }
-            .buttonStyle(PressScaleButtonStyle())
+            TrackMoreButton {}
         }
         .frame(height: Self.height)
         .contentShape(.rect)
@@ -328,6 +263,34 @@ struct EntityExplicitBadge: View {
             .renderingMode(.template)
             .resizable()
             .frame(width: EntitySectionLayout.badgeBox, height: EntitySectionLayout.badgeBox)
-            .foregroundStyle(Color.white.opacity(0.3))
+            .foregroundStyle(Color.fillSeven)
+    }
+}
+
+// MARK: - «Ещё» строки трека
+
+/// «Ещё» строки трека — вид `PlusButton` plain M, иконка белым 60 % (макет треклиста).
+/// Круг 40 стоит под отрицательным отступом: раскладка строки держит только иконку 20.
+struct TrackMoreLabel: View {
+    static var hitInset: CGFloat { (PlusButtonSize.m.height - PlusButtonSize.m.iconBox) / 2 }
+
+    var body: some View {
+        PlusButtonLabel(type: .plain, size: .m) {
+            PlusButtonAssetIcon(name: "iconMore")
+                .foregroundStyle(Color.fillFive)
+        }
+    }
+}
+
+/// «Ещё» строки трека кнопкой — палец на ней достаётся ей, строка не проседает.
+struct TrackMoreButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        PlusButton(type: .plain, size: .m, accessibilityTitle: "Ещё", action: action) {
+            PlusButtonAssetIcon(name: "iconMore")
+                .foregroundStyle(Color.fillFive)
+        }
+        .padding(-TrackMoreLabel.hitInset)
     }
 }

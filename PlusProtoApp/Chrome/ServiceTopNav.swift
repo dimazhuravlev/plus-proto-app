@@ -34,7 +34,7 @@ enum ServiceTopNavLayout {
     /// Свечение — эллипс от нижней кромки: полуширина пилюли по горизонтали,
     /// 74 % её высоты по вертикали (матрица градиента макета: 34.2 × 29.5 на 69 × 40).
     static let pillGlowHeightShare: CGFloat = 29.5 / 40
-    static let pillBorder = Color.white.opacity(0.3)
+    static let pillBorder = Color.fillSeven
     static let pillBorderWidth: CGFloat = 0.67
     static let pillHighlight = Color.white.opacity(0.2)
     static let pillBlur: CGFloat = 20

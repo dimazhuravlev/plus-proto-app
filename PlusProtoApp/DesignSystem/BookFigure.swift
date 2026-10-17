@@ -20,7 +20,7 @@ struct BookFigureGeometry {
     /// Крайние пропорции: дальше обложка уже режется — иначе альбомный скан
     /// растянул бы книгу на пол-экрана, а узкий сжал бы её в столбик.
     static let aspectRange: ClosedRange<CGFloat> = 0.55...1.0
-    static let pagesFill = Color.white.opacity(0.15)
+    static let pagesFill = Color.fillEight
 
     private var scale: CGFloat { coverHeight / Self.referenceHeight }
 

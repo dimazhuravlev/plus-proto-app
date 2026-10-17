@@ -2,42 +2,124 @@ import SwiftUI
 
 // MARK: - Цвета
 
-/// Палитра из Figma. Почти вся нейтралка — белый с прозрачностью;
-/// литеральных хексов ровно два: акцент Плюса и заливка навбара.
+/// Палитра — переменные ДС «🌈 Стили» (`lsTLftjJkiuftLZkNqlO7k`, страница `29:5565`) ровно:
+/// коллекция Theme в режиме Dark и стиль YaPS/Accent Color (решение пользователя 2026-10-17).
+/// Имя — группа и имя переменной Фигмы: `Fill/Seven` → `fillSeven`, `System/iOS Navbar
+/// darkBlur` → `systemIOSNavbarDarkBlur`. Значения — то, во что в Dark резолвятся алиасы
+/// на константы `.Color constants` (Monochrome/White-30, Accent/Sugar Grape…), — они в
+/// комментариях. Градиенты в палитру не входят: вынесенные живут в `PlusGradient`,
+/// остальные — у своих компонентов.
 extension Color {
-    /// Fill/One — основной текст, активный лейбл таба, home indicator
+    // MARK: Accent
+
+    /// Accent/Primary — Accent/Sugar Grape. Активный чипс фильтров выдачи, лейбл тайтла
+    /// у меты, «нравится».
+    static let accentPrimary = Color(hex: 0xA332FF)
+    /// Accent/Secondary — Accent/Sugar Grape
+    static let accentSecondary = Color(hex: 0xA332FF)
+
+    // MARK: Fill
+
+    /// Fill/One — Monochrome/White. Основной текст, иконки.
     static let fillOne = Color.white
-    /// Fill/Six — неактивный лейбл таба
-    static let fillSix = Color.white.opacity(0.4)
-    /// Fill/Subtitle — вторичный текст (исполнитель в мини-плеере)
-    static let fillSubtitle = Color.white.opacity(0.5)
-    /// Fill/Four — текстовые блоки длиннее двух строк: текст читалки, описание книги.
-    /// Один из четырёх цветов текста по правилам типографики UI kit (`7529:2161`).
+    /// Fill/Two — Monochrome/Snow
+    static let fillTwo = Color(hex: 0xF2F2F2)
+    /// Fill/Three — Monochrome/Platinum
+    static let fillThree = Color(hex: 0xE6E6E6)
+    /// Fill/Four — Monochrome/White-80. Текстовые блоки длиннее двух строк (UI kit `7529:2161`).
     static let fillFour = Color.white.opacity(0.8)
-    /// Fill/Nine — бордеры стеклянных поверхностей (0.66pt)
+    /// Fill/Five — Monochrome/White-60. Вторичные иконки строк треков.
+    static let fillFive = Color.white.opacity(0.6)
+    /// Fill/Six — Monochrome/White-40. Неактивный лейбл таба.
+    static let fillSix = Color.white.opacity(0.4)
+    /// Fill/Seven — Monochrome/White-30. Плейсхолдер поиска, бейдж explicit, разделитель меты.
+    static let fillSeven = Color.white.opacity(0.3)
+    /// Fill/Eight — Monochrome/White-15. Разделители, бордеры виджетов.
+    static let fillEight = Color.white.opacity(0.15)
+    /// Fill/Nine — Monochrome/White-8. Бордеры стекла и обложек, скелетоны.
     static let fillNine = Color.white.opacity(0.08)
-    /// Fill/Ten — заливка прогресса в мини-плеере
+    /// Fill/Ten — Monochrome/White-6. Заливка прогресса мини-плеера.
     static let fillTen = Color.white.opacity(0.06)
-    /// Buttons/Primary — фон круглых кнопок и тайлов иконок
-    static let buttonsPrimary = Color.white.opacity(0.1)
-    /// Buttons/Secondary — фон чипов в блоке оценки
+    /// Fill/Eleven — Monochrome/White-0
+    static let fillEleven = Color.white.opacity(0)
+    /// Fill/Subtitle — Monochrome/White-50. Вторичный текст, лупа поиска.
+    static let fillSubtitle = Color.white.opacity(0.5)
+    /// Fill/Inverted — Monochrome/Black. Текст и иконки на белых поверхностях.
+    static let fillInverted = Color.black
+
+    // MARK: Surface
+
+    /// Surface/One — Monochrome/Black. Холст экранов.
+    static let surfaceOne = Color.black
+    /// Surface/Two — Monochrome/Charcoal
+    static let surfaceTwo = Color(hex: 0x141414)
+    /// Surface/Three — Monochrome/Gray
+    static let surfaceThree = Color(hex: 0x333333)
+    /// Surface/Four — Monochrome/Graphitic
+    static let surfaceFour = Color(hex: 0x1F1F1F)
+    /// Surface/Five — Monochrome/Gray-50
+    static let surfaceFive = Color(hex: 0x333333).opacity(0.5)
+    /// Surface/Highlight — Monochrome/White-6
+    static let surfaceHighlight = Color.white.opacity(0.06)
+    /// Surface/Inverted — Monochrome/White
+    static let surfaceInverted = Color.white
+
+    // MARK: Buttons
+
+    /// Buttons/Secondary — Monochrome/White-8. Фон чипов блока оценки.
     static let buttonsSecondary = Color.white.opacity(0.08)
-    /// Plus/Solid One — акцент бренда: заливка прогресс-баров
-    static let plusAccent = Color(red: 216 / 255, green: 141 / 255, blue: 252 / 255) // #D88DFC
-    /// Movies — фиолетовый кино: лейбл тайтла у меты, активный чипс фильтров выдачи
-    static let moviesAccent = Color(red: 163 / 255, green: 50 / 255, blue: 255 / 255) // #A332FF
-    /// System/iOS Navbar darkBlur — подложка навбара под блюром
-    static let navbarDarkBlur = Color(red: 20 / 255, green: 20 / 255, blue: 20 / 255).opacity(0.7) // #141414B2
-    /// Плейсхолдер в поле поиска
-    static let searchPlaceholder = Color.white.opacity(0.3)
-    /// Лупа в поле поиска — приглушена, ярче плейсхолдера, но не белая.
-    /// Замер по изолированному рендеру `2001:110987` на фоне канваса #444:
-    /// глиф (171,171,171) поверх пилюли (87,87,87) → альфа 0.50.
-    static let searchIcon = Color.white.opacity(0.5)
+    /// Buttons/Inverted — Monochrome/White. Белые кнопки: ▶ «Моей волны», выбранный чип оценки.
+    static let buttonsInverted = Color.white
+    /// Buttons/Extra One — Monochrome/Graphitic
+    static let buttonsExtraOne = Color(hex: 0x1F1F1F)
+    /// Buttons/Extra Two — Monochrome/White-8
+    static let buttonsExtraTwo = Color.white.opacity(0.08)
+    /// Buttons/Extra Three — Monochrome/Graphitic-95
+    static let buttonsExtraThree = Color(hex: 0x1F1F1F).opacity(0.95)
+
+    // MARK: System
+
+    /// System/Hint — Accent/Blue Lagoon
+    static let systemHint = Color(hex: 0x3A71F9)
+    /// System/Error — Accent/Permanent Geranium Lake
+    static let systemError = Color(hex: 0xE5312E)
+    /// System/Bright Red — Accent/Red
+    static let systemBrightRed = Color(hex: 0xFF0000)
+    /// System/So-so — Monochrome/Light Gray
+    static let systemSoSo = Color(hex: 0x777777)
+    /// System/Success — Accent/American Green
+    static let systemSuccess = Color(hex: 0x3BB33B)
+    /// System/iOS Navbar One — Monochrome/Charcoal-90
+    static let systemIOSNavbarOne = Color(hex: 0x141414).opacity(0.9)
+    /// System/iOS Navbar Two — Monochrome/Black
+    static let systemIOSNavbarTwo = Color.black
+    /// System/iOS Navbar darkBlur — Monochrome/Charcoal-70
+    static let systemIOSNavbarDarkBlur = Color(hex: 0x141414).opacity(0.7)
+    /// System/Android Navbar One — Monochrome/Black
+    static let systemAndroidNavbarOne = Color.black
+
+    // MARK: Plus
+
+    /// Plus/Solid One — Accent/Orchid. Акцент Плюса: заливка прогресс-баров.
+    static let plusSolidOne = Color(hex: 0xD88DFC)
+    /// Plus/Solid Two — Accent/Dark Orchid
+    static let plusSolidTwo = Color(hex: 0x8F05BC)
+
+    // MARK: YaPS
+
+    /// YaPS/Accent Color — Accent/Orchid (стиль, привязанный к переменной)
+    static let yapsAccentColor = Color(hex: 0xD88DFC)
+
+    // MARK: Вне палитры
+
+    /// Buttons/Primary — белый 10 %: фон стекла, круглых кнопок и тайлов. В коллекции Theme
+    /// «Стилей» такой переменной нет, а макеты на неё ссылаются (переменная прежней версии
+    /// ДС) — держим, пока ДС не скажет, чем её заменить.
+    static let buttonsPrimary = Color.white.opacity(0.1)
 }
 
 extension Color {
-    /// Цвет по хексу макета `0xRRGGBB` — палитры станций «Моей волны» (барабан, промо «Главной»).
+    /// Цвет по хексу макета `0xRRGGBB` — палитра выше и палитры станций «Моей волны».
     init(hex: UInt32) {
         self.init(
             red: Double((hex >> 16) & 0xFF) / 255,

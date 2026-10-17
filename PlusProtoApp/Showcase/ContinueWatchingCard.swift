@@ -54,10 +54,11 @@ private enum RateBlockGeometry {
     static let designHeight: CGFloat = 158
     static let verticalPadding: CGFloat = 8
     static let horizontalPadding: CGFloat = 16
-    /// Макетные 16 и 12 — плюс по 3: строка заголовка по шкале UI kit (Headline S,
-    /// 20/20) на 6 ниже макетной 26, и без добавки глиф и ряд эмодзи уехали бы вверх.
-    static let titleTop: CGFloat = 16 + 3
-    static let titleBottom: CGFloat = 12 + 3
+    /// Макетные 16 и 12 — плюс по 1: строка заголовка по ДС (Headline S, 24/24) на 2 ниже
+    /// макетной 26, и без добавки глиф и ряд эмодзи уехали бы вверх (было по 3 при 20/20
+    /// прежней шкалы; переход на ДС 2026-10-17).
+    static let titleTop: CGFloat = 16 + 1
+    static let titleBottom: CGFloat = 12 + 1
     // Вертикальные поля блока растут вместе с лентой (`ShowcaseLayout.scale`), чип,
     // шрифты и боковые поля — нет.
     /// Колонка: pt8 pb6 px8, зазор 8
@@ -65,8 +66,6 @@ private enum RateBlockGeometry {
     static let columnBottom: CGFloat = 6
     static let columnInset: CGFloat = 8
     static let columnGap: CGFloat = 8
-    /// Чип 52×52 r32 — при такой стороне радиус схлопывается в круг
-    static let chip: CGFloat = 52
 }
 
 // MARK: - Карточка
@@ -106,7 +105,7 @@ struct ContinueWatchingCard: View {
                 )
                 .allowsHitTesting(false)
 
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть", action: dismiss)
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Скрыть", haptic: .inAction, action: dismiss)
                 .offset(
                     x: WatchingGeometry.dismissOrigin.x * ShowcaseLayout.scale,
                     y: WatchingGeometry.dismissOrigin.y * ShowcaseLayout.scale
@@ -263,9 +262,6 @@ private struct RateBlock: View {
     /// Нажатия по кнопкам: каждое — новая стайка эмодзи из этой кнопки
     @State private var launches: [String: Int] = [:]
 
-    /// Эмодзи — 24, как глиф кегля 24 (Title S макета), которым он был текстом.
-    private static let emojiSize: CGFloat = 24
-
     var body: some View {
         VStack(spacing: 0) {
             Text("Что думаешь?")
@@ -281,8 +277,8 @@ private struct RateBlock: View {
                         .overlay(alignment: .top) {
                             RateBalloons(
                                 emoji: option.emoji,
-                                emojiSize: Self.emojiSize,
-                                diameter: RateBlockGeometry.chip,
+                                emojiSize: RateReactionChip.size.iconBox,
+                                diameter: RateReactionChip.size.height,
                                 burst: option.burst,
                                 launches: launches[option.id] ?? 0
                             )
@@ -335,12 +331,7 @@ private struct RateBlock: View {
 
     private func column(_ option: Option) -> some View {
         VStack(spacing: RateBlockGeometry.columnGap) {
-            RateReactionChip(
-                emoji: option.emoji,
-                isSelected: selected == option.id,
-                diameter: RateBlockGeometry.chip,
-                emojiSize: Self.emojiSize
-            )
+            RateReactionChip(emoji: option.emoji, isSelected: selected == option.id)
 
             GradientText(option.label, from: .fillOne, to: .white.opacity(0.7))
                 .plusText(.textM, .medium)

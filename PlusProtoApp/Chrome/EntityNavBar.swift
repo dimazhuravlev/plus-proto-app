@@ -133,11 +133,10 @@ struct EntityNavBar<Trailing: View>: View {
     /// Шеврон — `icon / dropleft` из ДС «🦄 Графика» (нода сета `19:6461`).
     /// Раньше здесь стоял системный `chevron.left`: своего ассета не было.
     ///
-    /// Кнопка — тот же `GlassIconButton`, что у крестика и сердца: круг 40, бокс глифа 20,
-    /// стекло и пресс-стейт совпадали и раньше, просто были переписаны здесь заново.
-    /// `chrome` — то же стекло хрома, что у пилюль action bar (блюр 35, затемнение из дебаг-меню).
+    /// Кнопка — `PlusButton` chrome M: стекло хрома, как у пилюль action bar.
     private var backButton: some View {
-        GlassIconButton(icon: "iconDropleft", accessibilityTitle: "Назад", chrome: true) {
+        // Без хаптики — как системное «назад» (правка пользователя 2026-10-17).
+        PlusButton(icon: "iconDropleft", type: .chrome, size: .m, accessibilityTitle: "Назад", haptic: .none) {
             if let onBack { onBack() } else { dismiss() }
         }
     }

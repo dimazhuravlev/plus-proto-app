@@ -25,7 +25,6 @@ enum AlbumLayout {
     static let popularWidth: CGFloat = 8
     static let numberWidth: CGFloat = 16
     static let titleLeading: CGFloat = 6
-    static let moreBox: CGFloat = 20
     static let badgeBox: CGFloat = 16
     static let badgeGap: CGFloat = 4
     /// Отрицательный зазор двухстрочного текстового лейбла (`mb-[-2px]` в макете)
@@ -49,9 +48,6 @@ enum AlbumLayout {
         EntityCoverLayout.navBarThresholds(coverHeight: coverSize)
     }
 }
-
-// Прежний одноразовый градиент пилюли «Слушать» (`Gradients/Yango/Accent`) заменён
-// общим акцентным стилем ДС — `accentButtonSurface()` (правка пользователя 2026-08-25).
 
 // MARK: - Экран
 
@@ -135,7 +131,7 @@ struct AlbumScreen: View {
                 thresholds: AlbumLayout.navBarThresholds
             )
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         // `-debugTapPlay` — нажать «Слушать»: тот же флаг, что у «Смотреть»
@@ -368,15 +364,7 @@ struct AlbumScreen: View {
             Spacer(minLength: AlbumLayout.badgeGap)
 
             // Меню трека в прототипе не спроектировано — кнопка только откликается.
-            Button {} label: {
-                Image("iconMore")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: AlbumLayout.moreBox, height: AlbumLayout.moreBox)
-                    // Белый 60 % из макета; токена нет — оттенок живёт только здесь
-                    .foregroundStyle(Color.white.opacity(0.6))
-            }
-            .buttonStyle(PressScaleButtonStyle())
+            TrackMoreButton {}
         }
         .frame(height: AlbumLayout.rowHeight)
         .padding(.horizontal, AlbumLayout.side)
@@ -407,7 +395,7 @@ struct AlbumScreen: View {
             .renderingMode(.template)
             .resizable()
             .frame(width: AlbumLayout.badgeBox, height: AlbumLayout.badgeBox)
-            .foregroundStyle(Color.white.opacity(0.3))
+            .foregroundStyle(Color.fillSeven)
     }
 
     // MARK: Другие альбомы
@@ -416,7 +404,7 @@ struct AlbumScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: AlbumLayout.sectionTitleGap) {
                 Text("Другие альбомы")
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
 
                 // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет,

@@ -18,16 +18,17 @@ struct AppRootView: View {
     /// Главная Кинопоиска — по той же причине, что каталог витрины: экран таба
     /// размонтируется на переключении, а лента собирается раз за процесс.
     @State private var cinema = CinemaCatalog()
-    /// Главная Книг — так же (2026-10-04). У Музыки каталога нет: «Моя волна»
-    /// по скриншоту — шейдер, название и кнопка, данных ей не нужно.
+    /// Главная Книг — так же (2026-10-04).
     @State private var books = BooksHomeCatalog()
+    /// «Для вас» таба Музыки — так же (2026-10-17).
+    @State private var music = MusicHomeCatalog()
     /// Заставка на запуске. `@State` корня, поэтому показывается ровно один раз
     /// за процесс: возврат из фона её не воскрешает.
     @State private var isSplashShown = !SplashTiming.isDisabled
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             tabContent
                 // Поджимаем контент скролла, а не фрейм: лента едет под хромом, но в покое
@@ -73,6 +74,8 @@ struct AppRootView: View {
         // Тап по тосту «добавлено в Моё» открывает «Моё» откуда угодно. Окно тоста окружения
         // корня не видит, поэтому корень отдаёт центру замыкание (идемпотентно: перезапись того же).
         .onAppear {
+            // Конец превью — в очередь живого бара, а не лишнего экземпляра `@State`.
+            actionBar.attachAudio()
             ToastCenter.shared.openCollection = { [navigation, actionBar, keyboard, search] in
                 // 1. Поиск: как тап по затемнению (`SearchLayers`); `dropSuspension` обязателен,
                 // иначе `SearchNavigationSync` вернёт выдачу.
@@ -130,6 +133,7 @@ struct AppRootView: View {
             // как раз пополняет, — и заставку это не держит.
             await cinema.loadIfNeeded()
             await books.loadIfNeeded()
+            await music.loadIfNeeded()
         }
         // Системное поднятие над клавиатурой отключаем на корне: иначе SwiftUI поднимает
         // весь overlay с хромом целиком (включая таббар), и это складывается с ручным
@@ -156,6 +160,7 @@ struct AppRootView: View {
         .environment(catalog)
         .environment(cinema)
         .environment(books)
+        .environment(music)
         // Коллекция «Моё» — одна на приложение (`CollectionStore.shared`): сердце
         // мини-плеера отмечает трек из `ActionBarState`, у которого окружения нет.
         .environment(CollectionStore.shared)
@@ -252,7 +257,7 @@ struct AppRootView: View {
             SearchLayers(host: .stackRoot) {
                 content()
             }
-            .background(Color.black)
+            .background(Color.surfaceOne)
             // Экраны сущностей и слой фильма — у каждого таба: карточки выдачи поиска
             // открываются откуда угодно (см. `EntityDestinations`).
             .modifier(EntityDestinations(zoom: stackZoom))

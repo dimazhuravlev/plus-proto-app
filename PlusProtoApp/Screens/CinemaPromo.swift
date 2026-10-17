@@ -57,14 +57,11 @@ enum CinemaPromoLayout {
     static let logoBottom: CGFloat = 6.8
     static let leadLines = 3
     static let titleLines = 2
-    /// Кнопки: ряд с полями 12 сверху и снизу, высота 48, зазор 8
+    /// Кнопки: ряд с полями 12 сверху и снизу, `PlusButton` L, зазор 8
     static let buttonsPadding: CGFloat = 12
-    static let buttonHeight: CGFloat = 48
+    static let buttonSize = PlusButtonSize.l
+    static var buttonHeight: CGFloat { buttonSize.height }
     static let buttonGap: CGFloat = 8
-    static let buttonIcon: CGFloat = 24
-    static let watchLeading: CGFloat = 20
-    static let watchTrailing: CGFloat = 24
-    static let watchIconGap: CGFloat = 8
 
     /// Затемнение обложки к низу — 16 стопов макета (`fade`): обложка уходит в чёрный
     /// фон экрана без нижней кромки, а мета читается поверх неё.
@@ -321,7 +318,7 @@ private struct CinemaPromoSlide: View {
             CinemaPromoLogo(source: logo, title: promo.title)
         } else {
             Text(promo.title)
-                .plusHeadline(.l)
+                .plusHeadline(.m)
                 .foregroundStyle(Color.fillOne)
                 .multilineTextAlignment(.center)
                 .lineLimit(CinemaPromoLayout.titleLines)
@@ -331,35 +328,20 @@ private struct CinemaPromoSlide: View {
 
     private var buttons: some View {
         HStack(spacing: CinemaPromoLayout.buttonGap) {
-            Button(action: watch) {
-                HStack(spacing: CinemaPromoLayout.watchIconGap) {
-                    MovieIcon(name: "iconPlay", box: CinemaPromoLayout.buttonIcon)
-                    Text("Смотреть")
-                        .plusText(.textM, .semibold)
-                        .foregroundStyle(Color.fillOne)
-                        .fixedSize()
-                }
-                .padding(.leading, CinemaPromoLayout.watchLeading)
-                .padding(.trailing, CinemaPromoLayout.watchTrailing)
-                .frame(height: CinemaPromoLayout.buttonHeight)
-                // Общий акцентный стиль ДС — как «Смотреть» карточки тайтла.
-                .accentButtonSurface()
-            }
-            .buttonStyle(PressScaleButtonStyle())
+            PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: CinemaPromoLayout.buttonSize, haptic: .inAction, action: watch)
 
             // «Позже» — как на карточке тайтла: закладка в «Любимом» коллекции «Моё».
             let isSaved = collectionItem.map { collection.isFavorite($0.id) } ?? false
-            Button {
+            PlusButton(
+                type: .secondary,
+                size: CinemaPromoLayout.buttonSize,
+                accessibilityTitle: isSaved ? "Убрать из «Позже»" : "Буду смотреть"
+            ) {
                 guard let collectionItem else { return }
-                PlayerHaptics.tap()
                 collection.toggleFavorite(collectionItem)
-            } label: {
-                BookmarkGlyph(isSaved: isSaved, box: CinemaPromoLayout.buttonIcon)
-                    .frame(width: CinemaPromoLayout.buttonHeight, height: CinemaPromoLayout.buttonHeight)
-                    .secondaryButtonSurface(Circle())
+            } icon: {
+                BookmarkGlyph(isSaved: isSaved, box: CinemaPromoLayout.buttonSize.iconBox)
             }
-            .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel(isSaved ? "Убрать из «Позже»" : "Буду смотреть")
         }
     }
 
@@ -505,7 +487,7 @@ struct CinemaPromoSkeleton: View {
                 .padding(.vertical, 4)
                 Capsule()
                     .fill(PlusSkeleton.fill)
-                    .frame(width: 148, height: CinemaPromoLayout.buttonHeight)
+                    .frame(width: CinemaPromoLayout.buttonSize.width(title: "Смотреть", hasIcon: true), height: CinemaPromoLayout.buttonHeight)
                     .padding(.vertical, CinemaPromoLayout.buttonsPadding)
             }
             .padding(.bottom, CinemaPromoLayout.metaBottom)

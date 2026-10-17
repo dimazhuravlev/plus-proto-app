@@ -86,11 +86,9 @@ enum MovieLayout {
     /// сознательно: под панелью фильма едет собственный контент экрана, и он
     /// должен читаться размытым, а не тонуть в черноте.
     static let panelPeak: Double = 0.70
-    static let buttonHeight: CGFloat = 56
-    static let buttonIconBox: CGFloat = 24
-    static let buttonLeading: CGFloat = 22
-    static let buttonTrailing: CGFloat = 26
-    static let buttonGap: CGFloat = 8
+    /// Кнопки панели — `PlusButton` XL (52): у кнопок ДС нет 56 прежнего компонента
+    static let buttonSize = PlusButtonSize.xl
+    static var buttonHeight: CGFloat { buttonSize.height }
     /// Воздух между концом ленты и кнопками панели: вплотную контент касался кнопок
     /// (правка пользователя 2026-10-09).
     static let panelAir: CGFloat = 32
@@ -98,7 +96,7 @@ enum MovieLayout {
     static var panelClearance: CGFloat { buttonHeight + panelBottom + panelAir }
     /// Высота затемняющей подложки — общая с таббаром (правка пользователя 2026-08-25;
     /// прежде считалась своей суммой 96 + 56 + 24 = 176). Над кнопками остаётся
-    /// 140 − 56 − 24 = 60 чистого градиента.
+    /// 140 − 52 − 24 = 64 чистого градиента.
     static var panelHeight: CGFloat { PlusMetrics.bottomUnderlayHeight }
     /// Блюр начинается от верхней кромки кнопок, а не от верха градиента
     static var panelBlurHeight: CGFloat { buttonHeight + panelBottom }
@@ -349,7 +347,7 @@ struct MovieScreen: View {
                 headerActions
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
         .overlay(alignment: .bottom) { MovieMainButtons(onPlay: startWatching, collectionItem: collectionItem) }
         #if DEBUG
         // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
@@ -404,15 +402,14 @@ struct MovieScreen: View {
     /// верхнему углу и по скроллу не меняются — ровно поведение trailing-слота навбара.
     private var headerActions: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
-            GlassIconButton(icon: "iconShare", accessibilityTitle: "Поделиться", chrome: true) {
-                PlayerHaptics.tap()
+            PlusButton(icon: "iconShare", type: .chrome, size: .m, accessibilityTitle: "Поделиться") {
                 ShareState.shared.present(.movie(
                     title: details.title,
                     year: details.year,
                     poster: details.poster.map { ArtworkSource.remote($0) } ?? entity.artwork
                 ))
             }
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть", chrome: true) { dismiss() }
+            PlusButton(icon: "iconCross", type: .chrome, size: .m, accessibilityTitle: "Закрыть") { dismiss() }
         }
     }
 
@@ -639,7 +636,7 @@ struct MovieScreen: View {
     private var meta: some View {
         details.meta.dropFirst()
             .reduce(Text(details.meta.first ?? "")) { result, item in
-                result + Text(" • ").foregroundColor(.white.opacity(0.3)) + Text(item)
+                result + Text(" • ").foregroundColor(Color.fillSeven) + Text(item)
             }
             .plusText(.textM, .medium)
             .foregroundStyle(Color.fillSubtitle)
@@ -768,29 +765,21 @@ private struct MovieMainButtons: View {
     }
 
     private var playButton: some View {
-        Button(action: onPlay) {
-            label(icon: "iconPlay", title: "Смотреть")
-            .frame(maxWidth: .infinity)
-            .frame(height: MovieLayout.buttonHeight)
-            // Общий акцентный стиль ДС (`2103:15149`): градиент + вспышка + бордер
-            .accentButtonSurface()
-        }
-        .buttonStyle(PressScaleButtonStyle())
+        PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: MovieLayout.buttonSize, fillsWidth: true, haptic: .inAction, action: onPlay)
     }
 
     /// «Позже» — закладка в «Любимом» коллекции: в коллекции — залитая.
     private var watchLaterButton: some View {
-        Button(action: toggleLater) {
-            label(title: "Позже") {
-                BookmarkGlyph(isSaved: isSaved, box: MovieLayout.buttonIconBox)
-            }
-            .frame(height: MovieLayout.buttonHeight)
-            // Дефолтный бордер стекла (white 8% × 0.66) вернулся по макету
-            // `2103:15123` — раньше выключался явно (правка 2026-08-25)
-            .secondaryButtonSurface(Capsule(style: .continuous))
+        PlusButton(
+            "Позже",
+            type: .secondary,
+            size: MovieLayout.buttonSize,
+            accessibilityTitle: isSaved ? "Убрать из «Позже»" : "Позже",
+            haptic: .inAction,
+            action: toggleLater
+        ) {
+            BookmarkGlyph(isSaved: isSaved, box: MovieLayout.buttonSize.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isSaved ? "Убрать из «Позже»" : "Позже")
         #if DEBUG
         // `-debugLaterToast 1` — через 3 с «Позже» тем же путём, что кнопка (тайтл уже
         // в «Любимом» — сперва снимается), ещё через 1.5 с — тап по тосту (`activate`, как
@@ -818,33 +807,16 @@ private struct MovieMainButtons: View {
 
     /// «Скачать» — «Скачанное» коллекции: скачанное — фиолетовым.
     private var downloadButton: some View {
-        Button {
+        PlusButton(
+            type: .secondary,
+            size: MovieLayout.buttonSize,
+            accessibilityTitle: isDownloaded ? "Удалить из скачанного" : "Скачать"
+        ) {
             guard let collectionItem else { return }
-            PlayerHaptics.tap()
             collection.toggleDownload(collectionItem)
-        } label: {
-            DownloadGlyph(isDownloaded: isDownloaded, box: MovieLayout.buttonIconBox)
-            .frame(width: MovieLayout.buttonHeight, height: MovieLayout.buttonHeight)
-            .secondaryButtonSurface(Circle())
+        } icon: {
+            DownloadGlyph(isDownloaded: isDownloaded, box: MovieLayout.buttonSize.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isDownloaded ? "Удалить из скачанного" : "Скачать")
-    }
-
-    private func label(icon: String, title: String) -> some View {
-        label(title: title) { MovieIcon(name: icon, box: MovieLayout.buttonIconBox) }
-    }
-
-    private func label(title: String, @ViewBuilder icon: () -> some View) -> some View {
-        HStack(spacing: MovieLayout.buttonGap) {
-            icon()
-            Text(title)
-                .plusText(.textM, .semibold)
-                .foregroundStyle(Color.fillOne)
-                .fixedSize()
-        }
-        .padding(.leading, MovieLayout.buttonLeading)
-        .padding(.trailing, MovieLayout.buttonTrailing)
     }
 }
 

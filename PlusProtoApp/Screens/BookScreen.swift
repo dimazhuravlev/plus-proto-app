@@ -30,8 +30,8 @@ private enum BookScreenLayout {
     static let sectionHeaderBottom: CGFloat = 12
     static let sectionTitleGap: CGFloat = 2
     static let sectionChevronBox: CGFloat = 20
-    /// Строка заголовка секции — 28, как у заголовков выдачи (Headline M при 100 %).
-    static let sectionHeaderLine: CGFloat = 28
+    /// Строка заголовка секции — как у заголовков выдачи (`EntitySectionLayout.headerLine`).
+    static var sectionHeaderLine: CGFloat { EntitySectionLayout.headerLine }
     /// Книга карусели — тот же рисунок, высота обложки 186 на 402: в экран входит две
     /// книги с торчащим краем третьей. Эталон — книга 2:3 (кадр ≈ 127); на других
     /// ширинах высота растёт так, чтобы две целые и край третьей остались теми же.
@@ -152,7 +152,7 @@ struct BookScreen: View {
                 thresholds: BookScreenLayout.navBarThresholds
             )
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
         // Системный бар выключен: на пуше он рисовал бы свой back поверх нашего.
         .toolbar(.hidden, for: .navigationBar)
         .task { await text.load(bookID: entity.id) }
@@ -378,7 +378,7 @@ struct BookScreen: View {
             // заголовок не нажимается.
             HStack(spacing: BookScreenLayout.sectionTitleGap) {
                 Text("Книги писателя")
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
 
                 Image("iconDropleft")

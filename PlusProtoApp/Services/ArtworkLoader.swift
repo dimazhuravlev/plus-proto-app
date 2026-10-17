@@ -110,6 +110,14 @@ final class ArtworkLoader {
         return Color(hue: tone.hue, saturation: min(tone.saturation * 0.9, 0.35), brightness: 0.86)
     }
 
+    /// Фон карточки под фото — средний тон всей картинки, приглушённый до тёмно-среднего
+    /// (`#96834c` под фото Дельфина в блоке «Похоже на», `17305:29395`): на нём читается
+    /// белый текст и не спорит с фото.
+    func backdropTone(for url: URL) async -> Color? {
+        guard let image = await image(for: url), let tone = Self.averageTone(of: image, wholeFrame: true) else { return nil }
+        return Color(hue: tone.hue, saturation: min(tone.saturation, 0.5), brightness: 0.58)
+    }
+
     /// Тёмный ли логотип тайтла. Часть PNG Кинопоиск отдаёт чёрными — под светлый
     /// фон, — и на наших тёмных обложках их не прочесть («Большой куш», первый прогон
     /// главной Кинопоиска 2026-10-04). Такой логотип рисуется белым силуэтом.

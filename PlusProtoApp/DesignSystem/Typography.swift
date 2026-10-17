@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// Семейства шрифтов. В проекте ровно два: YS Display (акцидентные заголовки) и YS Text
-/// (тексты), каждое в двух начертаниях. Отдельного файла Semibold в семействе не существует —
-/// в Figma переменная `Font Weight/Semibold` резолвится в Bold(700), поэтому Semibold ≡ Bold.
+/// Семейства шрифтов. В проекте ровно два: YS Display (акцидентные заголовки) в одном
+/// начертании — Bold, и YS Text (наборные тексты) в двух — Medium и Semibold. Отдельного
+/// файла Semibold в семействе не существует — в Figma переменная `Font Weight/Semibold`
+/// резолвится в Bold (700), поэтому Semibold ≡ Bold.
 ///
-/// Набирать текст напрямую этими именами нельзя — только стилями UI kit ниже:
+/// Набирать текст напрямую этими именами нельзя — только стилями ДС ниже:
 /// `plusText(_:_:)` для YS Text и `plusHeadline(_:)` для YS Display.
 enum PlusFont {
-    static let displayMedium = "YSDisplay-Medium"
-    static let displaySemibold = "YSDisplay-Bold"
+    static let display = "YSDisplay-Bold"
     static let textMedium = "YSText-Medium"
     static let textSemibold = "YSText-Bold"
 }
@@ -36,45 +36,12 @@ private struct FigmaTextStyle: ViewModifier {
     }
 }
 
-/// Многострочный текст с межстрочным интервалом ровно как в макете.
-///
-/// У YS натуральный интервал 1.172em — на кегле 32 это 37.5pt против макетных 36,
-/// и на трёх строках заголовка набегает 4.5pt. `lineSpacing` умеет только прибавлять,
-/// а `paragraphStyle` в `AttributedString` SwiftUI игнорирует (замер дал шаг 37.6 вместо 36).
-///
-/// Поэтому строки набираются отдельными `Text` в стеке с точным — при необходимости
-/// отрицательным — зазором. Переносы задаёт сам текст через `\n`: в макете они
-/// расставлены под врезки между словами, автоперенос их бы не повторил.
-/// Живёт ради заголовка витрины — см. исключение у `PlusHeadline`.
-struct FigmaText: View {
-    let text: String
-    let family: String
-    let size: CGFloat
-    let lineHeight: CGFloat
-    let tracking: CGFloat
+// MARK: - ДС: наборные стили YS Text
 
-    private var lineGap: CGFloat {
-        let natural = (UIFont(name: family, size: size) ?? .systemFont(ofSize: size)).lineHeight
-        return lineHeight - natural
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: lineGap) {
-            ForEach(Array(text.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.custom(family, size: size))
-                    .tracking(tracking)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
-// MARK: - UI kit: стили YS Text
-
-/// Кегль стиля YS Text — переменные UI kit «🧩 Mobile · Library» (`7529:1713`),
-/// правила работы — там же (`7529:2161`). Других стилей YS Text в проекте нет и быть
-/// не может (решение пользователя 2026-10-03).
+/// Кегль стиля YS Text — переменные ДС «🫟 Mobile · Library» (`7529:1713`): Title S・24,
+/// Text L・18, Text M・15, Text S・13, Text ХS・11, каждый в Semibold и Medium; правила
+/// работы — там же (`7529:2161`). Других стилей YS Text в проекте нет и быть не может
+/// (решения пользователя 2026-10-03 и 2026-10-17: вся типографика — только переменными).
 ///
 /// Правила, по которым стиль выбирается на месте применения:
 /// - кегля только пять; текст крупнее 24 — сигнал, что нужен YS Display (`plusHeadline`);
@@ -131,11 +98,25 @@ enum PlusTextWeight {
     }
 }
 
+extension PlusTextSize {
+    /// Файл шрифта переменной. Как в ДС: «Title S・24/Medium» там набран YS Text Bold,
+    /// как и Semibold, — переменная повторена ровно.
+    func family(_ weight: PlusTextWeight) -> String {
+        self == .titleS ? PlusFont.textSemibold : weight.family
+    }
+
+    /// Шрифт стиля для замеров текста до раскладки (ширина, число строк) — тот же файл
+    /// и кегль, что рисует `plusText`. Интерлиньяж у него натуральный.
+    func uiFont(_ weight: PlusTextWeight) -> UIFont {
+        UIFont(name: family(weight), size: size) ?? .systemFont(ofSize: size, weight: .medium)
+    }
+}
+
 extension View {
-    /// Текст по UI kit — «Text M・15 / Medium» пишется `.plusText(.textM, .medium)`.
+    /// Текст по ДС — «Text M・15/Medium» пишется `.plusText(.textM, .medium)`.
     func plusText(_ size: PlusTextSize, _ weight: PlusTextWeight) -> some View {
         modifier(FigmaTextStyle(
-            family: weight.family,
+            family: size.family(weight),
             size: size.size,
             lineHeight: size.lineHeight,
             tracking: 0
@@ -143,31 +124,47 @@ extension View {
     }
 }
 
-// MARK: - UI kit: заголовки YS Display
+// MARK: - ДС: акцидентные стили YS Display
 
-/// Шкала акцидентных заголовков и текстов YS Display — UI kit проекта (решение
-/// пользователя 2026-10-03): всё, что набрано YS Display, берёт кегль только отсюда.
-/// Начертание одно — Bold (Semibold Фигмы), интерлиньяж 100 % на любом кегле, трекинг 0.
+/// Шкала акцидентных заголовков YS Display — переменные ДС «🫟 Mobile · Library»
+/// (`7816:504`) ровно: Headline/Headline XXXL 56, XXL 48, XL 40, L 32, M 28, S 24.
+/// Всё, что набрано YS Display, берёт стиль только отсюда, и всё, что зависит от его
+/// строки (рамки шапок, скелетоны), считается от `size`/`lineHeight`, а не числом.
+/// Начертание одно — Bold, интерлиньяж 100 % на любом кегле, трекинг 0, у S — 1.5 %.
 ///
-/// Исключение одно — заголовок витрины (`ShowcaseHeader`): макетные 32/36, под них
-/// вручную расставлены врезки между словами, а 32 в шкале нет. Ждёт решения, на какую
-/// ступень его перевести, — вместе с перерасчётом позиций врезок.
-enum PlusHeadline: CaseIterable {
+/// Прежняя шкала проекта (52/44/36/28/24/20) переведена на ДС с сохранением кеглей:
+/// 24 → S, 28 → M, 36/44/52 — ступенью ниже (L, XL, XXL), 20 → S (решения пользователя
+/// 2026-10-17).
+enum PlusHeadline: String, CaseIterable {
     case xxxl, xxl, xl, l, m, s
 
-    var size: CGFloat {
+    /// Кегль переменной ДС.
+    var defaultSize: CGFloat {
         switch self {
-        case .xxxl: 52
-        case .xxl: 44
-        case .xl: 36
-        case .l: 28
-        case .m: 24
-        case .s: 20
+        case .xxxl: 56
+        case .xxl: 48
+        case .xl: 40
+        case .l: 32
+        case .m: 28
+        case .s: 24
         }
     }
 
+    /// Кегль в приложении — переменная ДС или примерка из дебаг-меню (`HeadlineSizes`).
+    /// Читать в `body` или в вычисляемом свойстве, не в `static let`: тогда смена
+    /// кегля перерисовывает заголовок сразу.
+    var size: CGFloat { HeadlineSizes.shared.size(of: self) }
+
+    /// Имя переменной в Фигме — «Headline XXXL»…
+    var title: String { "Headline \(rawValue.uppercased())" }
+
     /// Интерлиньяж 100 %: высота строки равна кеглю.
     var lineHeight: CGFloat { size }
+
+    /// Трекинг в пунктах: у S — 1.5 % кегля, у остальных 0.
+    var tracking: CGFloat {
+        self == .s ? size * 0.015 : 0
+    }
 
     /// Следующая ступень шкалы вниз; у самой мелкой остаётся она же.
     var smaller: PlusHeadline {
@@ -202,8 +199,71 @@ enum PlusHeadline: CaseIterable {
     /// Bold и тот же кегль, что рисует `plusHeadline`. Натуральный интерлиньяж у него
     /// 1.172 кегля — строки в замере считать им, а не `lineHeight`.
     var uiFont: UIFont {
-        UIFont(name: PlusFont.displaySemibold, size: size)
+        UIFont(name: PlusFont.display, size: size)
             ?? .systemFont(ofSize: size, weight: .bold)
+    }
+
+    /// Атрибуты для замера строки стилем — шрифт и трекинг, как их рисует `plusHeadline`.
+    var measureAttributes: [NSAttributedString.Key: Any] {
+        [.font: uiFont, .kern: tracking]
+    }
+}
+
+/// Кегли шкалы для примерки (задача пользователя 2026-10-17): по умолчанию — переменные
+/// ДС, дебаг-меню меняет каждую кнопками «−»/«+». Наблюдаемые: заголовок читает кегль
+/// в своём `body`, и смена сразу видна на всех экранах. Изменённые кегли хранятся
+/// в `UserDefaults` и переживают перезапуск, как прочие ручки дебаг-меню.
+@Observable
+final class HeadlineSizes {
+    static let shared = HeadlineSizes()
+
+    static let storageKey = "headlineSizes"
+    static let step: CGFloat = 1
+    static let range: ClosedRange<CGFloat> = 8...120
+
+    private var values: [PlusHeadline: CGFloat]
+
+    private init() {
+        // Числа — и строкой: ключ можно задать из шелла (`defaults write … -dict s 30`).
+        let stored = UserDefaults.standard.dictionary(forKey: Self.storageKey) ?? [:]
+        values = Dictionary(uniqueKeysWithValues: PlusHeadline.allCases.map { style in
+            let value = (stored[style.rawValue] as? NSNumber)?.doubleValue
+                ?? (stored[style.rawValue] as? String).flatMap(Double.init)
+            return (style, value.map { CGFloat($0) } ?? style.defaultSize)
+        })
+    }
+
+    func size(of style: PlusHeadline) -> CGFloat {
+        values[style] ?? style.defaultSize
+    }
+
+    /// Все кегли — переменные ДС.
+    var isDefault: Bool {
+        PlusHeadline.allCases.allSatisfy { size(of: $0) == $0.defaultSize }
+    }
+
+    func adjust(_ style: PlusHeadline, by delta: CGFloat) {
+        let size = min(max(size(of: style) + delta, Self.range.lowerBound), Self.range.upperBound)
+        guard size != values[style] else { return }
+        values[style] = size
+        persist()
+    }
+
+    /// Обратно к переменным ДС.
+    func reset() {
+        values = Dictionary(uniqueKeysWithValues: PlusHeadline.allCases.map { ($0, $0.defaultSize) })
+        persist()
+    }
+
+    private func persist() {
+        let changed = values.reduce(into: [String: Double]()) { stored, entry in
+            if entry.value != entry.key.defaultSize { stored[entry.key.rawValue] = Double(entry.value) }
+        }
+        if changed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.storageKey)
+        } else {
+            UserDefaults.standard.set(changed, forKey: Self.storageKey)
+        }
     }
 }
 
@@ -354,7 +414,8 @@ extension View {
         progress: Double,
         reduceMotion: Bool
     ) -> some View {
-        font(.custom(PlusFont.displaySemibold, size: style.size))
+        font(.custom(PlusFont.display, size: style.size))
+            .tracking(style.tracking)
             .lineHeight(.exact(points: style.lineHeight))
             .textRenderer(HeadlineWaveRenderer(
                 style: style,
@@ -371,7 +432,8 @@ extension View {
     /// Базовая линия при этом та же, что у плейсхолдера на `plusHeadline`: обе строки
     /// центрируются в поле, а смещение базовой линии от центра у них совпадает.
     func plusHeadlineField(_ style: PlusHeadline) -> some View {
-        font(.custom(PlusFont.displaySemibold, size: style.size))
+        font(.custom(PlusFont.display, size: style.size))
+            .tracking(style.tracking)
     }
 
     /// Заголовок по шкале UI kit — Headline XXXL…S.
@@ -382,7 +444,8 @@ extension View {
     /// `HeadlineInkRenderer` — на месте Фигмы и с запасом за рамкой, иначе хвосты
     /// последней строки срезаны.
     func plusHeadline(_ style: PlusHeadline) -> some View {
-        font(.custom(PlusFont.displaySemibold, size: style.size))
+        font(.custom(PlusFont.display, size: style.size))
+            .tracking(style.tracking)
             .lineHeight(.exact(points: style.lineHeight))
             .textRenderer(HeadlineInkRenderer(style: style))
     }
@@ -394,19 +457,19 @@ extension View {
 /// лестницей на оба экрана (задача пользователя 2026-10-03): короткое набирается
 /// крупно, длинное становится меньше, чтобы шапка не разрасталась на пол-экрана.
 ///
-/// Концы лестницы — макеты: «Snow Day» (8 знаков) на альбоме `2079:11226` — XXL
-/// (в макете было 40, в шкале ближайшая крупная ступень 44), «Atomic Heart. Предыстория
-/// «Предприятия 3826»» (44 знака) на книге `2427:26464` — M, ровно как в макете.
-/// Границы — по замеру строк YS Display Bold в колонке 370pt: на XXL до 14 знаков
-/// встают в строку («Технофеодализм» — 358pt), на XL до 24 и на L до 40 — в две,
-/// длиннее на M — в две-три. Тот же приём, что у текстового логотипа тайтла
+/// Концы лестницы — макеты: «Snow Day» (8 знаков) на альбоме `2079:11226` — XL 40,
+/// как в макете, «Atomic Heart. Предыстория «Предприятия 3826»» (44 знака) на книге
+/// `2427:26464` — S 24, как в макете. Границы — по замеру строк YS Display Bold в колонке
+/// 370pt на прежней шкале 44/36/28/24 (на XL 40 «Технофеодализм» — 325pt, в строку);
+/// ступени переведены на ДС с сохранением кеглей (2026-10-17), кегли не выросли, и границы
+/// остались в силе. Тот же приём, что у текстового логотипа тайтла
 /// (`MovieHeaderLayout.titleSteps`), только колонка там уже.
 enum EntityTitleType {
     static let steps: [(maxLength: Int, style: PlusHeadline)] = [
-        (14, .xxl),
-        (24, .xl),
-        (40, .l),
-        (Int.max, .m),
+        (14, .xl),
+        (24, .l),
+        (40, .m),
+        (Int.max, .s),
     ]
 
     /// Последняя ступень ловит всё (`Int.max`) — `!` безопасен.

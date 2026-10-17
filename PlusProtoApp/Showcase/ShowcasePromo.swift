@@ -87,12 +87,8 @@ enum ShowcasePromoLayout {
     /// середина высоты — на нижней кромке. Сама капсула не масштабируется, её место — да.
     @MainActor
     static var continueLeading: CGFloat { 15.2 * scale }
-    /// Капсула 40: иконка 20, зазор 6, поля 16 слева и 20 справа.
-    static let continueHeight: CGFloat = 40
-    static let continueIconBox: CGFloat = 20
-    static let continueGap: CGFloat = 6
-    static let continuePaddingLeading: CGFloat = 16
-    static let continuePaddingTrailing: CGFloat = 20
+    /// `PlusButton` secondary M
+    static var continueHeight: CGFloat { PlusButtonSize.m.height }
 
     /// У исполнителя пара — по касательной к кругу (правка пользователя 2026-10-13): центры
     /// обеих кнопок на окружности, середина пары — на φ по часовой от 12 часов, пара
@@ -986,7 +982,7 @@ private struct PromoCardFace: View {
 }
 
 /// Кнопка «Продолжить» карточки начатого фильма и книги (задача 69, макет `2698:28639`):
-/// стеклянная капсула Buttons/Secondary, ▶ у фильма, книга у книги, Text M Semibold.
+/// `PlusButton` secondary M, ▶ у фильма, книга у книги.
 private struct PromoContinueButton: View {
     let target: ShowcasePlayerTarget
     let action: () -> Void
@@ -998,21 +994,7 @@ private struct PromoContinueButton: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: Layout.continueGap) {
-                MovieIcon(name: icon, box: Layout.continueIconBox)
-                Text("Продолжить")
-                    .plusText(.textM, .semibold)
-                    .foregroundStyle(Color.fillOne)
-                    .fixedSize()
-            }
-            .padding(.leading, Layout.continuePaddingLeading)
-            .padding(.trailing, Layout.continuePaddingTrailing)
-            .frame(height: Layout.continueHeight)
-            .secondaryButtonSurface(Capsule(style: .continuous), fill: .buttonsSecondary)
-            .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(PressScaleButtonStyle())
+        PlusButton("Продолжить", icon: icon, type: .secondary, size: .m, haptic: .inAction, action: action)
     }
 }
 

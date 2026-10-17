@@ -74,7 +74,7 @@ enum ShareCardLayout {
     static let coverGap: CGFloat = 8
     /// Заголовок альбома, плейлиста и исполнителя: одна строка этой ступени, влево.
     /// На ступень мельче экрана фильма — правка пользователя 2026-10-12.
-    static let titleStyle = PlusHeadline.m
+    static let titleStyle = PlusHeadline.s
     static let titleToMeta: CGFloat = 4
     static let metaHeight: CGFloat = 40
     static let metaGap: CGFloat = 8
@@ -145,7 +145,7 @@ enum ShareCardLayout {
         let rect = (entity.title as NSString).boundingRect(
             with: CGSize(width: titleWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font],
+            attributes: style.measureAttributes,
             context: nil
         )
         // Высота рамки кратна натуральной строке шрифта; округляем, а не `ceil`:
@@ -293,22 +293,8 @@ struct ShareOverlay: View {
     // MARK: Крестик
 
     private var closeButton: some View {
-        Button(action: dismiss) {
-            Image("iconCross")
-                .resizable()
-                .renderingMode(.template)
-                .foregroundStyle(Color.fillOne)
-                .frame(width: 16, height: 16)
-                .padding(6)
-                .secondaryButtonSurface(Circle())
-        }
-        .frame(width: 28, height: 28)
-        .buttonStyle(PressScaleButtonStyle())
-        // Зона тапа шире кнопки, раскладка не едет.
-        .padding(8)
-        .contentShape(Rectangle())
-        .padding(-8)
-        .accessibilityLabel("Закрыть")
+        // `PlusButton` secondary S (прежде самописный круг 28 — ближайший размер ДС 32).
+        PlusButton(icon: "iconCross", type: .secondary, size: .s, accessibilityTitle: "Закрыть", action: dismiss)
     }
 
     // MARK: Карточка
@@ -633,7 +619,7 @@ struct ShareOverlay: View {
 
 // MARK: - Кнопка канала
 
-/// Круг 52 и подпись. Отклик нажатия и хаптика — как у любой кнопки (`ToastCenter.show` хаптику
+/// Круг и подпись. Отклик нажатия и хаптика — как у любой кнопки (`ToastCenter.show` хаптику
 /// не играет, поэтому её играет сама кнопка); действие — необязательное.
 private struct ShareChannelButton: View {
     let icon: String
@@ -646,13 +632,8 @@ private struct ShareChannelButton: View {
             action?()
         } label: {
             VStack(spacing: 6) {
-                Image(icon)
-                    .resizable()
-                    .renderingMode(.template)
-                    .foregroundStyle(Color.fillOne)
-                    .frame(width: 24, height: 24)
-                    .frame(width: 52, height: 52)
-                    .secondaryButtonSurface(Circle())
+                // Круг — вид `PlusButton` secondary XL; нажимается колонка с подписью.
+                PlusButtonLabel(icon: icon, type: .secondary, size: .xl)
                 Text(title)
                     .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillSubtitle)

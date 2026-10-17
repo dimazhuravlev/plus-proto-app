@@ -157,10 +157,10 @@ struct SearchResultsView: View {
         static let resultsHeaderTop: CGFloat = 8
         static let headerBottom: CGFloat = 12
         /// Строка заголовка — 28, как в `header / static` обоих макетов (56 = 16 + 28
-        /// + 12). Стиль UI kit — 24 при интерлиньяже 100 %, поэтому строку держит рамка,
-        /// а текст стоит по её центру — на той же базовой линии, что в Фигме. Без рамки
-        /// заголовок сидел на 2 выше, а карусель под ним — на 4.
-        static let headerLine: CGFloat = 28
+        /// + 12). Стиль UI kit — 24 при интерлиньяже 100 %, поэтому строку держит рамка
+        /// с полями по 2, а текст стоит по её центру — на той же базовой линии, что в Фигме.
+        /// Без рамки заголовок сидел на 2 выше, а карусель под ним — на 4.
+        static var headerLine: CGFloat { EntitySectionLayout.headerLine }
         /// Зазор «заголовок ↔ шеврон» из макета
         static let headerGap: CGFloat = 2
         static let chevronBox: CGFloat = 20
@@ -533,7 +533,7 @@ struct SearchResultsView: View {
     private func header(_ title: String, top: CGFloat = Layout.headerTop) -> some View {
         HStack(spacing: Layout.headerGap) {
             Text(title)
-                .plusHeadline(.m)
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
 
             // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет,

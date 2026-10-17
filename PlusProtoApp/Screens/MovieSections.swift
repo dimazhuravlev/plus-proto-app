@@ -9,7 +9,7 @@ struct MovieSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .plusHeadline(.m)
+            .plusHeadline(.s)
             .foregroundStyle(Color.fillOne)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, MovieLayout.sectionHeaderTop)
@@ -54,7 +54,7 @@ struct MovieSynopsisSection: View {
                 let shifted = index.isMultiple(of: 2) == false
 
                 Text(text)
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
                     // Абзац обязан занять свою полную высоту. Без этого он ужимается
                     // под высоту, предложенную снаружи, и SwiftUI режет его многоточием
@@ -203,9 +203,6 @@ struct MovieRateSection: View {
         static let outer: CGFloat = 24
         /// Ряд кнопок 393×92
         static let rowHeight: CGFloat = 92
-        static let circle: CGFloat = 52
-        /// Эмодзи — 24, как глиф кегля 24 (Title S макета), которым он был текстом.
-        static let emoji: CGFloat = 24
         static let labelGap: CGFloat = 8
         /// Воздух под заголовком блока — на 16 больше, чем у секций экрана (правка
         /// пользователя 2026-10-09; 8 — мало): кнопки стояли вплотную к нему.
@@ -251,16 +248,14 @@ struct MovieRateSection: View {
                         }
                     } label: {
                         VStack(spacing: Layout.labelGap) {
-                            RateReactionChip(
-                                emoji: option.emoji,
-                                isSelected: selected == option.id,
-                                diameter: Layout.circle,
-                                emojiSize: Layout.emoji
-                            )
+                            RateReactionChip(emoji: option.emoji, isSelected: selected == option.id)
 
-                            // Стиль подписи — тот же, что у блока оценки витрины.
-                            GradientText(option.title, from: .fillOne, to: .white.opacity(0.7))
-                                .plusText(.textM, .medium)
+                            // Подпись — Text S・13/Semibold белым, как в макете экрана тайтла
+                            // (`2052:10610`, сверка 2026-10-17; прежде — градиентом и Text M,
+                            // как у блока оценки витрины).
+                            Text(option.title)
+                                .plusText(.textS, .semibold)
+                                .foregroundStyle(Color.fillOne)
                         }
                         .contentShape(.rect)
                     }
@@ -268,8 +263,8 @@ struct MovieRateSection: View {
                     .overlay(alignment: .top) {
                         RateBalloons(
                             emoji: option.emoji,
-                            emojiSize: Layout.emoji,
-                            diameter: Layout.circle,
+                            emojiSize: RateReactionChip.size.iconBox,
+                            diameter: RateReactionChip.size.height,
                             burst: option.burst,
                             launches: launches[option.id] ?? 0
                         )
