@@ -258,9 +258,12 @@ struct MovieRateSection: View {
                                 emojiSize: Layout.emoji
                             )
 
-                            // Стиль подписи — тот же, что у блока оценки витрины.
-                            GradientText(option.title, from: .fillOne, to: .white.opacity(0.7))
-                                .plusText(.textM, .medium)
+                            // Подпись — Text S・13/Semibold белым, как в макете экрана тайтла
+                            // (`2052:10610`, сверка 2026-10-17; прежде — градиентом и Text M,
+                            // как у блока оценки витрины).
+                            Text(option.title)
+                                .plusText(.textS, .semibold)
+                                .foregroundStyle(Color.fillOne)
                         }
                         .contentShape(.rect)
                     }
