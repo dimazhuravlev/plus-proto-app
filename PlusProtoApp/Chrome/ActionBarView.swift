@@ -1525,10 +1525,11 @@ struct MiniPlayerPill: View {
             .frame(height: PlusMetrics.actionBarHeight)
             .glassPill()
             .overlay(alignment: .leading) {
-                MiniPlayerProgressFill(clock: progress, opacity: progressOpacity)
+                MiniPlayerProgressFill(clock: progress)
                     // Заливка гаснет и приходит вместе с остальными внутренностями:
                     // на сужении она иначе доживает до круга полосой в полкруга.
-                    .animation(ActionBarMotion.miniContentFade, value: progressOpacity)
+                    // Своя кривая — только у прозрачности (`MiniPlayerContentFade`).
+                    .modifier(MiniPlayerContentFade(opacity: progressOpacity))
             }
             .overlay(alignment: .leading) { content }
             .clipShape(Capsule(style: .continuous))
@@ -1553,12 +1554,10 @@ struct MiniPlayerPill: View {
             HStack(spacing: ActionBarGeometry.miniPlayerCoverGap) {
                 cover
                 trackInfo
-                    .opacity(trackInfoOpacity)
-                    .animation(ActionBarMotion.miniContentFade, value: trackInfoOpacity)
+                    .modifier(MiniPlayerContentFade(opacity: trackInfoOpacity))
             }
             actions
-                .opacity(trackInfoOpacity)
-                .animation(ActionBarMotion.miniContentFade, value: trackInfoOpacity)
+                .modifier(MiniPlayerContentFade(opacity: trackInfoOpacity))
         }
         .padding(.leading, ActionBarGeometry.miniPlayerPaddingLeading)
         .padding(.trailing, ActionBarGeometry.miniPlayerPaddingTrailing)
@@ -1666,7 +1665,6 @@ struct MiniPlayerPill: View {
 /// и любое чтение его размера замкнуло бы цикл раскладки. Форму даёт клип родителя.
 private struct MiniPlayerProgressFill: View {
     let clock: MusicClock
-    let opacity: Double
 
     var body: some View {
         MusicProgressReader(clock: clock) { progress in
@@ -1675,7 +1673,20 @@ private struct MiniPlayerProgressFill: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .scaleEffect(x: max(0, min(1, progress)), anchor: .leading)
         }
-        .opacity(opacity)
+    }
+}
+
+/// Проявление и уход внутренностей пилюли своей кривой (`miniContentFade`) — **только
+/// прозрачность**. `.animation(_:value:)` на них перехватывал всю транзакцию поддерева:
+/// раскладка и сдвиг ехали за 0.2 с, а капсула — кривой морфа или обвязки, и в читалке,
+/// где пилюля одновременно раскрывается и поднимается на 132 вместе с обвязкой,
+/// содержимое обгоняло капсулу (жалоба пользователя 2026-10-17). Движение остаётся
+/// родительским — внутренности едут ровно с капсулой.
+private struct MiniPlayerContentFade: ViewModifier {
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content.animation(ActionBarMotion.miniContentFade) { $0.opacity(opacity) }
     }
 }
 
