@@ -57,11 +57,11 @@ struct MusicForYouFeed: View {
                 tilesSection("Герои вашего месяца", tiles: heroTiles, captionLines: 2, bottom: Layout.counterBottom)
                 releasesSection
                 block(1)
-                tilesSection("Моя Волна: любимые", tiles: Self.stations(MusicForYouMocks.favourites), bottom: Layout.wideBottom)
+                tilesSection("Моя волна: любимые", tiles: Self.stations(MusicForYouMocks.favourites), bottom: Layout.wideBottom)
                 block(2)
                 tilesSection("Совпадает с моментом", tiles: Self.stations(MusicForYouMocks.moments), bottom: Layout.wideBottom)
                 block(3)
-                tilesSection("Моя Волна под любое дело", tiles: Self.stations(MusicForYouMocks.activities), bottom: Layout.wideBottom)
+                tilesSection("Моя волна под любое дело", tiles: Self.stations(MusicForYouMocks.activities), bottom: Layout.wideBottom)
                 legal
             }
             .animation(EntityMotion.reveal, value: catalog.isLoaded)
