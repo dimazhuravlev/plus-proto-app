@@ -1084,7 +1084,7 @@ private enum SearchPlaceholderMotion {
     /// читается как «одна фраза сменила другую», а не как проявление сквозь неё.
     static let swapGap: Duration = .milliseconds(100)
     /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
-    static let lineHeight: CGFloat = PlusHeadline.s.lineHeight
+    static var lineHeight: CGFloat { PlusHeadline.s.lineHeight }
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
     /// фраза погасла вместе с подъёмом, и нахлёста нет. Символы встают резко, без
     /// проявления прозрачностью и без сдвига — как печать (правки пользователя

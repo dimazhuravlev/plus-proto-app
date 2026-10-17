@@ -5,7 +5,7 @@ enum ServiceCarouselLayout {
     static let side: CGFloat = 16
     static let sectionPad: CGFloat = 8
     /// Строка заголовка — Headline S при 100 % (шапка 52 = 16 + 24 + 12)
-    static let headerLine: CGFloat = 24
+    static var headerLine: CGFloat { PlusHeadline.s.lineHeight }
     static let cardGap: CGFloat = 8
 }
 

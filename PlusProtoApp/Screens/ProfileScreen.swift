@@ -148,6 +148,16 @@ struct ProfileScreen: View {
                     DebugMenuScreen()
                 }
         }
+        #if DEBUG
+        // `-debugMenu 1` (с `-debugProfile 1`) — через 1 с открыть дебаг-меню, как тап
+        // по ячейке; меню встаёт прокрученным к концу — к последним разделам.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugMenu") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            isDebugMenuShown = true
+        }
+        #endif
         .preferredColorScheme(.dark)
     }
 

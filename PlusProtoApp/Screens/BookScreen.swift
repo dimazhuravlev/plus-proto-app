@@ -30,8 +30,8 @@ private enum BookScreenLayout {
     static let sectionHeaderBottom: CGFloat = 12
     static let sectionTitleGap: CGFloat = 2
     static let sectionChevronBox: CGFloat = 20
-    /// Строка заголовка секции — 28, как у заголовков выдачи (Headline S 24 с полями по 2).
-    static let sectionHeaderLine: CGFloat = 28
+    /// Строка заголовка секции — как у заголовков выдачи (`EntitySectionLayout.headerLine`).
+    static var sectionHeaderLine: CGFloat { EntitySectionLayout.headerLine }
     /// Книга карусели — тот же рисунок, высота обложки 186 на 402: в экран входит две
     /// книги с торчащим краем третьей. Эталон — книга 2:3 (кадр ≈ 127); на других
     /// ширинах высота растёт так, чтобы две целые и край третьей остались теми же.

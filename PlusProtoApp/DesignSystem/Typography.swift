@@ -128,16 +128,18 @@ extension View {
 
 /// Шкала акцидентных заголовков YS Display — переменные ДС «🫟 Mobile · Library»
 /// (`7816:504`) ровно: Headline/Headline XXXL 56, XXL 48, XL 40, L 32, M 28, S 24.
-/// Всё, что набрано YS Display, берёт стиль только отсюда. Начертание одно — Bold,
-/// интерлиньяж 100 % на любом кегле, трекинг 0, у S — 1.5 %.
+/// Всё, что набрано YS Display, берёт стиль только отсюда, и всё, что зависит от его
+/// строки (рамки шапок, скелетоны), считается от `size`/`lineHeight`, а не числом.
+/// Начертание одно — Bold, интерлиньяж 100 % на любом кегле, трекинг 0, у S — 1.5 %.
 ///
 /// Прежняя шкала проекта (52/44/36/28/24/20) переведена на ДС с сохранением кеглей:
 /// 24 → S, 28 → M, 36/44/52 — ступенью ниже (L, XL, XXL), 20 → S (решения пользователя
 /// 2026-10-17).
-enum PlusHeadline {
+enum PlusHeadline: String, CaseIterable {
     case xxxl, xxl, xl, l, m, s
 
-    var size: CGFloat {
+    /// Кегль переменной ДС.
+    var defaultSize: CGFloat {
         switch self {
         case .xxxl: 56
         case .xxl: 48
@@ -147,6 +149,14 @@ enum PlusHeadline {
         case .s: 24
         }
     }
+
+    /// Кегль в приложении — переменная ДС или примерка из дебаг-меню (`HeadlineSizes`).
+    /// Читать в `body` или в вычисляемом свойстве, не в `static let`: тогда смена
+    /// кегля перерисовывает заголовок сразу.
+    var size: CGFloat { HeadlineSizes.shared.size(of: self) }
+
+    /// Имя переменной в Фигме — «Headline XXXL»…
+    var title: String { "Headline \(rawValue.uppercased())" }
 
     /// Интерлиньяж 100 %: высота строки равна кеглю.
     var lineHeight: CGFloat { size }
@@ -196,6 +206,49 @@ enum PlusHeadline {
     /// Атрибуты для замера строки стилем — шрифт и трекинг, как их рисует `plusHeadline`.
     var measureAttributes: [NSAttributedString.Key: Any] {
         [.font: uiFont, .kern: tracking]
+    }
+}
+
+/// Кегли шкалы для примерки (задача пользователя 2026-10-17): по умолчанию — переменные
+/// ДС, дебаг-меню меняет каждую кнопками «−»/«+». Наблюдаемые: заголовок читает кегль
+/// в своём `body`, и смена сразу видна на всех экранах. Изменённые кегли хранятся
+/// в `UserDefaults` и переживают перезапуск, как прочие ручки дебаг-меню.
+@Observable
+final class HeadlineSizes {
+    static let shared = HeadlineSizes()
+
+    static let storageKey = "headlineSizes"
+    static let step: CGFloat = 1
+    static let range: ClosedRange<CGFloat> = 8...120
+
+    private var values: [PlusHeadline: CGFloat]
+
+    private init() {
+        // Числа — и строкой: ключ можно задать из шелла (`defaults write … -dict s 30`).
+        let stored = UserDefaults.standard.dictionary(forKey: Self.storageKey) ?? [:]
+        values = Dictionary(uniqueKeysWithValues: PlusHeadline.allCases.map { style in
+            let value = (stored[style.rawValue] as? NSNumber)?.doubleValue
+                ?? (stored[style.rawValue] as? String).flatMap(Double.init)
+            return (style, value.map { CGFloat($0) } ?? style.defaultSize)
+        })
+    }
+
+    func size(of style: PlusHeadline) -> CGFloat {
+        values[style] ?? style.defaultSize
+    }
+
+    func adjust(_ style: PlusHeadline, by delta: CGFloat) {
+        let size = min(max(size(of: style) + delta, Self.range.lowerBound), Self.range.upperBound)
+        guard size != values[style] else { return }
+        values[style] = size
+        let changed = values.reduce(into: [String: Double]()) { stored, entry in
+            if entry.value != entry.key.defaultSize { stored[entry.key.rawValue] = Double(entry.value) }
+        }
+        if changed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.storageKey)
+        } else {
+            UserDefaults.standard.set(changed, forKey: Self.storageKey)
+        }
     }
 }
 

@@ -412,7 +412,7 @@ struct SearchRecentsMosaicView: View {
         /// Заголовок — строка 28, 12 снизу, как у ленты каруселей; сверху 8, а не 16
         /// (правка пользователя 2026-10-05). Шеврона нет, переходить некуда.
         static let headerTop: CGFloat = 8
-        static let headerLine: CGFloat = 28
+        static var headerLine: CGFloat { EntitySectionLayout.headerLine }
         static let headerBottom: CGFloat = 12
         /// Кнопка — на 24 ниже сетки, как под полным списком истории.
         static let buttonTop: CGFloat = 24

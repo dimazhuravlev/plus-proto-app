@@ -19,8 +19,9 @@ enum EntitySectionLayout {
     static let trackColumnPeek: CGFloat = 24
     static let headerTop: CGFloat = 16
     static let headerBottom: CGFloat = 12
-    /// Строка заголовка — 28, как у заголовков выдачи (Headline S 24 с полями по 2)
-    static let headerLine: CGFloat = 28
+    /// Строка заголовка — как у заголовков выдачи: Headline S с полями по 2 (28 на 24)
+    static var headerLine: CGFloat { PlusHeadline.s.lineHeight + 2 * headerLinePad }
+    static let headerLinePad: CGFloat = 2
     static let titleGap: CGFloat = 2
     static let chevronBox: CGFloat = 20
     static let cardGap: CGFloat = 8
