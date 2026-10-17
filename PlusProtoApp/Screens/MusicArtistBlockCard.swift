@@ -23,6 +23,11 @@ enum MusicArtistBlockLayout {
     static let shadeFull: CGFloat = 0.652
     static let playSize: CGFloat = 48
     static let playIcon: CGFloat = 24
+    /// Микрошейдер над ▶ (`micro shader`) — 80, от кнопки на −16 по горизонтали и −21
+    /// по вертикали: центр на 5 выше центра кнопки, поверх неё и начала имени
+    static let shaderSize: CGFloat = 80
+    static let shaderLeading: CGFloat = -16
+    static let shaderRise: CGFloat = -5
     /// Блюр стеклянной ▶ — backdrop-blur 40 панели Figma
     static let playBlur: CGFloat = 20
     static let headerGap: CGFloat = 8
@@ -151,6 +156,11 @@ struct MusicArtistBlockCard: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .overlay(alignment: .leading) {
+                SharedVideoLayer(video: .musicMicroShader, poster: "musicMicroShaderPoster")
+                    .frame(width: Layout.shaderSize, height: Layout.shaderSize)
+                    .offset(x: Layout.shaderLeading, y: Layout.shaderRise)
             }
             .padding(.horizontal, Layout.side)
             .padding(.bottom, Layout.headerBottom)

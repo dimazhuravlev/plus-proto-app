@@ -110,6 +110,99 @@ final class PausingLoopPlayback {
     }
 }
 
+/// Один зацикленный ролик на все копии вью — каждая копия считается зрителем, ролик идёт,
+/// пока на экране хоть одна. Нужен там, где вью пересоздаются (экран таба размонтируется на
+/// каждом заходе, у ленты несколько копий): свой плеер у каждой копии стартовал бы заново,
+/// и до первого кадра стояла бы заглушка — смена читалась как подмена (жалоба пользователя
+/// 2026-10-16, капля «Моей волны» в ПП).
+@MainActor
+final class SharedLoopingVideo {
+    /// Капля «Моей волны» в ряду ПП «Главной».
+    static let vibeDrop = SharedLoopingVideo(bundled: "my-vibe-shader", extension: "mp4")
+    /// Микрошейдер над ▶ блоков «Похоже на» витрины «Для вас» (видео пользователя
+    /// `micro-shader.webm`, HEVC с альфой, 2026-10-17).
+    static let musicMicroShader = SharedLoopingVideo(bundled: "musicMicroShader", extension: "mov")
+
+    let playback = LoopingVideoPlayback()
+    /// Слой хоть раз показал кадр — новые копии встают сразу с видео, без заглушки.
+    var hasShownFrame = false
+    private let name: String
+    private let ext: String
+    private var viewers = 0
+
+    init(bundled name: String, extension ext: String) {
+        self.name = name
+        self.ext = ext
+    }
+
+    func attach() {
+        viewers += 1
+        guard viewers == 1 else { return }
+        playback.start(bundled: name, extension: ext)
+    }
+
+    func detach() {
+        viewers = max(0, viewers - 1)
+        guard viewers == 0 else { return }
+        playback.pause()
+    }
+}
+
+/// Слой общего ролика (`SharedLoopingVideo`): до первого кадра — постер из первого кадра
+/// самого ролика, так что смены не видно; ролик уже показывал кадры — встаёт сразу с видео.
+/// С «уменьшением движения» — один постер.
+struct SharedVideoLayer: View {
+    let video: SharedLoopingVideo
+    let poster: String
+    /// `.screen` — для роликов на чёрном (капля «Моей волны»): чёрное поле не видно.
+    var blendMode: BlendMode = .normal
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isReady: Bool
+    /// Эта копия числится зрителем ролика — снять её ровно один раз.
+    @State private var isAttached = false
+
+    init(video: SharedLoopingVideo, poster: String, blendMode: BlendMode = .normal) {
+        self.video = video
+        self.poster = poster
+        self.blendMode = blendMode
+        _isReady = State(initialValue: video.hasShownFrame)
+    }
+
+    var body: some View {
+        ZStack {
+            Image(poster)
+                .resizable()
+                .blendMode(blendMode)
+                .opacity(isReady && !reduceMotion ? 0 : 1)
+            if !reduceMotion {
+                LoopingVideoLayer(player: video.playback.queue) {
+                    video.hasShownFrame = true
+                    isReady = true
+                }
+                .blendMode(blendMode)
+                .opacity(isReady ? 1 : 0)
+            }
+        }
+        .animation(.easeOut(duration: 0.4), value: isReady)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear { setWatching(!reduceMotion) }
+        .onDisappear { setWatching(false) }
+        .onChange(of: reduceMotion) { _, reduced in setWatching(!reduced) }
+    }
+
+    private func setWatching(_ watching: Bool) {
+        guard watching != isAttached else { return }
+        isAttached = watching
+        if watching {
+            video.attach()
+        } else {
+            video.detach()
+        }
+    }
+}
+
 /// Видео как `AVPlayerLayer`: `VideoPlayer` тянет за собой системный контрол-оверлей,
 /// которого в фоне экрана быть не должно.
 struct LoopingVideoLayer: UIViewRepresentable {

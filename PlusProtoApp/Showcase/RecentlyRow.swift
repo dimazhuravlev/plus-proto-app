@@ -255,8 +255,10 @@ private struct RecentlyTile: View {
                         .offset(L.glowOffset)
                     // Капля — живой шейдер «Моей волны» (тот же ролик, что на экране Музыки;
                     // правка пользователя 2026-10-13). Чёрный фон ролика убирает «экран»;
-                    // до первого кадра — постер из него же (`PPVibeShader`).
-                    PPVibeShader()
+                    // до первого кадра — постер из него же. Ролик — общий на все появления
+                    // плитки (`SharedLoopingVideo`): экран «Главной» пересоздаётся на каждом
+                    // заходе в таб, и свой плеер стартовал бы заново (жалоба 2026-10-16).
+                    SharedVideoLayer(video: .vibeDrop, poster: "vibeShaderPoster", blendMode: .screen)
                         .frame(width: L.drop, height: L.drop)
                         .offset(L.dropOffset)
                 }
@@ -411,73 +413,5 @@ private extension View {
         return frame(width: size.width, height: size.height)
             .scaleEffect(scale)
             .frame(width: size.width * scale, height: size.height * scale)
-    }
-}
-
-/// Живая капля «Моей волны» в ряду ПП: зацикленный ролик шейдера (`my-vibe-shader`) поверх
-/// фона «экраном» — чёрное поле ролика не видно.
-///
-/// Ролик — общий на все появления плитки (`PPVibeShaderPlayback`): экран «Главной»
-/// пересоздаётся на каждом заходе в таб, и свой плеер у каждой копии стартовал заново — до
-/// первого кадра стояла капля макета, другого цвета, и проявление видео читалось как подмена
-/// (жалоба пользователя 2026-10-16). Теперь ролик уже показывал кадры — плитка встаёт сразу
-/// с видео; самый первый показ — с постера из первого кадра ролика (`vibeShaderPoster`),
-/// с которого видео и стартует, так что смены не видно.
-private struct PPVibeShader: View {
-    @State private var isReady = PPVibeShaderPlayback.shared.hasShownFrame
-    /// Эта копия числится зрителем общего ролика — снять её ровно один раз.
-    @State private var isAttached = false
-
-    var body: some View {
-        ZStack {
-            Image("vibeShaderPoster")
-                .resizable()
-                .blendMode(.screen)
-                .opacity(isReady ? 0 : 1)
-            LoopingVideoLayer(player: PPVibeShaderPlayback.shared.playback.queue) {
-                PPVibeShaderPlayback.shared.hasShownFrame = true
-                isReady = true
-            }
-            .blendMode(.screen)
-            .opacity(isReady ? 1 : 0)
-        }
-        .animation(.easeOut(duration: 0.4), value: isReady)
-        .allowsHitTesting(false)
-        .onAppear { setWatching(true) }
-        .onDisappear { setWatching(false) }
-        .accessibilityHidden(true)
-    }
-
-    private func setWatching(_ watching: Bool) {
-        guard watching != isAttached else { return }
-        isAttached = watching
-        if watching {
-            PPVibeShaderPlayback.shared.attach()
-        } else {
-            PPVibeShaderPlayback.shared.detach()
-        }
-    }
-}
-
-/// Один ролик шейдера на все копии плитки «Моей волны»: играет, пока на экране хоть одна.
-@MainActor
-private final class PPVibeShaderPlayback {
-    static let shared = PPVibeShaderPlayback()
-
-    let playback = LoopingVideoPlayback()
-    /// Слой хоть раз показал кадр — новые копии плитки встают сразу с видео.
-    var hasShownFrame = false
-    private var viewers = 0
-
-    func attach() {
-        viewers += 1
-        guard viewers == 1 else { return }
-        playback.start(bundled: "my-vibe-shader")
-    }
-
-    func detach() {
-        viewers = max(0, viewers - 1)
-        guard viewers == 0 else { return }
-        playback.pause()
     }
 }
