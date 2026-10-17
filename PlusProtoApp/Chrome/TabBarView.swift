@@ -148,7 +148,7 @@ struct TabBarView: View {
                         .padding(hit.negated)
                 }
                 .buttonStyle(PressScaleButtonStyle())
-                .scaleEffect(debugPressed == tab ? GlassIconButtonConfig.pressedScale : 1)
+                .scaleEffect(debugPressed == tab ? PressMotion.buttonScale : 1)
                 .animation(debugPressed == tab ? PressMotion.pressIn : PressMotion.release, value: debugPressed)
                 if tab != AppTab.allCases.last {
                     Spacer(minLength: 0)

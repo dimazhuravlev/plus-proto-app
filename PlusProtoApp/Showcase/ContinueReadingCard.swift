@@ -96,7 +96,7 @@ struct ContinueReadingCard: View {
             readingArea
 
             // Крест — своя кнопка поверх карточки: палец на нём достаётся ему, а не ей.
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Скрыть", action: dismiss)
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Скрыть", action: dismiss)
                 .offset(x: ReadingCardLayout.dismissOrigin.x, y: ReadingCardLayout.dismissOrigin.y)
         }
         .frame(

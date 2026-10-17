@@ -59,7 +59,7 @@ struct PlayPauseGlyph: View {
     }
 }
 
-/// Круглая стеклянная «нравится» 40 — ряд действий экранов альбома, книги и персоны.
+/// «Нравится» — `PlusButton` secondary M, только иконка — ряд действий экранов альбома, книги и персоны.
 /// Отмечает сущность в «Любимом» коллекции «Моё» (2026-10-04). Без записи коллекции
 /// (сущность ей неизвестна) — отметка на время экрана, как было прежде.
 /// Хаптик — как у лайка мини-плеера.
@@ -74,20 +74,20 @@ struct LikeGlassButton: View {
     }
 
     var body: some View {
-        Button {
+        PlusButton(
+            type: .secondary,
+            size: .m,
+            accessibilityTitle: isLiked ? "Убрать из любимых" : "Нравится"
+        ) {
             PlayerHaptics.tap()
             if let item {
                 collection.toggleFavorite(item)
             } else {
                 isLikedLocally.toggle()
             }
-        } label: {
-            LikeGlyph(isLiked: isLiked, box: GlassIconButtonConfig.iconBox)
-                .frame(width: GlassIconButtonConfig.size, height: GlassIconButtonConfig.size)
-                .glassCircle()
+        } icon: {
+            LikeGlyph(isLiked: isLiked, box: PlusButtonSize.m.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isLiked ? "Убрать из любимых" : "Нравится")
     }
 }
 
@@ -148,7 +148,7 @@ struct DownloadGlyph: View {
     }
 }
 
-/// Круглая стеклянная «скачать» 40 — ряд действий экранов альбома и книги: отмечает
+/// «Скачать» — `PlusButton` secondary M, только иконка — ряд действий экранов альбома и книги: отмечает
 /// сущность в «Скачанном» коллекции «Моё». Скачивания в прототипе нет — отметка
 /// мгновенная, хаптик — как у сердца.
 struct DownloadGlassButton: View {
@@ -158,15 +158,15 @@ struct DownloadGlassButton: View {
 
     var body: some View {
         let isDownloaded = collection.isDownloaded(item.id)
-        Button {
+        PlusButton(
+            type: .secondary,
+            size: .m,
+            accessibilityTitle: isDownloaded ? "Удалить из скачанного" : "Скачать"
+        ) {
             PlayerHaptics.tap()
             collection.toggleDownload(item)
-        } label: {
-            DownloadGlyph(isDownloaded: isDownloaded, box: GlassIconButtonConfig.iconBox)
-                .frame(width: GlassIconButtonConfig.size, height: GlassIconButtonConfig.size)
-                .glassCircle()
+        } icon: {
+            DownloadGlyph(isDownloaded: isDownloaded, box: PlusButtonSize.m.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isDownloaded ? "Удалить из скачанного" : "Скачать")
     }
 }

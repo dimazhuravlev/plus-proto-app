@@ -14,8 +14,7 @@ enum ProfileLayout {
     // MARK: Шапка
 
     /// Крестик — круглая кнопка 40 сразу под статус-баром, справа на поле 16 (`2701:30888`)
-    static let closeButton: CGFloat = 40
-    static let closeIcon: CGFloat = 20
+    static var closeButton: CGFloat { PlusButtonSize.m.height }
     /// Подложка-блюр под крестиком проявляется по скроллу за 24 и сходит на нет на 24 ниже кнопки
     static let headerRamp: CGFloat = 24
     static let headerTail: CGFloat = 24
@@ -96,10 +95,6 @@ enum ProfileLayout {
     static let progressBottom: CGFloat = 65.5
     /// Знак Плюса в кнопке «Получить» — 16 (`2701:30229`)
     static let plusBadge: CGFloat = 16
-
-    /// Кнопки виджетов — капсула 32: поля 16 × 8, Text S Semibold
-    static let pillHorizontal: CGFloat = 16
-    static let pillVertical: CGFloat = 8
 
     // MARK: Ячейки (`stack` `2701:30236`)
 
@@ -190,18 +185,8 @@ struct ProfileScreen: View {
     /// Крестик справа сразу под статус-баром. Подложка — прогрессивный блюр без затемнения,
     /// как у навигации витрин: проявляется, когда лента уходит под кнопку.
     private var header: some View {
-        Button { dismiss() } label: {
-            Image("iconCross")
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: ProfileLayout.closeIcon, height: ProfileLayout.closeIcon)
-                .foregroundStyle(Color.fillOne)
-                .frame(width: ProfileLayout.closeButton, height: ProfileLayout.closeButton)
-                // Единое стекло хрома — как у кнопок навбаров (правка пользователя 2026-10-10).
-                .chromeGlass(Circle())
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Закрыть")
+        // Стекло хрома — как у кнопок навбаров (правка пользователя 2026-10-10).
+        PlusButton(icon: "iconCross", type: .chrome, size: .m, accessibilityTitle: "Закрыть") { dismiss() }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, ProfileLayout.side)
         // Оттяг — как у навигации витрин: кнопка едет за лентой вчетверо медленнее
@@ -573,7 +558,7 @@ private struct ProfileFamilyWidget: View {
             .frame(width: textColumn, alignment: .leading)
             .padding(padding)
 
-            ProfilePill("Добавить", fill: .buttonsPrimary)
+            PlusButton("Добавить", type: .secondary, size: .s, action: PlayerHaptics.tap)
                 .padding(.leading, padding)
                 .padding(.top, padding + rowHeight)
 
@@ -641,7 +626,7 @@ private struct ProfileVideoQualityWidget: View {
                 .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillSubtitle)
         } footer: {
-            ProfilePill("Подключить ТВ", fill: .buttonsSecondary)
+            PlusButton("Подключить ТВ", type: .secondary, size: .s, action: PlayerHaptics.tap)
                 .padding(ProfileLayout.widgetPadding)
         }
     }
@@ -681,16 +666,13 @@ private struct ProfileDownloadWidget: View {
                 .padding(.trailing, ProfileLayout.progressTrailing)
                 .padding(.bottom, ProfileLayout.progressBottom)
 
-                ProfilePill(fill: .buttonsSecondary) {
+                PlusButton(type: .secondary, size: .s, accessibilityTitle: "Получить 100 баллов", action: PlayerHaptics.tap, title: {
                     HStack(spacing: ProfileLayout.textGap) {
                         Text("Получить")
-                            .plusText(.textS, .semibold)
                         ProfilePlusBadge()
                         Text("100")
-                            .plusText(.textS, .semibold)
                     }
-                }
-                .accessibilityLabel("Получить 100 баллов")
+                })
                 .padding(ProfileLayout.widgetPadding)
             }
         }
@@ -719,48 +701,6 @@ private struct ProfilePlusBadge: View {
             .frame(width: ProfileLayout.plusBadge, height: ProfileLayout.plusBadge)
             .background(Self.gradient)
             .clipShape(Circle())
-    }
-}
-
-/// Кнопка виджета — капсула 32, Text S Semibold, стекло серых кнопок. Заливка своя:
-/// у «Добавить» — Buttons/Primary 10 %, у кнопок квадратов — Buttons/Secondary 8 %.
-/// Действий в прототипе нет — откликается нажатием.
-private struct ProfilePill<Label: View>: View {
-    let fill: Color
-    let label: Label
-
-    init(fill: Color, @ViewBuilder label: () -> Label) {
-        self.fill = fill
-        self.label = label()
-    }
-
-    var body: some View {
-        Button(action: PlayerHaptics.tap) {
-            label
-                .foregroundStyle(Color.fillOne)
-                .padding(.horizontal, ProfileLayout.pillHorizontal)
-                .padding(.vertical, ProfileLayout.pillVertical)
-                .secondaryButtonSurface(Capsule(style: .continuous), fill: fill)
-        }
-        .buttonStyle(PressScaleButtonStyle())
-    }
-}
-
-/// Подпись кнопки виджета — Text S Semibold.
-private struct ProfilePillTitle: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .plusText(.textS, .semibold)
-    }
-}
-
-private extension ProfilePill where Label == ProfilePillTitle {
-    init(_ title: String, fill: Color) {
-        self.init(fill: fill) {
-            ProfilePillTitle(title: title)
-        }
     }
 }
 

@@ -210,12 +210,6 @@ enum EntityTitleLayout {
     static let avatarSize: CGFloat = 40
     /// Отрицательный зазор двухстрочного текстового лейбла (`mb-[-2px]` в макете)
     static let textStackGap: CGFloat = -2
-    /// Пилюля главного действия `736:106975`
-    static let primaryLeading: CGFloat = 16
-    static let primaryTrailing: CGFloat = 20
-    static let primaryVertical: CGFloat = 10
-    static let primaryGap: CGFloat = 6
-    static let primaryIconBox: CGFloat = 20
     /// Скелетоны строки персоны — `PlusSkeleton`, полосы 12 по центрам строк Text M.
     static let skeletonBar: CGFloat = 12
     static let skeletonNameWidth: CGFloat = 120
@@ -285,12 +279,12 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
                             } else if action == .download, let collectionItem {
                                 DownloadGlassButton(item: collectionItem)
                             } else if action == .share {
-                                GlassIconButton(icon: action.icon, accessibilityTitle: action.title) {
+                                PlusButton(icon: action.icon, type: .secondary, size: .m, accessibilityTitle: action.title) {
                                     PlayerHaptics.tap()
                                     onShare?()
                                 }
                             } else {
-                                GlassIconButton(icon: action.icon, accessibilityTitle: action.title)
+                                PlusButton(icon: action.icon, type: .secondary, size: .m, accessibilityTitle: action.title) {}
                             }
                         }
                     }
@@ -303,8 +297,7 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
     }
 }
 
-/// Пилюля главного действия — «Слушать», «Читать»: глиф 20 и Text M Semibold
-/// в общем акцентном стиле ДС (`accentButtonSurface`, `2103:15149`).
+/// Главное действие — «Слушать», «Читать»: `PlusButton` accent M с иконкой слева.
 struct EntityPrimaryButton: View {
     private let glyph: Glyph
     let title: String
@@ -330,33 +323,13 @@ struct EntityPrimaryButton: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: EntityTitleLayout.primaryGap) {
-                icon
-                    .foregroundStyle(Color.fillOne)
-
-                Text(title)
-                    .plusText(.textM, .semibold)
-                    .foregroundStyle(Color.fillOne)
+        PlusButton(title, type: .accent, size: .m, action: action) {
+            switch glyph {
+            case .asset(let name):
+                PlusButtonAssetIcon(name: name)
+            case .playPause(let isPlaying):
+                PlayPauseGlyph(isPlaying: isPlaying, box: PlusButtonSize.m.iconBox)
             }
-            .padding(.leading, EntityTitleLayout.primaryLeading)
-            .padding(.trailing, EntityTitleLayout.primaryTrailing)
-            .padding(.vertical, EntityTitleLayout.primaryVertical)
-            .accentButtonSurface()
-        }
-        .buttonStyle(PressScaleButtonStyle())
-    }
-
-    @ViewBuilder
-    private var icon: some View {
-        switch glyph {
-        case .asset(let name):
-            Image(name)
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: EntityTitleLayout.primaryIconBox, height: EntityTitleLayout.primaryIconBox)
-        case .playPause(let isPlaying):
-            PlayPauseGlyph(isPlaying: isPlaying, box: EntityTitleLayout.primaryIconBox)
         }
     }
 }

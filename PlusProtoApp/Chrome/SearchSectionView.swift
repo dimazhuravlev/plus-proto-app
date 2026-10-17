@@ -316,8 +316,6 @@ struct SearchHistoryView: View {
         static let side: CGFloat = 16
         /// Кнопка — на 24 ниже последней строки, во всю ширину между полями.
         static let buttonTop: CGFloat = 24
-        static let buttonHeight: CGFloat = 48
-        static let buttonPressedScale: CGFloat = 0.97
     }
 
     var body: some View {
@@ -370,20 +368,12 @@ struct SearchHistoryView: View {
         }
     }
 
-    /// Вторичная кнопка — стеклянная капсула, как «Позже» на экране фильма: акцентная
-    /// (градиент) в проекте одна на экран и за главное действие, а удаление истории —
-    /// побочное.
+    /// Secondary, как «Позже» на экране фильма: акцентная в проекте одна на экран
+    /// и за главное действие, а удаление истории — побочное.
     private var clearButton: some View {
-        Button { isConfirmingClear = true } label: {
-            Text("Удалить историю")
-                .plusText(.textM, .semibold)
-                .foregroundStyle(Color.fillOne)
-                .frame(maxWidth: .infinity)
-                .frame(height: Layout.buttonHeight)
-                .secondaryButtonSurface(Capsule(style: .continuous))
-                .contentShape(Capsule(style: .continuous))
+        PlusButton("Удалить историю", type: .secondary, size: .l, fillsWidth: true) {
+            isConfirmingClear = true
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: Layout.buttonPressedScale))
     }
 
     /// Сердце строки — отметка коллекции «Моё» (2026-10-04); персоны, которых коллекция
@@ -507,18 +497,14 @@ struct SearchListRow: View {
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
+            PlusButton(type: .plain, size: .m, accessibilityTitle: isLiked ? "Убрать из избранного" : "В избранное") {
                 PlayerHaptics.tap()
                 onLike()
-            } label: {
+            } icon: {
                 // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).
-                LikeGlyph(isLiked: isLiked, box: 20, offColor: SearchSectionColors.like)
-                    .padding(10)
-                    .contentShape(.rect)
+                LikeGlyph(isLiked: isLiked, box: PlusButtonSize.m.iconBox, offColor: SearchSectionColors.like)
             }
-            .buttonStyle(PressScaleButtonStyle())
             .padding(.trailing, -10)
-            .accessibilityLabel(isLiked ? "Убрать из избранного" : "В избранное")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -688,7 +674,6 @@ private struct MusicWizardCard: View {
         /// Сторона обложки альбома на текущей ширине экрана
         @MainActor
         static var albumWidth: CGFloat { albumFit.cardWidth }
-        static let playSize: CGFloat = 40
     }
 
     var body: some View {
@@ -738,28 +723,18 @@ private struct MusicWizardCard: View {
             .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.rowScale))
             .modifier(SearchResultsView.SearchZoomSource(route: artistRoute, zoom: zoom))
 
-            Button {
+            PlusButton(type: .plain, size: .m, accessibilityTitle: isLiked ? "Убрать из избранного" : "В избранное") {
                 PlayerHaptics.tap()
                 onLike()
-            } label: {
+            } icon: {
                 // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).
-                LikeGlyph(isLiked: isLiked, box: 20, offColor: SearchSectionColors.like)
-                    .padding(10)
-                    .contentShape(.rect)
+                LikeGlyph(isLiked: isLiked, box: PlusButtonSize.m.iconBox, offColor: SearchSectionColors.like)
             }
-            .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel(isLiked ? "Убрать из избранного" : "В избранное")
             .padding(.trailing, 6)
 
-            Button(action: togglePlay) {
-                PlayPauseGlyph(isPlaying: isPlayingThis, box: 20)
-                    .foregroundStyle(Color.fillOne)
-                    .frame(width: Layout.playSize, height: Layout.playSize)
-                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
-                    .contentShape(Circle())
+            PlusButton(type: .secondary, size: .m, accessibilityTitle: isPlayingThis ? "Пауза" : "Слушать", action: togglePlay) {
+                PlayPauseGlyph(isPlaying: isPlayingThis, box: PlusButtonSize.m.iconBox)
             }
-            .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel(isPlayingThis ? "Пауза" : "Слушать")
         }
         .frame(height: Layout.avatar)
         .padding(.horizontal, Layout.inner)

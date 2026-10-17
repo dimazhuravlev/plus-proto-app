@@ -25,7 +25,6 @@ enum AlbumLayout {
     static let popularWidth: CGFloat = 8
     static let numberWidth: CGFloat = 16
     static let titleLeading: CGFloat = 6
-    static let moreBox: CGFloat = 20
     static let badgeBox: CGFloat = 16
     static let badgeGap: CGFloat = 4
     /// Отрицательный зазор двухстрочного текстового лейбла (`mb-[-2px]` в макете)
@@ -49,9 +48,6 @@ enum AlbumLayout {
         EntityCoverLayout.navBarThresholds(coverHeight: coverSize)
     }
 }
-
-// Прежний одноразовый градиент пилюли «Слушать» (`Gradients/Yango/Accent`) заменён
-// общим акцентным стилем ДС — `accentButtonSurface()` (правка пользователя 2026-08-25).
 
 // MARK: - Экран
 
@@ -368,15 +364,7 @@ struct AlbumScreen: View {
             Spacer(minLength: AlbumLayout.badgeGap)
 
             // Меню трека в прототипе не спроектировано — кнопка только откликается.
-            Button {} label: {
-                Image("iconMore")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: AlbumLayout.moreBox, height: AlbumLayout.moreBox)
-                    // Белый 60 % из макета; токена нет — оттенок живёт только здесь
-                    .foregroundStyle(Color.fillFive)
-            }
-            .buttonStyle(PressScaleButtonStyle())
+            TrackMoreButton {}
         }
         .frame(height: AlbumLayout.rowHeight)
         .padding(.horizontal, AlbumLayout.side)

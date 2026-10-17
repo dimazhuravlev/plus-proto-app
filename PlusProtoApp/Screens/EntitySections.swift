@@ -206,15 +206,7 @@ struct EntityTrackRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             // Меню трека в прототипе не спроектировано — кнопка только откликается.
-            Button {} label: {
-                Image("iconMore")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: 20, height: 20)
-                    // Белый 60 % из макета, как в треклисте альбома
-                    .foregroundStyle(Color.fillFive)
-            }
-            .buttonStyle(PressScaleButtonStyle())
+            TrackMoreButton {}
         }
         .frame(height: Self.height)
         .contentShape(.rect)
@@ -271,5 +263,33 @@ struct EntityExplicitBadge: View {
             .resizable()
             .frame(width: EntitySectionLayout.badgeBox, height: EntitySectionLayout.badgeBox)
             .foregroundStyle(Color.fillSeven)
+    }
+}
+
+// MARK: - «Ещё» строки трека
+
+/// «Ещё» строки трека — вид `PlusButton` plain M, иконка белым 60 % (макет треклиста).
+/// Круг 40 стоит под отрицательным отступом: раскладка строки держит только иконку 20.
+struct TrackMoreLabel: View {
+    static var hitInset: CGFloat { (PlusButtonSize.m.height - PlusButtonSize.m.iconBox) / 2 }
+
+    var body: some View {
+        PlusButtonLabel(type: .plain, size: .m) {
+            PlusButtonAssetIcon(name: "iconMore")
+                .foregroundStyle(Color.fillFive)
+        }
+    }
+}
+
+/// «Ещё» строки трека кнопкой — палец на ней достаётся ей, строка не проседает.
+struct TrackMoreButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        PlusButton(type: .plain, size: .m, accessibilityTitle: "Ещё", action: action) {
+            PlusButtonAssetIcon(name: "iconMore")
+                .foregroundStyle(Color.fillFive)
+        }
+        .padding(-TrackMoreLabel.hitInset)
     }
 }

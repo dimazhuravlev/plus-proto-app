@@ -1,76 +1,96 @@
 import SwiftUI
 
-/// Акцентная фиолетовая кнопка — компонент макета `2103:15149` (Size=xl,
-/// Type=accent; по описанию компонента «не меняется в зависимости от темы»).
+/// Accent YaPS — `Type=accent YaPS` кнопки ДС (`7284:43450`). Прежде здесь был акцент
+/// Yango Play (`2103:15149`) — по ДС это кнопка другого проекта (решение пользователя
+/// 2026-10-17).
 ///
-/// Три слоя одной капсулы:
-/// - линейный градиент 125°: шесть стопов от тёмно-синего к розовому — стопы
-///   дословно из CSS макета, ручки переведены в юнит-спейс бокса 145×56
-///   тем же приёмом, что прежний градиент Play;
-/// - «свечение»: плоская розовая вспышка у верхней кромки — радиальный градиент,
-///   сплюснутый сжатием слоя по матрице макета (rx 39.5, ry 5.9), поверх базы
-///   с непрозрачностью 0.7. За краем вспышки слой прозрачен, сжатие безопасно;
-/// - бордер white 10% × 1pt.
-///
-/// Живёт в DesignSystem, а не у экрана: акцентные кнопки в проекте две —
-/// «Смотреть» карточки тайтла и «Слушать» альбома, — и стиль у них общий
-/// (решение пользователя 2026-08-25; прежде каждая несла свой градиент
-/// `Gradients/Yango/Accent` без вспышки и бордера).
-private enum AccentButtonStyle {
-    static let base = LinearGradient(
-        stops: [
-            .init(color: Color(red: 0x33 / 255, green: 0x24 / 255, blue: 0x5E / 255), location: 0),
-            .init(color: Color(red: 0x59 / 255, green: 0x25 / 255, blue: 0xAE / 255), location: 0.1624),
-            .init(color: Color(red: 0x79 / 255, green: 0x37 / 255, blue: 0xE5 / 255), location: 0.37243),
-            .init(color: Color(red: 0xA6 / 255, green: 0x45 / 255, blue: 0xF3 / 255), location: 0.57778),
-            .init(color: Color(red: 0xE6 / 255, green: 0x68 / 255, blue: 0xE5 / 255), location: 0.83912),
-            .init(color: Color(red: 0xF4 / 255, green: 0xBB / 255, blue: 0xE5 / 255), location: 1),
-        ],
-        startPoint: UnitPoint(x: 0.0761, y: -0.2782),
-        endPoint: UnitPoint(x: 0.9239, y: 1.2782)
-    )
+/// Три краски одной формы, все — в нормированном пространстве бокса, как их кладёт Figma
+/// (`gradientTransform`): у растянутой кнопки градиент и вспышка тянутся вместе с ней.
+/// - линейный градиент от тёмно-фиолетового к розовому;
+/// - радиальная вспышка у верхней кромки, 37 %;
+/// - бордер 1 внутрь — линейный градиент белого 10 % → 35 % → 0.
+private enum AccentYaPS {
+    static let base = Gradient(stops: [
+        .init(color: Color(hex: 0x291A54), location: 0),
+        .init(color: Color(hex: 0x5C28B1), location: 0.3977),
+        .init(color: Color(hex: 0x9227D5), location: 0.5852),
+        .init(color: Color(hex: 0xE668E5), location: 0.8224),
+        .init(color: Color(hex: 0xF4BBE5), location: 1),
+    ])
+    static let baseAxis = FigmaLinearAxis(a: 0.9588, b: 0.3202, c: -0.2382)
 
-    /// Вспышка. Центр — юнитами (26.8 % ширины, верхняя кромка), радиус — поинтами
-    /// из макета: вспышка физического размера, на растянутой кнопке она не раздувается.
-    static let spark = RadialGradient(
-        stops: [
-            .init(color: Color(red: 244 / 255, green: 218 / 255, blue: 217 / 255).opacity(0.95), location: 0),
-            .init(color: Color(red: 245 / 255, green: 169 / 255, blue: 191 / 255).opacity(0.9), location: 0.14),
-            .init(color: Color(red: 246 / 255, green: 120 / 255, blue: 164 / 255).opacity(0.85), location: 0.28),
-            .init(color: Color(red: 246 / 255, green: 120 / 255, blue: 164 / 255).opacity(0.45), location: 0.52),
-            .init(color: Color(red: 188 / 255, green: 71 / 255, blue: 180 / 255).opacity(0.225), location: 0.76),
-            .init(color: Color(red: 130 / 255, green: 22 / 255, blue: 197 / 255).opacity(0), location: 1),
-        ],
-        center: UnitPoint(x: 0.2676, y: 0),
-        startRadius: 0,
-        endRadius: 39.5
-    )
-    /// Эллиптичность вспышки: ry / rx из матрицы градиента макета
-    static let sparkFlatten: CGFloat = 5.93 / 39.48
-    static let sparkOpacity: Double = 0.7
+    static let spark = Gradient(stops: [
+        .init(color: Color(hex: 0xF4DAD9).opacity(0.95), location: 0),
+        .init(color: Color(hex: 0xF678A4).opacity(0.85), location: 0.28),
+        .init(color: Color(hex: 0xF678A4).opacity(0.45), location: 0.52),
+        .init(color: Color(hex: 0x8216C5).opacity(0), location: 1),
+    ])
+    /// Центр и полуоси эллипса вспышки — доли бокса (матрица `[[1.8362, 0, 0.0086], [0, 4.7236, 0.5]]`)
+    static let sparkCenter = CGPoint(x: 0.2676, y: 0)
+    static let sparkRadii = CGSize(width: 0.2723, height: 0.1059)
+    static let sparkOpacity: Double = 0.37
 
-    static let border = Color.white.opacity(0.1)
+    static let border = Gradient(stops: [
+        .init(color: .white.opacity(0.1), location: 0),
+        .init(color: .white.opacity(0.35), location: 0.4759),
+        .init(color: .white.opacity(0), location: 1),
+    ])
+    static let borderAxis = FigmaLinearAxis(a: -1.0931, b: 0.2017, c: 0.9061)
     static let borderWidth: CGFloat = 1
 }
 
-extension View {
-    /// Подложка акцентной кнопки: градиент, вспышка у верхней кромки, бордер.
-    func accentButtonSurface() -> some View {
-        let shape = Capsule(style: .continuous)
-        return background {
-            ZStack {
-                Rectangle()
-                    .fill(AccentButtonStyle.base)
-                Rectangle()
-                    .fill(AccentButtonStyle.spark)
-                    .scaleEffect(x: 1, y: AccentButtonStyle.sparkFlatten, anchor: .top)
-                    .opacity(AccentButtonStyle.sparkOpacity)
-            }
-            .clipShape(shape)
+/// Ось линейного градиента Figma: первая строка `gradientTransform` — доля градиента
+/// в точке бокса `t = a·x + b·y + c` (x, y — доли ширины и высоты).
+private struct FigmaLinearAxis {
+    let a: CGFloat
+    let b: CGFloat
+    let c: CGFloat
+
+    /// Концы градиента в поинтах бокса: t = 0 и t = 1 на перпендикуляре к изолиниям.
+    func points(in size: CGSize) -> (start: CGPoint, end: CGPoint) {
+        let g = CGVector(dx: a / size.width, dy: b / size.height)
+        let norm = g.dx * g.dx + g.dy * g.dy
+        let step = CGVector(dx: g.dx / norm, dy: g.dy / norm)
+        let start = CGPoint(x: -c * step.dx, y: -c * step.dy)
+        return (start, CGPoint(x: start.x + step.dx, y: start.y + step.dy))
+    }
+}
+
+/// Подложка accent YaPS: градиент, вспышка, бордер — одним холстом по размеру кнопки.
+struct AccentYaPSFill<S: InsettableShape>: View {
+    let shape: S
+
+    var body: some View {
+        Canvas { context, size in
+            let rect = CGRect(origin: .zero, size: size)
+            context.clip(to: shape.path(in: rect))
+
+            let base = AccentYaPS.baseAxis.points(in: size)
+            context.fill(Path(rect), with: .linearGradient(AccentYaPS.base, startPoint: base.start, endPoint: base.end))
+
+            var spark = context
+            spark.opacity = AccentYaPS.sparkOpacity
+            let radii = CGSize(
+                width: AccentYaPS.sparkRadii.width * size.width,
+                height: AccentYaPS.sparkRadii.height * size.height
+            )
+            spark.translateBy(x: AccentYaPS.sparkCenter.x * size.width, y: AccentYaPS.sparkCenter.y * size.height)
+            spark.scaleBy(x: radii.width, y: radii.height)
+            let local = CGRect(
+                x: -AccentYaPS.sparkCenter.x * size.width / radii.width,
+                y: -AccentYaPS.sparkCenter.y * size.height / radii.height,
+                width: size.width / radii.width,
+                height: size.height / radii.height
+            )
+            spark.fill(Path(local), with: .radialGradient(AccentYaPS.spark, center: .zero, startRadius: 0, endRadius: 1))
+
+            let border = AccentYaPS.borderAxis.points(in: size)
+            let inset = AccentYaPS.borderWidth / 2
+            context.stroke(
+                shape.path(in: rect.insetBy(dx: inset, dy: inset)),
+                with: .linearGradient(AccentYaPS.border, startPoint: border.start, endPoint: border.end),
+                lineWidth: AccentYaPS.borderWidth
+            )
         }
-        .overlay {
-            shape.strokeBorder(AccentButtonStyle.border, lineWidth: AccentButtonStyle.borderWidth)
-        }
-        .contentShape(shape)
     }
 }

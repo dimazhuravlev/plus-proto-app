@@ -64,7 +64,6 @@ enum CollectionLayout {
     static let trackTextGap: CGFloat = 12
     static let trackControlsGap: CGFloat = 8
     static let downloadIcon: CGFloat = 16
-    static let moreIcon: CGFloat = 20
     static var tracksHeight: CGFloat {
         CGFloat(tracksPerColumn) * trackCover + CGFloat(tracksPerColumn - 1) * 2 * trackRowGap
     }
@@ -74,8 +73,7 @@ enum CollectionLayout {
     static let tracksHeaderBottom: CGFloat = 12
     static let tracksHeaderGap: CGFloat = 12
     static let tracksBlockBottom: CGFloat = 8
-    static let playButton: CGFloat = 40
-    static let playIcon: CGFloat = 20
+    static let playButton = PlusButtonSize.m
 
     /// Разделитель строк треков — Fill/Eight, 0.5
     static let divider = Color.fillEight
@@ -686,19 +684,17 @@ private struct CollectionTracksBlock: View {
 
     private var header: some View {
         HStack(spacing: CollectionLayout.tracksHeaderGap) {
-            Button(action: togglePlayback) {
-                PlayPauseGlyph(isPlaying: isPlayingShelf, box: CollectionLayout.playIcon)
-                    .foregroundStyle(Color.fillOne)
-                    .frame(width: CollectionLayout.playButton, height: CollectionLayout.playButton)
-                    .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
-                    .contentShape(Circle())
+            // В режиме порядка «play» остаётся на месте выключенной кнопкой ДС — как кнопка
+            // навбара при одном блоке.
+            PlusButton(
+                type: .secondary,
+                size: CollectionLayout.playButton,
+                state: reorder.isReordering ? .disabled : .normal,
+                accessibilityTitle: isPlayingShelf ? "Пауза" : "Слушать",
+                action: togglePlayback
+            ) {
+                PlayPauseGlyph(isPlaying: isPlayingShelf, box: CollectionLayout.playButton.iconBox)
             }
-            .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel(isPlayingShelf ? "Пауза" : "Слушать")
-            // В режиме порядка «play» остаётся на месте, приглушён и недоступен — как
-            // выключенная кнопка навбара (одна константа).
-            .opacity(reorder.isReordering ? CollectionReorderMotion.disabledOpacity : 1)
-            .allowsHitTesting(!reorder.isReordering)
             .animation(CollectionReorderMotion.disabledFade, value: reorder.isReordering)
 
             // Название — переход в полный список, как шеврон у карусельных секций.
@@ -723,7 +719,7 @@ private struct CollectionTracksBlock: View {
         // его нет: от каруселей — тот же край, а вертикаль — середина ряда 40).
         .overlay(alignment: .topTrailing) {
             CollectionReorderGrip(isVisible: reorder.isReordering)
-                .padding(.top, CollectionLayout.tracksHeaderTop + (CollectionLayout.playButton - CollectionReorderGrip.size) / 2)
+                .padding(.top, CollectionLayout.tracksHeaderTop + (CollectionLayout.playButton.height - CollectionReorderGrip.size) / 2)
                 .padding(.trailing, CollectionLayout.side)
         }
     }
@@ -790,17 +786,12 @@ private struct CollectionTrackRow: View {
                     Menu {
                         CollectionItemMenu(item: item)
                     } label: {
-                        Image("iconMore")
-                            .renderingMode(.template)
-                            .resizable()
-                            .frame(width: CollectionLayout.moreIcon, height: CollectionLayout.moreIcon)
-                            .foregroundStyle(CollectionLayout.more)
-                            .padding(10)
-                            .contentShape(.rect)
-                            // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
-                            .pressScale(GlassIconButtonConfig.pressedScale)
+                        // Вид `PlusButton` plain M; круг 40 — под отрицательным отступом.
+                        // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
+                        TrackMoreLabel()
+                            .pressScale(PressMotion.buttonScale)
                     }
-                    .padding(-10)
+                    .padding(-TrackMoreLabel.hitInset)
                     .accessibilityLabel("Ещё")
                 }
             }
@@ -847,9 +838,7 @@ enum CollectionReorderMotion {
     static let glassFade: Animation = .easeInOut(duration: glassFadeDuration)
     /// Подъём блока в руке — как просадка карточки, только вверх (`PressMotion`).
     static let liftScale: CGFloat = 1.02
-    /// Приглушённое состояние недоступного: кнопка навбара при одном блоке и «play» «Треков»
-    /// в режиме — одно значение.
-    static let disabledOpacity: Double = 0.3
+    /// Выключение кнопки навбара при одном блоке и «play» «Треков» в режиме — одна кривая.
     static let disabledFade: Animation = .easeInOut(duration: 0.2)
     /// Захват — удержание 0.3 с без сдвига больше 10 pt: быстрый свайп раньше этого
     /// уходит в прокрутку ленты.
@@ -1409,8 +1398,9 @@ private struct CollectionReorderGrip: View {
     }
 }
 
-/// Кнопка навбара «изменить порядок» ↔ «готово» (`2584:26578`): голая иконка 20 без
-/// подложки, зона тапа 40; иконки меняются кросс-попом, как у сердца и play/pause.
+/// Кнопка навбара «изменить порядок» ↔ «готово» (`2584:26578`) — `PlusButton` plain M:
+/// иконка 20, круг 40 под отрицательным отступом — раскладка держит только иконку. Иконки
+/// меняются кросс-попом, как у сердца и play/pause.
 private struct CollectionReorderButton: View {
     let isEnabled: Bool
     let action: () -> Void
@@ -1418,16 +1408,23 @@ private struct CollectionReorderButton: View {
     @Environment(CollectionReorderState.self) private var reorder
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let box: CGFloat = 20
-    /// Зона тапа 40 при иконке 20: поле под отрицательным отступом, раскладка не едет.
-    private static let hitInset: CGFloat = 10
+    private static let size = PlusButtonSize.m
+    private static var hitInset: CGFloat { (size.height - size.iconBox) / 2 }
 
     var body: some View {
         let isReordering = reorder.isReordering
         let swapScale = reduceMotion ? 1 : ActionBarMotion.iconSwapScale
-        Button(action: action) {
+        PlusButton(
+            type: .plain,
+            size: Self.size,
+            state: isEnabled ? .normal : .disabled,
+            accessibilityTitle: isReordering ? "Готово" : "Изменить порядок",
+            action: action
+        ) {
             ZStack {
-                glyph("iconChangeOrder", color: .fillSubtitle)
+                // Блоков меньше двух — переставлять нечего: иконка приглушена, как
+                // у выключенной кнопки ДС, место за ней держится.
+                glyph("iconChangeOrder", color: isEnabled ? .fillSubtitle : .fillSeven)
                     .opacity(isReordering ? 0 : 1)
                     .scaleEffect(isReordering ? swapScale : 1)
                 glyph("iconDone", color: .accentPrimary)
@@ -1435,16 +1432,9 @@ private struct CollectionReorderButton: View {
                     .scaleEffect(isReordering ? 1 : swapScale)
             }
             .animation(reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap, value: isReordering)
-            .padding(Self.hitInset)
-            .contentShape(.rect)
+            .animation(.easeInOut(duration: 0.2), value: isEnabled)
         }
-        .buttonStyle(PressScaleButtonStyle())
         .padding(-Self.hitInset)
-        .disabled(!isEnabled)
-        // Блоков меньше двух — переставлять нечего: кнопка приглушена, место за ней держится.
-        .opacity(isEnabled ? 1 : CollectionReorderMotion.disabledOpacity)
-        .animation(.easeInOut(duration: 0.2), value: isEnabled)
-        .accessibilityLabel(isReordering ? "Готово" : "Изменить порядок")
     }
 
     /// «Изменить порядок» — приглушённый белый, «Готово» — фиолетовый акцент приложения;
@@ -1453,7 +1443,6 @@ private struct CollectionReorderButton: View {
         Image(name)
             .renderingMode(.template)
             .resizable()
-            .frame(width: Self.box, height: Self.box)
             .foregroundStyle(color)
     }
 }

@@ -19,11 +19,9 @@ enum MosaicLayout {
     /// Постер кино и персон — 2:3, 118 × 177
     static let posterAspect: CGFloat = 2.0 / 3.0
     static let coverRadius = PlusRadius.movieChip
-    /// Кнопка play на обложке трека: серая кнопка ДС в натуральный размер — круг 40,
-    /// глиф 20, — с отступом 6 от кромок (правка пользователя 2026-10-05; в макете
-    /// `2479:25744` — 30 и 4).
-    static let playButton: CGFloat = 40
-    static let playIcon: CGFloat = 20
+    /// Кнопка play на обложке трека: вид `PlusButton` secondary M в натуральный размер —
+    /// с отступом 6 от кромок (правка пользователя 2026-10-05; в макете `2479:25744` — 30 и 4).
+    static let playButton = PlusButtonSize.m
     static let playInset: CGFloat = 6
     /// Порция — четыре ряда. Первая сразу, следующие — на подходе к низу.
     static let chunk = 12
@@ -418,11 +416,6 @@ struct SearchRecentsMosaicView: View {
         static let headerBottom: CGFloat = 12
         /// Кнопка — на 24 ниже сетки, как под полным списком истории.
         static let buttonTop: CGFloat = 24
-        static let buttonHeight: CGFloat = 48
-        /// Капсула по тексту (правка пользователя 2026-10-05: «сжимается по контенту»):
-        /// поля 24 по бокам, ширина — сколько займёт надпись.
-        static let buttonSide: CGFloat = 24
-        static let buttonPressedScale: CGFloat = 0.97
     }
 
     var body: some View {
@@ -479,19 +472,13 @@ struct SearchRecentsMosaicView: View {
         }
     }
 
-    /// Вторичная кнопка — стеклянная капсула, как «Удалить историю» под полным списком:
-    /// удаление — побочное действие, акцентная кнопка в проекте за главным.
+    /// Secondary, как «Удалить историю» под полным списком: удаление — побочное действие,
+    /// акцентная кнопка в проекте за главным.
     private var clearButton: some View {
-        Button { isConfirmingClear = true } label: {
-            Text("Удалить историю поиска")
-                .plusText(.textM, .semibold)
-                .foregroundStyle(Color.fillOne)
-                .padding(.horizontal, Layout.buttonSide)
-                .frame(height: Layout.buttonHeight)
-                .secondaryButtonSurface(Capsule(style: .continuous))
-                .contentShape(Capsule(style: .continuous))
+        // Капсула по тексту (правка пользователя 2026-10-05: «сжимается по контенту»).
+        PlusButton("Удалить историю поиска", type: .secondary, size: .l) {
+            isConfirmingClear = true
         }
-        .buttonStyle(PressScaleButtonStyle(pressedScale: Layout.buttonPressedScale))
     }
 
     /// История гаснет целиком — заголовок, сетка, кнопка — той же кривой, что сетка
@@ -784,19 +771,17 @@ private struct MosaicCard: View {
     }
 }
 
-/// Кнопка play на обложке трека — `button` макета `2479:25744`: серая кнопка-круг
-/// ДС (40, глиф 20, блюр и бордер серых кнопок), слева снизу (размеры —
-/// `MosaicLayout.play…`). Сама не нажимается: нажимается вся карточка, кнопка — знак,
+/// Кнопка play на обложке трека — `button` макета `2479:25744`: вид `PlusButton`
+/// secondary M, слева снизу (`MosaicLayout.play…`). Сама не нажимается: нажимается вся карточка, кнопка — знак,
 /// что это трек. Играет этот трек — на ней пауза, сменой как в плеере.
 private struct MosaicPlayBadge: View {
     let isPlaying: Bool
 
     var body: some View {
-        PlayPauseGlyph(isPlaying: isPlaying, box: MosaicLayout.playIcon)
-            .foregroundStyle(Color.fillOne)
-            .frame(width: MosaicLayout.playButton, height: MosaicLayout.playButton)
-            .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
-            .allowsHitTesting(false)
+        PlusButtonLabel(type: .secondary, size: MosaicLayout.playButton) {
+            PlayPauseGlyph(isPlaying: isPlaying, box: MosaicLayout.playButton.iconBox)
+        }
+        .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 }

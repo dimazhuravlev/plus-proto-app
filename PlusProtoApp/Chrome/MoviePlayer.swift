@@ -21,9 +21,7 @@ private enum MoviePlayerLayout {
     /// Колонка названия по центру верхней полосы — бокс макета.
     static let metaWidth: CGFloat = 375
     static let metaTop: CGFloat = 2
-    /// Кнопки транспорта — компонент `11:9197` (Size=2xl 52px): круг 52, глиф 24.
-    static let transportSize: CGFloat = 52
-    static let transportIcon: CGFloat = 24
+    /// Кнопки транспорта — `PlusButton` secondary XL.
     static let transportGap: CGFloat = 16
     /// Дорожка таймлайна: подписи времени над ней, ряд кнопок под ней.
     static let trackHeight: CGFloat = 16
@@ -38,14 +36,6 @@ private enum MoviePlayerLayout {
     /// стороны (просьба пользователя 2026-10-03). Растёт поверх зазоров — слот
     /// раскладки остаётся 16pt, и подписи времени над ней не сдвигаются.
     static let trackGrow: CGFloat = 8
-    /// Кнопки с подписью — компонент `11:9094` (Size=md 40px, Icon=leading).
-    static let pillHeight: CGFloat = 40
-    static let pillLeading: CGFloat = 16
-    static let pillTrailing: CGFloat = 20
-    static let pillIconGap: CGFloat = 6
-    static let pillIcon: CGFloat = 20
-    // Бордер стеклянных кнопок плеера — общий у серых кнопок: 0.67 × белый 8 %
-    // (`secondaryButtonSurface`, 2026-10-04; прежде сырые white 6 %).
 }
 
 // MARK: - Движение
@@ -386,15 +376,15 @@ struct MoviePlayerView: View {
 
     private var topBar: some View {
         HStack(alignment: .top, spacing: 0) {
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Закрыть") {
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Закрыть") {
                 PlayerHaptics.tap()
                 close()
             }
             Spacer(minLength: 0)
             HStack(spacing: MoviePlayerLayout.buttonGap) {
-                GlassIconButton(icon: "iconPip", accessibilityTitle: "Картинка в картинке", action: press)
-                GlassIconButton(icon: "iconCast", accessibilityTitle: "Транслировать на экран", action: press)
-                GlassIconButton(icon: "iconMore", accessibilityTitle: "Ещё", action: press)
+                PlusButton(icon: "iconPip", type: .secondary, size: .m, accessibilityTitle: "Картинка в картинке", action: press)
+                PlusButton(icon: "iconCast", type: .secondary, size: .m, accessibilityTitle: "Транслировать на экран", action: press)
+                PlusButton(icon: "iconMore", type: .secondary, size: .m, accessibilityTitle: "Ещё", action: press)
             }
         }
         // Название — по центру полосы, а не между группами кнопок: группы разной
@@ -462,13 +452,9 @@ struct MoviePlayerView: View {
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: MoviePlayerLayout.buttonGap) {
-                    GlassIconButton(
-                        icon: "iconAspect",
-                        accessibilityTitle: fillsFrame ? "Вписать кадр" : "Заполнить экран",
-                        action: toggleFill
-                    )
-                    GlassIconButton(icon: "iconRotate", accessibilityTitle: "Повернуть экран", action: press)
-                    GlassIconButton(icon: "iconNext", accessibilityTitle: "Дальше", action: press)
+                    PlusButton(icon: "iconAspect", type: .secondary, size: .m, accessibilityTitle: fillsFrame ? "Вписать кадр" : "Заполнить экран", action: toggleFill)
+                    PlusButton(icon: "iconRotate", type: .secondary, size: .m, accessibilityTitle: "Повернуть экран", action: press)
+                    PlusButton(icon: "iconNext", type: .secondary, size: .m, accessibilityTitle: "Дальше", action: press)
                 }
             }
             .padding(.top, MoviePlayerLayout.trackToButtons)
@@ -547,20 +533,7 @@ struct MoviePlayerView: View {
     }
 
     private func pill(icon: String, title: String) -> some View {
-        Button(action: press) {
-            HStack(spacing: MoviePlayerLayout.pillIconGap) {
-                MovieIcon(name: icon, box: MoviePlayerLayout.pillIcon)
-                Text(title)
-                    .plusText(.textM, .semibold)
-                    .foregroundStyle(Color.fillOne)
-                    .fixedSize()
-            }
-            .padding(.leading, MoviePlayerLayout.pillLeading)
-            .padding(.trailing, MoviePlayerLayout.pillTrailing)
-            .frame(height: MoviePlayerLayout.pillHeight)
-            .secondaryButtonSurface(Capsule(style: .continuous))
-        }
-        .buttonStyle(PressScaleButtonStyle())
+        PlusButton(title, icon: icon, type: .secondary, size: .m, action: press)
     }
 
     // MARK: Действия
@@ -620,24 +593,17 @@ struct MoviePlayerView: View {
 
 // MARK: - Кнопки транспорта
 
-/// Круглая стеклянная кнопка 52 с глифом 24 — компонент `11:9197`. Рецепт стекла
-/// тот же, что у кнопки 40 (`glassCircle`), отличаются только размеры.
+/// Кнопки транспорта — `PlusButton` secondary XL.
 private struct TransportButton: View {
     let icon: String
     let title: String
     let action: () -> Void
 
     var body: some View {
-        Button {
+        PlusButton(icon: icon, type: .secondary, size: .xl, accessibilityTitle: title) {
             PlayerHaptics.tap()
             action()
-        } label: {
-            MovieIcon(name: icon, box: MoviePlayerLayout.transportIcon)
-                .frame(width: MoviePlayerLayout.transportSize, height: MoviePlayerLayout.transportSize)
-                .glassCircle()
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
     }
 }
 
@@ -646,18 +612,13 @@ private struct PlayPauseButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button {
+        PlusButton(type: .secondary, size: .xl, accessibilityTitle: isPlaying ? "Пауза" : "Смотреть") {
             PlayerHaptics.tap()
             action()
-        } label: {
+        } icon: {
             // Общая смена play/pause — та же, что у мини-плеера и карточек.
-            PlayPauseGlyph(isPlaying: isPlaying, box: MoviePlayerLayout.transportIcon)
-                .foregroundStyle(Color.fillOne)
-                .frame(width: MoviePlayerLayout.transportSize, height: MoviePlayerLayout.transportSize)
-                .glassCircle()
+            PlayPauseGlyph(isPlaying: isPlaying, box: PlusButtonSize.xl.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isPlaying ? "Пауза" : "Смотреть")
     }
 }
 

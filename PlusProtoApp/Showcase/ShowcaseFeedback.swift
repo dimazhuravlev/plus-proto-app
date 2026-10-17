@@ -169,7 +169,7 @@ struct ShowcaseFeedbackPair: View {
 
     var body: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
-            GlassIconButton(icon: "iconCross", accessibilityTitle: "Показать другое", action: dismiss)
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Показать другое", action: dismiss)
             doneButton
         }
         .modifier(ShowcaseHideEffect(
@@ -184,27 +184,13 @@ struct ShowcaseFeedbackPair: View {
         .onChange(of: state?.debugDones) { done() }
     }
 
-    /// ✓ — стеклянный круг, после нажатия белый с чёрной галочкой. Белеет резко,
-    /// без анимации (задача пользователя): это отметка, а не переход.
+    /// ✓ — secondary, после нажатия white с чёрной галочкой. Белеет резко, без анимации
+    /// (задача пользователя): это отметка, а не переход.
     private var doneButton: some View {
         let isDone = state?.isDone ?? false
-        return Button(action: done) {
-            Image("iconDone")
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: GlassIconButtonConfig.iconBox, height: GlassIconButtonConfig.iconBox)
-                .foregroundStyle(isDone ? Color.fillInverted : Color.fillOne)
-                .frame(width: GlassIconButtonConfig.size, height: GlassIconButtonConfig.size)
-                .background {
-                    if isDone {
-                        Circle().fill(Color.buttonsInverted)
-                    }
-                }
-                .modifier(GlassUnlessDone(isDone: isDone))
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("То, что надо")
-        .accessibilityAddTraits(isDone ? .isSelected : [])
+        return PlusButton(icon: "iconDone", type: isDone ? .white : .secondary, size: .m, accessibilityTitle: "То, что надо", action: done)
+            .transaction { $0.animation = nil }
+            .accessibilityAddTraits(isDone ? .isSelected : [])
     }
 
     /// ✕: айтем гаснет, каталог тем временем готовит замену; новый контент встаёт,
@@ -244,15 +230,3 @@ struct ShowcaseFeedbackPair: View {
     }
 }
 
-/// Стекло у ✓ — пока она не нажата; белый круг стеклом не накрывается.
-private struct GlassUnlessDone: ViewModifier {
-    let isDone: Bool
-
-    func body(content: Content) -> some View {
-        if isDone {
-            content
-        } else {
-            content.glassCircle()
-        }
-    }
-}

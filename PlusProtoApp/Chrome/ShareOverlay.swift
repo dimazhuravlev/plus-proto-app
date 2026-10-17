@@ -293,22 +293,8 @@ struct ShareOverlay: View {
     // MARK: Крестик
 
     private var closeButton: some View {
-        Button(action: dismiss) {
-            Image("iconCross")
-                .resizable()
-                .renderingMode(.template)
-                .foregroundStyle(Color.fillOne)
-                .frame(width: 16, height: 16)
-                .padding(6)
-                .secondaryButtonSurface(Circle())
-        }
-        .frame(width: 28, height: 28)
-        .buttonStyle(PressScaleButtonStyle())
-        // Зона тапа шире кнопки, раскладка не едет.
-        .padding(8)
-        .contentShape(Rectangle())
-        .padding(-8)
-        .accessibilityLabel("Закрыть")
+        // `PlusButton` secondary S (прежде самописный круг 28 — ближайший размер ДС 32).
+        PlusButton(icon: "iconCross", type: .secondary, size: .s, accessibilityTitle: "Закрыть", action: dismiss)
     }
 
     // MARK: Карточка
@@ -633,7 +619,7 @@ struct ShareOverlay: View {
 
 // MARK: - Кнопка канала
 
-/// Круг 52 и подпись. Отклик нажатия и хаптика — как у любой кнопки (`ToastCenter.show` хаптику
+/// Круг и подпись. Отклик нажатия и хаптика — как у любой кнопки (`ToastCenter.show` хаптику
 /// не играет, поэтому её играет сама кнопка); действие — необязательное.
 private struct ShareChannelButton: View {
     let icon: String
@@ -646,13 +632,8 @@ private struct ShareChannelButton: View {
             action?()
         } label: {
             VStack(spacing: 6) {
-                Image(icon)
-                    .resizable()
-                    .renderingMode(.template)
-                    .foregroundStyle(Color.fillOne)
-                    .frame(width: 24, height: 24)
-                    .frame(width: 52, height: 52)
-                    .secondaryButtonSurface(Circle())
+                // Круг — вид `PlusButton` secondary XL; нажимается колонка с подписью.
+                PlusButtonLabel(icon: icon, type: .secondary, size: .xl)
                 Text(title)
                     .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillSubtitle)

@@ -10,7 +10,10 @@ private enum MusicPlayerLayout {
     /// Строка навбара под статус-баром.
     static let barHeight: CGFloat = 44
     static let barSide: CGFloat = 16
-    static let barIcon: CGFloat = 24
+    static var barIcon: CGFloat { PlusButtonSize.l.iconBox }
+    /// Кнопки без подложки — `PlusButton` plain L: круг 48 вокруг глифа 24 стоит под
+    /// отрицательным отступом, раскладка держит только глиф.
+    static var plainHitInset: CGFloat { (PlusButtonSize.l.height - PlusButtonSize.l.iconBox) / 2 }
     /// «Сейчас играет» ↔ название альбома.
     static let barCaptionGap: CGFloat = 2
     /// От навбара до обложки.
@@ -44,8 +47,6 @@ private enum MusicPlayerLayout {
     static let textStackGap: CGFloat = -2
     /// Длинное имя артиста не обрывается многоточием, а гаснет на этой ширине.
     static let artistFade: CGFloat = 32
-    static let rowButton: CGFloat = 40
-    static let rowButtonIcon: CGFloat = 20
     static let rowButtonGap: CGFloat = 6
     static let artistToTimeline: CGFloat = 24
     /// Таймлайн: подписи 27 по краям, зазор 6, дорожка 6.
@@ -72,7 +73,6 @@ private enum MusicPlayerLayout {
     /// Повтор и перемешивание висят поверх шапки на 15 от её верха (`6200:280427`).
     static let queueTogglesTop: CGFloat = 15
     static let queueToggleGap: CGFloat = 12
-    static let queueToggleIcon: CGFloat = 24
     static let activeDot: CGFloat = 4
     static let rowVertical: CGFloat = 8
     static let rowCover: CGFloat = 48
@@ -225,18 +225,12 @@ struct MusicPlayerView: View {
     }
 
     private func barButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button {
+        // `PlusButton` plain L: круг 48 под отрицательным отступом — раскладка держит глиф 24.
+        PlusButton(icon: icon, type: .plain, size: .l, accessibilityTitle: title) {
             PlayerHaptics.tap()
             action()
-        } label: {
-            MovieIcon(name: icon, box: MusicPlayerLayout.barIcon)
-                // Хит-зона шире глифа, раскладка — нет: тот же приём, что у play в мини-плеере.
-                .padding(10)
-                .contentShape(.rect)
-                .padding(-10)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
+        .padding(-MusicPlayerLayout.plainHitInset)
     }
 
     // MARK: Содержимое
@@ -344,17 +338,11 @@ struct MusicPlayerView: View {
             .coverBorder(Circle())
     }
 
-    /// Кнопка 40 на подложке Buttons/Secondary — со стеклом и бордером серых кнопок
-    /// (правка пользователя 2026-10-04; в макете их не было). Текст песни и меню трека
-    /// в прототипе не спроектированы — кнопки только откликаются.
+    /// `PlusButton` secondary M (правка пользователя 2026-10-04: со стеклом и бордером серых
+    /// кнопок; в макете их не было). Текст песни и меню трека в прототипе не спроектированы —
+    /// кнопки только откликаются.
     private func rowButton(icon: String, title: String) -> some View {
-        Button(action: PlayerHaptics.tap) {
-            MovieIcon(name: icon, box: MusicPlayerLayout.rowButtonIcon)
-                .frame(width: MusicPlayerLayout.rowButton, height: MusicPlayerLayout.rowButton)
-                .secondaryButtonSurface(Circle(), fill: .buttonsSecondary)
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
+        PlusButton(icon: icon, type: .secondary, size: .m, accessibilityTitle: title, action: PlayerHaptics.tap)
     }
 
     // MARK: Таймлайн
@@ -569,21 +557,20 @@ struct MusicPlayerView: View {
 
     /// Переключатель с точкой «включено» под глифом — точку рисует код, а не ассет.
     private func queueToggle(icon: String, title: String, isOn: Binding<Bool>) -> some View {
-        Button {
+        // `PlusButton` plain L, круг под отрицательным отступом; точка — под глифом, в круге.
+        PlusButton(type: .plain, size: .l, accessibilityTitle: title) {
             PlayerHaptics.tap()
             isOn.wrappedValue.toggle()
-        } label: {
-            VStack(spacing: 0) {
-                MovieIcon(name: icon, box: MusicPlayerLayout.queueToggleIcon)
-                Circle()
-                    .fill(Color.fillOne)
-                    .frame(width: MusicPlayerLayout.activeDot, height: MusicPlayerLayout.activeDot)
-                    .opacity(isOn.wrappedValue ? 1 : 0)
-            }
-            .contentShape(.rect)
+        } icon: {
+            PlusButtonAssetIcon(name: icon)
+                .overlay(alignment: .bottom) {
+                    Circle()
+                        .frame(width: MusicPlayerLayout.activeDot, height: MusicPlayerLayout.activeDot)
+                        .opacity(isOn.wrappedValue ? 1 : 0)
+                        .offset(y: MusicPlayerLayout.activeDot)
+                }
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(title)
+        .padding(-MusicPlayerLayout.plainHitInset)
         .accessibilityValue(isOn.wrappedValue ? "Включено" : "Выключено")
     }
 }

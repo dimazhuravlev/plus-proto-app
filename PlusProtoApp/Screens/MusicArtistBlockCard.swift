@@ -21,15 +21,11 @@ enum MusicArtistBlockLayout {
     static let shadeTop: CGFloat = 151
     static let shadeOpacity: Double = 0.5
     static let shadeFull: CGFloat = 0.652
-    static let playSize: CGFloat = 48
-    static let playIcon: CGFloat = 24
     /// Микрошейдер над ▶ (`micro shader`) — 80, от кнопки на −16 по горизонтали и −21
     /// по вертикали: центр на 5 выше центра кнопки, поверх неё и начала имени
     static let shaderSize: CGFloat = 80
     static let shaderLeading: CGFloat = -16
     static let shaderRise: CGFloat = -5
-    /// Блюр стеклянной ▶ — backdrop-blur 40 панели Figma
-    static let playBlur: CGFloat = 20
     static let headerGap: CGFloat = 8
     static let headerBottom: CGFloat = 12
     /// «Похоже на» и имя — две строки Headline L с наездом −2
@@ -170,28 +166,23 @@ struct MusicArtistBlockCard: View {
         }
     }
 
+    /// ▶ — `PlusButton` plain L с фоновым блюром: инстанс макета `Size=L • 48px, Type=plain`
+    /// без заливки и бордера, но с блюром поверх фото (правка пользователя 2026-10-17).
     private var playButton: some View {
-        Button {
+        PlusButton(
+            type: .plain,
+            size: .l,
+            blursBackdrop: true,
+            accessibilityTitle: isPlaying ? "Пауза" : "Слушать похожее на \(block.name)"
+        ) {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
             if let track = block.track {
                 actionBar.open(.music(track))
             }
-        } label: {
-            // Кнопка типа plain (`Size=L • 48px, Type=plain`, «кнопка без фона»): только
-            // фоновый блюр, без заливки и бордера — не secondary (правка пользователя
-            // 2026-10-17, сверено с макетом).
-            PlayPauseGlyph(isPlaying: isPlaying, box: Layout.playIcon)
-                .foregroundStyle(Color.fillOne)
-                .frame(width: Layout.playSize, height: Layout.playSize)
-                .background {
-                    BackdropBlurView(radius: Layout.playBlur)
-                        .clipShape(Circle())
-                }
-                .contentShape(Circle())
+        } icon: {
+            PlayPauseGlyph(isPlaying: isPlaying, box: PlusButtonSize.l.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isPlaying ? "Пауза" : "Слушать похожее на \(block.name)")
     }
 
     private var row: some View {

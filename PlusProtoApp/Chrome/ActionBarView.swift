@@ -97,6 +97,9 @@ struct ActionBarRaise: Equatable {
 enum ActionBarGeometry {
     static let searchPaddingH: CGFloat = 18
     static let searchIconBox: CGFloat = 24
+    /// Кнопки без подложки (крест поля, play и лайк мини-плеера) — `PlusButton` plain L:
+    /// круг 48 вокруг глифа 24 под отрицательным отступом, раскладка держит глиф.
+    static var plainHitInset: CGFloat { (PlusButtonSize.l.height - PlusButtonSize.l.iconBox) / 2 }
     /// Зазор между полем ввода и крестом очистки.
     static let clearLeadingGap: CGFloat = 8
     /// Во что схлопывается крест, когда поле пустое. Не ноль: из нуля предмет появляется
@@ -948,25 +951,18 @@ private struct SearchPill: View {
     /// оставил бы поиск ни в выдаче, ни во вводе. В макете 24×24 с полем 18 от правого
     /// края поля — на месте общего внутреннего отступа пилюли.
     private var clearButton: some View {
-        Button {
+        // `PlusButton` plain L: белый 100 %, как «Назад» (правка пользователя 2026-10-05) —
+        // приглушена только лупа, она знак поля, а не действие. Круг 48 — под
+        // отрицательным отступом: раскладка поля держит глиф 24.
+        PlusButton(icon: "iconCross", type: .plain, size: .l, accessibilityTitle: "Стереть запрос") {
             // Стёрли заполненное поле — «Поиск по всему» встаёт сразу, без печати:
             // печатается он только на открытии пустого поиска (правка пользователя
             // 2026-10-05).
             didPlayFocusedPlaceholderWave = true
             query = ""
             if !searchFocused { searchFocused = true }
-        } label: {
-            // Белый 100 %, как «Назад» (правка пользователя 2026-10-05): кнопки — белые,
-            // приглушена только лупа — она знак поля, а не действие.
-            Image("iconCross")
-                .renderingMode(.template)
-                .resizable()
-                .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.fillOne)
-                .contentShape(.rect)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Стереть запрос")
+        .padding(-ActionBarGeometry.plainHitInset)
     }
 
     @ViewBuilder
@@ -1630,47 +1626,32 @@ struct MiniPlayerPill: View {
     }
 
     private var playPauseButton: some View {
-        Button {
+        // `PlusButton` plain L; круг 48 — под отрицательным отступом, раскладка держит глиф 24.
+        PlusButton(type: .plain, size: .l, accessibilityTitle: isPlaying ? "Пауза" : "Играть") {
             UIImpactFeedbackGenerator(style: .light)
                 .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
             // Угол фиксируем в том же апдейте, что и смену флага, иначе кадр успеет
             // отрисоваться со старой базой. Сеттер идемпотентен — onChange отработает вхолостую.
             spin.set(spinning: !isPlaying)
             onTogglePlay()
-        } label: {
-            PlayPauseGlyph(isPlaying: isPlaying, box: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.fillOne)
-                // Хит-зона крупнее глифа, но раскладка не едет: отрицательный отступ
-                // возвращает кадру исходные 24×24, увеличенной остаётся только contentShape.
-                .padding(.horizontal, 8)
-                .padding(.vertical, 10)
-                .contentShape(.rect)
-                .padding(.horizontal, -8)
-                .padding(.vertical, -10)
+        } icon: {
+            PlayPauseGlyph(isPlaying: isPlaying, box: PlusButtonSize.l.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
+        .padding(-ActionBarGeometry.plainHitInset)
     }
 
     /// Лайк прямо из мини-плеера (просьба пользователя 2026-10-03). Нравится — залитое
     /// белое сердце, как в полноэкранном плеере (правка того же дня: раньше лайк здесь
     /// был акцентным контуром); смена — тем же кросс-попом, что у play/pause.
     private var likeButton: some View {
-        Button {
+        PlusButton(type: .plain, size: .l, accessibilityTitle: isLiked ? "Убрать из любимых" : "Нравится") {
             PlayerHaptics.tap()
             onToggleLike()
-        } label: {
+        } icon: {
             // Общий рисунок лайка (`LikeGlyph`) — эталон для всех сердец проекта.
-            LikeGlyph(isLiked: isLiked, box: ActionBarGeometry.searchIconBox)
-            // Хит-зона крупнее глифа, раскладка — нет: тот же приём, что у play.
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
-            .contentShape(.rect)
-            .padding(.horizontal, -8)
-            .padding(.vertical, -10)
+            LikeGlyph(isLiked: isLiked, box: PlusButtonSize.l.iconBox)
         }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(isLiked ? "Убрать из любимых" : "Нравится")
+        .padding(-ActionBarGeometry.plainHitInset)
     }
 }
 

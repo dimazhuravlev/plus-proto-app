@@ -126,12 +126,6 @@ extension View {
         modifier(ChromeGlassSurface(shape: shape, blur: blur, border: border, borderWidth: borderWidth))
     }
 
-    /// Круглые кнопки 40pt — общий бордер серых кнопок. ~~Бордер white 6 % по figma-screen1
-    /// §2~~ — с 2026-10-04 у всех серых кнопок один: 0.67 × белый 8 %.
-    func glassCircle() -> some View {
-        secondaryButtonSurface(Circle())
-    }
-
     /// Тайл иконки таба 40×40 r14 — figma-tabbar §5. В макете (`2004:9375` / `2004:9387`) это
     /// плоская заливка white 10 % без блюра; решением пользователя 2026-10-10 тайл — то же
     /// стекло хрома, что у остального хрома (блюр 35, затемнение). Свой остался бордер:

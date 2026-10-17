@@ -11,6 +11,8 @@ import UIKit.UIGestureRecognizerSubclass
 /// Поэтому палец ловит пассивный UIKit-распознаватель — он видит касание сразу, —
 /// а короткий тап держит просадку не меньше `minimumHold`.
 enum PressMotion {
+    /// Кнопки — как в MusicPlayer (BottomBarV2)
+    static let buttonScale: CGFloat = 0.92
     /// Карточки: площадь большая, и просадка кнопок (0.92) читалась бы прыжком.
     static let cardScale: CGFloat = 0.97
     /// Строки во всю ширину экрана — ещё мягче: у строки в 402 pt и 0.97 — это 12 pt.
@@ -35,7 +37,7 @@ enum PressMotion {
 /// источник: им приходит нажатие не пальцем, и он же снимает просадку, когда касание
 /// забрало контекстное меню.
 struct PressScaleButtonStyle: ButtonStyle {
-    var pressedScale: CGFloat = GlassIconButtonConfig.pressedScale
+    var pressedScale: CGFloat = PressMotion.buttonScale
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
