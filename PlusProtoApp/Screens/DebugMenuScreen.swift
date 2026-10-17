@@ -65,7 +65,7 @@ struct DebugMenuScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -161,7 +161,7 @@ struct DebugMenuScreen: View {
                     .foregroundStyle(Color.fillSubtitle)
             }
             Slider(value: value, in: range, step: Layout.sliderStep)
-                .tint(Color.moviesAccent)
+                .tint(Color.accentPrimary)
                 .accessibilityLabel(accessibility)
         }
         .padding(.horizontal, ProfileLayout.cellHorizontal)
@@ -181,7 +181,7 @@ struct DebugMenuScreen: View {
                 .plusText(.textM, .medium)
                 .foregroundStyle(Color.fillOne)
         }
-        .tint(Color.moviesAccent)
+        .tint(Color.accentPrimary)
         .accessibilityLabel(accessibility)
         .padding(.horizontal, ProfileLayout.cellHorizontal)
         .padding(.vertical, ProfileLayout.cellVertical)

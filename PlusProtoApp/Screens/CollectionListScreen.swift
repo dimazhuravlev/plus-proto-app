@@ -85,7 +85,7 @@ struct CollectionListScreen: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             ScrollView {
                 // Чипсы — закреплённым заголовком внутри ленты, как у полной выдачи
@@ -241,7 +241,7 @@ private struct CollectionListRow: View {
                         .renderingMode(.template)
                         .resizable()
                         .frame(width: CollectionLayout.downloadIcon, height: CollectionLayout.downloadIcon)
-                        .foregroundStyle(Color.moviesAccent)
+                        .foregroundStyle(Color.accentPrimary)
                         .accessibilityLabel("Скачано")
                 }
                 Menu {

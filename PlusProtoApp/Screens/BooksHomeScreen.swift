@@ -86,7 +86,7 @@ struct BooksHomeScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             if filter == 0 {
                 feed

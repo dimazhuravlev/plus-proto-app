@@ -432,7 +432,7 @@ struct SearchRecentsMosaicView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Искали недавно")
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
                     // Строку держит рамка, текст — по её центру: так же, как у заголовка
                     // карусели, на той же базовой линии, что в Фигме.

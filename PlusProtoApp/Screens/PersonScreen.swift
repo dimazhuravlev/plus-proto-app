@@ -109,7 +109,7 @@ struct PersonScreen: View {
                 thresholds: PersonLayout.navBarThresholds(for: role)
             )
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task { await store.load(role: role, entity: entity) }
     }
@@ -211,7 +211,7 @@ struct PersonScreen: View {
                 Color.buttonsPrimary
                     .overlay {
                         Text(String(entity.title.prefix(1)).uppercased())
-                            .plusHeadline(.xxl)
+                            .plusHeadline(.xl)
                             .foregroundStyle(Color.fillSubtitle)
                     }
                     .transition(.opacity)

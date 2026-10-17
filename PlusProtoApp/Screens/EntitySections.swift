@@ -19,7 +19,7 @@ enum EntitySectionLayout {
     static let trackColumnPeek: CGFloat = 24
     static let headerTop: CGFloat = 16
     static let headerBottom: CGFloat = 12
-    /// Строка заголовка — 28, как у заголовков выдачи (Headline M при 100 %)
+    /// Строка заголовка — 28, как у заголовков выдачи (Headline S 24 с полями по 2)
     static let headerLine: CGFloat = 28
     static let titleGap: CGFloat = 2
     static let chevronBox: CGFloat = 20
@@ -46,7 +46,7 @@ enum EntitySectionLayout {
     static let skeletonHeaderBar: CGFloat = 16
 }
 
-/// Заголовок секции — `header / static`: Headline M и шеврон сразу за текстом.
+/// Заголовок секции — `header / static`: Headline S и шеврон сразу за текстом.
 /// Полного списка за ним в прототипе нет — заголовок не нажимается, как «Другие
 /// альбомы». У плоских списков (фильмы режиссёра, книги писателя — список и есть
 /// весь раздел) шеврона нет: вести некуда.
@@ -58,14 +58,14 @@ struct EntitySectionHeader: View {
     /// Шеврон уступил место иконке-хвату режима порядка («Моё») — гаснет кросс-попом,
     /// место за ним остаётся.
     var isChevronCollapsed = false
-    /// Высота строки заголовка. У каруселей главной Кинопоиска она 24 — Headline M
+    /// Высота строки заголовка. У каруселей главной Кинопоиска она 24 — Headline S
     /// при 100 % (`carousel / Movies`, шапка 52 = 16 + 24 + 12).
     var lineHeight: CGFloat = EntitySectionLayout.headerLine
 
     var body: some View {
         HStack(spacing: EntitySectionLayout.titleGap) {
             Text(title)
-                .plusHeadline(.m)
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
 
             if showsChevron {
@@ -270,7 +270,7 @@ struct EntityTrackRow: View {
                     .resizable()
                     .frame(width: 20, height: 20)
                     // Белый 60 % из макета, как в треклисте альбома
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .foregroundStyle(Color.fillFive)
             }
             .buttonStyle(PressScaleButtonStyle())
         }
@@ -328,6 +328,6 @@ struct EntityExplicitBadge: View {
             .renderingMode(.template)
             .resizable()
             .frame(width: EntitySectionLayout.badgeBox, height: EntitySectionLayout.badgeBox)
-            .foregroundStyle(Color.white.opacity(0.3))
+            .foregroundStyle(Color.fillSeven)
     }
 }

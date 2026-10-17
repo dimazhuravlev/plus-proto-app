@@ -74,7 +74,7 @@ enum ShareCardLayout {
     static let coverGap: CGFloat = 8
     /// Заголовок альбома, плейлиста и исполнителя: одна строка этой ступени, влево.
     /// На ступень мельче экрана фильма — правка пользователя 2026-10-12.
-    static let titleStyle = PlusHeadline.m
+    static let titleStyle = PlusHeadline.s
     static let titleToMeta: CGFloat = 4
     static let metaHeight: CGFloat = 40
     static let metaGap: CGFloat = 8
@@ -145,7 +145,7 @@ enum ShareCardLayout {
         let rect = (entity.title as NSString).boundingRect(
             with: CGSize(width: titleWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font],
+            attributes: style.measureAttributes,
             context: nil
         )
         // Высота рамки кратна натуральной строке шрифта; округляем, а не `ceil`:

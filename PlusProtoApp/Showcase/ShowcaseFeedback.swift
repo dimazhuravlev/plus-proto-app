@@ -193,11 +193,11 @@ struct ShowcaseFeedbackPair: View {
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: GlassIconButtonConfig.iconBox, height: GlassIconButtonConfig.iconBox)
-                .foregroundStyle(isDone ? Color.black : Color.fillOne)
+                .foregroundStyle(isDone ? Color.fillInverted : Color.fillOne)
                 .frame(width: GlassIconButtonConfig.size, height: GlassIconButtonConfig.size)
                 .background {
                     if isDone {
-                        Circle().fill(Color.white)
+                        Circle().fill(Color.buttonsInverted)
                     }
                 }
                 .modifier(GlassUnlessDone(isDone: isDone))

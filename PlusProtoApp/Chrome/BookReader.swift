@@ -204,7 +204,7 @@ struct BookReaderView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black
+            Color.surfaceOne
             pages
             scrim
             chromeTop
@@ -665,7 +665,7 @@ private struct ReaderBottomBlock: View {
                 .secondaryButtonSurface(Capsule(style: .continuous), blur: BookReaderLayout.timelineTrackBlur)
                 .overlay(alignment: .leading) {
                     Capsule(style: .continuous)
-                        .fill(Color.plusAccent)
+                        .fill(Color.plusSolidOne)
                         .frame(width: BookReaderLayout.barWidth * progress)
                         // Заливка идёт за прокруткой текста — без собственной анимации.
                         .animation(nil, value: progress)

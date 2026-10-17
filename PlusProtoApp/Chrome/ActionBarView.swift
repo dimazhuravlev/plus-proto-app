@@ -913,7 +913,7 @@ private struct SearchPill: View {
             .textFieldStyle(.plain)
             // Каретка — наш фиолетовый, тот же, что у активного чипса (правка
             // пользователя 2026-10-05; была белой).
-            .tint(Color.moviesAccent)
+            .tint(Color.accentPrimary)
             .foregroundStyle(Color.fillOne)
             // Не `plusHeadline`: у поля точная строка срезала хвосты букв снизу.
             .plusHeadlineField(.s)
@@ -987,7 +987,7 @@ private struct SearchPill: View {
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: ActionBarGeometry.searchIconBox, height: ActionBarGeometry.searchIconBox)
-                .foregroundStyle(Color.searchIcon)
+                .foregroundStyle(Color.fillSubtitle)
         }
     }
 
@@ -1036,7 +1036,7 @@ private struct SearchPill: View {
             .accessibilityHidden(true)
     }
 
-    /// Бледнее бегущих фраз (`searchPlaceholder`, белый 30 %): те зовут в сервисы,
+    /// Бледнее бегущих фраз (`fillSeven`, белый 30 %): те зовут в сервисы,
     /// а эта только подписывает пустое поле (правка пользователя 2026-10-03).
     private static let focusedPlaceholderColor = Color.white.opacity(0.2)
     fileprivate static let focusedPlaceholderText = "Поиск по всему"
@@ -1186,7 +1186,7 @@ private struct SearchPlaceholderTicker: View {
     private func phrase(_ text: String) -> some View {
         Text(text + "...")
             .plusHeadline(.s)
-            .foregroundStyle(Color.searchPlaceholder)
+            .foregroundStyle(Color.fillSeven)
             // Длинная фраза в узком поле (чип справа) не переносится на вторую строку.
             .lineLimit(1)
     }
@@ -1371,8 +1371,9 @@ private struct TrailingSlot: View {
             if UserDefaults.standard.bool(forKey: "debugBarProbe") {
                 GeometryReader { proxy in
                     Text("\(actionBar.mode.rawValue) w\(Int(layout.trailingWidth.rounded()))→\(Int(proxy.size.width.rounded()))\(layout.isRaised ? " up" : "")")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.yellow)
+                        .plusText(.textXS, .semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.systemBrightRed)
                         .fixedSize()
                         .offset(y: -12)
                 }

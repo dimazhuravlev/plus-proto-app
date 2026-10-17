@@ -194,7 +194,7 @@ struct ContinueReadingCard: View {
             alignment: .topLeading
         )
         .clipShape(shape)
-        .glassSurface(shape, blur: PlusMetrics.buttonBlur, border: .white.opacity(0.06))
+        .glassSurface(shape, blur: PlusMetrics.buttonBlur, border: Color.fillTen)
     }
 
     /// Кадр фиксирован по макету, чтобы полтысячи точек текста не перемерялись на скролле,

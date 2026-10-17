@@ -9,7 +9,7 @@ struct MovieSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .plusHeadline(.m)
+            .plusHeadline(.s)
             .foregroundStyle(Color.fillOne)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, MovieLayout.sectionHeaderTop)
@@ -54,7 +54,7 @@ struct MovieSynopsisSection: View {
                 let shifted = index.isMultiple(of: 2) == false
 
                 Text(text)
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
                     // Абзац обязан занять свою полную высоту. Без этого он ужимается
                     // под высоту, предложенную снаружи, и SwiftUI режет его многоточием

@@ -184,8 +184,7 @@ struct MoviePersonSection: View {
 enum TileCaptionRuler {
     static func lines(_ text: String, width: CGFloat) -> Int {
         guard !text.isEmpty else { return 0 }
-        let size = PlusTextSize.textS.size
-        let font = UIFont(name: PlusTextWeight.medium.family, size: size) ?? .systemFont(ofSize: size)
+        let font = PlusTextSize.textS.uiFont(.medium)
         let singleLine = (text as NSString).size(withAttributes: [.font: font]).width
         return singleLine <= width ? 1 : 2
     }

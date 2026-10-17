@@ -472,11 +472,11 @@ enum SearchFilter: Hashable {
 /// Цвета строк и чипсов по макету — разовые, токенов не заводим.
 private enum SearchSectionColors {
     /// Разделитель строк — Fill/Eight.
-    static let divider = Color.white.opacity(0.15)
+    static let divider = Color.fillEight
     /// Сердце без лайка — Fill/Five.
-    static let like = Color.white.opacity(0.6)
+    static let like = Color.fillFive
     /// Точка-разделитель в подписи — Fill/Seven.
-    static let dot = Color.white.opacity(0.3)
+    static let dot = Color.fillSeven
 }
 
 // MARK: - Строка

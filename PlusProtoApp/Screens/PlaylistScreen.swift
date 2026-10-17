@@ -53,7 +53,7 @@ struct PlaylistScreen: View {
                 thresholds: AlbumLayout.navBarThresholds
             )
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         // `-debugTapPlay` — нажать «Слушать», как на альбоме.

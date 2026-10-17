@@ -132,7 +132,7 @@ struct DownloadGlyph: View {
             glyph("iconDownload", color: offColor)
                 .opacity(isDownloaded ? 0 : 1)
                 .scaleEffect(isDownloaded ? ActionBarMotion.iconSwapScale : 1)
-            glyph("iconDone", color: Color.moviesAccent)
+            glyph("iconDone", color: Color.accentPrimary)
                 .opacity(isDownloaded ? 1 : 0)
                 .scaleEffect(isDownloaded ? 1 : ActionBarMotion.iconSwapScale)
         }

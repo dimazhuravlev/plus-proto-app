@@ -34,7 +34,7 @@ enum ProfileLayout {
     /// Фото 90.67 с бордером 1.519 × белый 15 % — по центру кольца
     static let photo: CGFloat = 90.67
     static let photoBorder: CGFloat = 1.519
-    static let photoBorderColor = Color.white.opacity(0.15)
+    static let photoBorderColor = Color.fillEight
     /// Карандаш: круг 26.824, центр (+39.09, 156.588) — на кромке кольца справа снизу
     /// (`2701:30201`); растр с полями под тень и блюр — 30.35 (`profilePencilCircle`)
     static let pencil: CGFloat = 26.824
@@ -68,7 +68,7 @@ enum ProfileLayout {
     static let widgetRadius: CGFloat = 24
     static let widgetPadding: CGFloat = 12
     static let widgetBlur: CGFloat = 20
-    static let widgetBorder = Color.white.opacity(0.15)
+    static let widgetBorder = Color.fillEight
     static let borderWidth: CGFloat = 0.67
     static let textGap: CGFloat = 4
 
@@ -119,10 +119,10 @@ enum ProfileLayout {
     static let cellTextGap: CGFloat = 0
     static let chevron: CGFloat = 16
     /// Разделитель ячеек — 0.5 × белый 15 %, от 16 слева до правого края островка
-    static let divider = Color.white.opacity(0.15)
+    static let divider = Color.fillEight
     static let dividerInset: CGFloat = 16
     /// Шеврон и «+» — белый 40 %
-    static let secondaryGlyph = Color.white.opacity(0.4)
+    static let secondaryGlyph = Color.fillSix
 
     // MARK: Общее с дебаг-меню
 
@@ -161,7 +161,7 @@ struct ProfileScreen: View {
             // Свечение — от верха экрана, уезжает вместе с лентой; при оттяге чуть сползает вниз.
             // Оверлеем на фоне, а не слоем стопки: кадр свечения шире экрана, и слоем
             // он раздвигал бы всю стопку (кадр 2026-10-04).
-            Color.black
+            Color.surfaceOne
                 .overlay(alignment: .top) {
                     ProfileGlow()
                         // При оттяге — немного вниз, как ряд навбара: четверть хода с мягким
@@ -361,7 +361,7 @@ private struct ProfileHero: View {
         ProfileLevitation { offsets in
             ZStack(alignment: .top) {
                 Text(ProfileMock.name)
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(1)
                     .padding(.horizontal, ProfileLayout.side)
@@ -457,7 +457,7 @@ private struct ProfilePointsBadge: View {
 
             HStack(spacing: ProfileLayout.pointsValueGap) {
                 Text(ProfileMock.points)
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                 Image("iconPlusPoints")
                     .renderingMode(.template)
                     .resizable()
@@ -465,11 +465,11 @@ private struct ProfilePointsBadge: View {
             }
             .foregroundStyle(Color.fillOne)
             .fixedSize()
-            .frame(height: PlusHeadline.m.lineHeight)
+            .frame(height: PlusHeadline.s.lineHeight)
             .scaleEffect(ProfileLayout.pointsValueScale)
             .offset(
                 x: ProfileLayout.pointsValueCenter.x,
-                y: ProfileLayout.pointsValueCenter.y - PlusHeadline.m.lineHeight / 2
+                y: ProfileLayout.pointsValueCenter.y - PlusHeadline.s.lineHeight / 2
             )
 
             Text("Баллы")
@@ -634,7 +634,7 @@ private struct ProfileVideoQualityWidget: View {
                 .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)
             Text("4K UHD")
-                .plusHeadline(.m)
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(1)
             Text("Кино на большом экране")
@@ -715,7 +715,7 @@ private struct ProfilePlusBadge: View {
         Image("iconPlusSign")
             .renderingMode(.template)
             .resizable()
-            .foregroundStyle(Color.white)
+            .foregroundStyle(Color.fillOne)
             .frame(width: ProfileLayout.plusBadge, height: ProfileLayout.plusBadge)
             .background(Self.gradient)
             .clipShape(Circle())

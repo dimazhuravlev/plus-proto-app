@@ -54,10 +54,11 @@ private enum RateBlockGeometry {
     static let designHeight: CGFloat = 158
     static let verticalPadding: CGFloat = 8
     static let horizontalPadding: CGFloat = 16
-    /// Макетные 16 и 12 — плюс по 3: строка заголовка по шкале UI kit (Headline S,
-    /// 20/20) на 6 ниже макетной 26, и без добавки глиф и ряд эмодзи уехали бы вверх.
-    static let titleTop: CGFloat = 16 + 3
-    static let titleBottom: CGFloat = 12 + 3
+    /// Макетные 16 и 12 — плюс по 1: строка заголовка по ДС (Headline S, 24/24) на 2 ниже
+    /// макетной 26, и без добавки глиф и ряд эмодзи уехали бы вверх (было по 3 при 20/20
+    /// прежней шкалы; переход на ДС 2026-10-17).
+    static let titleTop: CGFloat = 16 + 1
+    static let titleBottom: CGFloat = 12 + 1
     // Вертикальные поля блока растут вместе с лентой (`ShowcaseLayout.scale`), чип,
     // шрифты и боковые поля — нет.
     /// Колонка: pt8 pb6 px8, зазор 8

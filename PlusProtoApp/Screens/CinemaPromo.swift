@@ -321,7 +321,7 @@ private struct CinemaPromoSlide: View {
             CinemaPromoLogo(source: logo, title: promo.title)
         } else {
             Text(promo.title)
-                .plusHeadline(.l)
+                .plusHeadline(.m)
                 .foregroundStyle(Color.fillOne)
                 .multilineTextAlignment(.center)
                 .lineLimit(CinemaPromoLayout.titleLines)

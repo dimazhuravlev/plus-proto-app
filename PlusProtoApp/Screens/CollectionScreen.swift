@@ -78,9 +78,9 @@ enum CollectionLayout {
     static let playIcon: CGFloat = 20
 
     /// Разделитель строк треков — Fill/Eight, 0.5
-    static let divider = Color.white.opacity(0.15)
+    static let divider = Color.fillEight
     /// «Ещё» у строки трека — белый 60 %
-    static let more = Color.white.opacity(0.6)
+    static let more = Color.fillFive
 }
 
 enum CollectionMotion {
@@ -128,7 +128,7 @@ struct CollectionScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             // Лента одна на обе полки — меняется только её содержимое. Пока у каждой
             // полки была своя, на смене обе разом докладывали свой сдвиг, и подложка
@@ -705,7 +705,7 @@ private struct CollectionTracksBlock: View {
             Button(action: openAll) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(CollectionItem.Kind.track.title)
-                        .plusHeadline(.m)
+                        .plusHeadline(.s)
                         .foregroundStyle(Color.fillOne)
                     Text(CollectionCopy.tracks(items.count))
                         .plusText(.textM, .medium)
@@ -784,7 +784,7 @@ private struct CollectionTrackRow: View {
                             .renderingMode(.template)
                             .resizable()
                             .frame(width: CollectionLayout.downloadIcon, height: CollectionLayout.downloadIcon)
-                            .foregroundStyle(Color.moviesAccent)
+                            .foregroundStyle(Color.accentPrimary)
                             .accessibilityLabel("Скачано")
                     }
                     Menu {
@@ -1430,7 +1430,7 @@ private struct CollectionReorderButton: View {
                 glyph("iconChangeOrder", color: .fillSubtitle)
                     .opacity(isReordering ? 0 : 1)
                     .scaleEffect(isReordering ? swapScale : 1)
-                glyph("iconDone", color: .moviesAccent)
+                glyph("iconDone", color: .accentPrimary)
                     .opacity(isReordering ? 1 : 0)
                     .scaleEffect(isReordering ? 1 : swapScale)
             }
@@ -1503,7 +1503,7 @@ private struct CollectionEmptyState: View {
     var body: some View {
         VStack(spacing: 8) {
             Text(title)
-                .plusHeadline(.m)
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
             Text(hint)
                 .plusText(.textM, .medium)

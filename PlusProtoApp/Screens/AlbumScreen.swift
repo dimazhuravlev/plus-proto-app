@@ -135,7 +135,7 @@ struct AlbumScreen: View {
                 thresholds: AlbumLayout.navBarThresholds
             )
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         // `-debugTapPlay` — нажать «Слушать»: тот же флаг, что у «Смотреть»
@@ -374,7 +374,7 @@ struct AlbumScreen: View {
                     .resizable()
                     .frame(width: AlbumLayout.moreBox, height: AlbumLayout.moreBox)
                     // Белый 60 % из макета; токена нет — оттенок живёт только здесь
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .foregroundStyle(Color.fillFive)
             }
             .buttonStyle(PressScaleButtonStyle())
         }
@@ -407,7 +407,7 @@ struct AlbumScreen: View {
             .renderingMode(.template)
             .resizable()
             .frame(width: AlbumLayout.badgeBox, height: AlbumLayout.badgeBox)
-            .foregroundStyle(Color.white.opacity(0.3))
+            .foregroundStyle(Color.fillSeven)
     }
 
     // MARK: Другие альбомы
@@ -416,7 +416,7 @@ struct AlbumScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: AlbumLayout.sectionTitleGap) {
                 Text("Другие альбомы")
-                    .plusHeadline(.m)
+                    .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
 
                 // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет,

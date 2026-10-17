@@ -34,7 +34,7 @@ private enum MusicPlayerLayout {
     static let titleBadgeGap: CGFloat = 8
     /// От строки названия до ряда артиста. Меряем по макету паузы от базовой линии:
     /// до верха аватара 9pt. В макете их дают зазор 2 и 6.9pt под базовой линией
-    /// Headline L En (32/32, другой шрифт); у нашего L 28/28 под ней 4.4 — остаётся 4.5
+    /// Headline L En (32/32, другой шрифт); у нашего M 28/28 под ней 4.4 — остаётся 4.5
     /// (жалоба пользователя 2026-10-03: при 2 аватар подпирал название).
     static let titleToArtist: CGFloat = 4.5
     static let artistRowHeight: CGFloat = 40
@@ -180,7 +180,7 @@ struct MusicPlayerView: View {
             }
             .ignoresSafeArea()
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
     }
 
     // MARK: Навбар
@@ -651,7 +651,7 @@ private struct CoverCarousel: View {
 
 // MARK: - Название
 
-/// Название трека — Headline L, у explicit-трека с бейджем 18+. Не влезает в колонку —
+/// Название трека — Headline M, у explicit-трека с бейджем 18+. Не влезает в колонку —
 /// бежит строкой во всю ширину экрана с гаснущими краями, как в макете `6105:61569`;
 /// влезает — стоит у левого поля.
 ///
@@ -666,9 +666,7 @@ private struct MarqueeTitle: View {
     @State private var start = Date.now
 
     private var lineWidth: CGFloat {
-        let font = UIFont(name: PlusFont.displaySemibold, size: PlusHeadline.l.size)
-            ?? .systemFont(ofSize: PlusHeadline.l.size, weight: .bold)
-        let textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        let textWidth = ceil((text as NSString).size(withAttributes: PlusHeadline.m.measureAttributes).width)
         return isExplicit
             ? textWidth + MusicPlayerLayout.titleBadgeGap + MusicPlayerLayout.titleBadge
             : textWidth
@@ -691,7 +689,7 @@ private struct MarqueeTitle: View {
                 marquee
             }
         }
-        .frame(height: PlusHeadline.l.lineHeight)
+        .frame(height: PlusHeadline.m.lineHeight)
         .onChange(of: text) { start = .now }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
@@ -700,7 +698,7 @@ private struct MarqueeTitle: View {
     private var line: some View {
         HStack(spacing: MusicPlayerLayout.titleBadgeGap) {
             Text(text)
-                .plusHeadline(.l)
+                .plusHeadline(.m)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(1)
             if isExplicit {
@@ -709,7 +707,7 @@ private struct MarqueeTitle: View {
                     .resizable()
                     .frame(width: MusicPlayerLayout.titleBadge, height: MusicPlayerLayout.titleBadge)
                     // Белый 15 % из макета; токена нет — оттенок живёт только здесь.
-                    .foregroundStyle(Color.white.opacity(0.15))
+                    .foregroundStyle(Color.fillEight)
             }
         }
         .fixedSize()
@@ -746,7 +744,7 @@ private struct MarqueeTitle: View {
     /// Строка под масками краёв. Маска выше рамки на запас глифов (`inkOutset`):
     /// по рамке строки она срезала бы хвосты «у», «р» и точки «Й».
     private func faded(leading: Double, @ViewBuilder content: () -> some View) -> some View {
-        let outset = PlusHeadline.l.inkOutset
+        let outset = PlusHeadline.m.inkOutset
         return content()
             .padding(.vertical, outset)
             .mask { fadeMask(leading: leading) }
@@ -830,7 +828,7 @@ private struct QueueRow: View {
                         .frame(width: MusicPlayerLayout.rowBadge, height: MusicPlayerLayout.rowBadge)
                         // Белый 60 % из макета; токена нет — оттенок живёт только здесь
                         // (как у «ещё» в треклисте альбома).
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Color.fillFive)
                 }
                 .padding(.leading, MusicPlayerLayout.rowCoverToText)
             }
@@ -863,7 +861,7 @@ private struct QueueRow: View {
                         .resizable()
                         .frame(width: MusicPlayerLayout.rowBadge, height: MusicPlayerLayout.rowBadge)
                         // Белый 30 % — как бейдж в треклисте альбома.
-                        .foregroundStyle(Color.white.opacity(0.3))
+                        .foregroundStyle(Color.fillSeven)
                 }
             }
             Text(item.artist)

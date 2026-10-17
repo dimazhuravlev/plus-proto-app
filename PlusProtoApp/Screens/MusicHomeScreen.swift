@@ -40,7 +40,7 @@ struct MusicHomeScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             if filter == 0 {
                 // Экран в один кадр, но пружинит при оттяге, как остальные витрины:
@@ -119,17 +119,17 @@ private struct MyVibeHero: View {
     }
 
     private var titleAndPlay: some View {
-        VStack(spacing: MyVibeLayout.titleToPlay - PlusHeadline.xxxl.size / 2 - MyVibeLayout.playSize / 2) {
+        VStack(spacing: MyVibeLayout.titleToPlay - PlusHeadline.xxl.size / 2 - MyVibeLayout.playSize / 2) {
             Text("Моя волна")
-                .plusHeadline(.xxxl)
+                .plusHeadline(.xxl)
                 .foregroundStyle(Color.fillOne)
-                .frame(height: PlusHeadline.xxxl.size)
+                .frame(height: PlusHeadline.xxl.size)
 
             Button(action: play) {
                 PlayPauseGlyph(isPlaying: isPlaying, box: MyVibeLayout.playIcon)
                     .foregroundStyle(MyVibeLayout.playGradient)
                     .frame(width: MyVibeLayout.playSize, height: MyVibeLayout.playSize)
-                    .background(Color.white, in: Circle())
+                    .background(Color.buttonsInverted, in: Circle())
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel(isPlaying ? "Пауза" : "Слушать Мою волну")
@@ -138,7 +138,7 @@ private struct MyVibeHero: View {
         .background(alignment: .top) {
             VibeShader()
                 .frame(width: MyVibeLayout.shaderSize, height: MyVibeLayout.shaderSize)
-                .offset(y: PlusHeadline.xxxl.size / 2 - MyVibeLayout.shaderSize / 2)
+                .offset(y: PlusHeadline.xxl.size / 2 - MyVibeLayout.shaderSize / 2)
         }
     }
 

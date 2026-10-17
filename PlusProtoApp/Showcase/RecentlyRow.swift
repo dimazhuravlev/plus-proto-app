@@ -315,7 +315,7 @@ private struct RecentlyTile: View {
             }
             .overlay(alignment: .leading) {
                 Capsule()
-                    .fill(Color.plusAccent)
+                    .fill(Color.plusSolidOne)
                     .frame(width: L.trackWidth * min(max(progress, 0), 1))
             }
             .frame(width: L.trackWidth, height: L.trackHeight)

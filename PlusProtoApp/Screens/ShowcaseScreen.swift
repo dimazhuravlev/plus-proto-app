@@ -24,7 +24,7 @@ struct ShowcaseScreen: View {
     var body: some View {
         @Bindable var catalog = catalog
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
             ShowcaseFeedView(
                 feed: catalog.feed,
                 zoom: zoom,

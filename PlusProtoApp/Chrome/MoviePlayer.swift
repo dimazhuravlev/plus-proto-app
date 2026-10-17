@@ -322,7 +322,7 @@ struct MoviePlayerView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .ignoresSafeArea()
-        .background(Color.black)
+        .background(Color.surfaceOne)
         .task { await clock.start(clip: ShowcaseSeeds.playerClip) }
         .task(id: idleKey) { await hideControlsWhenIdle() }
         // Ушли из приложения — фильм встаёт, как в системных плеерах: часы идут

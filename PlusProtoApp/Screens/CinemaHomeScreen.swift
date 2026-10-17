@@ -15,7 +15,7 @@ enum CinemaLayout {
     static let feedBottom: CGFloat = 16
     static let side: CGFloat = 16
     static let sectionPad: CGFloat = 8
-    /// Строка заголовка карусели — Headline M при 100 % (шапка 52 = 16 + 24 + 12)
+    /// Строка заголовка карусели — Headline S при 100 % (шапка 52 = 16 + 24 + 12)
     static let headerLine: CGFloat = 24
     static let cardGap: CGFloat = 8
     static let cardRadius: CGFloat = 12
@@ -34,7 +34,7 @@ enum CinemaLayout {
     static let historyProgressHeight: CGFloat = 4
     /// Затемнение под временем — 80 снизу: 40 полосы прогресса и 40 над ней
     static let historyFadeHeight: CGFloat = 80
-    static let historyProgressTrack = Color.white.opacity(0.15)
+    static let historyProgressTrack = Color.fillEight
     /// `accent/sugar-grape` — цвет прогресса Кинопоиска
     static let historyProgressFill = Color(red: 0x9C / 255, green: 0x38 / 255, blue: 1)
 
@@ -69,7 +69,7 @@ struct CinemaHomeScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             if filter == 0 {
                 feed

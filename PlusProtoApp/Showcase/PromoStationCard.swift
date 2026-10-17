@@ -60,7 +60,6 @@ enum PromoStationLayout {
     /// квадрат `artBox`, обводка 1 белым 15 % внутрь и внутреннее свечение белым 50 %
     /// (в макете inset-блюр 32, в коде радиус вдвое меньше — конвенция проекта).
     static let artistStroke: CGFloat = 1
-    static let artistStrokeOpacity: Double = 0.15
     static let artistGlowRadius: CGFloat = 16
     static let artistGlowOpacity: Double = 0.5
     /// «Моя волна» и «в стиле артиста» — две строки, имя артиста под ними — до двух.
@@ -159,7 +158,7 @@ private struct PromoArtistWavePhoto: View {
             .overlay {
                 Circle()
                     .strokeBorder(
-                        Color.white.opacity(Layout.artistStrokeOpacity),
+                        Color.fillEight,
                         lineWidth: Layout.artistStroke * ShowcasePromoLayout.scale
                     )
                     .allowsHitTesting(false)

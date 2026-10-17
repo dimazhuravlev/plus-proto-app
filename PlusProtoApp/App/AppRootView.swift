@@ -27,7 +27,7 @@ struct AppRootView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.surfaceOne.ignoresSafeArea()
 
             tabContent
                 // Поджимаем контент скролла, а не фрейм: лента едет под хромом, но в покое
@@ -252,7 +252,7 @@ struct AppRootView: View {
             SearchLayers(host: .stackRoot) {
                 content()
             }
-            .background(Color.black)
+            .background(Color.surfaceOne)
             // Экраны сущностей и слой фильма — у каждого таба: карточки выдачи поиска
             // открываются откуда угодно (см. `EntityDestinations`).
             .modifier(EntityDestinations(zoom: stackZoom))

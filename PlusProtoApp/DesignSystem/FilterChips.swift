@@ -92,7 +92,7 @@ private struct FilterChip: View {
     let action: () -> Void
 
     /// Фиолетовый активного чипса — #A332FF макета, общий с лейблом тайтла.
-    private static let accent = Color.moviesAccent
+    private static let accent = Color.accentPrimary
 
     var body: some View {
         Button(action: action) {

@@ -32,8 +32,8 @@ struct PlusProgressBar: View {
             .fill(
                 LinearGradient(
                     stops: [
-                        .init(color: .plusAccent, location: 0),
-                        .init(color: .plusAccent, location: fraction),
+                        .init(color: .plusSolidOne, location: 0),
+                        .init(color: .plusSolidOne, location: fraction),
                         .init(color: .buttonsPrimary, location: fraction),
                         .init(color: .buttonsPrimary, location: 1),
                     ],

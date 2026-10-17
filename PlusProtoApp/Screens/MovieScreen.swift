@@ -349,7 +349,7 @@ struct MovieScreen: View {
                 headerActions
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.surfaceOne.ignoresSafeArea())
         .overlay(alignment: .bottom) { MovieMainButtons(onPlay: startWatching, collectionItem: collectionItem) }
         #if DEBUG
         // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
@@ -639,7 +639,7 @@ struct MovieScreen: View {
     private var meta: some View {
         details.meta.dropFirst()
             .reduce(Text(details.meta.first ?? "")) { result, item in
-                result + Text(" • ").foregroundColor(.white.opacity(0.3)) + Text(item)
+                result + Text(" • ").foregroundColor(Color.fillSeven) + Text(item)
             }
             .plusText(.textM, .medium)
             .foregroundStyle(Color.fillSubtitle)

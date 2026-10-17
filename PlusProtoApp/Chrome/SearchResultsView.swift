@@ -533,7 +533,7 @@ struct SearchResultsView: View {
     private func header(_ title: String, top: CGFloat = Layout.headerTop) -> some View {
         HStack(spacing: Layout.headerGap) {
             Text(title)
-                .plusHeadline(.m)
+                .plusHeadline(.s)
                 .foregroundStyle(Color.fillOne)
 
             // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет,

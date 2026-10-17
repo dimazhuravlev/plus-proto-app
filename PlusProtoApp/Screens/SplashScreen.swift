@@ -45,7 +45,7 @@ struct SplashScreen: View {
         ZStack(alignment: .topLeading) {
             SplashPalette.background
             PlusMark()
-                .fill(.white)
+                .fill(Color.fillOne)
                 // Мягкий ореол из макета: чёрный 10 % без смещения, blur 20 ÷ 2
                 // (единицы Figma к SwiftUI — тот же пересчёт, что у блюров проекта).
                 .shadow(color: .black.opacity(0.1), radius: 10)

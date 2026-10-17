@@ -185,9 +185,7 @@ enum ToastLayout {
     /// Шрифт — тот же YS Text Medium 13, что у `plusText(.textS, .medium)`; перенос
     /// здесь и в `Text` с `.frame(width:)` одинаковый, потому что ширина одна и та же.
     static func textWidth(_ title: String, maxWidth: CGFloat) -> CGFloat {
-        let size = PlusTextSize.textS.size
-        let font = UIFont(name: PlusFont.textMedium, size: size)
-            ?? UIFont.systemFont(ofSize: size, weight: .medium)
+        let font = PlusTextSize.textS.uiFont(.medium)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
         let text = NSAttributedString(
