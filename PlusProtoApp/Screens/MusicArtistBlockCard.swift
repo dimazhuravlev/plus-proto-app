@@ -44,13 +44,16 @@ enum MusicArtistBlockLayout {
 }
 
 /// Блок «Похоже на …» — фото исполнителя на тоне фона, снизу размытое отражение, ▶ и ряд
-/// похожих (исполнители и альбомы — общая `MusicCard`). ▶ включает его музыку, имя —
-/// экран исполнителя, карточки ряда — свои экраны.
+/// похожих (исполнители и альбомы — общая `MusicCard`). Карточка — экран исполнителя
+/// (правка пользователя 2026-10-17: «кавер артиста открывает экран артиста»), ▶ включает
+/// его музыку, карточки ряда — свои экраны: палец на них достаётся им, карточка под ними
+/// не проседает (`pressScale`, как у промо Кинопоиска).
 struct MusicArtistBlockCard: View {
     let block: MusicArtistBlock
 
     @Environment(ActionBarState.self) private var actionBar
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(\.stackZoomNamespace) private var zoom
 
     private typealias Layout = MusicArtistBlockLayout
 
@@ -70,6 +73,12 @@ struct MusicArtistBlockCard: View {
         .frame(width: Layout.width, height: Layout.height)
         .clipShape(shape)
         .coverBorder(shape)
+        .modifier(MusicBlockZoomSource(route: block.route, zoom: zoom))
+        .contentShape(shape)
+        .pressScale(PressMotion.cardScale)
+        .onTapGesture { navigation.open(block.route) }
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: Text(block.name)) { navigation.open(block.route) }
         .padding(Layout.side)
     }
 
@@ -132,20 +141,16 @@ struct MusicArtistBlockCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Layout.headerGap) {
                 playButton
-                Button { navigation.open(block.route) } label: {
-                    VStack(alignment: .leading, spacing: Layout.titleGap) {
-                        Text("Похоже на")
-                            .plusHeadline(.l)
-                            .foregroundStyle(Color.fillSix)
-                        Text(block.name)
-                            .plusHeadline(.l)
-                            .foregroundStyle(Color.fillOne)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
+                VStack(alignment: .leading, spacing: Layout.titleGap) {
+                    Text("Похоже на")
+                        .plusHeadline(.l)
+                        .foregroundStyle(Color.fillSix)
+                    Text(block.name)
+                        .plusHeadline(.l)
+                        .foregroundStyle(Color.fillOne)
+                        .lineLimit(1)
                 }
-                .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, Layout.side)
             .padding(.bottom, Layout.headerBottom)
@@ -225,6 +230,20 @@ enum MusicItemAction {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
             actionBar.open(.music(playable))
+        }
+    }
+}
+
+/// Источник зума экрана исполнителя — вся карточка блока: её рисунок умещается в свой кадр.
+private struct MusicBlockZoomSource: ViewModifier {
+    let route: EntityRoute
+    let zoom: Namespace.ID?
+
+    func body(content: Content) -> some View {
+        if let zoom {
+            content.matchedTransitionSource(id: route, in: zoom)
+        } else {
+            content
         }
     }
 }

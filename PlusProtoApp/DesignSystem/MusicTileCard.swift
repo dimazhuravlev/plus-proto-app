@@ -18,6 +18,9 @@ struct MusicTileCard: View {
     let content: Content
     /// Подпись под плиткой (Text M) — у счётчиков.
     var caption: String? = nil
+    /// Строк подписи: у «Героев месяца» имя исполнителя — до двух (правка пользователя
+    /// 2026-10-17), у треков — одна.
+    var captionLines = 1
     /// «Нравится» в углу (`icon / love`) — у любимых станций.
     var isLiked = false
     let width: CGFloat
@@ -29,7 +32,8 @@ struct MusicTileCard: View {
                 Text(caption)
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
-                    .lineLimit(1)
+                    .lineLimit(captionLines)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(width: width, alignment: .leading)
             }
         }
@@ -37,9 +41,10 @@ struct MusicTileCard: View {
         .contentShape(.rect)
     }
 
-    /// Плитка целиком с подписью — для явной высоты карусели.
-    static func height(width: CGFloat, hasCaption: Bool) -> CGFloat {
-        width + (hasCaption ? MusicCardLayout.textGap + PlusTextSize.textM.lineHeight : 0)
+    /// Плитка целиком с подписью — для явной высоты карусели: подпись — по наибольшему
+    /// числу строк, место держится заранее.
+    static func height(width: CGFloat, captionLines: Int) -> CGFloat {
+        width + (captionLines > 0 ? MusicCardLayout.textGap + CGFloat(captionLines) * PlusTextSize.textM.lineHeight : 0)
     }
 
     private var shape: RoundedRectangle {

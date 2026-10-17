@@ -55,7 +55,7 @@ struct MusicForYouFeed: View {
                 block(0)
                 tilesSection("На повторе в этом месяце", tiles: repeatTiles, bottom: Layout.counterBottom)
                 tilesSection("Жанры на ваш вкус", tiles: genreTiles, bottom: Layout.wideBottom)
-                tilesSection("Герои вашего месяца", tiles: heroTiles, bottom: Layout.counterBottom)
+                tilesSection("Герои вашего месяца", tiles: heroTiles, captionLines: 2, bottom: Layout.counterBottom)
                 releasesSection
                 block(1)
                 tilesSection("Моя Волна: любимые", tiles: Self.stations(MusicForYouMocks.favourites), bottom: Layout.wideBottom)
@@ -194,12 +194,12 @@ struct MusicForYouFeed: View {
 
     // MARK: - Средние карусели
 
-    private func tilesSection(_ title: String, tiles: [MusicTile], bottom: CGFloat) -> some View {
+    private func tilesSection(_ title: String, tiles: [MusicTile], captionLines: Int = 1, bottom: CGFloat) -> some View {
         let width = MusicCarouselFit.medium.cardWidth
         let hasCaption = tiles.contains { $0.caption != nil }
         return ServiceCarousel(
             title: title,
-            cardHeight: MusicTileCard.height(width: width, hasCaption: hasCaption),
+            cardHeight: MusicTileCard.height(width: width, captionLines: hasCaption ? captionLines : 0),
             showsChevron: false,
             bottomPadding: bottom
         ) {
@@ -209,6 +209,7 @@ struct MusicForYouFeed: View {
                         image: tile.image,
                         content: tile.content,
                         caption: tile.caption,
+                        captionLines: captionLines,
                         isLiked: tile.isLiked,
                         width: width
                     )
