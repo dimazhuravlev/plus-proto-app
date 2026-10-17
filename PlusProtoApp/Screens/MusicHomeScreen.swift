@@ -35,8 +35,15 @@ struct MusicHomeScreen: View {
     /// (правки пользователя тем же днём)
     static let filters = ["Моя волна", "Для вас", "Подкасты", "Тренды", "Детям"]
 
+    @Environment(MusicHomeCatalog.self) private var catalog
+    @Environment(AppNavigationState.self) private var navigation
+
     @State private var filter = 0
     @State private var scrollOffset: CGFloat = 0
+    @State private var forYouPosition = ScrollPosition(edge: .top)
+
+    /// «Для вас» — лента каруселей (`MusicForYouFeed`, задача пользователя 2026-10-17).
+    private static let forYou = 1
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -57,6 +64,8 @@ struct MusicHomeScreen: View {
                 // нижний хром, а не от безопасной зоны.
                 .ignoresSafeArea(edges: [.top, .bottom])
                 .trackNavBarScroll(into: $scrollOffset)
+            } else if filter == Self.forYou {
+                MusicForYouFeed(scrollOffset: $scrollOffset, scrollPosition: $forYouPosition)
             } else {
                 ServiceFilterStub(title: Self.filters[filter])
             }
@@ -65,7 +74,7 @@ struct MusicHomeScreen: View {
             ServiceTopNav(
                 filters: Self.filters,
                 selection: $filter,
-                scrollOffset: filter == 0 ? scrollOffset : 0,
+                scrollOffset: filter == 0 || filter == Self.forYou ? scrollOffset : 0,
                 // У «Моей волны» затемнения сверху нет (правка пользователя 2026-10-10).
                 showsTopShade: filter != 0
             )
@@ -73,7 +82,24 @@ struct MusicHomeScreen: View {
         // Лента таба, вернувшаяся после другого фильтра, доложит свой сдвиг сама —
         // прежний, оставшийся от неё, на миг проявил бы подложку навигации.
         .onChange(of: filter) { scrollOffset = 0 }
+        // Повторный тап по табу на корне — к началу ленты «Для вас», как у витрин.
+        .onChange(of: navigation.scrollToTopRequests[.music]) {
+            guard filter == Self.forYou else { return }
+            withAnimation(ShowcaseScrollMotion.toTop) { forYouPosition.scrollTo(edge: .top) }
+        }
         .toolbar(.hidden, for: .navigationBar)
+        .task { await catalog.loadIfNeeded() }
+        #if DEBUG
+        // `-debugMusicFilter <n>` — стартовый фильтр таба (1 — «Для вас»): тапнуть табы
+        // навигации из шелла нечем. Тактом позже раскладки: до замера ширины ленты табов
+        // навигация «докручивала» выбранный таб за левый край.
+        .task {
+            let start = UserDefaults.standard.integer(forKey: "debugMusicFilter")
+            guard start > 0, Self.filters.indices.contains(start) else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            filter = start
+        }
+        #endif
     }
 }
 

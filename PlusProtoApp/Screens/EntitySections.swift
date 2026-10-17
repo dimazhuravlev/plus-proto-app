@@ -110,7 +110,8 @@ struct EntitySectionHeaderSkeleton: View {
 }
 
 /// Карточка альбома в карусели — `2079:11242`: квадратная обложка 159, название
-/// в строку, под ним год, бейдж explicit справа.
+/// в строку, под ним год, бейдж explicit справа. Рисует общая карточка музыки (`MusicCard`,
+/// ступень Medium — подпись Text M), здесь только ширина карусели экранов сущностей.
 struct EntityAlbumCard: View {
     let cover: ArtworkSource?
     let title: String
@@ -118,104 +119,45 @@ struct EntityAlbumCard: View {
     var isExplicit = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
-        VStack(alignment: .leading, spacing: EntitySectionLayout.cardTextGap) {
-            PlusSkeleton.fill
-                .frame(width: EntitySectionLayout.albumCardWidth, height: EntitySectionLayout.albumCardWidth)
-                .overlay {
-                    if let cover {
-                        SkeletonArtwork(source: cover)
-                    }
-                }
-                .clipShape(shape)
-                .coverBorder(shape)
-
-            HStack(alignment: .top, spacing: EntitySectionLayout.badgeGap) {
-                VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
-                    Text(title)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillOne)
-                        .lineLimit(1)
-
-                    if let detail {
-                        Text(detail)
-                            .plusText(.textM, .medium)
-                            .foregroundStyle(Color.fillSubtitle)
-                    }
-                }
-
-                if isExplicit {
-                    Spacer(minLength: 0)
-                    EntityExplicitBadge()
-                        .padding(.top, 1)
-                }
-            }
-            .padding(.trailing, EntitySectionLayout.cardTextTrailing)
-        }
-        .frame(width: EntitySectionLayout.albumCardWidth, alignment: .leading)
-        .contentShape(.rect)
+        MusicCard(
+            size: .medium,
+            width: EntitySectionLayout.albumCardWidth,
+            cover: cover,
+            title: title,
+            subtitle: detail,
+            isExplicit: isExplicit
+        )
     }
 }
 
 /// Скелетон карточки альбома — того же габарита.
 struct EntityAlbumCardSkeleton: View {
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: PlusRadius.card, style: .continuous)
-        VStack(alignment: .leading, spacing: EntitySectionLayout.cardTextGap) {
-            shape
-                .plusSkeleton()
-                .frame(width: EntitySectionLayout.albumCardWidth, height: EntitySectionLayout.albumCardWidth)
-            EntitySkeletonLines(widths: [EntitySectionLayout.albumCardWidth * 0.7, EntitySectionLayout.albumCardWidth * 0.3])
-        }
-        .frame(width: EntitySectionLayout.albumCardWidth, alignment: .leading)
-        .accessibilityHidden(true)
+        MusicCardSkeleton(size: .medium, width: EntitySectionLayout.albumCardWidth)
     }
 }
 
 /// Карточка исполнителя — круг 109 и имя по центру (как исполнитель в карусели
-/// выдачи, только колонки `regular`).
+/// выдачи, только колонки `regular`). Общая карточка музыки, ступень Small.
 struct EntityPersonCard: View {
     let photo: ArtworkSource?
     let name: String
 
     var body: some View {
-        VStack(spacing: EntitySectionLayout.cardTextGap) {
-            PlusSkeleton.fill
-                .frame(width: EntitySectionLayout.personCardWidth, height: EntitySectionLayout.personCardWidth)
-                .overlay {
-                    if let photo {
-                        SkeletonArtwork(source: photo)
-                    }
-                }
-                .clipShape(Circle())
-                .coverBorder(Circle())
-
-            Text(name)
-                .plusText(.textS, .medium)
-                .foregroundStyle(Color.fillOne)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(width: EntitySectionLayout.personCardWidth)
-        .contentShape(.rect)
+        MusicCard(
+            size: .small,
+            width: EntitySectionLayout.personCardWidth,
+            shape: .circle,
+            cover: photo,
+            title: name
+        )
     }
 }
 
 /// Скелетон карточки исполнителя.
 struct EntityPersonCardSkeleton: View {
     var body: some View {
-        VStack(spacing: EntitySectionLayout.cardTextGap) {
-            Circle()
-                .fill(PlusSkeleton.fill)
-                .frame(width: EntitySectionLayout.personCardWidth, height: EntitySectionLayout.personCardWidth)
-            RoundedRectangle(cornerRadius: PlusSkeleton.textRadius, style: .continuous)
-                .fill(PlusSkeleton.fill)
-                .frame(width: EntitySectionLayout.personCardWidth * 0.6, height: EntitySectionLayout.skeletonBar)
-                .frame(height: PlusTextSize.textS.lineHeight)
-        }
-        .frame(width: EntitySectionLayout.personCardWidth)
-        .accessibilityHidden(true)
+        MusicCardSkeleton(size: .small, width: EntitySectionLayout.personCardWidth, shape: .circle)
     }
 }
 

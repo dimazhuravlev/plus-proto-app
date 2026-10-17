@@ -22,11 +22,16 @@ struct ServiceCarousel<Content: View>: View {
     let title: String
     /// Высота карточки целиком — вместе с подписью.
     let cardHeight: CGFloat
+    /// Шеврон за заголовком — у Музыки он только там, где есть полный список
+    /// («Новые релизы», макет `68:15807`).
+    var showsChevron = true
+    /// Поле под лентой: 8 у Кино и Книг, у каруселей Музыки — 16 и 24 (`pb-[…]` макета).
+    var bottomPadding: CGFloat = ServiceCarouselLayout.sectionPad
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(spacing: 0) {
-            EntitySectionHeader(title: title, lineHeight: ServiceCarouselLayout.headerLine)
+            EntitySectionHeader(title: title, showsChevron: showsChevron, lineHeight: ServiceCarouselLayout.headerLine)
 
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: ServiceCarouselLayout.cardGap) {
@@ -39,7 +44,8 @@ struct ServiceCarousel<Content: View>: View {
             .contentMargins(.horizontal, ServiceCarouselLayout.side, for: .scrollContent)
             .frame(height: cardHeight)
         }
-        .padding(.vertical, ServiceCarouselLayout.sectionPad)
+        .padding(.top, ServiceCarouselLayout.sectionPad)
+        .padding(.bottom, bottomPadding)
     }
 }
 

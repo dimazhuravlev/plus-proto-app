@@ -296,10 +296,14 @@ struct PersonScreen: View {
         }
     }
 
+    /// «Альбомы» — крупные карточки музыки без аватара исполнителя, полторы на экран
+    /// (макет `17506:23798`, задача пользователя 2026-10-17): та же карточка, что у «Новых
+    /// релизов» витрины «Для вас».
     private var albumsSection: some View {
-        ZStack(alignment: .top) {
+        let width = MusicCarouselFit.large.cardWidth
+        return ZStack(alignment: .top) {
             if !store.isLoaded {
-                carouselSkeleton { EntityAlbumCardSkeleton() }
+                carouselSkeleton { MusicCardSkeleton(size: .large, width: width) }
                     .transition(.opacity)
             } else if !store.albums.isEmpty {
                 VStack(spacing: 0) {
@@ -308,19 +312,25 @@ struct PersonScreen: View {
                         LazyHStack(alignment: .top, spacing: EntitySectionLayout.cardGap) {
                             ForEach(store.albums) { album in
                                 Button { open(album.route) } label: {
-                                    EntityAlbumCard(
+                                    MusicCard(
+                                        size: .large,
+                                        width: width,
                                         cover: album.artwork,
                                         title: album.title,
-                                        detail: album.subtitle.isEmpty ? nil : album.subtitle,
-                                        isExplicit: store.explicitAlbums.contains(album.id)
+                                        subtitle: album.subtitle.isEmpty ? nil : album.subtitle,
+                                        isExplicit: store.explicitAlbums.contains(album.id),
+                                        zoomRoute: album.route
                                     )
                                 }
                                 .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
                             }
                         }
+                        .scrollTargetLayout()
                     }
                     .scrollIndicators(.hidden)
+                    .scrollTargetBehavior(.viewAligned)
                     .contentMargins(.horizontal, PersonLayout.side, for: .scrollContent)
+                    .frame(height: MusicCardLayout.height(.large, width: width))
                 }
                 .padding(.vertical, EntitySectionLayout.sectionPad)
                 .transition(.opacity)

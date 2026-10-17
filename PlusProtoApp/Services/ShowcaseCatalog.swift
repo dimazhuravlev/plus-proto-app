@@ -523,7 +523,8 @@ final class ShowcaseCatalog {
     }
 
     /// Студийный альбом с обложкой: синглы, EP, концертники и сборники витрине не годятся.
-    private static func isShowcaseAlbum(_ album: DeezerAlbumBrief) -> Bool {
+    /// Общий с витриной «Для вас» таба Музыки (`MusicHomeCatalog`).
+    nonisolated static func isShowcaseAlbum(_ album: DeezerAlbumBrief) -> Bool {
         guard album.recordType == "album", album.coverXl != nil || album.coverBig != nil else { return false }
         let words = Set(album.title.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted))
         return words.isDisjoint(with: ShowcaseSeeds.albumStopWords)
