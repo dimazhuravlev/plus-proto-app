@@ -178,12 +178,16 @@ struct MusicArtistBlockCard: View {
                 actionBar.open(.music(track))
             }
         } label: {
-            // Поверхность серых кнопок — блюр, заливка и бордер, как у всех secondary
-            // (правка пользователя 2026-10-17: у ▶ блока не было бордера).
+            // Кнопка типа plain (`Size=L • 48px, Type=plain`, «кнопка без фона»): только
+            // фоновый блюр, без заливки и бордера — не secondary (правка пользователя
+            // 2026-10-17, сверено с макетом).
             PlayPauseGlyph(isPlaying: isPlaying, box: Layout.playIcon)
                 .foregroundStyle(Color.fillOne)
                 .frame(width: Layout.playSize, height: Layout.playSize)
-                .secondaryButtonSurface(Circle(), blur: Layout.playBlur)
+                .background {
+                    BackdropBlurView(radius: Layout.playBlur)
+                        .clipShape(Circle())
+                }
                 .contentShape(Circle())
         }
         .buttonStyle(PressScaleButtonStyle())
