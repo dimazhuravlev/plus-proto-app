@@ -74,6 +74,8 @@ struct AppRootView: View {
         // Тап по тосту «добавлено в Моё» открывает «Моё» откуда угодно. Окно тоста окружения
         // корня не видит, поэтому корень отдаёт центру замыкание (идемпотентно: перезапись того же).
         .onAppear {
+            // Конец превью — в очередь живого бара, а не лишнего экземпляра `@State`.
+            actionBar.attachAudio()
             ToastCenter.shared.openCollection = { [navigation, actionBar, keyboard, search] in
                 // 1. Поиск: как тап по затемнению (`SearchLayers`); `dropSuspension` обязателен,
                 // иначе `SearchNavigationSync` вернёт выдачу.
