@@ -20,7 +20,6 @@ private struct MusicTile: Identifiable {
     let image: ArtworkSource?
     let content: MusicTileCard.Content
     var caption: String? = nil
-    var isLiked = false
     var route: EntityRoute? = nil
     var playable: MusicNowPlaying? = nil
     /// Станция «Моей волны» — тап включает волну.
@@ -210,7 +209,6 @@ struct MusicForYouFeed: View {
                         content: tile.content,
                         caption: tile.caption,
                         captionLines: captionLines,
-                        isLiked: tile.isLiked,
                         width: width
                     )
                 }
@@ -325,7 +323,6 @@ struct MusicForYouFeed: View {
                 id: "station-\(station.title)",
                 image: .asset(station.image),
                 content: .station(label: "Моя волна", title: station.title),
-                isLiked: station.isLiked,
                 isVibe: true
             )
         }
@@ -346,10 +343,10 @@ struct MusicForYouFeed: View {
 
 /// Тексты и картинки «Для вас», которых нет в данных, — ровно из макета `68:15807`.
 enum MusicForYouMocks {
+    /// Станция «Моей волны» — без «нравится» в углу (правка пользователя 2026-10-17).
     struct Station {
         let title: String
         let image: String
-        var isLiked = false
     }
 
     static let repeatCounts = [184, 93, 701]
@@ -365,22 +362,22 @@ enum MusicForYouMocks {
 
     static let genres = [
         Station(title: "Трип-хоп", image: "mockStationTripHop"),
-        Station(title: "Focus", image: "mockStationFocus", isLiked: true),
+        Station(title: "Focus", image: "mockStationFocus"),
     ]
     static let favourites = [
         Station(title: "Bosnian Rainbows", image: "mockStationBosnianRainbows"),
         Station(title: "Ride", image: "mockStationRide"),
-        Station(title: "Portishead", image: "mockStationPortishead", isLiked: true),
+        Station(title: "Portishead", image: "mockStationPortishead"),
     ]
     static let moments = [
         Station(title: "Спокойное", image: "mockStationCalm"),
         Station(title: "Сентиментальное", image: "mockStationSentimental"),
-        Station(title: "Грустное", image: "mockStationSad", isLiked: true),
+        Station(title: "Грустное", image: "mockStationSad"),
     ]
     static let activities = [
         Station(title: "Бег", image: "mockStationRun"),
         Station(title: "В\u{00A0}дороге", image: "mockStationRoad"),
-        Station(title: "Тренируюсь", image: "mockStationSad", isLiked: true),
+        Station(title: "Тренируюсь", image: "mockStationSad"),
     ]
 
     /// Юридический текст Яндекс Музыки — из макета; однобуквенные слова — с неразрывным пробелом.

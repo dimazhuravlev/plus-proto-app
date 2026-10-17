@@ -21,8 +21,6 @@ struct MusicTileCard: View {
     /// Строк подписи: у «Героев месяца» имя исполнителя — до двух (правка пользователя
     /// 2026-10-17), у треков — одна.
     var captionLines = 1
-    /// «Нравится» в углу (`icon / love`) — у любимых станций.
-    var isLiked = false
     let width: CGFloat
 
     var body: some View {
@@ -64,16 +62,6 @@ struct MusicTileCard: View {
                 label
                     .padding(.leading, MusicTileLayout.inset)
                     .padding(.bottom, bottomInset)
-            }
-            .overlay(alignment: .topTrailing) {
-                if isLiked {
-                    Image("iconLove")
-                        .renderingMode(.template)
-                        .resizable()
-                        .frame(width: MusicTileLayout.loveIcon, height: MusicTileLayout.loveIcon)
-                        .foregroundStyle(Color.fillOne)
-                        .padding(MusicTileLayout.loveInset)
-                }
             }
             .clipShape(shape)
             .coverBorder(shape)
@@ -145,8 +133,6 @@ enum MusicTileLayout {
     static let artistGap: CGFloat = 2
     static let artistAvatar: CGFloat = 24
     static let artistAvatarGap: CGFloat = 4
-    static let loveIcon: CGFloat = 16
-    static let loveInset: CGFloat = 8
     /// Размытие у низа плитки — backdrop-blur 32 панели Figma, в коде вдвое меньше
     static let shadeBlur: CGFloat = 16
     /// Затемнение низа под подписью — чёрный 15 % → 0 к верху
