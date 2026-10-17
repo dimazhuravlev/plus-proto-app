@@ -55,6 +55,8 @@ struct DebugMenuScreen: View {
         /// Колонка кегля между «−» и «+» — под три цифры, кнопки не ездят
         static let headlineValueWidth: CGFloat = 36
         static let headlineButtonGap: CGFloat = 4
+        /// Сброс кеглей — под островком, на 12 ниже
+        static let resetTop: CGFloat = 12
     }
 
     /// Название раздела видно всегда, подложка (блюр с затемнением) проявляется
@@ -72,7 +74,14 @@ struct DebugMenuScreen: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    title("Вид поисковой выдачи")
+                    title("Настройка заголовков")
+                    headlineIsland
+                        .padding(.horizontal, ProfileLayout.side)
+                    headlineReset
+                        .padding(.top, Layout.resetTop)
+                        .padding(.horizontal, ProfileLayout.side)
+
+                    title("Вид поисковой выдачи", top: Layout.sectionGap)
 
                     optionsIsland
                         .padding(.horizontal, ProfileLayout.side)
@@ -107,18 +116,11 @@ struct DebugMenuScreen: View {
                         accessibility: "Люмен в поле поиска"
                     )
                     .padding(.horizontal, ProfileLayout.side)
-
-                    title("Кегль заголовков", top: Layout.sectionGap)
-                    headlineIsland
-                        .padding(.horizontal, ProfileLayout.side)
                 }
                 .padding(.top, EntityNavBarGeometry.barHeight)
                 .padding(.bottom, ProfileLayout.bottomPadding)
             }
             .scrollIndicators(.hidden)
-            #if DEBUG
-            .defaultScrollAnchor(UserDefaults.standard.bool(forKey: "debugMenu") ? .bottom : nil)
-            #endif
             .trackNavBarScroll(into: $scrollOffset)
         }
         .overlay(alignment: .top) {
@@ -241,20 +243,21 @@ struct DebugMenuScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: Layout.headlineButtonGap) {
                 PlusButton(
-                    "−",
                     type: .secondary,
                     size: .s,
                     state: size <= HeadlineSizes.range.lowerBound ? .disabled : .normal,
                     accessibilityTitle: "Уменьшить \(style.title)"
                 ) {
                     sizes.adjust(style, by: -HeadlineSizes.step)
+                } icon: {
+                    MinusGlyph()
                 }
                 Text("\(Int(size))")
                     .plusText(.textM, .semibold)
                     .foregroundStyle(Color.fillOne)
                     .frame(width: Layout.headlineValueWidth)
                 PlusButton(
-                    "+",
+                    icon: "iconAdd",
                     type: .secondary,
                     size: .s,
                     state: size >= HeadlineSizes.range.upperBound ? .disabled : .normal,
@@ -268,6 +271,18 @@ struct DebugMenuScreen: View {
         .padding(.vertical, ProfileLayout.cellVertical)
         .accessibilityElement(children: .contain)
         .accessibilityValue("\(Int(size))")
+    }
+
+    /// Все кегли — обратно к переменным ДС; уже на них — кнопка выключена.
+    private var headlineReset: some View {
+        PlusButton(
+            "Сбросить",
+            type: .secondary,
+            size: .s,
+            state: HeadlineSizes.shared.isDefault ? .disabled : .normal
+        ) {
+            HeadlineSizes.shared.reset()
+        }
     }
 
     /// Островок выбора — как ячейки профиля (`ProfileLayout`): строки с разделителями,
@@ -317,5 +332,18 @@ struct DebugMenuScreen: View {
         }
         .buttonStyle(CellHighlightButtonStyle())
         .accessibilityAddTraits(style == searchStyle ? .isSelected : [])
+    }
+}
+
+/// «−» кнопок кегля: в ДС «🦄 Графика» минуса нет — это горизонтальная черта `iconAdd`
+/// (на холсте 24 — 18.4 × 2.4 по центру), растянутая на бокс иконки кнопки.
+private struct MinusGlyph: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let side = proxy.size.width
+            Rectangle()
+                .frame(width: side * 18.4 / 24, height: side * 2.4 / 24)
+                .frame(width: side, height: side)
+        }
     }
 }

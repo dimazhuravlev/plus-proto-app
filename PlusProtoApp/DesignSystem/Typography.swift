@@ -237,10 +237,25 @@ final class HeadlineSizes {
         values[style] ?? style.defaultSize
     }
 
+    /// Все кегли — переменные ДС.
+    var isDefault: Bool {
+        PlusHeadline.allCases.allSatisfy { size(of: $0) == $0.defaultSize }
+    }
+
     func adjust(_ style: PlusHeadline, by delta: CGFloat) {
         let size = min(max(size(of: style) + delta, Self.range.lowerBound), Self.range.upperBound)
         guard size != values[style] else { return }
         values[style] = size
+        persist()
+    }
+
+    /// Обратно к переменным ДС.
+    func reset() {
+        values = Dictionary(uniqueKeysWithValues: PlusHeadline.allCases.map { ($0, $0.defaultSize) })
+        persist()
+    }
+
+    private func persist() {
         let changed = values.reduce(into: [String: Double]()) { stored, entry in
             if entry.value != entry.key.defaultSize { stored[entry.key.rawValue] = Double(entry.value) }
         }

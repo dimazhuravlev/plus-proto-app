@@ -131,7 +131,7 @@ enum ProfileLayout {
 /// с аватарки в навигации витрин, снизу вверх, поверх всего. Сверху — свечение Плюса
 /// и герой: баллы слева, аватар с карандашом, имя; аватар, карандаш и баллы левитируют
 /// (`ProfileLevitation`). Ниже — виджеты семейной группы, качества видео и «Скачайте
-/// фильм», островки ячеек и служебный островок «Дебаг меню». Данные — из макета, имя
+/// фильм», служебный островок «Дебаг меню» и островки ячеек. Данные — из макета, имя
 /// и аватар — общие на приложение (`ProfileMock`).
 struct ProfileScreen: View {
     @Environment(\.dismiss) private var dismiss
@@ -150,7 +150,7 @@ struct ProfileScreen: View {
         }
         #if DEBUG
         // `-debugMenu 1` (с `-debugProfile 1`) — через 1 с открыть дебаг-меню, как тап
-        // по ячейке; меню встаёт прокрученным к концу — к последним разделам.
+        // по ячейке.
         .task {
             guard UserDefaults.standard.bool(forKey: "debugMenu") else { return }
             try? await Task.sleep(for: .seconds(1))
@@ -233,10 +233,17 @@ struct ProfileScreen: View {
     // MARK: Ячейки
 
     /// Островки макета: подписка и ТВ; настройки, поддержка, о приложении, выход.
-    /// Последним — служебный «Дебаг меню», в макете его нет. Переход есть только
+    /// Первым — служебный «Дебаг меню», в макете его нет. Переход есть только
     /// у дебаг-меню, остальные строки в прототипе просто откликаются.
     private var cells: some View {
         VStack(spacing: ProfileLayout.islandGap) {
+            // Отдельным островком первым, над «Подпиской» (правки пользователя 2026-10-13
+            // и 2026-10-17). Глиф системный: в ДС «🦄 Графика» отладочной иконки нет.
+            ProfileIsland(rows: [
+                ProfileCell(icon: "ladybug", title: "Дебаг меню", isSymbol: true) {
+                    isDebugMenuShown = true
+                },
+            ])
             ProfileIsland(rows: [
                 ProfileCell(icon: "iconSubscriptions", title: "Подписка",
                             subtitle: "Активна до \(ProfileMock.subscriptionEnd)"),
@@ -247,13 +254,6 @@ struct ProfileScreen: View {
                 ProfileCell(icon: "iconComment", title: "Чат с поддержкой"),
                 ProfileCell(icon: "iconInfo", title: "О приложении"),
                 ProfileCell(icon: "iconExit", title: "Выйти"),
-            ])
-            // Отдельным островком в конце (задача пользователя 2026-10-13). Глиф
-            // системный: в ДС «🦄 Графика» отладочной иконки нет.
-            ProfileIsland(rows: [
-                ProfileCell(icon: "ladybug", title: "Дебаг меню", isSymbol: true) {
-                    isDebugMenuShown = true
-                },
             ])
         }
         .padding(.horizontal, ProfileLayout.side)
