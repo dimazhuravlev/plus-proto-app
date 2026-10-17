@@ -994,7 +994,7 @@ private struct PromoContinueButton: View {
     }
 
     var body: some View {
-        PlusButton("Продолжить", icon: icon, type: .secondary, size: .m, action: action)
+        PlusButton("Продолжить", icon: icon, type: .secondary, size: .m, haptic: .inAction, action: action)
     }
 }
 

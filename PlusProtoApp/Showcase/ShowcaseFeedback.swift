@@ -169,7 +169,7 @@ struct ShowcaseFeedbackPair: View {
 
     var body: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
-            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Показать другое", action: dismiss)
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Показать другое", haptic: .inAction, action: dismiss)
             doneButton
         }
         .modifier(ShowcaseHideEffect(
@@ -188,7 +188,7 @@ struct ShowcaseFeedbackPair: View {
     /// (задача пользователя): это отметка, а не переход.
     private var doneButton: some View {
         let isDone = state?.isDone ?? false
-        return PlusButton(icon: "iconDone", type: isDone ? .white : .secondary, size: .m, accessibilityTitle: "То, что надо", action: done)
+        return PlusButton(icon: "iconDone", type: isDone ? .white : .secondary, size: .m, accessibilityTitle: "То, что надо", haptic: .inAction, action: done)
             .transaction { $0.animation = nil }
             .accessibilityAddTraits(isDone ? .isSelected : [])
     }

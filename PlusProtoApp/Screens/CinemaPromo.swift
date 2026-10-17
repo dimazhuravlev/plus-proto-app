@@ -328,7 +328,7 @@ private struct CinemaPromoSlide: View {
 
     private var buttons: some View {
         HStack(spacing: CinemaPromoLayout.buttonGap) {
-            PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: CinemaPromoLayout.buttonSize, action: watch)
+            PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: CinemaPromoLayout.buttonSize, haptic: .inAction, action: watch)
 
             // «Позже» — как на карточке тайтла: закладка в «Любимом» коллекции «Моё».
             let isSaved = collectionItem.map { collection.isFavorite($0.id) } ?? false
@@ -338,7 +338,6 @@ private struct CinemaPromoSlide: View {
                 accessibilityTitle: isSaved ? "Убрать из «Позже»" : "Буду смотреть"
             ) {
                 guard let collectionItem else { return }
-                PlayerHaptics.tap()
                 collection.toggleFavorite(collectionItem)
             } icon: {
                 BookmarkGlyph(isSaved: isSaved, box: CinemaPromoLayout.buttonSize.iconBox)

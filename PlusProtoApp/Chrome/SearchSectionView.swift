@@ -498,7 +498,6 @@ struct SearchListRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             PlusButton(type: .plain, size: .m, accessibilityTitle: isLiked ? "Убрать из избранного" : "В избранное") {
-                PlayerHaptics.tap()
                 onLike()
             } icon: {
                 // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).
@@ -724,7 +723,6 @@ private struct MusicWizardCard: View {
             .modifier(SearchResultsView.SearchZoomSource(route: artistRoute, zoom: zoom))
 
             PlusButton(type: .plain, size: .m, accessibilityTitle: isLiked ? "Убрать из избранного" : "В избранное") {
-                PlayerHaptics.tap()
                 onLike()
             } icon: {
                 // Общий рисунок лайка — кросс-поп, как в мини-плеере (2026-10-04).

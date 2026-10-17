@@ -1230,7 +1230,12 @@ private struct SearchBackButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        // Кастомная (круг 60 — высота бара, вне шкалы ДС), но хаптика и просадка — как
+        // у кнопок ДС (правка пользователя 2026-10-17).
+        Button {
+            PlayerHaptics.tap()
+            action()
+        } label: {
             // Тот же глиф, что у шевронов, — без отзеркаливания он и есть «назад».
             // Белый 100 % (правка пользователя 2026-10-05).
             Image("iconDropleft")
@@ -1627,7 +1632,7 @@ struct MiniPlayerPill: View {
 
     private var playPauseButton: some View {
         // `PlusButton` plain L; круг 48 — под отрицательным отступом, раскладка держит глиф 24.
-        PlusButton(type: .plain, size: .l, accessibilityTitle: isPlaying ? "Пауза" : "Играть") {
+        PlusButton(type: .plain, size: .l, accessibilityTitle: isPlaying ? "Пауза" : "Играть", haptic: .inAction) {
             UIImpactFeedbackGenerator(style: .light)
                 .impactOccurred(intensity: ActionBarMotion.transportHapticIntensity)
             // Угол фиксируем в том же апдейте, что и смену флага, иначе кадр успеет
@@ -1645,7 +1650,6 @@ struct MiniPlayerPill: View {
     /// был акцентным контуром); смена — тем же кросс-попом, что у play/pause.
     private var likeButton: some View {
         PlusButton(type: .plain, size: .l, accessibilityTitle: isLiked ? "Убрать из любимых" : "Нравится") {
-            PlayerHaptics.tap()
             onToggleLike()
         } icon: {
             // Общий рисунок лайка (`LikeGlyph`) — эталон для всех сердец проекта.

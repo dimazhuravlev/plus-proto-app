@@ -226,10 +226,7 @@ struct MusicPlayerView: View {
 
     private func barButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
         // `PlusButton` plain L: круг 48 под отрицательным отступом — раскладка держит глиф 24.
-        PlusButton(icon: icon, type: .plain, size: .l, accessibilityTitle: title) {
-            PlayerHaptics.tap()
-            action()
-        }
+        PlusButton(icon: icon, type: .plain, size: .l, accessibilityTitle: title, action: action)
         .padding(-MusicPlayerLayout.plainHitInset)
     }
 
@@ -342,7 +339,7 @@ struct MusicPlayerView: View {
     /// кнопок; в макете их не было). Текст песни и меню трека в прототипе не спроектированы —
     /// кнопки только откликаются.
     private func rowButton(icon: String, title: String) -> some View {
-        PlusButton(icon: icon, type: .secondary, size: .m, accessibilityTitle: title, action: PlayerHaptics.tap)
+        PlusButton(icon: icon, type: .secondary, size: .m, accessibilityTitle: title) {}
     }
 
     // MARK: Таймлайн
@@ -559,7 +556,6 @@ struct MusicPlayerView: View {
     private func queueToggle(icon: String, title: String, isOn: Binding<Bool>) -> some View {
         // `PlusButton` plain L, круг под отрицательным отступом; точка — под глифом, в круге.
         PlusButton(type: .plain, size: .l, accessibilityTitle: title) {
-            PlayerHaptics.tap()
             isOn.wrappedValue.toggle()
         } icon: {
             PlusButtonAssetIcon(name: icon)

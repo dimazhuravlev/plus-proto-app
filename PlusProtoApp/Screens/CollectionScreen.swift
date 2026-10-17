@@ -691,6 +691,7 @@ private struct CollectionTracksBlock: View {
                 size: CollectionLayout.playButton,
                 state: reorder.isReordering ? .disabled : .normal,
                 accessibilityTitle: isPlayingShelf ? "Пауза" : "Слушать",
+                haptic: .inAction,
                 action: togglePlayback
             ) {
                 PlayPauseGlyph(isPlaying: isPlayingShelf, box: CollectionLayout.playButton.iconBox)
@@ -791,6 +792,8 @@ private struct CollectionTrackRow: View {
                         TrackMoreLabel()
                             .pressScale(PressMotion.buttonScale)
                     }
+                    // Хаптика — как у кнопок ДС: меню открывается системой, тап ловим рядом.
+                    .simultaneousGesture(TapGesture().onEnded { PlayerHaptics.tap() })
                     .padding(-TrackMoreLabel.hitInset)
                     .accessibilityLabel("Ещё")
                 }
@@ -1419,6 +1422,7 @@ private struct CollectionReorderButton: View {
             size: Self.size,
             state: isEnabled ? .normal : .disabled,
             accessibilityTitle: isReordering ? "Готово" : "Изменить порядок",
+            haptic: .inAction,
             action: action
         ) {
             ZStack {

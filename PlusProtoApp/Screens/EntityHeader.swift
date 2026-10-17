@@ -280,7 +280,6 @@ struct EntityTitleBlock<Person: View, Primary: View>: View {
                                 DownloadGlassButton(item: collectionItem)
                             } else if action == .share {
                                 PlusButton(icon: action.icon, type: .secondary, size: .m, accessibilityTitle: action.title) {
-                                    PlayerHaptics.tap()
                                     onShare?()
                                 }
                             } else {
@@ -323,7 +322,8 @@ struct EntityPrimaryButton: View {
     }
 
     var body: some View {
-        PlusButton(title, type: .accent, size: .m, action: action) {
+        // Хаптика старта контента (medium) — у действия экрана.
+        PlusButton(title, type: .accent, size: .m, haptic: .inAction, action: action) {
             switch glyph {
             case .asset(let name):
                 PlusButtonAssetIcon(name: name)

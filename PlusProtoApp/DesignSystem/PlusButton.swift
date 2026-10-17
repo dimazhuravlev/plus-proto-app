@@ -126,6 +126,17 @@ enum PlusButtonIconPlacement {
     case leading, trailing
 }
 
+/// Хаптика нажатия — у каждой кнопки (правка пользователя 2026-10-17).
+enum PlusButtonHaptic {
+    /// Лёгкий тап (`PlayerHaptics.tap`) — по умолчанию
+    case tap
+    /// Хаптику играет само действие: своя у старта контента (medium), ✓ (success), ✕ (medium),
+    /// или она зависит от исхода — действие может не состояться
+    case inAction
+    /// Без хаптики — «назад» навбара (правка пользователя 2026-10-17)
+    case none
+}
+
 // MARK: - Кнопка
 
 /// Кнопка ДС — одна на всё приложение: тип, размер, состояние, текст и/или иконка слева
@@ -135,13 +146,21 @@ enum PlusButtonIconPlacement {
 struct PlusButton<Icon: View, Title: View>: View {
     let label: PlusButtonLabel<Icon, Title>
     let accessibilityTitle: String?
+    var haptic: PlusButtonHaptic = .tap
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) { label }
-            .buttonStyle(PressScaleButtonStyle())
-            .disabled(label.state == .disabled || label.state.isLoading)
-            .accessibilityLabel(accessibilityTitle ?? "")
+        Button {
+            if haptic == .tap { PlayerHaptics.tap() }
+            action()
+        } label: {
+            label
+        }
+        // Круглые проседают как все кнопки, с текстом — меньше: капсула шире, и та же доля
+        // читалась бы прыжком (правка пользователя 2026-10-17).
+        .buttonStyle(PressScaleButtonStyle(pressedScale: label.isIconOnly ? PressMotion.buttonScale : PressMotion.textButtonScale))
+        .disabled(label.state == .disabled || label.state.isLoading)
+        .accessibilityLabel(accessibilityTitle ?? "")
     }
 }
 
@@ -156,6 +175,7 @@ extension PlusButton where Title == Text {
         fillsWidth: Bool = false,
         blursBackdrop: Bool = false,
         accessibilityTitle: String? = nil,
+        haptic: PlusButtonHaptic = .tap,
         action: @escaping () -> Void,
         @ViewBuilder icon: () -> Icon
     ) {
@@ -170,6 +190,7 @@ extension PlusButton where Title == Text {
             icon: icon()
         )
         self.accessibilityTitle = accessibilityTitle ?? title
+        self.haptic = haptic
         self.action = action
     }
 }
@@ -186,6 +207,7 @@ extension PlusButton where Icon == PlusButtonAssetIcon, Title == Text {
         fillsWidth: Bool = false,
         blursBackdrop: Bool = false,
         accessibilityTitle: String? = nil,
+        haptic: PlusButtonHaptic = .tap,
         action: @escaping () -> Void
     ) {
         self.init(
@@ -197,6 +219,7 @@ extension PlusButton where Icon == PlusButtonAssetIcon, Title == Text {
             fillsWidth: fillsWidth,
             blursBackdrop: blursBackdrop,
             accessibilityTitle: accessibilityTitle,
+            haptic: haptic,
             action: action
         ) {
             PlusButtonAssetIcon(name: icon)
@@ -213,6 +236,7 @@ extension PlusButton where Icon == EmptyView, Title == Text {
         state: PlusButtonState = .normal,
         fillsWidth: Bool = false,
         accessibilityTitle: String? = nil,
+        haptic: PlusButtonHaptic = .tap,
         action: @escaping () -> Void
     ) {
         self.init(
@@ -222,6 +246,7 @@ extension PlusButton where Icon == EmptyView, Title == Text {
             state: state,
             fillsWidth: fillsWidth,
             accessibilityTitle: accessibilityTitle,
+            haptic: haptic,
             action: action
         ) {
             EmptyView()
@@ -231,14 +256,18 @@ extension PlusButton where Icon == EmptyView, Title == Text {
 
 extension PlusButton where Icon == EmptyView {
     /// Своя подпись — набирается стилем кнопки (у «Получить [Плюс] 100» знак между словами).
+    /// Подпись стоит перед `action`: хвостовое замыкание здесь — всегда действие, а не
+    /// подпись (иначе вызов с `action:` и глифом хвостом уходил сюда, и круг становился
+    /// капсулой).
     init(
         type: PlusButtonType,
         size: PlusButtonSize,
         state: PlusButtonState = .normal,
         fillsWidth: Bool = false,
         accessibilityTitle: String,
-        action: @escaping () -> Void,
-        @ViewBuilder title: () -> Title
+        haptic: PlusButtonHaptic = .tap,
+        @ViewBuilder title: () -> Title,
+        action: @escaping () -> Void
     ) {
         self.label = PlusButtonLabel(
             type: type,
@@ -251,6 +280,7 @@ extension PlusButton where Icon == EmptyView {
             icon: EmptyView()
         )
         self.accessibilityTitle = accessibilityTitle
+        self.haptic = haptic
         self.action = action
     }
 }
@@ -281,7 +311,7 @@ struct PlusButtonLabel<Icon: View, Title: View>: View {
     var blursBackdrop = false
     let icon: Icon
 
-    private var isIconOnly: Bool { title == nil }
+    var isIconOnly: Bool { title == nil }
     private var hasIcon: Bool { Icon.self != EmptyView.self }
 
     private var foreground: Color {

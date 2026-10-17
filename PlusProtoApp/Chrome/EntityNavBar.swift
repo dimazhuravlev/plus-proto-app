@@ -135,7 +135,8 @@ struct EntityNavBar<Trailing: View>: View {
     ///
     /// Кнопка — `PlusButton` chrome M: стекло хрома, как у пилюль action bar.
     private var backButton: some View {
-        PlusButton(icon: "iconDropleft", type: .chrome, size: .m, accessibilityTitle: "Назад") {
+        // Без хаптики — как системное «назад» (правка пользователя 2026-10-17).
+        PlusButton(icon: "iconDropleft", type: .chrome, size: .m, accessibilityTitle: "Назад", haptic: .none) {
             if let onBack { onBack() } else { dismiss() }
         }
     }

@@ -252,6 +252,8 @@ private struct CollectionListRow: View {
                     TrackMoreLabel()
                         .pressScale(PressMotion.buttonScale)
                 }
+                // Хаптика — как у кнопок ДС: меню открывается системой, тап ловим рядом.
+                .simultaneousGesture(TapGesture().onEnded { PlayerHaptics.tap() })
                 .padding(-TrackMoreLabel.hitInset)
                 .accessibilityLabel("Ещё")
             }

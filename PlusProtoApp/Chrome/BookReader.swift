@@ -558,10 +558,7 @@ private struct ReaderCircleButton: View {
 
     var body: some View {
         // Стекло хрома (правка пользователя 2026-10-10): кнопки читаются над светлой страницей.
-        PlusButton(type: .chrome, size: .m, accessibilityTitle: title) {
-            PlayerHaptics.tap()
-            action()
-        } icon: {
+        PlusButton(type: .chrome, size: .m, accessibilityTitle: title, action: action) {
             ZStack {
                 PlusButtonAssetIcon(name: icon)
                     .opacity(isActive ? 0 : 1)
@@ -708,7 +705,7 @@ private struct ReaderBottomBlock: View {
     }
 
     private func control(_ icon: String, title: String) -> some View {
-        PlusButton(icon: icon, type: .plain, size: .l, accessibilityTitle: title, action: PlayerHaptics.tap)
+        PlusButton(icon: icon, type: .plain, size: .l, accessibilityTitle: title) {}
     }
 }
 

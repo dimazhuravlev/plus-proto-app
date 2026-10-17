@@ -558,7 +558,7 @@ private struct ProfileFamilyWidget: View {
             .frame(width: textColumn, alignment: .leading)
             .padding(padding)
 
-            PlusButton("Добавить", type: .secondary, size: .s, action: PlayerHaptics.tap)
+            PlusButton("Добавить", type: .secondary, size: .s) {}
                 .padding(.leading, padding)
                 .padding(.top, padding + rowHeight)
 
@@ -626,7 +626,7 @@ private struct ProfileVideoQualityWidget: View {
                 .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillSubtitle)
         } footer: {
-            PlusButton("Подключить ТВ", type: .secondary, size: .s, action: PlayerHaptics.tap)
+            PlusButton("Подключить ТВ", type: .secondary, size: .s) {}
                 .padding(ProfileLayout.widgetPadding)
         }
     }
@@ -666,13 +666,13 @@ private struct ProfileDownloadWidget: View {
                 .padding(.trailing, ProfileLayout.progressTrailing)
                 .padding(.bottom, ProfileLayout.progressBottom)
 
-                PlusButton(type: .secondary, size: .s, accessibilityTitle: "Получить 100 баллов", action: PlayerHaptics.tap, title: {
+                PlusButton(type: .secondary, size: .s, accessibilityTitle: "Получить 100 баллов") {
                     HStack(spacing: ProfileLayout.textGap) {
                         Text("Получить")
                         ProfilePlusBadge()
                         Text("100")
                     }
-                })
+                } action: {}
                 .padding(ProfileLayout.widgetPadding)
             }
         }

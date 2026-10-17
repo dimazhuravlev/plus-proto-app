@@ -403,7 +403,6 @@ struct MovieScreen: View {
     private var headerActions: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
             PlusButton(icon: "iconShare", type: .chrome, size: .m, accessibilityTitle: "Поделиться") {
-                PlayerHaptics.tap()
                 ShareState.shared.present(.movie(
                     title: details.title,
                     year: details.year,
@@ -766,7 +765,7 @@ private struct MovieMainButtons: View {
     }
 
     private var playButton: some View {
-        PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: MovieLayout.buttonSize, fillsWidth: true, action: onPlay)
+        PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: MovieLayout.buttonSize, fillsWidth: true, haptic: .inAction, action: onPlay)
     }
 
     /// «Позже» — закладка в «Любимом» коллекции: в коллекции — залитая.
@@ -776,6 +775,7 @@ private struct MovieMainButtons: View {
             type: .secondary,
             size: MovieLayout.buttonSize,
             accessibilityTitle: isSaved ? "Убрать из «Позже»" : "Позже",
+            haptic: .inAction,
             action: toggleLater
         ) {
             BookmarkGlyph(isSaved: isSaved, box: MovieLayout.buttonSize.iconBox)
@@ -813,7 +813,6 @@ private struct MovieMainButtons: View {
             accessibilityTitle: isDownloaded ? "Удалить из скачанного" : "Скачать"
         ) {
             guard let collectionItem else { return }
-            PlayerHaptics.tap()
             collection.toggleDownload(collectionItem)
         } icon: {
             DownloadGlyph(isDownloaded: isDownloaded, box: MovieLayout.buttonSize.iconBox)

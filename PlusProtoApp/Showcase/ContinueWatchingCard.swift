@@ -105,7 +105,7 @@ struct ContinueWatchingCard: View {
                 )
                 .allowsHitTesting(false)
 
-            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Скрыть", action: dismiss)
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Скрыть", haptic: .inAction, action: dismiss)
                 .offset(
                     x: WatchingGeometry.dismissOrigin.x * ShowcaseLayout.scale,
                     y: WatchingGeometry.dismissOrigin.y * ShowcaseLayout.scale

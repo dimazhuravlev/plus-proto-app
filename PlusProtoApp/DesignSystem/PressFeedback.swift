@@ -13,6 +13,8 @@ import UIKit.UIGestureRecognizerSubclass
 enum PressMotion {
     /// Кнопки — как в MusicPlayer (BottomBarV2)
     static let buttonScale: CGFloat = 0.92
+    /// Кнопки с текстом — капсула шире круга, проседает меньше (правка пользователя 2026-10-17)
+    static let textButtonScale: CGFloat = 0.95
     /// Карточки: площадь большая, и просадка кнопок (0.92) читалась бы прыжком.
     static let cardScale: CGFloat = 0.97
     /// Строки во всю ширину экрана — ещё мягче: у строки в 402 pt и 0.97 — это 12 pt.

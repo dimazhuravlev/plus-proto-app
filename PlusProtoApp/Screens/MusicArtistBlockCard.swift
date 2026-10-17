@@ -173,7 +173,8 @@ struct MusicArtistBlockCard: View {
             type: .plain,
             size: .l,
             blursBackdrop: true,
-            accessibilityTitle: isPlaying ? "Пауза" : "Слушать похожее на \(block.name)"
+            accessibilityTitle: isPlaying ? "Пауза" : "Слушать похожее на \(block.name)",
+            haptic: .inAction
         ) {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)

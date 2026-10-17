@@ -321,7 +321,7 @@ private struct BooksPromoCarousel: View {
     }
 
     private var readButton: some View {
-        PlusButton("Читать книгу", type: .accent, size: BooksPromoLayout.buttonSize, action: read)
+        PlusButton("Читать книгу", type: .accent, size: BooksPromoLayout.buttonSize, haptic: .inAction, action: read)
     }
 
     private func read() {

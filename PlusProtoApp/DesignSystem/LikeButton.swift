@@ -79,7 +79,6 @@ struct LikeGlassButton: View {
             size: .m,
             accessibilityTitle: isLiked ? "Убрать из любимых" : "Нравится"
         ) {
-            PlayerHaptics.tap()
             if let item {
                 collection.toggleFavorite(item)
             } else {
@@ -163,7 +162,6 @@ struct DownloadGlassButton: View {
             size: .m,
             accessibilityTitle: isDownloaded ? "Удалить из скачанного" : "Скачать"
         ) {
-            PlayerHaptics.tap()
             collection.toggleDownload(item)
         } icon: {
             DownloadGlyph(isDownloaded: isDownloaded, box: PlusButtonSize.m.iconBox)

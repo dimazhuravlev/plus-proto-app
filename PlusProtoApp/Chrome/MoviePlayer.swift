@@ -376,15 +376,12 @@ struct MoviePlayerView: View {
 
     private var topBar: some View {
         HStack(alignment: .top, spacing: 0) {
-            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Закрыть") {
-                PlayerHaptics.tap()
-                close()
-            }
+            PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Закрыть", action: close)
             Spacer(minLength: 0)
             HStack(spacing: MoviePlayerLayout.buttonGap) {
-                PlusButton(icon: "iconPip", type: .secondary, size: .m, accessibilityTitle: "Картинка в картинке", action: press)
-                PlusButton(icon: "iconCast", type: .secondary, size: .m, accessibilityTitle: "Транслировать на экран", action: press)
-                PlusButton(icon: "iconMore", type: .secondary, size: .m, accessibilityTitle: "Ещё", action: press)
+                PlusButton(icon: "iconPip", type: .secondary, size: .m, accessibilityTitle: "Картинка в картинке", haptic: .inAction, action: press)
+                PlusButton(icon: "iconCast", type: .secondary, size: .m, accessibilityTitle: "Транслировать на экран", haptic: .inAction, action: press)
+                PlusButton(icon: "iconMore", type: .secondary, size: .m, accessibilityTitle: "Ещё", haptic: .inAction, action: press)
             }
         }
         // Название — по центру полосы, а не между группами кнопок: группы разной
@@ -452,9 +449,9 @@ struct MoviePlayerView: View {
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: MoviePlayerLayout.buttonGap) {
-                    PlusButton(icon: "iconAspect", type: .secondary, size: .m, accessibilityTitle: fillsFrame ? "Вписать кадр" : "Заполнить экран", action: toggleFill)
-                    PlusButton(icon: "iconRotate", type: .secondary, size: .m, accessibilityTitle: "Повернуть экран", action: press)
-                    PlusButton(icon: "iconNext", type: .secondary, size: .m, accessibilityTitle: "Дальше", action: press)
+                    PlusButton(icon: "iconAspect", type: .secondary, size: .m, accessibilityTitle: fillsFrame ? "Вписать кадр" : "Заполнить экран", haptic: .inAction, action: toggleFill)
+                    PlusButton(icon: "iconRotate", type: .secondary, size: .m, accessibilityTitle: "Повернуть экран", haptic: .inAction, action: press)
+                    PlusButton(icon: "iconNext", type: .secondary, size: .m, accessibilityTitle: "Дальше", haptic: .inAction, action: press)
                 }
             }
             .padding(.top, MoviePlayerLayout.trackToButtons)
@@ -533,7 +530,7 @@ struct MoviePlayerView: View {
     }
 
     private func pill(icon: String, title: String) -> some View {
-        PlusButton(title, icon: icon, type: .secondary, size: .m, action: press)
+        PlusButton(title, icon: icon, type: .secondary, size: .m, haptic: .inAction, action: press)
     }
 
     // MARK: Действия
@@ -600,10 +597,7 @@ private struct TransportButton: View {
     let action: () -> Void
 
     var body: some View {
-        PlusButton(icon: icon, type: .secondary, size: .xl, accessibilityTitle: title) {
-            PlayerHaptics.tap()
-            action()
-        }
+        PlusButton(icon: icon, type: .secondary, size: .xl, accessibilityTitle: title, action: action)
     }
 }
 
@@ -612,10 +606,7 @@ private struct PlayPauseButton: View {
     let action: () -> Void
 
     var body: some View {
-        PlusButton(type: .secondary, size: .xl, accessibilityTitle: isPlaying ? "Пауза" : "Смотреть") {
-            PlayerHaptics.tap()
-            action()
-        } icon: {
+        PlusButton(type: .secondary, size: .xl, accessibilityTitle: isPlaying ? "Пауза" : "Смотреть", action: action) {
             // Общая смена play/pause — та же, что у мини-плеера и карточек.
             PlayPauseGlyph(isPlaying: isPlaying, box: PlusButtonSize.xl.iconBox)
         }
