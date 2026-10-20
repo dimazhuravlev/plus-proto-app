@@ -16,7 +16,10 @@ concurrency:
 jobs:
   build:
     name: Xcode 26.3
-    runs-on: macos-26
+    # macos-15, а не macos-26: на образе 26 у GitHub нехватка arm64-раннеров — 2026-10-20
+    # задачу не взял ни один раннер за 15 минут («not acquired by Runner»), и PR
+    # повис. Xcode 26.3 есть и здесь, а собирать под iOS 26 SDK хост 15 не мешает.
+    runs-on: macos-15
     timeout-minutes: 30
 
     steps:
