@@ -44,7 +44,7 @@ actor KinopoiskService {
     /// в 250 фильмов. Это один запрос в неделю, трафик здесь дешевле квоты.
     static let movieFields = [
         "id", "name", "alternativeName", "year", "description", "shortDescription",
-        "slogan", "movieLength", "isSeries", "ageRating", "ratingMpaa",
+        "slogan", "movieLength", "isSeries", "seriesLength", "ageRating", "ratingMpaa",
         "genres", "countries", "rating", "votes", "top250",
         "poster", "backdrop", "logo", "videos", "persons", "similarMovies"
     ]
@@ -214,6 +214,28 @@ actor KinopoiskService {
             ]
         )
         return response.docs
+    }
+
+    /// Сезоны сериала со списком серий — один запрос на сериал (`SeriesCatalog` кладёт
+    /// ответ на диск и больше его не спрашивает).
+    func seasons(movieID: Int) async throws -> [KinopoiskSeason] {
+        let response: KinopoiskListResponse<KinopoiskSeason> = try await fetch(
+            path: "/v1.4/season",
+            query: [
+                URLQueryItem(name: "movieId", value: "\(movieID)"),
+                URLQueryItem(name: "page", value: "1"),
+                URLQueryItem(name: "limit", value: "50")
+            ]
+        )
+        return response.docs
+    }
+
+    /// Длина серии, минуты, — у сериалов из пула, которым её не запрашивали.
+    func seriesLength(id: Int) async throws -> Int? {
+        var query = [URLQueryItem(name: "id", value: "\(id)"), URLQueryItem(name: "limit", value: "1")]
+        query.append(contentsOf: Self.selectFields(["id", "seriesLength"]))
+        let response: KinopoiskListResponse<KinopoiskMovie> = try await fetch(path: "/v1.4/movie", query: query)
+        return response.docs.first?.seriesLength
     }
 
     /// Остаток суточной квоты. Сам этот запрос квоту не тратит.

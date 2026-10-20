@@ -1,10 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// Числа коллекции «Моё» — макет `2351:17327`. Кадр макета 375, карточки и поля
-/// перенесены как есть; на холсте 402 — четыре целых карточки и торчащий край пятой 10.
-/// На другой ширине целых по-прежнему четыре и край тот же (`CarouselFit`): растёт
-/// карточка, а с ней — обложки и высоты лент (правило 4 CLAUDE.md).
+/// Числа коллекции «Моё» — макет `2837:33529` (2026-10-19; прежде `2351:17327`). Кадр
+/// макета 375: четыре целые карточки 76 и торчащий край пятой 24 (правка пользователя
+/// 2026-10-19). На другой ширине целых по-прежнему четыре и край тот же (`CarouselFit`):
+/// растёт карточка, а с ней — обложки и высоты лент (правило 4 CLAUDE.md).
 enum CollectionLayout {
     /// Лента — сразу под навигацией: контент на y 101 при высоте `top` 100
     static let contentTop: CGFloat = ServiceTopNavLayout.rowHeight + 1
@@ -15,38 +15,56 @@ enum CollectionLayout {
     static let sectionGap: CGFloat = 0
     static let side: CGFloat = 16
     static let cardGap: CGFloat = 8
+    /// Секция — поля 8 сверху и снизу (`carousel / Music / xsmall cards`), шапка
+    /// 52 = 16 + 24 + 12: строка заголовка — Headline S при 100 %
+    static let sectionPad: CGFloat = 8
+    static var headerLine: CGFloat { PlusHeadline.s.lineHeight }
     /// Подпись — 6 под обложкой, Text S
     static let captionGap: CGFloat = 6
     static var captionLine: CGFloat { PlusTextSize.textS.lineHeight }
-    /// Подпись под кругом исполнителя — с полем 8 справа, как в компоненте макета
-    static let artistCaptionTrailing: CGFloat = 8
+    /// Подпись под альбомом — с полем 8 справа (`card / text` макета); у исполнителя — без
+    static let albumCaptionTrailing: CGFloat = 8
 
-    /// Карточки на 402 — 86: постер 2:3 (86 × 129), квадрат альбома и плейлиста, круг
-    /// исполнителя. Целых — 4, торчащий край следующей — 10 (инвариант на любой ширине).
-    static let carousel = CarouselFit(designCard: 86, whole: 4, side: side, gap: cardGap)
+    /// Карточки на 375 — 76: постер 2:3 (76 × 114), квадрат альбома и плейлиста, круг
+    /// исполнителя. Целых — 4, торчащий край пятой — 24 (инвариант на любой ширине).
+    static let peek: CGFloat = 24
+    static let carousel = CarouselFit(
+        designCard: (PlusMetrics.designWidth - side - peek - 4 * cardGap) / 4,
+        whole: 4,
+        side: side,
+        gap: cardGap
+    )
     @MainActor static var cardWidth: CGFloat { carousel.cardWidth }
     @MainActor static var posterHeight: CGFloat { cardWidth * 3 / 2 }
     /// Радиус — токен карточки, от ширины не зависит
     static let cardRadius: CGFloat = 8
-    /// Книга — та же проекция, что карточка выдачи: обложка 128 на 402 (`book card small`),
-    /// на другой ширине — тем же масштабом, что карточка.
+    /// Книга — та же проекция, что карточка выдачи (`book card small`): кадр книги —
+    /// обложка и выступ страниц — ровно в высоту постера (114 на 375); ширина — от
+    /// пропорций обложки, поэтому у книг край пятой не постоянный.
     @MainActor static var book: BookFigureGeometry {
-        BookFigureGeometry(coverHeight: 128 * carousel.scale)
+        let reference = BookFigureGeometry.referenceHeight
+        return BookFigureGeometry(coverHeight: posterHeight * reference / (reference + 2))
     }
 
     /// Название карточки — до двух строк, деталь (год, автор, исполнитель) — в одну
     /// (правка пользователя 2026-10-04)
     static let titleLines = 2
-    /// Высоты лент — карточка с подписью на пределе строк: название и деталь у
-    /// альбомов, одно название у исполнителей и плейлистов. У кино и книг подписей нет
-    /// вовсе (правка пользователя 2026-10-10) — лента ровно в обложку.
+    /// Высоты лент — карточка с подписью на пределе строк: у альбомов и исполнителей —
+    /// название до двух строк, у плейлистов, кино и книг подписей нет — лента ровно
+    /// в обложку (макет `2837:33529`).
     @MainActor static var posterRowHeight: CGFloat { posterHeight }
     @MainActor static var bookRowHeight: CGFloat { book.frameSize(coverWidth: 0).height }
-    /// Нижний отступ полок кино и книг (правка пользователя 2026-10-10: без подписей
-    /// блок ниже прилипал). Высоты рядов не трогаем — отступ вне ленты, зум и клип целы.
-    static let coverOnlyShelfBottom: CGFloat = 16
+    @MainActor static var coverRowHeight: CGFloat { cardWidth }
+
+    /// «Смотреть дальше» экрана «Кино» — горизонтальные карточки витрины Кинопоиска,
+    /// две целые и край третьей 24 (правка пользователя 2026-10-20)
+    static let historyFit = CarouselFit(
+        designCard: (PlusMetrics.designWidth - side - peek - 2 * cardGap) / 2,
+        whole: 2,
+        side: side,
+        gap: cardGap
+    )
     /// Подпись — шрифт UI kit, от ширины не масштабируется: растёт только обложка.
-    @MainActor static var squareRowHeight: CGFloat { cardWidth + captionGap + 3 * captionLine }
     @MainActor static var titleOnlyRowHeight: CGFloat { cardWidth + captionGap + 2 * captionLine }
 
     /// Треки — колонки по три строки (`track stack`), строка — обложка 48 r6 и поля 8
@@ -67,13 +85,16 @@ enum CollectionLayout {
     static var tracksHeight: CGFloat {
         CGFloat(tracksPerColumn) * trackCover + CGFloat(tracksPerColumn - 1) * 2 * trackRowGap
     }
-    /// Шапка треков: кнопка 40, названия 24 + 20, поля 16 сверху и 12 снизу; блок
-    /// заканчивается полем 8
+    /// Шапка треков (`carousel / Music / opened playlist`): кнопка 40, названия 24 + 20,
+    /// поля 16 сверху и 12 снизу; блок — с полями секции 8 сверху и снизу
     static let tracksHeaderTop: CGFloat = 16
     static let tracksHeaderBottom: CGFloat = 12
     static let tracksHeaderGap: CGFloat = 12
-    static let tracksBlockBottom: CGFloat = 8
     static let playButton = PlusButtonSize.m
+    /// Микрошейдер под «play» шапки треков — 64, от кромки кнопки на −10 по горизонтали,
+    /// по центру шапки по вертикали
+    static let tracksShader: CGFloat = 64
+    static let tracksShaderLeading: CGFloat = -10
 
     /// Разделитель строк треков — Fill/Eight, 0.5
     static let divider = Color.fillEight
@@ -97,6 +118,7 @@ enum CollectionMotion {
 struct CollectionScreen: View {
     @Environment(CollectionStore.self) private var collection
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(ActionBarState.self) private var actionBar
     @Environment(\.scenePhase) private var scenePhase
 
     /// Выбранная полка — ею подсвечена пилюля, сразу по тапу.
@@ -121,7 +143,25 @@ struct CollectionScreen: View {
         let order = reorder.isReordering && reorder.shelf == shelf
             ? reorder.draftOrder
             : collection.kindsOrder(on: shelf)
-        return order.filter { !collection.items($0, on: shelf).isEmpty }
+        return order.filter { count($0, on: shelf) > 0 }
+    }
+
+    /// «Кино» и «Книги» «Любимого» — лайкнутое вперемешку с начатым (`CollectionMix`);
+    /// у остальных видов и в «Скачанном» — `nil`, там записи полки как есть.
+    private func mix(_ kind: CollectionItem.Kind, on shelf: CollectionStore.Shelf) -> [CollectionMixEntry]? {
+        guard shelf == .favorites else { return nil }
+        switch kind {
+        case .movie: return CollectionMix.movies(collection, history: actionBar.watchHistory)
+        case .book: return CollectionMix.books(collection, reading: actionBar.readingHistory)
+        default: return nil
+        }
+    }
+
+    private func count(_ kind: CollectionItem.Kind, on shelf: CollectionStore.Shelf) -> Int {
+        // Плейлисты «Любимого» — и свои: карточка «Мои плейлисты» есть, даже если
+        // любимых нет.
+        let own = kind == .playlist && shelf == .favorites ? MyPlaylists.all.count : 0
+        return (mix(kind, on: shelf)?.count ?? collection.items(kind, on: shelf).count) + own
     }
 
     var body: some View {
@@ -172,6 +212,24 @@ struct CollectionScreen: View {
             }
             .ignoresSafeArea(.keyboard)
         }
+        .navigationDestination(for: CollectionServiceRoute.self) { route in
+            SearchLayers(host: .pushed) {
+                CollectionServiceScreen(route: route)
+            }
+            .ignoresSafeArea(.keyboard)
+        }
+        .navigationDestination(for: CollectionTracksRoute.self) { route in
+            SearchLayers(host: .pushed) {
+                CollectionTracksScreen(route: route)
+            }
+            .ignoresSafeArea(.keyboard)
+        }
+        .navigationDestination(for: SeriesDownloadsRoute.self) { route in
+            SearchLayers(host: .pushed) {
+                SeriesDownloadsScreen(route: route)
+            }
+            .ignoresSafeArea(.keyboard)
+        }
         .onChange(of: shelfIndex) {
             // Полку сменили посреди редактирования — порядок прежней сохраняется, режим
             // выключается: у новой полки свой порядок и своё «изменить».
@@ -190,17 +248,24 @@ struct CollectionScreen: View {
         }
         #if DEBUG
         // `-debugCollectionList <movie|book|track|artist|album|playlist>` — через 1.5 с
-        // открыть полный список с этим фильтром: тапнуть заголовок из шелла нечем.
+        // открыть то, что открывает заголовок карусели этого вида (тем же путём): тапнуть
+        // заголовок из шелла нечем. `myPlaylists` — то, что открывает карточка
+        // «Мои плейлисты».
         // Один раз за процесс: на возврате корень появляется снова, и задача
         // открыла бы список опять.
         .task {
             guard !Self.didDebugOpenList,
-                  let raw = UserDefaults.standard.string(forKey: "debugCollectionList"),
-                  let kind = CollectionItem.Kind(rawValue: raw) else { return }
+                  let raw = UserDefaults.standard.string(forKey: "debugCollectionList") else { return }
+            let kind = CollectionItem.Kind(rawValue: raw)
+            guard kind != nil || raw == "myPlaylists" else { return }
             Self.didDebugOpenList = true
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
-            navigation.push(CollectionListRoute(kind: kind, shelf: shownShelf))
+            if let kind {
+                CollectionSectionNavigation.open(kind, on: shownShelf, navigation: navigation)
+            } else {
+                CollectionSectionNavigation.openMyPlaylists(on: shownShelf, navigation: navigation)
+            }
         }
         // `-debugCollectionReorder 1` — через 2 с войти в режим порядка (как кнопка
         // в навбаре), через 4 с поставить первый блок на второе место (тот же свап, что
@@ -348,31 +413,54 @@ struct CollectionScreen: View {
     @ViewBuilder
     private func section(_ kind: CollectionItem.Kind, on shelf: CollectionStore.Shelf) -> some View {
         let items = collection.items(kind, on: shelf)
-        let openAll = { navigation.push(CollectionListRoute(kind: kind, shelf: shelf)) }
+        let openAll = { CollectionSectionNavigation.open(kind, on: shelf, navigation: navigation) }
+        // «Кино» и «Книги» «Любимого» — лайкнутое вперемешку с начатым; в «Скачанном» —
+        // записи полки, той же карточкой.
+        let entries = mix(kind, on: shelf) ?? items.map { CollectionMixEntry(item: $0, date: $0.date(on: shelf) ?? .distantPast) }
         switch kind {
         case .track:
-            CollectionTracksBlock(items: items, openAll: openAll)
+            CollectionTracksBlock(items: items, shelf: shelf, openAll: openAll)
+        case .movie where shelf == .downloads:
+            // «Скачанное» — горизонтальными карточками коллекции: фильм играет сразу,
+            // сериал открывает свои скачанные серии (задача пользователя 2026-10-20).
+            let lines = items.contains { CollectionDownloadMeta.text($0) != nil } ? 2 : 1
+            CollectionCarousel(title: kind.title, height: PPMovieCard.rowHeight(.medium, lines: lines), items: items, openAll: openAll) { item in
+                CollectionDownloadCard(item: item)
+            }
+            .task { await collection.backfillDownloadStills() }
         case .movie:
-            CollectionCarousel(title: kind.title, height: CollectionLayout.posterRowHeight, items: items, openAll: openAll) { item in
-                CollectionPosterCard(item: item)
+            CollectionCarousel(title: kind.title, height: CollectionLayout.posterRowHeight, items: entries, openAll: openAll) { entry in
+                CollectionPosterCard(item: entry.item, resume: entry.resume)
             }
-            .padding(.bottom, CollectionLayout.coverOnlyShelfBottom)
         case .book:
-            CollectionCarousel(title: kind.title, height: CollectionLayout.bookRowHeight, items: items, openAll: openAll) { item in
-                CollectionBookCard(item: item)
+            CollectionCarousel(title: kind.title, height: CollectionLayout.bookRowHeight, items: entries, openAll: openAll) { entry in
+                CollectionBookCard(item: entry.item)
             }
-            .padding(.bottom, CollectionLayout.coverOnlyShelfBottom)
         case .artist:
             CollectionCarousel(title: kind.title, height: CollectionLayout.titleOnlyRowHeight, items: items, openAll: openAll) { item in
                 CollectionArtistCard(item: item)
             }
         case .album:
-            CollectionCarousel(title: kind.title, height: CollectionLayout.squareRowHeight, items: items, openAll: openAll) { item in
-                CollectionSquareCard(item: item, showsSubtitle: true)
+            CollectionCarousel(title: kind.title, height: CollectionLayout.titleOnlyRowHeight, items: items, openAll: openAll) { item in
+                CollectionSquareCard(item: item, showsTitle: true)
             }
         case .playlist:
-            CollectionCarousel(title: kind.title, height: CollectionLayout.titleOnlyRowHeight, items: items, openAll: openAll) { item in
-                CollectionSquareCard(item: item, showsSubtitle: false)
+            // Первой — «Мои плейлисты» (`card / playlist`, `2844:37412`): превью до четырёх
+            // плейлистов полки, тап — их полный список.
+            // В «Любимом» карточка показывает свои плейлисты (`MyPlaylists`), в «Скачанном» —
+            // скачанные.
+            let previews = shelf == .favorites ? MyPlaylists.items : items
+            let cards = [CollectionPlaylistSlot.mine(Array(previews.prefix(CollectionMyPlaylistsCard.previews)))]
+                + items.map(CollectionPlaylistSlot.playlist)
+            CollectionCarousel(title: kind.title, height: CollectionLayout.coverRowHeight, items: cards, openAll: openAll) { card in
+                switch card {
+                case .mine(let previews):
+                    CollectionMyPlaylistsCard(previews: previews) {
+                        CollectionSectionNavigation.openMyPlaylists(on: shelf, navigation: navigation)
+                    }
+                case .playlist(let item):
+                    CollectionSquareCard(item: item, showsTitle: false)
+                }
             }
         }
     }
@@ -383,28 +471,48 @@ struct CollectionScreen: View {
 /// Секция карточками: заголовок 56 с шевроном — переход в полный список, ниже лента
 /// с полями 16 и зазором 8 (`carousel / Movies` макета). Высота ленты — явная, из
 /// размеров карточки: своей `LazyHStack` здесь не меряет (`ServiceCarousel`).
-private struct CollectionCarousel<Card: View>: View {
+/// Общая у коллекции и её экранов «Кино» и «Книги»: там режима порядка нет, а у
+/// карусели без полного списка (`openAll == nil`) нет и шеврона.
+struct CollectionCarousel<Item: Identifiable, Card: View>: View {
     let title: String
     let height: CGFloat
-    let items: [CollectionItem]
-    let openAll: () -> Void
-    @ViewBuilder var card: (CollectionItem) -> Card
+    let items: [Item]
+    var openAll: (() -> Void)?
+    /// Не обрезать то, что выступает над карточками (оценка на постере «Моих оценок»).
+    var allowsOverflow = false
+    @ViewBuilder var card: (Item) -> Card
 
-    @Environment(CollectionReorderState.self) private var reorder
+    @Environment(CollectionReorderState.self) private var reorder: CollectionReorderState?
 
-    var body: some View {
-        VStack(spacing: 0) {
+    private var isReordering: Bool { reorder?.isReordering ?? false }
+
+    /// Без полного списка шапка — не кнопка: выключенная кнопка приглушила бы заголовок.
+    /// Есть ли список, у карусели не меняется — ветка не переключается.
+    @ViewBuilder
+    private var header: some View {
+        if let openAll {
             Button(action: openAll) {
-                EntitySectionHeader(title: title, isChevronCollapsed: reorder.isReordering)
+                EntitySectionHeader(title: title, isChevronCollapsed: isReordering, lineHeight: CollectionLayout.headerLine)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
+        } else {
+            EntitySectionHeader(title: title, showsChevron: false, lineHeight: CollectionLayout.headerLine)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
             // Иконка-хват — на правом краю шапки (`2584:29425`: x 339 при поле 16, y 16),
             // шеврон на её время гаснет.
             .overlay(alignment: .topTrailing) {
-                CollectionReorderGrip(isVisible: reorder.isReordering)
-                    .padding(.top, EntitySectionLayout.headerTop)
-                    .padding(.trailing, CollectionLayout.side)
+                if reorder != nil {
+                    // По центру строки заголовка
+                    CollectionReorderGrip(isVisible: isReordering)
+                        .padding(.top, EntitySectionLayout.headerTop + (CollectionLayout.headerLine - CollectionReorderGrip.size) / 2)
+                        .padding(.trailing, CollectionLayout.side)
+                }
             }
 
             ScrollView(.horizontal) {
@@ -417,22 +525,29 @@ private struct CollectionCarousel<Card: View>: View {
                 .animation(CollectionMotion.itemsChange, value: items.map(\.id))
             }
             .scrollIndicators(.hidden)
-            .scrollDisabled(reorder.isReordering)
+            .scrollDisabled(isReordering)
             .scrollTargetBehavior(.viewAligned)
             .contentMargins(.horizontal, CollectionLayout.side, for: .scrollContent)
+            .scrollClipDisabled(allowsOverflow)
             .frame(height: height)
         }
+        .padding(.vertical, CollectionLayout.sectionPad)
     }
 }
 
 // MARK: - Карточки
 
 /// Фильм — постер 86 × 129 r8, без подписи (правка пользователя 2026-10-10): название
-/// читает VoiceOver.
-private struct CollectionPosterCard: View {
+/// читает VoiceOver. Начатый фильм без своего экрана (моки витрины) — тап продолжает
+/// просмотр, как «Смотреть дальше».
+struct CollectionPosterCard: View {
     let item: CollectionItem
+    var resume: MovieInProgress? = nil
+    /// Оценка пользователя — эмодзи над углом постера («Мои оценки»).
+    var rating: MovieRating? = nil
 
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(ActionBarState.self) private var actionBar
     @Environment(\.stackZoomNamespace) private var zoom
 
     var body: some View {
@@ -444,6 +559,9 @@ private struct CollectionPosterCard: View {
                 shape: RoundedRectangle(cornerRadius: CollectionLayout.cardRadius, style: .continuous)
             )
             .collectionZoomSource(item.route, in: zoom)
+            .overlay(alignment: .topLeading) {
+                if let rating { MovieRatingBadge(rating: rating) }
+            }
             .frame(width: CollectionLayout.cardWidth, alignment: .leading)
             .contentShape(.rect)
         }
@@ -453,17 +571,25 @@ private struct CollectionPosterCard: View {
     }
 
     private func open() {
-        guard let route = item.route else { return }
-        navigation.open(route)
+        if let route = item.route {
+            navigation.open(route)
+        } else if let resume {
+            UIImpactFeedbackGenerator(style: .medium)
+                .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+            actionBar.open(.movie(resume))
+        }
     }
 }
 
 /// Книга — наша проекция с обложкой 128 (`BookFigure`), без подписи (правка
 /// пользователя 2026-10-10): название читает VoiceOver.
-private struct CollectionBookCard: View {
+struct CollectionBookCard: View {
     let item: CollectionItem
+    /// Начатая книга («Читаю»): тап — сразу читалка (правка пользователя 2026-10-20).
+    var readBook: BookInProgress? = nil
 
     @Environment(AppNavigationState.self) private var navigation
+    @Environment(ActionBarState.self) private var actionBar
     @Environment(\.stackZoomNamespace) private var zoom
 
     var body: some View {
@@ -471,7 +597,7 @@ private struct CollectionBookCard: View {
         let coverWidth = geometry.coverWidth(aspect: item.aspect)
         let width = geometry.frameSize(coverWidth: coverWidth).width
         Button(action: open) {
-            BookFigure(geometry: geometry, coverWidth: coverWidth) {
+            BookFigure(geometry: geometry, coverWidth: coverWidth, readingID: item.route?.ref.id) {
                 if let artwork = item.artwork {
                     SkeletonArtwork(source: artwork)
                 }
@@ -486,16 +612,22 @@ private struct CollectionBookCard: View {
     }
 
     private func open() {
+        if let readBook {
+            UIImpactFeedbackGenerator(style: .medium)
+                .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+            actionBar.open(.book(readBook))
+            return
+        }
         guard let route = item.route else { return }
         navigation.open(route)
     }
 }
 
-/// Альбом и плейлист — квадрат 86 r8, под ним название (у альбома — и исполнитель).
-/// Альбом открывает свой экран, плейлист — играет: экрана плейлиста в прототипе нет.
+/// Альбом и плейлист — квадрат r8; у альбома под ним название до двух строк, у плейлиста
+/// подписи нет (макет `2837:33529`). Открывают свои экраны; плейлист без экрана — играет.
 private struct CollectionSquareCard: View {
     let item: CollectionItem
-    let showsSubtitle: Bool
+    let showsTitle: Bool
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
@@ -512,7 +644,10 @@ private struct CollectionSquareCard: View {
                 )
                 .collectionZoomSource(item.route, in: zoom)
 
-                CollectionCaption(title: item.title, subtitle: showsSubtitle ? item.subtitle : nil)
+                if showsTitle {
+                    CollectionCaption(title: item.title)
+                        .padding(.trailing, CollectionLayout.albumCaptionTrailing)
+                }
             }
             .frame(width: CollectionLayout.cardWidth, alignment: .leading)
             .contentShape(.rect)
@@ -528,6 +663,76 @@ private struct CollectionSquareCard: View {
             PlayerHaptics.tap()
             actionBar.open(.music(playable))
         }
+    }
+}
+
+/// Карточка ленты плейлистов: «Мои плейлисты» первой, дальше — сами плейлисты.
+private enum CollectionPlaylistSlot: Identifiable {
+    case mine([CollectionItem])
+    case playlist(CollectionItem)
+
+    var id: String {
+        switch self {
+        case .mine: "my-playlists"
+        case .playlist(let item): item.id
+        }
+    }
+}
+
+/// «Мои плейлисты» — `card / playlist` (`2844:37412`): квадрат карточки на подложке
+/// Fill/Nine, внутри сеткой 2 × 2 превью до четырёх плейлистов полки — 32 с полями
+/// и зазором 4 на карточке 76, скругление 4; пустые места остаются подложкой. Подписи
+/// нет, как у всей ленты плейлистов. Тап — полный список плейлистов «Мои плейлисты».
+private struct CollectionMyPlaylistsCard: View {
+    static let title = "Мои плейлисты"
+    static let previews = 4
+
+    let previews: [CollectionItem]
+    let action: () -> Void
+
+    private enum Layout {
+        /// Числа макета на карточке 76 — дальше тем же масштабом, что карточка
+        static let designCard: CGFloat = 76
+        static let inset: CGFloat = 4
+        static let cover: CGFloat = 32
+        static let coverRadius: CGFloat = 4
+        /// Бордер подложки — 0.467 в макете (у превью — обычный 0.67)
+        static let containerBorder: CGFloat = 0.467
+    }
+
+    var body: some View {
+        let width = CollectionLayout.cardWidth
+        let scale = width / Layout.designCard
+        let inset = Layout.inset * scale
+        let cover = Layout.cover * scale
+        let shape = RoundedRectangle(cornerRadius: CollectionLayout.cardRadius, style: .continuous)
+        Button(action: action) {
+            Color.fillNine
+                .frame(width: width, height: width)
+                .overlay(alignment: .topLeading) {
+                    // Своя стопка с выравниванием по углу: у неявной стопки оверлея дети
+                    // разной величины встают по центру, и сетка съезжала.
+                    ZStack(alignment: .topLeading) {
+                        ForEach(previews.indices, id: \.self) { index in
+                            CollectionArtwork(
+                                source: previews[index].artwork,
+                                width: cover,
+                                height: cover,
+                                shape: RoundedRectangle(cornerRadius: Layout.coverRadius * scale, style: .continuous)
+                            )
+                            .padding(.leading, inset + CGFloat(index % 2) * (cover + inset))
+                            .padding(.top, inset + CGFloat(index / 2) * (cover + inset))
+                        }
+                    }
+                }
+                .clipShape(shape)
+                .overlay {
+                    shape.strokeBorder(CoverBorder.color, lineWidth: Layout.containerBorder)
+                }
+                .contentShape(.rect)
+        }
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+        .accessibilityLabel(Self.title)
     }
 }
 
@@ -550,7 +755,6 @@ private struct CollectionArtistCard: View {
                 .collectionZoomSource(item.route, in: zoom)
 
                 CollectionCaption(title: item.title, isCentered: true)
-                    .padding(.trailing, CollectionLayout.artistCaptionTrailing)
             }
             .frame(width: CollectionLayout.cardWidth)
             .contentShape(.rect)
@@ -629,6 +833,7 @@ private extension View {
 /// Тап по строке включает трек, «play» шапки — с первого трека полки.
 private struct CollectionTracksBlock: View {
     let items: [CollectionItem]
+    let shelf: CollectionStore.Shelf
     let openAll: () -> Void
 
     @Environment(ActionBarState.self) private var actionBar
@@ -679,15 +884,17 @@ private struct CollectionTracksBlock: View {
             .scrollTargetBehavior(.viewAligned)
             .frame(height: CollectionLayout.tracksHeight, alignment: .top)
         }
-        .padding(.bottom, CollectionLayout.tracksBlockBottom)
+        .padding(.vertical, CollectionLayout.sectionPad)
     }
 
     private var header: some View {
         HStack(spacing: CollectionLayout.tracksHeaderGap) {
             // В режиме порядка «play» остаётся на месте выключенной кнопкой ДС — как кнопка
             // навбара при одном блоке.
+            // `Size=M • 40px, Type=plain` макета; под ней — микрошейдер, как у «play» блока
+            // «Похоже на» (оверлей шапки ниже).
             PlusButton(
-                type: .secondary,
+                type: .plain,
                 size: CollectionLayout.playButton,
                 state: reorder.isReordering ? .disabled : .normal,
                 accessibilityTitle: isPlayingShelf ? "Пауза" : "Слушать",
@@ -701,10 +908,14 @@ private struct CollectionTracksBlock: View {
             // Название — переход в полный список, как шеврон у карусельных секций.
             Button(action: openAll) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(CollectionItem.Kind.track.title)
-                        .plusHeadline(.s)
-                        .foregroundStyle(Color.fillOne)
-                    Text(CollectionCopy.tracks(items.count))
+                    // Шеврон — как у шапок каруселей (правка пользователя 2026-10-20).
+                    HStack(spacing: EntitySectionLayout.titleGap) {
+                        Text(CollectionItem.Kind.track.title)
+                            .plusHeadline(.s)
+                            .foregroundStyle(Color.fillOne)
+                        EntitySectionChevron(isCollapsed: reorder.isReordering)
+                    }
+                    Text(subtitle)
                         .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                 }
@@ -712,6 +923,12 @@ private struct CollectionTracksBlock: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+        }
+        .overlay(alignment: .leading) {
+            SharedVideoLayer(video: .musicMicroShader, poster: "musicMicroShaderPoster")
+                .frame(width: CollectionLayout.tracksShader, height: CollectionLayout.tracksShader)
+                .offset(x: CollectionLayout.tracksShaderLeading)
+                .allowsHitTesting(false)
         }
         .padding(.horizontal, CollectionLayout.side)
         .padding(.top, CollectionLayout.tracksHeaderTop)
@@ -723,6 +940,12 @@ private struct CollectionTracksBlock: View {
                 .padding(.top, CollectionLayout.tracksHeaderTop + (CollectionLayout.playButton.height - CollectionReorderGrip.size) / 2)
                 .padding(.trailing, CollectionLayout.side)
         }
+    }
+
+    /// «Моя волна по любимому» — текст макета у «Любимого»; у «Скачанного» макета нет —
+    /// число треков.
+    private var subtitle: String {
+        shelf == .favorites ? "Моя волна по любимому" : CollectionCopy.tracks(items.count)
     }
 
     private func togglePlayback() {
@@ -737,8 +960,8 @@ private struct CollectionTracksBlock: View {
 
 /// Строка трека — `list-item / music`: обложка 48 r6, название и исполнитель Text M
 /// (бейдж 18+ у названия), справа отметка «скачано» и «ещё». Между строками колонки —
-/// разделитель 0.5.
-private struct CollectionTrackRow: View {
+/// разделитель 0.5. Общая у колонок блока «Треки» и экрана треков полки.
+struct CollectionTrackRow: View {
     let item: CollectionItem
     /// Очередь полки, в которой стоит строка.
     let queue: [MusicNowPlaying]
@@ -867,14 +1090,11 @@ enum CollectionReorderMotion {
     /// Правка пользователя 2026-10-10: поля вернули — фон и клип блока в руке с отступом 8
     /// от левого и правого края экрана (на время была версия «во всю ширину»).
     static let glassInset: CGFloat = CollectionLayout.cardGap
-    /// Правка пользователя 2026-10-10: фон блока «Плейлисты» в руке выходит на 16 ниже
-    /// содержимого — иначе он кончался вплотную под подписями карточек. У остальных
-    /// видов поле не нужно (у кино и книг оно и так есть внутри блока). Раскладку это
-    /// не меняет: фон и клип рисуются ниже рамки блока, соседи на месте.
-    static let glassBottomExtra: CGFloat = 16
-    /// Правка пользователя 2026-10-10: у «Треков» поле поменьше — 8 (у блока свой нижний
-    /// отступ 8, `tracksBlockBottom`).
-    static let tracksGlassBottomExtra: CGFloat = 8
+    /// Фон блока в руке выходит на 8 ниже его рамки: с нижним полем секции 8 — 16 под
+    /// содержимым у всех видов (правка пользователя 2026-10-10: вплотную под карточками
+    /// фон кончался резко). Раскладку это не меняет: фон и клип рисуются ниже рамки
+    /// блока, соседи на месте.
+    static let glassBottomExtra: CGFloat = 8
     /// Клип вне захвата: шире блока ровно на радиус — дуги углов за кромкой, срезов нет.
     static let restClipInset: CGFloat = -glassRadius
 }
@@ -1064,14 +1284,8 @@ private struct CollectionReorderBlock<Content: View>: View {
             .zIndex(reorder.liftedKind == kind ? 1 : 0)
     }
 
-    /// Сколько фон и клип выходят ниже рамки блока: у плейлистов 16, у «Треков» 8.
-    private var bottomExtra: CGFloat {
-        switch kind {
-        case .playlist: CollectionReorderMotion.glassBottomExtra
-        case .track: CollectionReorderMotion.tracksGlassBottomExtra
-        case .movie, .book, .artist, .album: 0
-        }
-    }
+    /// Сколько фон и клип выходят ниже рамки блока — одинаково у всех видов.
+    private var bottomExtra: CGFloat { CollectionReorderMotion.glassBottomExtra }
 
     /// Появление — сразу, исчезновение — после посадки блока (задержка = время посадки).
     private func glassAnimation(isHeld: Bool) -> Animation {

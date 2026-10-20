@@ -31,6 +31,7 @@ enum CollectionSeeds {
                 year: movie.year
             ), downloaded: movie.downloaded)
         }
+        result.insert(downloadedSeries, at: 0)
         for book in books {
             add(.book(
                 EntityRef(id: "gb-\(book.id)", title: book.title, subtitle: book.author, artwork: googleBooks(book.id)),
@@ -82,8 +83,98 @@ enum CollectionSeeds {
                 cover: deezer("playlist", playlist.picture)
             ))
         }
-        return result
+        return result.map(backfill)
     }
+
+    // MARK: - Скачанное кино
+
+    /// Кадр и хронометраж фильмов стартового набора — карточкам «Скачанного кино»
+    /// (замер по пулу 2026-10-20). Дозаполняет и записи, сохранённые до этих полей.
+    static func backfill(_ item: CollectionItem) -> CollectionItem {
+        guard item.kind == .movie, let id = item.kinopoiskID,
+              let known = movieFrames[id] else { return item }
+        var item = item
+        if item.still == nil { item.still = kinopoiskStill(known.still) }
+        if item.runtime == nil { item.runtime = TimeInterval(known.minutes * 60) }
+        return item
+    }
+
+    private static let movieFrames: [Int: (still: String, minutes: Int)] = [
+        5283168: ("4483445/50c9d621-0217-4438-aa3d-33652c05df04", 124),
+    ]
+
+    /// Скачанный сериал стартового набора — «Белый лотос», две первые серии (сезоны —
+    /// замер `/v1.4/season` 2026-10-20, длина серии 60 мин — `seriesLength`): «Скачанное»
+    /// показывает и фильм, и сериал.
+    static var downloadedSeries: CollectionItem {
+        let date = Date.now
+        var item = CollectionItem.movie(
+            EntityRef(id: "kp-2000461", title: "Белый лотос", subtitle: "", artwork: kinopoisk("4486454/4461f04a-5083-4fc1-9931-0ae69f365770")),
+            poster: kinopoisk("4486454/4461f04a-5083-4fc1-9931-0ae69f365770"),
+            year: "2021",
+            still: kinopoiskStill("6201401/12e83450-55ce-4bb1-abd9-6dc578b74a44"),
+            isSeries: true
+        )
+        let episodes: [(number: Int, name: String, still: String)] = [
+            (1, "Заезд", "1652588/2a0000017a99c432bb358299ec9380148899"),
+            (2, "Новый день", "374297/2a0000017abdee6412b84e858d2ebc691741"),
+        ]
+        item.episodes = episodes.map { episode in
+            let still = URL(string: "https://avatars.mds.yandex.net/get-ott/\(episode.still)/1344x756")
+            return DownloadedEpisode(
+                episode: SeriesEpisode(season: 1, number: episode.number, name: episode.name, still: still, runtime: 60 * 60),
+                still: still.map { ArtworkSource.remote($0) },
+                downloadedAt: date.addingTimeInterval(TimeInterval(episode.number - 3) * 60)
+            )
+        }
+        item.downloadedAt = item.episodes?.map(\.downloadedAt).max()
+        item.favoritedAt = nil
+        return item
+    }
+
+    /// Кадр Кинопоиска — тем же пресетом, что кавер экрана тайтла (`MovieDetails.backdrop`).
+    private static func kinopoiskStill(_ path: String) -> ArtworkSource {
+        .remote(URL(string: "https://avatars.mds.yandex.net/get-kinopoisk-image/\(path)/1920x1920")!)
+    }
+
+    // MARK: - Покупки и прочитанное
+
+    /// «Покупки» экрана «Кино» коллекции — покупок в прототипе нет, набор стартовый
+    /// и неизменный (решение пользователя 2026-10-19). Фильмы — из запаса витрины
+    /// (`MoviePool`, замер 2026-10-19), экраны открываются как из ленты.
+    static var purchases: [CollectionItem] {
+        purchasedMovies.map { movie in
+            .movie(
+                EntityRef(id: "kp-\(movie.id)", title: movie.title, subtitle: "", artwork: kinopoisk(movie.poster)),
+                poster: kinopoisk(movie.poster),
+                year: movie.year
+            )
+        }
+    }
+
+    /// «Прочитано» экрана «Книги» — так же стартовый набор: дочитанного прототип не
+    /// знает. Тома Google Books со сканом обложки, пропорции — с самих обложек.
+    static var read: [CollectionItem] {
+        readBooks.map { book in
+            .book(
+                EntityRef(id: "gb-\(book.id)", title: book.title, subtitle: book.author, artwork: googleBooks(book.id)),
+                aspect: book.aspect
+            )
+        }
+    }
+
+    private static let purchasedMovies: [(id: Int, title: String, year: String, poster: String)] = [
+        (1262160, "Отец", "2020", "1629390/8563b753-d7f2-4eaf-b9af-3e44522b35fd"),
+        (1143242, "Джентльмены", "2019", "1599028/637271d5-61b4-4e46-ac83-6d07494c7645"),
+        (447301, "Начало", "2010", "1629390/8ab9a119-dd74-44f0-baec-0629797483d7"),
+        (342, "Криминальное чтиво", "1994", "4716873/0a07a903-9025-4aff-bf7c-46bbb175888c"),
+    ]
+
+    private static let readBooks: [(id: String, title: String, author: String, aspect: CGFloat)] = [
+        ("E_xrEAAAQBAJ", "1984", "Джордж Оруэлл", 0.6461),
+        ("JY5EDwAAQBAJ", "Преступление и наказание", "Фёдор Достоевский", 0.6432),
+        ("6rbPEQAAQBAJ", "Маленький принц", "Антуан де Сент-Экзюпери", 0.7697),
+    ]
 
     // MARK: - Данные
 
@@ -152,7 +243,7 @@ enum CollectionSeeds {
     }
 
     /// Обложка книги — та же ссылка, что собирает `GoogleBook.coverURL`.
-    private static func googleBooks(_ id: String) -> ArtworkSource {
+    static func googleBooks(_ id: String) -> ArtworkSource {
         remote("https://books.google.com/books/content?id=\(id)&printsec=frontcover&img=1&zoom=3&source=gbs_api")
     }
 

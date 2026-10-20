@@ -685,7 +685,7 @@ struct SearchResultsView: View {
     private func bookCardBody(_ hit: SearchHit, coverBox: CGFloat? = nil) -> some View {
         let coverWidth = Self.bookCoverWidth(hit.artworkAspect)
         return VStack(alignment: .leading, spacing: Layout.coverGap) {
-            bookFigure(coverWidth: coverWidth) {
+            bookFigure(coverWidth: coverWidth, readingID: hit.route?.ref.id) {
                 if let source = hit.artwork {
                     ResolvedArtwork(source: source, appear: Layout.coverAppear) { image in
                         image.resizable().scaledToFill()
@@ -725,8 +725,8 @@ struct SearchResultsView: View {
 
     /// Книга целиком — общий рисунок (`BookFigure`). Обложку подставляет вызывающий —
     /// у скелетона на её месте только заливка.
-    private func bookFigure(coverWidth: CGFloat, @ViewBuilder cover: () -> some View) -> some View {
-        BookFigure(geometry: Layout.book, coverWidth: coverWidth) { cover() }
+    private func bookFigure(coverWidth: CGFloat, readingID: String? = nil, @ViewBuilder cover: () -> some View) -> some View {
+        BookFigure(geometry: Layout.book, coverWidth: coverWidth, readingID: readingID) { cover() }
     }
 
     /// Скролл выдачи начался — клавиатура уходит мягко (`KeyboardDismissMotion`).

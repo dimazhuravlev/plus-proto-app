@@ -28,6 +28,10 @@ struct MovieDetails {
     let runtime: TimeInterval?
     /// Вторая строка шапки киноплеера: «2019 • криминал». Пусто — шапка в одну строку.
     let playerSubtitle: String?
+    /// Сериал — у карточки ПП серой строкой сезон и серия (`MovieInProgress.episodeText`).
+    var isSeries = false
+    /// Длина серии сериала (`seriesLength`). Нет — `SeriesCatalog` доберёт её запросом.
+    var episodeLength: TimeInterval? = nil
     /// Абзацы полного описания, уже нарезанные под макет.
     let synopsis: [String]
     let rows: [MovieDetailRow]
@@ -42,6 +46,9 @@ struct MovieDetails {
     /// Кадры под видеокарточки — те же сцены тайтла, но **другие**, чем в шапке.
     /// Пустой массив или короче четырёх — карточкам без кадра остаётся ролик.
     let cardStills: [URL]
+    /// Все кадры тайтла (нет кадров — `backdrop` Кинопоиска): запас серий без своего
+    /// кадра (`SeriesStills`, правка пользователя 2026-10-20).
+    var stills: [URL] = []
     /// Постер 2:3 и год — тайтл в коллекции «Моё» стоит постером с годом под ним.
     var poster: URL? = nil
     var year: String? = nil
@@ -134,6 +141,8 @@ extension MovieDetails {
         meta = Self.meta(movie)
         runtime = movie.movieLength.flatMap { $0 > 0 ? TimeInterval($0 * 60) : nil }
         playerSubtitle = Self.playerSubtitle(movie)
+        isSeries = movie.isSeries == true
+        episodeLength = movie.seriesLength.flatMap { $0 > 0 ? TimeInterval($0 * 60) : nil }
         synopsis = Self.synopsis(movie)
         rows = Self.rows(movie)
         cast = Self.cast(movie)
@@ -155,6 +164,8 @@ extension MovieDetails {
         // без своего кадра карточка не показывается (правка 2026-08-25, раньше брала
         // первый кадр забандленного ролика).
         cardStills = stills.dropFirst().compactMap { $0.url(size: .huge) }
+        let frames = stills.compactMap { $0.url(size: .huge) }
+        self.stills = frames.isEmpty ? [movie.backdrop?.url(size: .frame)].compactMap { $0 } : frames
         // Через прокси tmdb, как постеры выдачи: часть их Кинопоиск отдаёт ссылкой
         // на заблокированный хост.
         let rawPoster = movie.poster?.url(size: .small)

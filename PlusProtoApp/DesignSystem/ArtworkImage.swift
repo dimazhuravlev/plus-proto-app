@@ -66,14 +66,21 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
     var body: some View {
         Group {
             if let image = loaded ?? fallback {
-                content(image)
-                    .overlay(alignment: .leading) {
-                        if let hingeWidth {
+                if let hingeWidth {
+                    // Сгиб — по кадру обложки, а не по картинке: `scaledToFill` у обложки,
+                    // чьи пропорции шире кадра, вылезает за него по бокам, и прикреплённый
+                    // к картинке сгиб уезжал за левую кромку — у книг его почти не было
+                    // видно (жалоба пользователя 2026-10-19). Распорка берёт ровно кадр.
+                    Color.clear
+                        .overlay { content(image) }
+                        .overlay(alignment: .leading) {
                             BookHingeShade.gradient
                                 .frame(width: hingeWidth)
                                 .allowsHitTesting(false)
                         }
-                    }
+                } else {
+                    content(image)
+                }
             } else {
                 placeholder()
             }

@@ -222,6 +222,11 @@ struct BookReaderView: View {
         }
         .ignoresSafeArea()
         .task { await text.load(bookID: book.id) }
+        // Сколько прочитано — для полосы под карточкой «Читаю»: на закрытии, раз.
+        .onDisappear {
+            guard text.isReady else { return }
+            actionBar.readingHistory.setProgress(scrollProgress, for: book.id)
+        }
         // Обвязка на открытии: экран читалки поднимается, и с небольшой задержкой
         // проявляется обвязка (правка пользователя 2026-10-10). Идемпотентно: флаг
         // не даёт перезапущенной задаче показать её ещё раз или перебить пользователя.

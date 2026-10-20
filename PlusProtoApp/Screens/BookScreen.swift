@@ -422,7 +422,7 @@ struct BookScreen: View {
         ))
         return Button { navigation.open(route) } label: {
             VStack(alignment: .leading, spacing: BookScreenLayout.shelfTextGap) {
-                BookFigure(geometry: geometry, coverWidth: coverWidth) {
+                BookFigure(geometry: geometry, coverWidth: coverWidth, readingID: route.ref.id) {
                     SkeletonArtwork(source: .remote(book.cover))
                 }
 

@@ -240,6 +240,9 @@ struct KinopoiskMovie: Codable, Identifiable {
     let slogan: String?
     let movieLength: Int?
     let isSeries: Bool?
+    /// Длина серии сериала, минуты. У фильма нет; у сериалов, лёгших в пул до 2026-10-20,
+    /// тоже нет — поле тогда не запрашивали (`SeriesCatalog` доберёт его сам).
+    var seriesLength: Int? = nil
     let ageRating: Int?
     let ratingMpaa: String?
     let genres: [KinopoiskGenre]?
@@ -328,4 +331,26 @@ struct KinopoiskTokenInfo: Decodable {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: resetAt) ?? ISO8601DateFormatter().date(from: resetAt)
     }
+}
+
+// MARK: - Сезоны сериала
+
+/// Сезон из `/v1.4/season` (замер 2026-10-20 на «Белом лотосе» и «Уэнздей»): номер
+/// и серии. У серий есть название (у части сериалов — английское или заглушка
+/// «Episode #2.2»), кадр (`get-ott`, бывает не у всех) и дата выхода; хронометраж
+/// приходит нулём — длину серии даёт `seriesLength` сериала.
+struct KinopoiskSeason: Decodable {
+    let number: Int?
+    let episodes: [KinopoiskEpisode]?
+}
+
+struct KinopoiskEpisode: Decodable {
+    let number: Int?
+    let name: String?
+    let enName: String?
+    let still: KinopoiskImage?
+    /// Минуты; у Кинопоиска почти всегда 0
+    let duration: Int?
+    /// ISO 8601 — `2021-07-12T00:00:00.000Z`. Нет — серия ещё не вышла.
+    let airDate: String?
 }

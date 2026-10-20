@@ -197,6 +197,10 @@ struct MovieDetailsSection: View {
 /// `3807:12644` — 393×160: четыре равные колонки, круг 52 на белом 8 %.
 /// Геометрия совпадает с блоком оценки витрины (figma-screen1 §3.7).
 struct MovieRateSection: View {
+    /// Тайтл в коллекции — его оценка копится в «Моих оценках» (`MovieRatings`).
+    /// `nil` — моковый тайтл без id Кинопоиска: оценка живёт, пока открыт экран.
+    var item: CollectionItem? = nil
+
     private enum Layout {
         /// Поле блока сверху и снизу. Макетные 8 + 16 (правка пользователя
         /// 2026-08-25): блоку оценки нужен воздух от соседних секций.
@@ -209,41 +213,38 @@ struct MovieRateSection: View {
         static let headerExtra: CGFloat = 16
     }
 
-    private struct Option: Identifiable {
-        var id: String { title }
-        /// Ассет эмодзи — картинка, а не глиф: см. `RateBlock` витрины.
-        let emoji: String
-        let title: String
-        /// Сколько эмодзи улетает из кнопки — как у блока витрины (`RateReaction`)
-        let burst: Int
-    }
-
-    /// Подписи — как у блока оценки на витрине (правка пользователя 2026-10-09).
-    private static let options = [
-        Option(emoji: "emojiRateDislike", title: "Нет", burst: 1),
-        Option(emoji: "emojiRateMeh", title: "Норм", burst: 1),
-        Option(emoji: "emojiRateGood", title: "Супер", burst: 2),
-        Option(emoji: "emojiRateLove", title: "Шедевр", burst: 6),
-    ]
-
-    @State private var selected: String?
+    /// Оценка мокового тайтла — без записи
+    @State private var localSelection: MovieRating?
     /// Нажатия по кнопкам: каждое — новая стайка эмодзи из этой кнопки
     @State private var launches: [String: Int] = [:]
+
+    private var selected: String? {
+        let rating = item.map { MovieRatings.shared.rating(for: $0.id) } ?? localSelection
+        return rating?.id
+    }
+
+    private func select(_ rating: MovieRating?) {
+        if let item {
+            MovieRatings.shared.set(rating, for: item)
+        } else {
+            localSelection = rating
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             MovieSectionHeader(title: "Уже смотрели? Как вам?")
 
             HStack(spacing: 0) {
-                ForEach(MovieRateSection.options) { option in
+                ForEach(MovieRating.allCases) { option in
                     // Тап — реакция, как на витрине: белый фон, стайка эмодзи, хаптик.
                     Button {
                         // Повторный тап по выбранной снимает выбор — как на витрине.
                         if selected == option.id {
-                            selected = nil
+                            select(nil)
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         } else {
-                            selected = option.id
+                            select(option)
                             launches[option.id, default: 0] += 1
                         }
                     } label: {

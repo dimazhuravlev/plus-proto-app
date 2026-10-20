@@ -14,6 +14,7 @@ struct EntityScreen: View {
         case .artist(let ref): PersonScreen(role: .artist, entity: ref)
         case .director(let ref): PersonScreen(role: .director, entity: ref)
         case .writer(let ref): PersonScreen(role: .writer, entity: ref)
+        case .episodes(let ref): SeriesEpisodesScreen(entity: ref)
         }
     }
 }

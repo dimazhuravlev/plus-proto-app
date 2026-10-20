@@ -43,7 +43,13 @@ struct BookFigureGeometry {
     /// (ряд ПП): там толщина задаётся с поправкой на масштаб.
     var borderWidth: CGFloat = CoverBorder.width
     var spineBevel: CGSize { CGSize(width: 0.0406, height: 1.93 * scale) }
-    var hingeWidth: CGFloat { 10 * scale }
+    /// Сгиб у корешка (`line` компонента `book card small`, `2440:27634`) — 11.76 % ширины
+    /// книги (10 на книге 85, 8.47 на 72): в макете он тянется вместе с ней (`SCALE`).
+    func hingeWidth(coverWidth: CGFloat) -> CGFloat {
+        frameSize(coverWidth: coverWidth).width * Self.hingeShare
+    }
+
+    static let hingeShare: CGFloat = 10 / 85
 
     /// Ширина обложки — по её пропорциям в допустимых пределах.
     func coverWidth(aspect: CGFloat?) -> CGFloat {
@@ -102,7 +108,18 @@ enum BookCoverAspect {
 struct BookFigure<Cover: View>: View {
     let geometry: BookFigureGeometry
     let coverWidth: CGFloat
+    /// Id книги (`gb-…`) — у начатой на обложке бейдж с прочитанной долей
+    /// (`BookProgressBadge`, задача пользователя 2026-10-20). `nil` — бейджа нет
+    /// (скелетоны, шапка экрана книги, карточка шеринга).
+    var readingID: String? = nil
     @ViewBuilder var cover: Cover
+
+    /// Опционально: в окне поверх всего (шеринг) окружения корня нет.
+    @Environment(ActionBarState.self) private var actionBar: ActionBarState?
+
+    private var readingProgress: Double? {
+        readingID.flatMap { actionBar?.readingHistory.readingProgress(for: $0) }
+    }
 
     /// Скелетон — книга без обложки (`EmptyView` на её месте). Каждый слой рисунка
     /// у него вполсилы: подложка, заливка обложки, кромки и сгиб ложатся друг на друга,
@@ -124,7 +141,13 @@ struct BookFigure<Cover: View>: View {
                         .clipShape(pages)
                         .allowsHitTesting(false)
                 }
-                .overlay { pages.stroke(PlusSkeleton.fill.opacity(layerOpacity), lineWidth: PlusMetrics.hairline) }
+                // Бордер внутрь, как в макете (`back cover`: Fill/Nine 0.67 inside) и как все
+                // бордеры проекта: обводка вдвое толще по кромке, срезанная самой формой.
+                .overlay {
+                    pages
+                        .stroke(CoverBorder.color.opacity(layerOpacity), lineWidth: 2 * CoverBorder.width)
+                        .clipShape(pages)
+                }
                 .frame(
                     width: coverWidth + geometry.pagesRight,
                     height: geometry.coverHeight + geometry.pagesTop
@@ -133,17 +156,61 @@ struct BookFigure<Cover: View>: View {
             PlusSkeleton.fill.opacity(layerOpacity)
                 // Сгиб у корешка рисует сама картинка (`ResolvedArtwork`): проявляется
                 // вместе с обложкой, а у скелетона его нет (правка пользователя 2026-10-09).
-                .overlay { cover.environment(\.bookHingeWidth, geometry.hingeWidth) }
+                .overlay { cover.environment(\.bookHingeWidth, geometry.hingeWidth(coverWidth: coverWidth)) }
                 .frame(width: coverWidth, height: geometry.coverHeight)
                 .bookCoverShape(
                     radius: geometry.coverRadius,
                     borderWidth: geometry.borderWidth,
                     borderOpacity: layerOpacity
                 )
+                .overlay(alignment: .topLeading) {
+                    if let readingProgress {
+                        BookProgressBadge(progress: readingProgress)
+                            .padding(BookProgressBadge.inset)
+                    }
+                }
                 .padding(.top, geometry.pagesTop)
         }
         // Кадр книги — вместе с правым выступом подложки (`frameSize`).
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    }
+}
+
+// MARK: - Бейдж прогресса
+
+/// Прочитанная доля на обложке начатой книги — `nameplates` `2880:78062`: белая плашка
+/// 18 r6 с полями 4 по бокам и лёгкой тенью, «38%» Text XS Semibold чёрным; стоит
+/// в 4 от верхнего левого угла обложки. Размер постоянный у карточек всех размеров:
+/// текст не масштабируем.
+struct BookProgressBadge: View {
+    let progress: Double
+
+    static let inset: CGFloat = 4
+
+    private enum Layout {
+        static let height: CGFloat = 18
+        static let side: CGFloat = 4
+        static let radius: CGFloat = 6
+        /// Тень макета — y 1, блюр 4 (в коде вдвое меньше)
+        static let shadowRadius: CGFloat = 2
+        static let shadowOffset: CGFloat = 1
+        static let shadowOpacity: Double = 0.1
+    }
+
+    /// Не меньше 1 % и не больше 99 %: начатая и недочитанная.
+    private var percent: Int {
+        min(max(Int((progress * 100).rounded()), 1), 99)
+    }
+
+    var body: some View {
+        Text("\(percent)%")
+            .plusText(.textXS, .semibold)
+            .foregroundStyle(Color.fillInverted)
+            .padding(.horizontal, Layout.side)
+            .frame(height: Layout.height)
+            .background(Color.fillOne, in: RoundedRectangle(cornerRadius: Layout.radius, style: .continuous))
+            .shadow(color: .black.opacity(Layout.shadowOpacity), radius: Layout.shadowRadius, y: Layout.shadowOffset)
+            .accessibilityLabel("Прочитано \(percent)%")
     }
 }
 
@@ -228,9 +295,10 @@ private struct BookCoverEdge: Shape {
     }
 }
 
-/// Притенённый сгиб у корешка — полоска `Rectangle 240661877` макета, снятая
-/// по пикселям: блик у самой кромки, тень с пиком 15 % в 3/10 ширины от неё, спад
-/// к краю полоски. Мягче, чем у объёмной книги витрины: книга почти анфас.
+/// Притенённый сгиб у корешка — `line` компонента `book card small` (`2440:27634`):
+/// линейный градиент от корешка — прозрачный у кромки, чёрный 16 % на 34.6 % ширины,
+/// 8 % на 67.8 %, прозрачный у края полоски. Мягче, чем у объёмной книги витрины:
+/// книга почти анфас.
 extension EnvironmentValues {
     /// Ширина сгиба у корешка — `BookFigure` ставит её своей обложке, а сгиб рисует сама
     /// загруженная картинка (`ResolvedArtwork`). `nil` — не книга, сгиба нет.
@@ -238,18 +306,14 @@ extension EnvironmentValues {
 }
 
 enum BookHingeShade {
+    /// Стопы макета: у него градиент идёт от края полоски к корешку (матрица
+    /// `[[-1, 0, 1], …]`), здесь — от корешка, доли пересчитаны (1 − t).
     static let gradient = LinearGradient(
         stops: [
-            .init(color: .white.opacity(0.02), location: 0.05),
-            .init(color: .white.opacity(0.03), location: 0.15),
-            .init(color: .black.opacity(0.11), location: 0.25),
-            .init(color: .black.opacity(0.15), location: 0.35),
-            .init(color: .black.opacity(0.13), location: 0.45),
-            .init(color: .black.opacity(0.11), location: 0.55),
-            .init(color: .black.opacity(0.08), location: 0.65),
-            .init(color: .black.opacity(0.06), location: 0.75),
-            .init(color: .black.opacity(0.035), location: 0.85),
-            .init(color: .clear, location: 1),
+            .init(color: .white.opacity(0), location: 0),
+            .init(color: .black.opacity(0.16), location: 0.3462),
+            .init(color: .black.opacity(0.08), location: 0.6779),
+            .init(color: .white.opacity(0), location: 1),
         ],
         startPoint: .leading,
         endPoint: .trailing

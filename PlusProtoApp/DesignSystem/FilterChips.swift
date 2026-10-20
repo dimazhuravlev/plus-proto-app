@@ -1,4 +1,5 @@
 import SwiftUI
+import VariableBlur
 
 /// Числа ряда чипсов — `chips-row` макета: чипсы 40 с полями 8 сверху и снизу,
 /// поля ленты 16, шаг 6 (правка пользователя 2026-10-03; в макете 8).
@@ -150,5 +151,76 @@ private struct FilterChip: View {
             }
         }
         .clipShape(Capsule())
+    }
+}
+
+// MARK: - Закреплённый ряд
+
+enum PinnedFilterChipsLayout {
+    /// Подложка навбара и чипсов — на 24 ниже чипсов, проявляется за первые 24 скролла
+    static let backdropTail: CGFloat = 24
+    static let backdropRamp: CGFloat = 24
+
+    /// Навбар над закреплёнными чипсами: своей подложки у бара нет — она общая
+    /// с чипсами; название — всегда, и при оттяге тоже.
+    static let navThresholds = EntityNavBarThresholds(
+        backgroundStart: .greatestFiniteMagnitude,
+        backgroundRamp: 1,
+        titleStart: -.greatestFiniteMagnitude,
+        titleRamp: 0
+    )
+}
+
+/// Ряд чипсов, закреплённый под навбаром экрана со списком, — заголовком секции
+/// внутри ленты (`pinnedViews: [.sectionHeaders]`), а не оверлеем экрана: там UIKit
+/// раздувал скролл ряда до кромок соседей, и его прозрачный низ забирал касания первой
+/// строки (жалоба пользователя 2026-10-06). Подложка одна на навбар и чипсы:
+/// прогрессивный блюр без затемнения от верха экрана до чуть ниже чипсов, проявляется
+/// по скроллу. При оттяге ряд едет за лентой вчетверо медленнее — как навигация витрин.
+/// Общий у списка плейлистов «Моего» и экрана всех серий сериала.
+struct PinnedFilterChips<Option: Hashable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
+    /// Сдвиг ленты экрана (`trackNavBarScroll`)
+    let scrollOffset: CGFloat
+
+    var body: some View {
+        FilterChipsRow(options: options, selection: $selection, title: title)
+            .background(alignment: .top) { backdrop }
+            .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset) - max(0, -scrollOffset))
+    }
+
+    private var backdrop: some View {
+        let above = ServiceTopNavLayout.topSafeArea + EntityNavBarGeometry.barHeight
+        return VariableBlurView(
+            maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
+            direction: .blurredTopClearBottom
+        )
+        .frame(height: above + FilterChipsLayout.rowHeight + PinnedFilterChipsLayout.backdropTail)
+        .offset(y: -above)
+        .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: PinnedFilterChipsLayout.backdropRamp))
+        .allowsHitTesting(false)
+    }
+}
+
+/// Скелетон ряда чипсов — капсулы на месте чипсов, пока варианты едут: ряд держит
+/// своё место, и список под ним не прыгает, когда чипсы появляются.
+struct FilterChipsSkeleton: View {
+    var count = 2
+    var chipWidth: CGFloat = EntitySectionLayout.skeletonHeaderWidth
+
+    var body: some View {
+        HStack(spacing: FilterChipsLayout.gap) {
+            ForEach(0..<count, id: \.self) { _ in
+                Capsule()
+                    .fill(PlusSkeleton.fill)
+                    .frame(width: chipWidth, height: FilterChipsLayout.chipHeight)
+            }
+        }
+        .padding(.horizontal, FilterChipsLayout.side)
+        .padding(.vertical, FilterChipsLayout.vertical)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityHidden(true)
     }
 }

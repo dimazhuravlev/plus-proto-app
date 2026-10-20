@@ -98,10 +98,13 @@ final class WatchHistory {
         var movie = movie
         if let index = entries.firstIndex(where: { $0.id == movie.id }) {
             let previous = entries.remove(at: index).movie
-            if movie.position == nil { movie.position = previous.position }
+            // Другая серия сериала начинается с начала: позиция прежней ей не своя.
+            if movie.position == nil, movie.isSameEpisode(as: previous) { movie.position = previous.position }
             if movie.runtime == nil { movie.runtime = previous.runtime }
             if movie.subtitle == nil { movie.subtitle = previous.subtitle }
             if movie.poster == nil { movie.poster = previous.poster }
+            if movie.season == nil { movie.season = previous.season }
+            if movie.episode == nil { movie.episode = previous.episode }
         }
         entries.insert(Entry(movie: movie, updatedAt: .now), at: 0)
         if entries.count > Self.limit {

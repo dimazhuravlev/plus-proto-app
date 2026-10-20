@@ -18,6 +18,11 @@ final class PlaylistDetailsStore {
 
     /// Один заход на плейлист за жизнь экрана.
     func load(_ entity: EntityRef) async {
+        // Свой плейлист — из стартового набора, без сети.
+        if let own = MyPlaylists.playlist(entityID: entity.id) {
+            details = PlaylistDetails(myPlaylist: own)
+            return
+        }
         guard let id = entity.deezerID, requested != id else { return }
         requested = id
 

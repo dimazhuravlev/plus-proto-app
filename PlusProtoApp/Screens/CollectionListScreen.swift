@@ -1,11 +1,45 @@
 import SwiftUI
-import VariableBlur
 
-/// Полный список коллекции — переход из заголовка любой её карусели.
+/// Полный список коллекции — переход из заголовка карусели: вид полки или секция
+/// экранов «Кино» и «Книги» (`CollectionServiceScreen`).
 struct CollectionListRoute: Hashable {
-    /// Фильтр, с которым экран открывается, — вид карусели, из которой пришли
-    let kind: CollectionItem.Kind
-    let shelf: CollectionStore.Shelf
+    enum Source: Hashable {
+        /// Вид полки — «Альбомы» «Любимого», «Кино» «Скачанного», «Буду смотреть»…
+        case shelf(CollectionItem.Kind, CollectionStore.Shelf)
+        /// Плейлисты «Любимого» — с чипсами «Мои» и «Любимые» (задача пользователя
+        /// 2026-10-20); значение — чипс, с которым экран открывается
+        case playlists(CollectionPlaylistFilter)
+        /// «Покупки» — стартовый набор (`CollectionSeeds.purchases`)
+        case purchases
+        /// «Мои оценки» — оценённые фильмы (`MovieRatings`)
+        case ratings
+        /// «Читаю» — начатые книги (`ReadingHistory`)
+        case reading
+        /// «Прочитано» — стартовый набор (`CollectionSeeds.read`)
+        case read
+    }
+
+    let source: Source
+    /// Название в навбаре — заголовок карусели, из которой пришли
+    let title: String
+}
+
+/// Чипсы списка плейлистов «Любимого».
+enum CollectionPlaylistFilter: Hashable, CaseIterable {
+    /// Свои плейлисты — первой строкой «Создать новый плейлист» (создание не делаем,
+    /// решение пользователя 2026-10-20), дальше стартовый набор `MyPlaylists`.
+    case mine
+    /// Отмеченные «нравится» — плейлисты полки
+    case liked
+
+    /// Короткие названия — правка пользователя 2026-10-20 (были «Мои плейлисты»
+    /// и «Понравившиеся плейлисты»).
+    var title: String {
+        switch self {
+        case .mine: "Мои"
+        case .liked: "Любимые"
+        }
+    }
 }
 
 /// Числа полных списков — `list-item / music` макета Музыки (`2128:94020`).
@@ -30,88 +64,76 @@ enum CollectionListLayout {
     static let textGap: CGFloat = 12
     static let controlsGap: CGFloat = 8
     static let titleLines = 2
-    /// Список — на 8 ниже ряда чипсов (`stack` макета)
+    /// Список — на 8 ниже навбара (`stack` макета)
     static let listTop: CGFloat = 8
-    /// Подложка шапки сходит на нет на 24 ниже чипсов
-    static let backdropTail: CGFloat = 24
-    static let backdropRamp: CGFloat = 24
+    /// «+» в квадрате строки «Создать новый плейлист» (`2871:77052`)
+    static let addIcon: CGFloat = 24
 }
 
 /// Полные списки коллекции «Моё» — по макету полных списков Музыки (`2128:94020`,
-/// задача пользователя 2026-10-04), с нашим навбаром: «назад» и название полки. Под ним —
-/// ряд чипсов, как у полной выдачи музыки в поиске: все виды полки по порядку каруселей
-/// коллекции. Открывается из заголовка любой карусели сразу на её виде. В «Скачанном»
-/// исполнителей нет — у них нечего скачивать.
+/// задача пользователя 2026-10-04), с нашим навбаром: «назад» и название карусели,
+/// из которой пришли. Чипсов других видов нет (задача пользователя 2026-10-19): у «Кино»
+/// и «Книг» свои экраны, у остальных видов — свой список.
 ///
 /// Строки — `list-item / music`: обложка 80, название в две строки и деталь, справа
 /// отметка «скачано» и «ещё» с действиями записи; тап открывает сущность, трек
-/// и плейлист — играют. Смена фильтра — как в выдаче: старый список гаснет, новый
-/// проявляется.
+/// и плейлист — играют.
 struct CollectionListScreen: View {
     let route: CollectionListRoute
 
     @Environment(CollectionStore.self) private var collection
-
-    /// Выбранный фильтр — им подсвечен чипс, сразу по нажатию.
-    @State private var kind: CollectionItem.Kind
-    /// Фильтр показанного списка — догоняет выбранный, когда старый список погас.
-    @State private var shownKind: CollectionItem.Kind
-    @State private var listOpacity: Double = 1
-    @State private var swap: Task<Void, Never>?
+    @Environment(ActionBarState.self) private var actionBar
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition(edge: .top)
-    /// Чипсы — на время экрана: виды, в которых что-то было при входе. Снятая отметка
-    /// не выдёргивает чипс из-под пальца — список просто пустеет.
-    private let options: [CollectionItem.Kind]
+    /// Выбранный чипс и показанный список: смена — старый гаснет, новый проявляется.
+    @State private var filter: CollectionPlaylistFilter?
+    @State private var shownFilter: CollectionPlaylistFilter?
+    @State private var listOpacity: Double = 1
+    @State private var swap: Task<Void, Never>?
 
     init(route: CollectionListRoute) {
         self.route = route
-        _kind = State(initialValue: route.kind)
-        _shownKind = State(initialValue: route.kind)
-        let store = CollectionStore.shared
-        options = Self.kinds(on: route.shelf).filter { kind in
-            kind == route.kind || !store.items(kind, on: route.shelf).isEmpty
+        if case .playlists(let start) = route.source {
+            _filter = State(initialValue: start)
+            _shownFilter = State(initialValue: start)
         }
     }
 
-    /// Виды полки — порядок каруселей коллекции; исполнителей в «Скачанном» нет.
-    static func kinds(on shelf: CollectionStore.Shelf) -> [CollectionItem.Kind] {
-        CollectionItem.Kind.allCases.filter { shelf == .favorites || $0 != .artist }
+    private var items: [CollectionItem] {
+        switch route.source {
+        case .shelf(let kind, let shelf): collection.items(kind, on: shelf)
+        case .playlists:
+            // «Мои» — стартовый набор своих плейлистов (`MyPlaylists`), «Любимые» — полка.
+            shownFilter == .liked ? collection.items(.playlist, on: .favorites) : MyPlaylists.items
+        case .purchases: CollectionSeeds.purchases
+        case .ratings: MovieRatings.shared.entries.map(\.item)
+        case .reading: CollectionMix.readingItems(actionBar.readingHistory)
+        case .read: CollectionSeeds.read
+        }
     }
 
-    private var items: [CollectionItem] {
-        collection.items(shownKind, on: route.shelf)
+    /// Строка-действие первой в списке: «Создать новый плейлист» у «Моих плейлистов»
+    /// (`2871:77052`), «Добавить исполнителей» у любимых исполнителей (`2877:77621`).
+    private var leadingAction: CollectionListAction? {
+        if shownFilter == .mine { return .createPlaylist }
+        if case .shelf(.artist, .favorites) = route.source { return .addArtists }
+        return nil
     }
+
+    private var showsCreateRow: Bool { leadingAction != nil }
 
     var body: some View {
+        let items = items
         ZStack {
             Color.surfaceOne.ignoresSafeArea()
 
             ScrollView {
-                // Чипсы — закреплённым заголовком внутри ленты, как у полной выдачи
-                // музыки и сетки поиска, а не в оверлее экрана: там UIKit раздувал скролл
-                // ряда до кромок соседей, и его прозрачный низ забирал касания первой
-                // строки (жалоба пользователя 2026-10-06, замер `-debugHitSweep`).
+                // Чипсы — закреплённым заголовком внутри ленты (`PinnedFilterChips`).
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
-                        LazyVStack(spacing: 0) {
-                            // Очередь — треки показанного списка по порядку.
-                            let queue = items.filter { $0.kind == .track }.compactMap(\.playable)
-                            ForEach(items) { item in
-                                CollectionListRow(item: item, queue: queue, isFirst: item.id == items.first?.id)
-                            }
-                        }
-                        .padding(.top, CollectionListLayout.listTop)
-                        // Строки съезжают плавно, только когда отметку сняли в этом же списке.
-                        .animation(CollectionMotion.itemsChange, value: items.map(\.id))
-                        // Список другого фильтра — новый целиком, а не те же строки с другим
-                        // содержимым: иначе на смене фильтра строки переезжали и морфились
-                        // под проявлением (правка пользователя 2026-10-04 — «не нужно это»).
-                        // Смена — одной прозрачностью: старый гаснет, новый проявляется.
-                        .id(shownKind)
-                        .opacity(listOpacity)
+                        list(items)
                     } header: {
-                        chips
+                        if filter != nil { chips }
                     }
                 }
             }
@@ -121,7 +143,7 @@ struct CollectionListScreen: View {
             .trackNavBarScroll(into: $scrollOffset)
 
             // Пустой список гаснет и проявляется вместе со строками — той же прозрачностью.
-            if items.isEmpty {
+            if items.isEmpty, !showsCreateRow {
                 Text("Здесь пока ничего нет")
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillSubtitle)
@@ -129,52 +151,70 @@ struct CollectionListScreen: View {
             }
         }
         .overlay(alignment: .top) {
-            EntityNavBar(title: route.shelf.title, scrollOffset: scrollOffset, thresholds: Self.navThresholds)
+            EntityNavBar(
+                title: route.title,
+                scrollOffset: scrollOffset,
+                thresholds: filter == nil ? Self.navThresholds : PinnedFilterChipsLayout.navThresholds
+            ) {
+                // «+» у плейлистов — создать плейлист (правка пользователя 2026-10-20):
+                // круг того же вида, что «назад». Само создание пока не делаем — кнопка
+                // только откликается.
+                if filter != nil {
+                    PlusButton(icon: "iconAdd", type: .chrome, size: .m, accessibilityTitle: "Создать плейлист") {}
+                }
+            }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .onChange(of: kind) { _, selected in swapList(to: selected) }
+        .onChange(of: filter) { _, selected in swapList(to: selected) }
     }
 
-    /// Чипсы под навбаром. Подложка одна на навбар и чипсы: прогрессивный блюр без
-    /// затемнения от верха экрана до чуть ниже чипсов, проявляется по скроллу. Висит
-    /// фоном закреплённого ряда и уходит от него вверх, под навбар. При оттяге ряд
-    /// едет за лентой вчетверо медленнее — как навигация витрин; заголовок секции на
-    /// оттяге едет вместе с лентой, сдвиг возвращает разницу.
+    private func list(_ items: [CollectionItem]) -> some View {
+        LazyVStack(spacing: 0) {
+            if let leadingAction {
+                CollectionActionRow(action: leadingAction)
+            }
+            // Очередь — треки списка по порядку.
+            let queue = items.filter { $0.kind == .track }.compactMap(\.playable)
+            ForEach(items) { item in
+                let isFirst = !showsCreateRow && item.id == items.first?.id
+                // «Скачанное кино» — строками с кадром, как «Загрузки» Кинопоиска.
+                if case .shelf(.movie, .downloads) = route.source {
+                    CollectionDownloadRow(item: item, isFirst: isFirst)
+                } else {
+                    CollectionListRow(
+                        item: item,
+                        queue: queue,
+                        isFirst: isFirst,
+                        // «Читаю» — сразу читалка (правка пользователя 2026-10-20).
+                        readBook: route.source == .reading ? CollectionMix.readBook(item.id, in: actionBar.readingHistory) : nil,
+                        rating: route.source == .ratings ? MovieRatings.shared.rating(for: item.id) : nil
+                    )
+                }
+            }
+        }
+        .padding(.top, CollectionListLayout.listTop)
+        // Строки съезжают плавно, когда отметку сняли в этом же списке.
+        .animation(CollectionMotion.itemsChange, value: items.map(\.id))
+        // Список другого чипса — новый целиком, а не те же строки с другим содержимым:
+        // смена — одной прозрачностью (правка пользователя 2026-10-04).
+        .id(shownFilter)
+        .opacity(listOpacity)
+    }
+
     private var chips: some View {
-        FilterChipsRow(options: options, selection: $kind, title: \.title)
-            .background(alignment: .top) { headerBackdrop }
-            .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset) - max(0, -scrollOffset))
-    }
-
-    private var headerBackdrop: some View {
-        let above = ServiceTopNavLayout.topSafeArea + EntityNavBarGeometry.barHeight
-        return VariableBlurView(
-            maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
-            direction: .blurredTopClearBottom
+        PinnedFilterChips(
+            options: CollectionPlaylistFilter.allCases,
+            selection: Binding(get: { filter ?? .mine }, set: { filter = $0 }),
+            title: \.title,
+            scrollOffset: scrollOffset
         )
-        .frame(height: above + FilterChipsLayout.rowHeight + CollectionListLayout.backdropTail)
-        .offset(y: -above)
-        .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: CollectionListLayout.backdropRamp))
-        .allowsHitTesting(false)
     }
 
-    /// Название полки в баре — всегда, и при оттяге тоже: это свой тип навбара, а не
-    /// название сущности, проявляющееся по скроллу (правка пользователя 2026-10-04).
-    /// Нулевая рампа от нуля гасила его на отрицательном сдвиге — старт на минус
-    /// бесконечности держит его всегда. Своей подложки у бара нет — она общая с чипсами.
-    private static let navThresholds = EntityNavBarThresholds(
-        backgroundStart: .greatestFiniteMagnitude,
-        backgroundRamp: 1,
-        titleStart: -.greatestFiniteMagnitude,
-        titleRamp: 0
-    )
-
-    /// Старый список гаснет, в паузе подменяется и уезжает к началу, новый проявляется —
-    /// как смена фильтров полной выдачи. Быстрые нажатия подряд прерывают незаконченную
-    /// смену: показан всегда последний выбранный.
-    private func swapList(to selected: CollectionItem.Kind) {
+    /// Старый список гаснет, в паузе подменяется и уезжает к началу, новый проявляется.
+    /// Быстрые нажатия подряд прерывают незаконченную смену: показан последний выбранный.
+    private func swapList(to selected: CollectionPlaylistFilter?) {
         swap?.cancel()
-        guard selected != shownKind else {
+        guard selected != shownFilter else {
             withAnimation(CollectionListMotion.fadeIn) { listOpacity = 1 }
             return
         }
@@ -182,18 +222,131 @@ struct CollectionListScreen: View {
             withAnimation(CollectionListMotion.fadeOut) { listOpacity = 0 }
             try? await Task.sleep(for: CollectionListMotion.fadeOutDuration)
             guard !Task.isCancelled else { return }
-            shownKind = selected
+            shownFilter = selected
             scrollPosition.scrollTo(edge: .top)
             withAnimation(CollectionListMotion.fadeIn) { listOpacity = 1 }
         }
     }
+
+
+    /// Название карусели в баре — всегда, и при оттяге тоже: это свой тип навбара, а не
+    /// название сущности, проявляющееся по скроллу (правка пользователя 2026-10-04).
+    /// Подложка проявляется с первых пунктов скролла — чипсов с их подложкой больше нет.
+    static let navThresholds = EntityNavBarThresholds(
+        backgroundStart: 0,
+        backgroundRamp: ServiceTopNavMotion.backdropRamp,
+        titleStart: -.greatestFiniteMagnitude,
+        titleRamp: 0
+    )
 }
 
-/// Смена списков по фильтру — те же 300 + 300 мс, что у полной выдачи поиска.
+/// Смена полок коллекции — те же 300 + 300 мс, что у полной выдачи поиска.
 enum CollectionListMotion {
     static let fadeOutDuration: Duration = .milliseconds(300)
     static let fadeOut: Animation = .easeInOut(duration: 0.3)
     static let fadeIn: Animation = .easeInOut(duration: 0.3)
+}
+
+// MARK: - Строка-действие
+
+/// Строка-действие в начале полного списка.
+enum CollectionListAction {
+    /// «Создать новый плейлист» — `2871:77052`
+    case createPlaylist
+    /// «Добавить исполнителей» — `2877:77621`
+    case addArtists
+
+    var title: String {
+        switch self {
+        case .createPlaylist: "Создать новый плейлист"
+        case .addArtists: "Добавить исполнителей"
+        }
+    }
+
+    /// Вторая строка серым — Text S, перенос — как в макете.
+    var subtitle: String? {
+        switch self {
+        case .createPlaylist: nil
+        case .addArtists: "Чем их больше, тем лучше\nрекомендации"
+        }
+    }
+
+    /// Обложка — круг у исполнителей, квадрат r12 у плейлиста: форма строк списка.
+    var isCircle: Bool { self == .addArtists }
+}
+
+/// Строка-действие — `list-item / music` (`2871:77052`, `2877:77621`): квадрат 80 r12
+/// (у исполнителей — круг) с заливкой Fill/Nine и «+» 24 по центру, название Text M
+/// и серым Text S, справа шеврон. Действий пока нет (решения пользователя 2026-10-20) —
+/// строка только откликается нажатием и хаптикой.
+private struct CollectionActionRow: View {
+    let action: CollectionListAction
+
+    private enum Layout {
+        /// Название — описание (`gap-[2px]` text-label)
+        static let titleToSubtitle: CGFloat = 2
+    }
+
+    var body: some View {
+        HStack(spacing: CollectionListLayout.textGap) {
+            cover
+                .frame(width: CollectionListLayout.cover, height: CollectionListLayout.cover)
+                .overlay {
+                    Image("iconAdd")
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: CollectionListLayout.addIcon, height: CollectionListLayout.addIcon)
+                        .foregroundStyle(Color.fillFive)
+                }
+
+            VStack(alignment: .leading, spacing: Layout.titleToSubtitle) {
+                Text(action.title)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillOne)
+                    .lineLimit(1)
+                if let subtitle = action.subtitle {
+                    Text(subtitle)
+                        .plusText(.textS, .medium)
+                        .foregroundStyle(Color.fillSubtitle)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Правый шеврон — отзеркаленный `icon / dropleft`, как у шапок секций.
+            Image("iconDropleft")
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: EntitySectionLayout.chevronBox, height: EntitySectionLayout.chevronBox)
+                .scaleEffect(x: -1)
+                .foregroundStyle(Color.fillFive)
+        }
+        .padding(.horizontal, CollectionListLayout.side)
+        .padding(.vertical, CollectionListLayout.rowPadding)
+        .contentShape(.rect)
+        .pressScale(PressMotion.rowScale)
+        .overlay(alignment: .top) { divider }
+        .overlay(alignment: .bottom) { divider }
+        .onTapGesture { PlayerHaptics.tap() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    @ViewBuilder
+    private var cover: some View {
+        if action.isCircle {
+            Circle().fill(Color.fillNine)
+        } else {
+            RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
+                .fill(Color.fillNine)
+        }
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(CollectionLayout.divider)
+            .frame(height: 0.5)
+            .padding(.horizontal, CollectionListLayout.side)
+    }
 }
 
 // MARK: - Строка
@@ -206,6 +359,10 @@ private struct CollectionListRow: View {
     /// Треки показанного списка — очередь, если строка сама трек.
     let queue: [MusicNowPlaying]
     let isFirst: Bool
+    /// Начатая книга «Читаю»: тап — читалка, а не экран книги.
+    var readBook: BookInProgress? = nil
+    /// «Мои оценки» — эмодзи оценки над углом постера, как у карточки карусели.
+    var rating: MovieRating? = nil
 
     @Environment(CollectionStore.self) private var collection
     @Environment(AppNavigationState.self) private var navigation
@@ -280,6 +437,9 @@ private struct CollectionListRow: View {
                 height: CollectionListLayout.posterHeight,
                 shape: RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
             ))
+            .overlay(alignment: .topLeading) {
+                if let rating { MovieRatingBadge(rating: rating) }
+            }
         case .book:
             source(bookFigure)
         case .artist:
@@ -301,7 +461,7 @@ private struct CollectionListRow: View {
 
     private var bookFigure: some View {
         let geometry = CollectionListLayout.book(aspect: item.aspect)
-        return BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: item.aspect)) {
+        return BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: item.aspect), readingID: item.route?.ref.id) {
             if let artwork = item.artwork {
                 SkeletonArtwork(source: artwork)
             }
@@ -327,7 +487,11 @@ private struct CollectionListRow: View {
 
     /// Трек и плейлист играют сразу, остальные открывают свой экран.
     private func open() {
-        if item.kind != .track, let route = item.route {
+        if let readBook {
+            UIImpactFeedbackGenerator(style: .medium)
+                .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+            actionBar.open(.book(readBook))
+        } else if item.kind != .track, let route = item.route {
             navigation.open(route)
         } else if let playable = item.playable {
             PlayerHaptics.tap()
