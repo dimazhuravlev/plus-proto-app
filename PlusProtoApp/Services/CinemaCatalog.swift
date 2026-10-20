@@ -232,7 +232,9 @@ final class CinemaCatalog {
                 subtitle: details.playerSubtitle,
                 runtime: details.runtime,
                 // Постер — карточке «Продолжить» промо «Главной» (задача 69), крупный.
-                poster: (details.coverPoster ?? details.poster).map { ArtworkSource.remote($0) }
+                poster: (details.coverPoster ?? details.poster).map { ArtworkSource.remote($0) },
+                season: details.isSeries ? 1 : nil,
+                episode: details.isSeries ? 1 : nil
             ),
             poster: details.poster.map { ArtworkSource.remote($0) },
             year: details.year

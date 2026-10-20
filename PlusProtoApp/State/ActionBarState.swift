@@ -102,6 +102,22 @@ struct MovieInProgress: Equatable, Codable {
     /// Заполняют входы, которые его знают (экран тайтла, промо Кинопоиска); у остальных
     /// и у старых записей его нет — карточка тогда из кадра.
     var poster: ArtworkSource? = nil
+    /// Сериал — сезон и серия, на которых остановились; у фильма нет. Серий прототип не
+    /// переключает, сериал играет с первой — «1 сезон, 1 серия» (2026-10-20).
+    var season: Int? = nil
+    var episode: Int? = nil
+
+    /// Та же серия — или вход серии не знает (чип бара, витрина): тогда продолжается
+    /// записанная. У фильма серий нет — всегда «та же».
+    func isSameEpisode(as other: MovieInProgress) -> Bool {
+        season == nil || (season == other.season && episode == other.episode)
+    }
+
+    /// «2 сезон, 4 серия» — серой строкой под названием карточки ПП.
+    var episodeText: String? {
+        guard let season, let episode else { return nil }
+        return "\(season) сезон, \(episode) серия"
+    }
 }
 
 /// Что читали: обложка 36×52 внутри чипа 44×60 (figma-actionbar §4.3).
@@ -193,6 +209,8 @@ final class ActionBarState {
     /// «Смотреть дальше» главной Кинопоиска — всё, что запускали в киноплеере.
     /// Живёт здесь, потому что вход в плеер один — `watch` (2026-10-04).
     let watchHistory = WatchHistory()
+    /// Начатые книги — «Читаю» коллекции и начатое в её карусели «Книги».
+    let readingHistory = ReadingHistory()
     /// Ряд «продолженного потребления» «Главной» (задача 71) — пишется отсюда же,
     /// из единого входа плееров (`open`).
     let recently = RecentlyConsumed()
@@ -737,7 +755,13 @@ final class ActionBarState {
         // сохранённую позицию не знает и приходит без неё. Не в чипе бара — из истории
         // просмотра: «Смотреть дальше» продолжает любой запущенный фильм (2026-10-04).
         if item.position == nil {
-            item.position = movie?.id == item.id ? movie?.position : watchHistory.position(for: item.id)
+            let previous = movie?.id == item.id ? movie : watchHistory.entries.first { $0.id == item.id }?.movie
+            // Другая серия сериала — с начала, а не с места прежней.
+            if let previous, item.isSameEpisode(as: previous) { item.position = previous.position }
+            if item.season == nil, let previous {
+                item.season = previous.season
+                item.episode = previous.episode
+            }
         }
         // Хронометраж — тоже из истории, если вход его не знает (чип бара, витрина):
         // иначе плеер шёл бы по числу макета, а карточка «Смотреть дальше» — по
@@ -813,6 +837,7 @@ final class ActionBarState {
             Task { await watchHistory.backfillContinuingPoster() }
             resumeMovie(item)
         case .book(let item):
+            readingHistory.record(item)
             resumeBook(item)
         }
     }

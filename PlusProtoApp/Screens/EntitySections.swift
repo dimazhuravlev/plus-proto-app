@@ -52,8 +52,6 @@ enum EntitySectionLayout {
 /// альбомы». У плоских списков (фильмы режиссёра, книги писателя — список и есть
 /// весь раздел) шеврона нет: вести некуда.
 struct EntitySectionHeader: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let title: String
     var showsChevron = true
     /// Шеврон уступил место иконке-хвату режима порядка («Моё») — гаснет кросс-попом,
@@ -70,17 +68,7 @@ struct EntitySectionHeader: View {
                 .foregroundStyle(Color.fillOne)
 
             if showsChevron {
-                // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет.
-                Image("iconDropleft")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: EntitySectionLayout.chevronBox, height: EntitySectionLayout.chevronBox)
-                    .scaleEffect(x: -1)
-                    .foregroundStyle(Color.fillSubtitle)
-                    .offset(y: PlusMetrics.headerChevronDrop)
-                    .opacity(isChevronCollapsed ? 0 : 1)
-                    .scaleEffect(isChevronCollapsed && !reduceMotion ? ActionBarMotion.iconSwapScale : 1)
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap, value: isChevronCollapsed)
+                EntitySectionChevron(isCollapsed: isChevronCollapsed)
             }
         }
         .frame(height: lineHeight)
@@ -89,6 +77,28 @@ struct EntitySectionHeader: View {
         .padding(.bottom, EntitySectionLayout.headerBottom)
         .padding(.horizontal, EntitySectionLayout.side)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Шеврон за заголовком секции — общий у шапок каруселей и шапки блока «Треки» «Моего».
+/// В режиме порядка блоков гаснет кросс-попом, место за ним остаётся.
+struct EntitySectionChevron: View {
+    var isCollapsed = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        // Правый шеврон — отзеркаленный `icon / dropleft`: своего ассета нет.
+        Image("iconDropleft")
+            .renderingMode(.template)
+            .resizable()
+            .frame(width: EntitySectionLayout.chevronBox, height: EntitySectionLayout.chevronBox)
+            .scaleEffect(x: -1)
+            .foregroundStyle(Color.fillSubtitle)
+            .offset(y: PlusMetrics.headerChevronDrop)
+            .opacity(isCollapsed ? 0 : 1)
+            .scaleEffect(isCollapsed && !reduceMotion ? ActionBarMotion.iconSwapScale : 1)
+            .animation(reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap, value: isCollapsed)
     }
 }
 

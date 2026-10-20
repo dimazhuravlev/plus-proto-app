@@ -220,6 +220,11 @@ struct MovieScreen: View {
     private func startWatching() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
+        // Сериал — с серии, на которой остановились, иначе с первой.
+        if let current = currentEpisode {
+            actionBar.open(.movie(.playing(current.episode, of: entity, details: details, still: current.still)))
+            return
+        }
         actionBar.open(.movie(MovieInProgress(
             id: entity.id,
             still: details.backdrop.map { ArtworkSource.remote($0) } ?? entity.artwork,
@@ -236,12 +241,40 @@ struct MovieScreen: View {
     /// (2026-10-04). Постером — карусель коллекции стоит на 2:3. Моковый тайтл
     /// витрины без сети в коллекцию не ложится: id Кинопоиска у него нет.
     private var collectionItem: CollectionItem? {
-        guard entity.kinopoiskID != nil else { return nil }
-        return .movie(
-            EntityRef(id: entity.id, title: details.title, subtitle: "", artwork: entity.artwork),
-            poster: details.poster.map { ArtworkSource.remote($0) },
-            year: details.year
-        )
+        .title(entity, details: details)
+    }
+
+    // MARK: Серии
+
+    /// Серии сериала, если уже доехали (`SeriesCatalog`).
+    private var seriesInfo: SeriesInfo? {
+        guard details.isSeries else { return nil }
+        return SeriesCatalog.shared.info(details.id)
+    }
+
+    /// Серия с кадром той же раздачи, что в карусели «Сезонов и Эпизодов».
+    private func withStill(_ episode: SeriesEpisode) -> EpisodeWithStill {
+        let episodes = seriesInfo?.episodes ?? [episode]
+        let stills = SeriesStills.assign(episodes, titleStills: details.stills, seed: details.id)
+        return EpisodeWithStill(episode: episode, still: stills[episode.id].map { ArtworkSource.remote($0) })
+    }
+
+    /// «Смотреть» сериала — серия, на которой остановились, иначе первая.
+    private var currentEpisode: EpisodeWithStill? {
+        guard details.isSeries else { return nil }
+        let watched = actionBar.watchHistory.entries.first { $0.id == entity.id }?.movie
+        let season = watched?.season ?? 1
+        let number = watched?.episode ?? 1
+        let episode = seriesInfo?.episode(season, number)
+            ?? (season == 1 && number == 1 ? seriesInfo?.episodes.first : nil)
+            ?? SeriesEpisode(season: season, number: number, runtime: details.episodeLength)
+        return withStill(episode)
+    }
+
+    /// «Скачать» сериала качает первую серию, а не тайтл (решение пользователя 2026-10-20).
+    private var downloadEpisode: EpisodeWithStill? {
+        guard details.isSeries else { return nil }
+        return withStill(seriesInfo?.episodes.first ?? SeriesEpisode(season: 1, number: 1, runtime: details.episodeLength))
     }
 
     /// Текст лида — всегда сам аргумент, короткое редакционное описание.
@@ -258,6 +291,10 @@ struct MovieScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     titleBlock
+                    // «Сезоны и Эпизоды» — только у сериала, сразу под шапкой (`2052:10621`).
+                    if details.isSeries {
+                        MovieEpisodesSection(entity: entity, details: details)
+                    }
                     // Описание живёт внутри секции видеокарточек, между второй
                     // и третьей, — так оно стоит в макете. Отдельной секцией оно было,
                     // пока карточек не существовало, и показывалось дважды, когда они
@@ -289,7 +326,7 @@ struct MovieScreen: View {
                     if !details.rows.isEmpty {
                         MovieDetailsSection(rows: details.rows)
                     }
-                    MovieRateSection()
+                    MovieRateSection(item: collectionItem)
                     if !details.similar.isEmpty {
                         MovieSimilarSection(titles: details.similar)
                     }
@@ -348,7 +385,9 @@ struct MovieScreen: View {
             }
         }
         .background(Color.surfaceOne.ignoresSafeArea())
-        .overlay(alignment: .bottom) { MovieMainButtons(onPlay: startWatching, collectionItem: collectionItem) }
+        .overlay(alignment: .bottom) {
+            MovieMainButtons(onPlay: startWatching, collectionItem: collectionItem, episode: downloadEpisode)
+        }
         #if DEBUG
         // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
         // а запуск плеера теперь живёт только на этой кнопке. Раньше секунды —
@@ -721,6 +760,8 @@ private struct MovieMainButtons: View {
     /// Запись коллекции «Моё» — её отмечают «Позже» и «Скачать». Нет — кнопки
     /// только откликаются.
     let collectionItem: CollectionItem?
+    /// Сериал — «Скачать» качает эту серию, а не тайтл целиком.
+    var episode: EpisodeWithStill?
 
     @Environment(CollectionStore.self) private var collection
 
@@ -729,7 +770,9 @@ private struct MovieMainButtons: View {
     }
 
     private var isDownloaded: Bool {
-        collectionItem.map { collection.isDownloaded($0.id) } ?? false
+        guard let collectionItem else { return false }
+        if let episode { return collection.isEpisodeDownloaded(collectionItem.id, episode.episode.id) }
+        return collection.isDownloaded(collectionItem.id)
     }
 
     var body: some View {
@@ -813,7 +856,11 @@ private struct MovieMainButtons: View {
             accessibilityTitle: isDownloaded ? "Удалить из скачанного" : "Скачать"
         ) {
             guard let collectionItem else { return }
-            collection.toggleDownload(collectionItem)
+            if let episode {
+                collection.toggleEpisode(collectionItem, episode.episode, still: episode.still)
+            } else {
+                collection.toggleDownload(collectionItem)
+            }
         } icon: {
             DownloadGlyph(isDownloaded: isDownloaded, box: MovieLayout.buttonSize.iconBox)
         }

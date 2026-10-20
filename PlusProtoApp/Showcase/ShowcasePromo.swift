@@ -951,7 +951,7 @@ private struct PromoCardFace: View {
                 .showcaseSwappable()
         case .book(let book):
             let figure = Layout.book
-            BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth) {
+            BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth, readingID: book.resume?.id ?? book.id) {
                 SkeletonArtwork(source: book.cover)
             }
             .promoCoverShadow(item)

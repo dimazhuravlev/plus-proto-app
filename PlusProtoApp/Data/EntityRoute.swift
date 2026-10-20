@@ -29,6 +29,9 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     case artist(EntityRef)
     case director(EntityRef)
     case writer(EntityRef)
+    /// Все серии сериала (`SeriesEpisodesScreen`): шеврон «Сезонов и Эпизодов» экрана
+    /// тайтла и «Загрузить другие серии» скачанного сериала. `ref` — сам сериал.
+    case episodes(EntityRef)
 
     /// Для показа слоем: `fullScreenCover(item:)` требует `Identifiable`.
     var id: String {
@@ -40,13 +43,14 @@ enum EntityRoute: Hashable, Identifiable, Codable {
         case .artist(let ref): "artist-" + ref.id
         case .director(let ref): "director-" + ref.id
         case .writer(let ref): "writer-" + ref.id
+        case .episodes(let ref): "episodes-" + ref.id
         }
     }
 
     var ref: EntityRef {
         switch self {
         case .movie(let ref), .book(let ref), .album(let ref), .playlist(let ref),
-             .artist(let ref), .director(let ref), .writer(let ref): ref
+             .artist(let ref), .director(let ref), .writer(let ref), .episodes(let ref): ref
         }
     }
 
@@ -66,7 +70,7 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     var hasRoundArtwork: Bool {
         switch self {
         case .album, .playlist, .artist, .director, .writer: true
-        case .movie, .book: false
+        case .movie, .book, .episodes: false
         }
     }
 }

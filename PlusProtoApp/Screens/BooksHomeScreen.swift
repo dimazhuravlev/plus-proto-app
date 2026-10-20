@@ -296,7 +296,7 @@ private struct BooksPromoCarousel: View {
     private func bookView(_ book: BooksHomeCatalog.Book, slot: Int, isCurrent: Bool) -> some View {
         let geometry = BooksPromoLayout.geometry
         let coverWidth = geometry.coverWidth(aspect: min(book.aspect ?? BookFigureGeometry.defaultAspect, BooksPromoLayout.maxAspect))
-        let figure = BookFigure(geometry: geometry, coverWidth: coverWidth) {
+        let figure = BookFigure(geometry: geometry, coverWidth: coverWidth, readingID: book.id) {
             SkeletonArtwork(source: book.cover)
         }
         Button { navigation.open(book.route) } label: {
@@ -407,7 +407,7 @@ private struct BooksCard: View {
         let geometry = BooksCardLayout.geometry
         let coverWidth = geometry.coverWidth(aspect: book.aspect)
         let width = geometry.frameSize(coverWidth: coverWidth).width
-        let figure = BookFigure(geometry: geometry, coverWidth: coverWidth) {
+        let figure = BookFigure(geometry: geometry, coverWidth: coverWidth, readingID: book.id) {
             SkeletonArtwork(source: book.cover)
         }
         Button { navigation.open(book.route) } label: {

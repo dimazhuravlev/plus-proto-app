@@ -43,7 +43,7 @@ struct PlaylistDetails {
         }
     }
 
-    private init(title: String, owner: String, tracks: [Track]) {
+    init(title: String, owner: String, tracks: [Track]) {
         self.title = title
         self.owner = owner
         self.tracks = tracks
@@ -51,6 +51,10 @@ struct PlaylistDetails {
 
     /// Пока ответ едет — то, что знает карточка, с которой открыли: название и владелец.
     static func placeholder(for entity: EntityRef) -> PlaylistDetails {
-        PlaylistDetails(title: entity.title, owner: entity.subtitle, tracks: [])
+        // Свой плейлист известен целиком сразу — треклист стоит с первого кадра.
+        if let own = MyPlaylists.playlist(entityID: entity.id) {
+            return PlaylistDetails(myPlaylist: own)
+        }
+        return PlaylistDetails(title: entity.title, owner: entity.subtitle, tracks: [])
     }
 }

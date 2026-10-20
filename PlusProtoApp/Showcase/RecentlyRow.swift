@@ -208,7 +208,7 @@ private struct RecentlyTile: View {
             switch item {
             case .movie(let movie): movieTile(movie)
             case .music(let track): albumTile(track)
-            case .book(let book): bookTile(book.cover)
+            case .book(let book): bookTile(book.cover, readingID: book.id)
             case .artist(let artist): artistTile(artist)
             case .myVibe: vibeTile
             }
@@ -291,38 +291,7 @@ private struct RecentlyTile: View {
     }
 
     private func movieTile(_ movie: MovieInProgress) -> some View {
-        typealias L = RecentlyLayout.Movie
-        let shape = RoundedRectangle(cornerRadius: RecentlyLayout.radius, style: .continuous)
-        return PlusSkeleton.fill
-            .overlay { SkeletonArtwork(source: movie.still) }
-            .overlay(alignment: .bottomLeading) {
-                if let progress = progress(of: movie) {
-                    track(progress)
-                }
-            }
-            .frame(width: L.frame.width, height: L.frame.height)
-            .clipShape(shape)
-            .ppBorder(shape)
-            .frame(width: L.size.width, height: L.size.height)
-    }
-
-    /// Таймлайн кадра: подложка белый 10 % на блюре, заливка — акцент Плюса.
-    private func track(_ progress: Double) -> some View {
-        typealias L = RecentlyLayout.Movie
-        return Capsule()
-            .fill(Color.buttonsPrimary)
-            .background {
-                BackdropBlurView(radius: L.trackBlur)
-                    .clipShape(Capsule())
-            }
-            .overlay(alignment: .leading) {
-                Capsule()
-                    .fill(Color.plusSolidOne)
-                    .frame(width: L.trackWidth * min(max(progress, 0), 1))
-            }
-            .frame(width: L.trackWidth, height: L.trackHeight)
-            .padding(L.trackInset)
-            .allowsHitTesting(false)
+        PPMovieCard(movie: movie, size: .small, progress: progress(of: movie))
     }
 
     // MARK: Альбом / трек
@@ -356,11 +325,11 @@ private struct RecentlyTile: View {
         RecentlyLayout.Book.geometry.frameSize(coverWidth: bookCoverWidth)
     }
 
-    private func bookTile(_ cover: ArtworkSource) -> some View {
+    private func bookTile(_ cover: ArtworkSource, readingID: String) -> some View {
         typealias L = RecentlyLayout.Book
         let geometry = L.geometry
         // Без свечения под обложкой — правка пользователя 2026-10-13 (в макете было 0.45).
-        return BookFigure(geometry: geometry, coverWidth: bookCoverWidth) {
+        return BookFigure(geometry: geometry, coverWidth: bookCoverWidth, readingID: readingID) {
             SkeletonArtwork(source: cover)
         }
         .frame(width: bookFrame.width, height: L.height, alignment: .topLeading)
@@ -396,7 +365,7 @@ private struct RecentlyTile: View {
     }
 }
 
-private extension View {
+extension View {
     /// Бордер плитки — `CoverBorder` толщиной 0.67 на экране, а не в числах плитки.
     func ppBorder<S: InsettableShape>(_ shape: S) -> some View {
         overlay {

@@ -42,6 +42,18 @@ struct CollectionItem: Codable, Identifiable, Equatable {
     var isExplicit: Bool?
     var favoritedAt: Date?
     var downloadedAt: Date?
+    /// Горизонтальный кадр фильма и сериала — карточки и строки «Скачанного кино»
+    /// (`PPMovieCard`, 2026-10-20). У остальных видов нет.
+    var still: ArtworkSource?
+    /// Хронометраж фильма — оценка размера скачанного (`DownloadSize`).
+    var runtime: TimeInterval?
+    /// Сериал: «Скачать» качает серии, а не тайтл целиком (решение пользователя 2026-10-20).
+    var isSeries: Bool?
+    /// Скачанные серии сериала. Опустели — сериал уходит из «Скачанного».
+    var episodes: [DownloadedEpisode]?
+
+    /// Id Кинопоиска у фильма и сериала.
+    var kinopoiskID: Int? { route?.ref.kinopoiskID }
 
     func date(on shelf: CollectionStore.Shelf) -> Date? {
         switch shelf {
@@ -62,6 +74,10 @@ struct CollectionItem: Codable, Identifiable, Equatable {
         playable = fresh.playable ?? playable
         aspect = fresh.aspect ?? aspect
         isExplicit = fresh.isExplicit ?? isExplicit
+        still = fresh.still ?? still
+        runtime = fresh.runtime ?? runtime
+        isSeries = fresh.isSeries ?? isSeries
+        // Серии свежая запись не несёт — их пишет только `toggleEpisode`.
     }
 }
 
@@ -70,7 +86,15 @@ struct CollectionItem: Codable, Identifiable, Equatable {
 extension CollectionItem {
     /// Фильм — постером: карусель коллекции стоит на 2:3. Нет постера — обложка,
     /// с которой экран открыли.
-    static func movie(_ ref: EntityRef, poster: ArtworkSource?, year: String?) -> CollectionItem {
+    /// Кадр и хронометраж — карточке «Скачанного кино»; их знает экран тайтла.
+    static func movie(
+        _ ref: EntityRef,
+        poster: ArtworkSource?,
+        year: String?,
+        still: ArtworkSource? = nil,
+        runtime: TimeInterval? = nil,
+        isSeries: Bool? = nil
+    ) -> CollectionItem {
         let artwork = kinopoiskPoster(poster ?? ref.artwork)
         return CollectionItem(
             id: "movie:\(ref.id)",
@@ -78,7 +102,10 @@ extension CollectionItem {
             title: ref.title,
             subtitle: year ?? "",
             artwork: artwork,
-            route: .movie(EntityRef(id: ref.id, title: ref.title, subtitle: "", artwork: artwork))
+            route: .movie(EntityRef(id: ref.id, title: ref.title, subtitle: "", artwork: artwork)),
+            still: still,
+            runtime: runtime,
+            isSeries: isSeries
         )
     }
 
@@ -145,7 +172,13 @@ extension CollectionItem {
     /// Экран плейлиста (2026-10-05) по id выдачи `playlist-<id Deezer>`: тап по плейлисту
     /// коллекции открывает его, как альбом, а не включает музыку сразу.
     static func playlistRoute(id: String, title: String, owner: String, cover: ArtworkSource?) -> EntityRoute? {
-        guard id.hasPrefix("playlist-"), let deezerID = Int(id.dropFirst("playlist-".count)) else { return nil }
+        guard id.hasPrefix("playlist-") else { return nil }
+        // Свой плейлист (`MyPlaylists`) — `playlist-own-<slug>`, экран по `own-<slug>`.
+        let tail = String(id.dropFirst("playlist-".count))
+        if MyPlaylists.playlist(entityID: tail) != nil {
+            return .playlist(EntityRef(id: tail, title: title, subtitle: owner, artwork: cover ?? .asset("")))
+        }
+        guard let deezerID = Int(tail) else { return nil }
         return .playlist(EntityRef(id: "dz-\(deezerID)", title: title, subtitle: owner, artwork: cover ?? .asset("")))
     }
 
@@ -275,6 +308,7 @@ final class CollectionStore {
     }
 
     private static let storageKey = "collection"
+    private static let seriesSeededKey = "collectionSeriesSeeded"
 
     /// Порядок блоков (видов) на каждой полке — его задаёт пользователь драг-н-дропом
     /// в режиме редактирования «Моего». Свой у каждой полки, ключ — `Shelf.rawValue`.
@@ -293,6 +327,7 @@ final class CollectionStore {
             for shelf in Shelf.allCases {
                 UserDefaults.standard.removeObject(forKey: Self.kindsOrderKey(shelf))
             }
+            UserDefaults.standard.removeObject(forKey: Self.seriesSeededKey)
         }
         #endif
         for shelf in Shelf.allCases {
@@ -301,8 +336,20 @@ final class CollectionStore {
         }
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let saved = try? JSONDecoder().decode([CollectionItem].self, from: data) {
-            items = saved.map { $0.repairingPoster().repairingPlaylistRoute() }
+            var list = saved.map { CollectionSeeds.backfill($0.repairingPoster().repairingPlaylistRoute()) }
+            // Скачанный сериал стартового набора — и коллекциям, собранным до серий
+            // (2026-10-20): иначе «Скачанное» не показало бы, как выглядит сериал.
+            // Один раз: удалённый пользователем сериал не возвращается.
+            if !UserDefaults.standard.bool(forKey: Self.seriesSeededKey) {
+                if !list.contains(where: { $0.id == CollectionSeeds.downloadedSeries.id }) {
+                    list.insert(CollectionSeeds.downloadedSeries, at: 0)
+                }
+                UserDefaults.standard.set(true, forKey: Self.seriesSeededKey)
+            }
+            items = list
+            persist()
         } else {
+            UserDefaults.standard.set(true, forKey: Self.seriesSeededKey)
             items = CollectionSeeds.items(now: .now)
             // Наблюдатель свойства в инициализаторе молчит — пишем сами: даты стартового
             // набора должны пережить перезапуск, иначе порядок пересобирался бы.
@@ -322,6 +369,10 @@ final class CollectionStore {
 
     func isDownloaded(_ id: String) -> Bool {
         item(id)?.downloadedAt != nil
+    }
+
+    func isEpisodeDownloaded(_ seriesID: String, _ episodeID: SeriesEpisode.ID) -> Bool {
+        item(seriesID)?.episodes?.contains { $0.id == episodeID } ?? false
     }
 
     /// Полка одного вида — свежие сверху.
@@ -377,7 +428,73 @@ final class CollectionStore {
     }
 
     func setDownloaded(_ item: CollectionItem, _ isOn: Bool) {
-        update(item) { $0.downloadedAt = isOn ? .now : nil }
+        update(item) { record in
+            record.downloadedAt = isOn ? .now : nil
+            // Сериал целиком не качается: «Скачать» из меню — первая серия, «Удалить» —
+            // все серии разом.
+            if record.isSeries == true {
+                record.episodes = isOn ? [Self.firstEpisode(of: record)] : []
+            }
+        }
+    }
+
+    /// Скачать серию или удалить её. Сериал лежит в «Скачанном», пока скачана хоть
+    /// одна серия; дата на полке — последней скачанной.
+    func toggleEpisode(_ series: CollectionItem, _ episode: SeriesEpisode, still: ArtworkSource?) {
+        let isOn = !isEpisodeDownloaded(series.id, episode.id)
+        update(series) { record in
+            var list = record.episodes ?? []
+            list.removeAll { $0.id == episode.id }
+            if isOn {
+                list.append(DownloadedEpisode(episode: episode, still: still, downloadedAt: .now))
+            }
+            record.isSeries = true
+            record.episodes = list
+            record.downloadedAt = list.map(\.downloadedAt).max()
+        }
+    }
+
+    /// Первая серия сериала — какую знает каталог серий, иначе номер без названия.
+    private static func firstEpisode(of series: CollectionItem) -> DownloadedEpisode {
+        let known = series.kinopoiskID.flatMap { SeriesCatalog.shared.info($0)?.episodes.first }
+        let episode = known ?? SeriesEpisode(season: 1, number: 1)
+        return DownloadedEpisode(
+            episode: episode,
+            still: episode.still.map { ArtworkSource.remote($0) } ?? series.still,
+            downloadedAt: .now
+        )
+    }
+
+    /// Кадр и хронометраж скачанных фильмов, которые скачали до того, как их стали
+    /// хранить, — из дискового пула Кинопоиска, без запросов. Нет в пуле — карточка
+    /// остаётся с постером. Сериал, скачанный целиком до серий (2026-10-20), становится
+    /// скачанной первой серией: «Скачать» тогда и качало её.
+    func backfillDownloadStills() async {
+        let pending = items.filter {
+            $0.kind == .movie && $0.downloadedAt != nil && ($0.still == nil || ($0.runtime == nil && $0.isSeries == nil))
+        }
+        for item in pending {
+            guard let id = item.kinopoiskID else { continue }
+            let still = await MoviePool.shared.stills(for: id).first?.url(size: .huge)
+            let details = await MoviePool.shared.details(id: id)
+            guard let index = items.firstIndex(where: { $0.id == item.id }) else { continue }
+            var record = items[index]
+            if record.still == nil, let still { record.still = .remote(still) }
+            if record.isSeries == nil, let details {
+                record.isSeries = details.isSeries == true
+                if details.isSeries == true, record.episodes == nil {
+                    record.episodes = [DownloadedEpisode(
+                        episode: SeriesEpisode(season: 1, number: 1),
+                        still: record.still,
+                        downloadedAt: record.downloadedAt ?? .now
+                    )]
+                }
+            }
+            if record.runtime == nil, record.isSeries != true, let length = details?.movieLength, length > 0 {
+                record.runtime = TimeInterval(length * 60)
+            }
+            items[index] = record
+        }
     }
 
     /// Отметить сущность или снять отметку. Отмеченная поднимается наверх; без отметок
