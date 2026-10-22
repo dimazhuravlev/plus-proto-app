@@ -705,7 +705,7 @@ private struct MosaicCard: View {
             // Книга в проекции — общий рисунок (`BookFigure`), по ширине колонки: высоту
             // дают пропорции обложки, снятые до показа.
             let book = BookFigureGeometry.fitting(width: MosaicLayout.card, aspect: hit.artworkAspect)
-            BookFigure(geometry: book.geometry, coverWidth: book.coverWidth, readingID: hit.route?.ref.id) { artwork }
+            BookFigure(geometry: book.geometry, coverWidth: book.coverWidth) { artwork }
         } else {
             let shape: AnyShape = isPerson
                 ? AnyShape(Circle())

@@ -104,17 +104,17 @@ enum CollectionMix {
 
     /// Читалка начатой книги по id записи коллекции — строки полного списка «Читаю».
     static func readBook(_ itemID: String, in reading: ReadingHistory) -> BookInProgress? {
-        reading.entries.first { readingItem($0).id == itemID }?.book
+        reading.started.first { readingItem($0).id == itemID }?.book
     }
 
     /// «Читаю» — начатые книги записями коллекции: их рисуют те же карточки и строки.
     static func readingItems(_ reading: ReadingHistory) -> [CollectionItem] {
-        reading.entries.map(readingItem)
+        reading.started.map(readingItem)
     }
 
     /// «Читаю» карточками — с прочитанной долей.
     static func readingEntries(_ reading: ReadingHistory) -> [CollectionMixEntry] {
-        reading.entries.map { CollectionMixEntry(item: readingItem($0), date: $0.updatedAt, progress: $0.progress, readBook: $0.book) }
+        reading.started.map { CollectionMixEntry(item: readingItem($0), date: $0.updatedAt, progress: $0.progress, readBook: $0.book) }
     }
 
     private static func readingItem(_ entry: ReadingHistory.Entry) -> CollectionItem {
@@ -224,11 +224,11 @@ struct CollectionServiceScreen: View {
         if !later.isEmpty {
             CollectionCarousel(
                 title: "Буду смотреть",
-                height: CollectionLayout.posterRowHeight,
+                height: posterRowHeight(later),
                 items: later,
                 openAll: { openList(.shelf(.movie, .favorites), title: "Буду смотреть") }
             ) { item in
-                CollectionPosterCard(item: item)
+                CollectionPosterCard(item: item, progress: moviesProgress(item))
             }
         }
 
@@ -237,24 +237,33 @@ struct CollectionServiceScreen: View {
         if !rated.isEmpty {
             CollectionCarousel(
                 title: "Мои оценки",
-                height: CollectionLayout.posterRowHeight,
+                height: posterRowHeight(rated.map(\.item)),
                 items: rated,
                 openAll: { openList(.ratings, title: "Мои оценки") },
                 allowsOverflow: true
             ) { entry in
-                CollectionPosterCard(item: entry.item, rating: entry.rating)
+                CollectionPosterCard(item: entry.item, rating: entry.rating, progress: moviesProgress(entry.item))
             }
         }
 
         let purchases = CollectionSeeds.purchases
         CollectionCarousel(
             title: "Покупки",
-            height: CollectionLayout.posterRowHeight,
+            height: posterRowHeight(purchases),
             items: purchases,
             openAll: { openList(.purchases, title: "Покупки") }
         ) { item in
-            CollectionPosterCard(item: item)
+            CollectionPosterCard(item: item, progress: moviesProgress(item))
         }
+    }
+
+    /// Начатый фильм — полоса под постером в любой карусели «Кино».
+    private func moviesProgress(_ item: CollectionItem) -> Double? {
+        CollectionProgress.movie(item, history: actionBar.watchHistory)
+    }
+
+    private func posterRowHeight(_ items: [CollectionItem]) -> CGFloat {
+        CollectionLayout.rowHeight(CollectionLayout.posterRowHeight, progress: items.map(moviesProgress))
     }
 
     // MARK: Книги
@@ -279,14 +288,19 @@ struct CollectionServiceScreen: View {
     }
 
     private func bookCarousel(_ title: String, entries: [CollectionMixEntry], source: CollectionListRoute.Source) -> some View {
-        CollectionCarousel(
+        let progress = entries.map { CollectionProgress.book($0, reading: actionBar.readingHistory) }
+        return CollectionCarousel(
             title: title,
-            height: CollectionLayout.bookRowHeight,
+            height: CollectionLayout.rowHeight(CollectionLayout.bookRowHeight, progress: progress),
             items: entries,
             openAll: { openList(source, title: title) }
         ) { entry in
             // «Читаю» — сразу читалка; «Буду читать» и «Прочитано» — экран книги.
-            CollectionBookCard(item: entry.item, readBook: entry.readBook)
+            CollectionBookCard(
+                item: entry.item,
+                readBook: entry.readBook,
+                progress: CollectionProgress.book(entry, reading: actionBar.readingHistory)
+            )
         }
     }
 

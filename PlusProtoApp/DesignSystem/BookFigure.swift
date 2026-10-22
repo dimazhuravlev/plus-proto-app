@@ -108,18 +108,7 @@ enum BookCoverAspect {
 struct BookFigure<Cover: View>: View {
     let geometry: BookFigureGeometry
     let coverWidth: CGFloat
-    /// Id книги (`gb-…`) — у начатой на обложке бейдж с прочитанной долей
-    /// (`BookProgressBadge`, задача пользователя 2026-10-20). `nil` — бейджа нет
-    /// (скелетоны, шапка экрана книги, карточка шеринга).
-    var readingID: String? = nil
     @ViewBuilder var cover: Cover
-
-    /// Опционально: в окне поверх всего (шеринг) окружения корня нет.
-    @Environment(ActionBarState.self) private var actionBar: ActionBarState?
-
-    private var readingProgress: Double? {
-        readingID.flatMap { actionBar?.readingHistory.readingProgress(for: $0) }
-    }
 
     /// Скелетон — книга без обложки (`EmptyView` на её месте). Каждый слой рисунка
     /// у него вполсилы: подложка, заливка обложки, кромки и сгиб ложатся друг на друга,
@@ -163,54 +152,10 @@ struct BookFigure<Cover: View>: View {
                     borderWidth: geometry.borderWidth,
                     borderOpacity: layerOpacity
                 )
-                .overlay(alignment: .topLeading) {
-                    if let readingProgress {
-                        BookProgressBadge(progress: readingProgress)
-                            .padding(BookProgressBadge.inset)
-                    }
-                }
                 .padding(.top, geometry.pagesTop)
         }
         // Кадр книги — вместе с правым выступом подложки (`frameSize`).
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-    }
-}
-
-// MARK: - Бейдж прогресса
-
-/// Прочитанная доля на обложке начатой книги — `nameplates` `2880:78062`: белая плашка
-/// 18 r6 с полями 4 по бокам и лёгкой тенью, «38%» Text XS Semibold чёрным; стоит
-/// в 4 от верхнего левого угла обложки. Размер постоянный у карточек всех размеров:
-/// текст не масштабируем.
-struct BookProgressBadge: View {
-    let progress: Double
-
-    static let inset: CGFloat = 4
-
-    private enum Layout {
-        static let height: CGFloat = 18
-        static let side: CGFloat = 4
-        static let radius: CGFloat = 6
-        /// Тень макета — y 1, блюр 4 (в коде вдвое меньше)
-        static let shadowRadius: CGFloat = 2
-        static let shadowOffset: CGFloat = 1
-        static let shadowOpacity: Double = 0.1
-    }
-
-    /// Не меньше 1 % и не больше 99 %: начатая и недочитанная.
-    private var percent: Int {
-        min(max(Int((progress * 100).rounded()), 1), 99)
-    }
-
-    var body: some View {
-        Text("\(percent)%")
-            .plusText(.textXS, .semibold)
-            .foregroundStyle(Color.fillInverted)
-            .padding(.horizontal, Layout.side)
-            .frame(height: Layout.height)
-            .background(Color.fillOne, in: RoundedRectangle(cornerRadius: Layout.radius, style: .continuous))
-            .shadow(color: .black.opacity(Layout.shadowOpacity), radius: Layout.shadowRadius, y: Layout.shadowOffset)
-            .accessibilityLabel("Прочитано \(percent)%")
     }
 }
 

@@ -238,6 +238,22 @@ actor KinopoiskService {
         return response.docs.first?.seriesLength
     }
 
+    /// Где смотреть — по пачке тайтлов одним запросом (`watchability`, замер 2026-10-22:
+    /// у «Джентльменов» — Okko, Wink, Иви, Kinopoisk HD; у «Интерстеллара» — пусто).
+    /// Ответ — названия площадок по id.
+    func watchability(ids: [Int]) async throws -> [Int: [String]] {
+        guard !ids.isEmpty else { return [:] }
+        var query = ids.prefix(250).map { URLQueryItem(name: "id", value: "\($0)") }
+        query.append(URLQueryItem(name: "limit", value: "\(min(ids.count, 250))"))
+        query.append(contentsOf: Self.selectFields(["id", "watchability"]))
+        let response: KinopoiskListResponse<KinopoiskWatchabilityHit> = try await fetch(path: "/v1.4/movie", query: query)
+        var result: [Int: [String]] = [:]
+        for hit in response.docs {
+            result[hit.id] = (hit.watchability?.items ?? []).compactMap(\.name)
+        }
+        return result
+    }
+
     /// Остаток суточной квоты. Сам этот запрос квоту не тратит.
     func tokenInfo() async throws -> KinopoiskTokenInfo {
         try await fetch(path: "/v1.5/token")

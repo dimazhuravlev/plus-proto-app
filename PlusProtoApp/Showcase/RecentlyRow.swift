@@ -208,7 +208,7 @@ private struct RecentlyTile: View {
             switch item {
             case .movie(let movie): movieTile(movie)
             case .music(let track): albumTile(track)
-            case .book(let book): bookTile(book.cover, readingID: book.id)
+            case .book(let book): bookTile(book.cover)
             case .artist(let artist): artistTile(artist)
             case .myVibe: vibeTile
             }
@@ -325,11 +325,11 @@ private struct RecentlyTile: View {
         RecentlyLayout.Book.geometry.frameSize(coverWidth: bookCoverWidth)
     }
 
-    private func bookTile(_ cover: ArtworkSource, readingID: String) -> some View {
+    private func bookTile(_ cover: ArtworkSource) -> some View {
         typealias L = RecentlyLayout.Book
         let geometry = L.geometry
         // Без свечения под обложкой — правка пользователя 2026-10-13 (в макете было 0.45).
-        return BookFigure(geometry: geometry, coverWidth: bookCoverWidth, readingID: readingID) {
+        return BookFigure(geometry: geometry, coverWidth: bookCoverWidth) {
             SkeletonArtwork(source: cover)
         }
         .frame(width: bookFrame.width, height: L.height, alignment: .topLeading)

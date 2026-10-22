@@ -301,9 +301,7 @@ struct StillListRow<Trailing: View>: View {
     }
 
     private var divider: some View {
-        Rectangle()
-            .fill(CollectionLayout.divider)
-            .frame(height: 0.5)
+        ListDivider()
             .padding(.horizontal, CollectionListLayout.side)
     }
 }

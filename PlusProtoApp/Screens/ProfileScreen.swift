@@ -11,17 +11,6 @@ enum ProfileLayout {
     /// то есть от верха безопасной зоны устройства.
     static let designStatusBar: CGFloat = 54
 
-    // MARK: Шапка
-
-    /// Крестик — круглая кнопка 40 сразу под статус-баром, справа на поле 16 (`2701:30888`)
-    static var closeButton: CGFloat { PlusButtonSize.m.height }
-    /// Подложка-блюр под крестиком проявляется по скроллу за 24 и сходит на нет на 24 ниже кнопки
-    static let headerRamp: CGFloat = 24
-    static let headerTail: CGFloat = 24
-    /// Блюр подложки под крестиком — вдвое мягче, чем у навбаров экранов (16): на фиолетовом
-    /// свечении профиля общий был «слишком сильным» (правка пользователя 2026-10-13).
-    static let headerBlur: CGFloat = 8
-
     // MARK: Герой (`hero` `2701:30164`)
 
     /// 237 от верха кадра — 183 под статус-баром
@@ -133,21 +122,24 @@ enum ProfileLayout {
 /// (`ProfileLevitation`). Ниже — виджеты семейной группы, качества видео и «Скачайте
 /// фильм», служебный островок «Дебаг меню» и островки ячеек. Данные — из макета, имя
 /// и аватар — общие на приложение (`ProfileMock`).
+/// Профиль в стеке таба — маршрут без данных: профиль один.
+struct ProfileRoute: Hashable {}
+
 struct ProfileScreen: View {
-    @Environment(\.dismiss) private var dismiss
     @State private var scrollOffset: CGFloat = 0
     @State private var isDebugMenuShown = false
 
     var body: some View {
-        // Стек — ради дебаг-меню: оно пушится из ячейки и уходит назад к профилю.
-        // `dismiss` взят снаружи стека — крестик закрывает весь профиль.
-        NavigationStack {
-            profile
-                .toolbar(.hidden, for: .navigationBar)
-                .navigationDestination(isPresented: $isDebugMenuShown) {
-                    DebugMenuScreen()
-                }
-        }
+        // Пуш в стек таба (правка пользователя 2026-10-21): дебаг-меню — следующий экран
+        // того же стека, «назад» возвращает к профилю.
+        profile
+            .toolbar(.hidden, for: .navigationBar)
+            // Без таббара и action bar (правка пользователя 2026-10-21).
+            .modifier(HidesBottomChrome())
+            .navigationDestination(isPresented: $isDebugMenuShown) {
+                DebugMenuScreen()
+                    .modifier(HidesBottomChrome())
+            }
         #if DEBUG
         // `-debugMenu 1` (с `-debugProfile 1`) — через 1 с открыть дебаг-меню, как тап
         // по ячейке.
@@ -192,28 +184,19 @@ struct ProfileScreen: View {
 
     // MARK: Шапка
 
-    /// Крестик справа сразу под статус-баром. Подложка — прогрессивный блюр без затемнения,
-    /// как у навигации витрин: проявляется, когда лента уходит под кнопку.
+    /// Обычный навбар экранов стека — «назад» без названия (правка пользователя
+    /// 2026-10-21; прежде — крестик справа на своей подложке). Подложка проявляется
+    /// с первых пунктов скролла, как у списков.
     private var header: some View {
-        // Стекло хрома — как у кнопок навбаров (правка пользователя 2026-10-10).
-        PlusButton(icon: "iconCross", type: .chrome, size: .m, accessibilityTitle: "Закрыть") { dismiss() }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.horizontal, ProfileLayout.side)
-        // Оттяг — как у навигации витрин: кнопка едет за лентой вчетверо медленнее
-        // и упирается в мягкий потолок (правка пользователя 2026-10-04). Сдвиг —
-        // только у кнопки: подложка стоит на месте, а при оттяге она прозрачна.
-        .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
-        .background(alignment: .top) {
-            VariableBlurView(
-                maxBlurRadius: ProfileLayout.headerBlur,
-                direction: .blurredTopClearBottom
-            )
-            .frame(height: ServiceTopNavLayout.topSafeArea + ProfileLayout.closeButton + ProfileLayout.headerTail)
-            .opacity(NavBarRamp.progress(scrollOffset, start: 0, length: ProfileLayout.headerRamp))
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-        }
+        EntityNavBar(title: "", scrollOffset: scrollOffset, thresholds: Self.navThresholds)
     }
+
+    private static let navThresholds = EntityNavBarThresholds(
+        backgroundStart: 0,
+        backgroundRamp: ServiceTopNavMotion.backdropRamp,
+        titleStart: .greatestFiniteMagnitude,
+        titleRamp: 1
+    )
 
     // MARK: Виджеты
 

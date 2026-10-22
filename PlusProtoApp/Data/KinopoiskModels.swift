@@ -354,3 +354,18 @@ struct KinopoiskEpisode: Decodable {
     /// ISO 8601 — `2021-07-12T00:00:00.000Z`. Нет — серия ещё не вышла.
     let airDate: String?
 }
+
+// MARK: - Где смотреть
+
+/// Тайтл с площадками, где его можно посмотреть (`watchability.items`).
+struct KinopoiskWatchabilityHit: Decodable {
+    struct Watchability: Decodable {
+        struct Item: Decodable {
+            let name: String?
+        }
+        let items: [Item]?
+    }
+
+    let id: Int
+    let watchability: Watchability?
+}

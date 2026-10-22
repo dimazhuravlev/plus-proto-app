@@ -11,8 +11,6 @@ import SwiftUI
 final class AppNavigationState {
     var activeTab: AppTab = .plus
 
-    /// Экран профиля — с аватарки в навигации витрин, поверх всего (2026-10-04).
-    var isProfileShown = false
 
     /// Экран сущности, показанный **слоем поверх хрома** вместо пуша (см.
     /// `EntityRoute.coversChrome`). Живёт отдельно от путей: он не элемент стека,
@@ -132,7 +130,6 @@ final class AppNavigationState {
     /// экранами UIKit снимает целой стопкой — по одной презентации (см. `coveredRoute`).
     func showRoot(of tab: AppTab) {
         Self.withoutLayerZoom {
-            isProfileShown = false
             coveredRoute = nil
             paths[tab] = NavigationPath()
             activeTab = tab
@@ -149,6 +146,23 @@ final class AppNavigationState {
         var instant = Transaction()
         instant.disablesAnimations = true
         withTransaction(instant, change)
+    }
+
+    /// Сколько экранов, прячущих нижний хром (таббар и action bar), сейчас на экране —
+    /// профиль и его дебаг-меню (правка пользователя 2026-10-21). Счётчик, а не флаг:
+    /// дебаг-меню пушится поверх профиля, и его появление приходит раньше ухода профиля.
+    private(set) var chromeHiders = 0
+
+    var isChromeHidden: Bool { chromeHiders > 0 }
+
+    func hideChrome() { chromeHiders += 1 }
+    func showChrome() { chromeHiders = max(0, chromeHiders - 1) }
+
+    /// Профиль — с аватарки навигации витрин: обычным пушем в стек активного таба,
+    /// справа налево, с навбаром «назад» (правка пользователя 2026-10-21; прежде
+    /// выезжал снизу поверх всего, включая хром).
+    func openProfile() {
+        push(ProfileRoute())
     }
 
     /// Программный пуш. Нужен и отладке (тапнуть по симулятору из шелла нечем),

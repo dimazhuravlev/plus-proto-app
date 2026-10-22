@@ -8,7 +8,7 @@ struct CollectionListRoute: Hashable {
         case shelf(CollectionItem.Kind, CollectionStore.Shelf)
         /// Плейлисты «Любимого» — с чипсами «Мои» и «Любимые» (задача пользователя
         /// 2026-10-20); значение — чипс, с которым экран открывается
-        case playlists(CollectionPlaylistFilter)
+        case playlists(CollectionListFilter)
         /// «Покупки» — стартовый набор (`CollectionSeeds.purchases`)
         case purchases
         /// «Мои оценки» — оценённые фильмы (`MovieRatings`)
@@ -24,13 +24,26 @@ struct CollectionListRoute: Hashable {
     let title: String
 }
 
-/// Чипсы списка плейлистов «Любимого».
-enum CollectionPlaylistFilter: Hashable, CaseIterable {
+/// Чипсы полных списков: плейлисты «Любимого» и «Буду смотреть».
+enum CollectionListFilter: Hashable {
     /// Свои плейлисты — первой строкой «Создать новый плейлист» (создание не делаем,
     /// решение пользователя 2026-10-20), дальше стартовый набор `MyPlaylists`.
     case mine
     /// Отмеченные «нравится» — плейлисты полки
     case liked
+    /// «Буду смотреть» целиком
+    case all
+    /// Только то, что есть в Кинопоиске (`MovieAvailability`, 2026-10-22)
+    case watchable
+
+    /// Чипсы источника; `nil` — список без чипсов.
+    static func options(for source: CollectionListRoute.Source) -> [CollectionListFilter]? {
+        switch source {
+        case .playlists: [.mine, .liked]
+        case .shelf(.movie, .favorites): [.all, .watchable]
+        default: nil
+        }
+    }
 
     /// Короткие названия — правка пользователя 2026-10-20 (были «Мои плейлисты»
     /// и «Понравившиеся плейлисты»).
@@ -38,6 +51,8 @@ enum CollectionPlaylistFilter: Hashable, CaseIterable {
         switch self {
         case .mine: "Мои"
         case .liked: "Любимые"
+        case .all: "Все"
+        case .watchable: "Можно посмотреть"
         }
     }
 }
@@ -86,8 +101,8 @@ struct CollectionListScreen: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition(edge: .top)
     /// Выбранный чипс и показанный список: смена — старый гаснет, новый проявляется.
-    @State private var filter: CollectionPlaylistFilter?
-    @State private var shownFilter: CollectionPlaylistFilter?
+    @State private var filter: CollectionListFilter?
+    @State private var shownFilter: CollectionListFilter?
     @State private var listOpacity: Double = 1
     @State private var swap: Task<Void, Never>?
 
@@ -96,12 +111,23 @@ struct CollectionListScreen: View {
         if case .playlists(let start) = route.source {
             _filter = State(initialValue: start)
             _shownFilter = State(initialValue: start)
+        } else if let first = CollectionListFilter.options(for: route.source)?.first {
+            _filter = State(initialValue: first)
+            _shownFilter = State(initialValue: first)
         }
+    }
+
+    private var filterOptions: [CollectionListFilter] {
+        CollectionListFilter.options(for: route.source) ?? []
     }
 
     private var items: [CollectionItem] {
         switch route.source {
-        case .shelf(let kind, let shelf): collection.items(kind, on: shelf)
+        case .shelf(let kind, let shelf):
+            // «Можно посмотреть» — только то, что есть в Кинопоиске.
+            shownFilter == .watchable
+                ? collection.items(kind, on: shelf).filter { $0.kinopoiskID.map(MovieAvailability.shared.isAvailable) ?? false }
+                : collection.items(kind, on: shelf)
         case .playlists:
             // «Мои» — стартовый набор своих плейлистов (`MyPlaylists`), «Любимые» — полка.
             shownFilter == .liked ? collection.items(.playlist, on: .favorites) : MyPlaylists.items
@@ -158,14 +184,20 @@ struct CollectionListScreen: View {
             ) {
                 // «+» у плейлистов — создать плейлист (правка пользователя 2026-10-20):
                 // круг того же вида, что «назад». Само создание пока не делаем — кнопка
-                // только откликается.
-                if filter != nil {
+                // только откликается. Только у плейлистов: у «Буду смотреть» чипсы есть,
+                // а «+» нет (правка пользователя 2026-10-22).
+                if case .playlists = route.source {
                     PlusButton(icon: "iconAdd", type: .chrome, size: .m, accessibilityTitle: "Создать плейлист") {}
                 }
             }
         }
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: filter) { _, selected in swapList(to: selected) }
+        // «Буду смотреть»: где смотреть — заранее, к тапу по «Можно посмотреть» уже известно.
+        .task {
+            guard case .shelf(.movie, .favorites) = route.source else { return }
+            await MovieAvailability.shared.load(collection.items(.movie, on: .favorites).compactMap(\.kinopoiskID))
+        }
     }
 
     private func list(_ items: [CollectionItem]) -> some View {
@@ -203,8 +235,8 @@ struct CollectionListScreen: View {
 
     private var chips: some View {
         PinnedFilterChips(
-            options: CollectionPlaylistFilter.allCases,
-            selection: Binding(get: { filter ?? .mine }, set: { filter = $0 }),
+            options: filterOptions,
+            selection: Binding(get: { filter ?? filterOptions[0] }, set: { filter = $0 }),
             title: \.title,
             scrollOffset: scrollOffset
         )
@@ -212,7 +244,7 @@ struct CollectionListScreen: View {
 
     /// Старый список гаснет, в паузе подменяется и уезжает к началу, новый проявляется.
     /// Быстрые нажатия подряд прерывают незаконченную смену: показан последний выбранный.
-    private func swapList(to selected: CollectionPlaylistFilter?) {
+    private func swapList(to selected: CollectionListFilter?) {
         swap?.cancel()
         guard selected != shownFilter else {
             withAnimation(CollectionListMotion.fadeIn) { listOpacity = 1 }
@@ -342,9 +374,7 @@ private struct CollectionActionRow: View {
     }
 
     private var divider: some View {
-        Rectangle()
-            .fill(CollectionLayout.divider)
-            .frame(height: 0.5)
+        ListDivider()
             .padding(.horizontal, CollectionListLayout.side)
     }
 }
@@ -461,7 +491,7 @@ private struct CollectionListRow: View {
 
     private var bookFigure: some View {
         let geometry = CollectionListLayout.book(aspect: item.aspect)
-        return BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: item.aspect), readingID: item.route?.ref.id) {
+        return BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: item.aspect)) {
             if let artwork = item.artwork {
                 SkeletonArtwork(source: artwork)
             }
@@ -479,9 +509,7 @@ private struct CollectionListRow: View {
     }
 
     private var divider: some View {
-        Rectangle()
-            .fill(CollectionLayout.divider)
-            .frame(height: 0.5)
+        ListDivider()
             .padding(.horizontal, CollectionListLayout.side)
     }
 
