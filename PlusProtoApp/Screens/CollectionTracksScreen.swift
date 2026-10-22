@@ -20,8 +20,13 @@ enum CollectionTracksLayout {
     static let titleToControls: CGFloat = 12
     static let headerBottom: CGFloat = 24
     static let controlsGap: CGFloat = 6
-    /// Список — строками `list-item / music` по 64, без зазоров
-    static let divider: CGFloat = 0.5
+    /// «Скачанные треки» — баннер умной загрузки над названием (`33183:161585`)
+    static let bannerTop: CGFloat = 8
+    static let bannerToTitle: CGFloat = 16
+    /// Примерно столько баннер с полями занимает над названием — порог названия в баре:
+    /// мерить баннер на каждом кадре скролла нельзя (правило 120 fps).
+    static let bannerEstimate: CGFloat = 230
+    static let titleRamp: CGFloat = 40
 
     /// Пороги навбара — как у альбома: подложка — когда кавер почти ушёл под бар,
     /// название — когда под бар уходит заголовок.
@@ -59,9 +64,10 @@ struct CollectionTracksScreen: View {
         shelf == .favorites ? "Любимые треки" : "Скачанные треки"
     }
 
-    private var coverAsset: String {
-        shelf == .favorites ? "mockLikedTracksCover" : "mockDownloadedTracksCover"
-    }
+    /// Кавер — только у «Любимых»: у «Скачанных» на его месте баннер умной загрузки
+    /// (макет `33183:161585`, задача пользователя 2026-10-21).
+    private var coverAsset: String { "mockLikedTracksCover" }
+    private var hasCover: Bool { shelf == .favorites }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -79,11 +85,13 @@ struct CollectionTracksScreen: View {
                 PlusChromeMetrics.contentBottomInset + AlbumLayout.bottomClearance,
                 for: .scrollContent
             )
+            // Без кавера — лента под навбаром, как у полных списков.
+            .contentMargins(.top, hasCover ? 0 : EntityNavBarGeometry.barHeight, for: .scrollContent)
             // Кавер начинается от физического верха экрана.
-            .ignoresSafeArea(edges: .top)
+            .ignoresSafeArea(edges: hasCover ? .top : [])
             .trackNavBarScroll(into: $scrollOffset)
 
-            EntityNavBar(title: title, scrollOffset: scrollOffset, thresholds: L.navBarThresholds)
+            EntityNavBar(title: title, scrollOffset: scrollOffset, thresholds: navThresholds)
         }
         .background(Color.surfaceOne.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -91,10 +99,32 @@ struct CollectionTracksScreen: View {
 
     // MARK: Шапка
 
+    /// Без кавера название уходит под бар раньше: над ним только баннер.
+    private var navThresholds: EntityNavBarThresholds {
+        guard !hasCover else { return L.navBarThresholds }
+        let titleTop = L.bannerEstimate
+        return EntityNavBarThresholds(
+            backgroundStart: 0,
+            backgroundRamp: ServiceTopNavMotion.backdropRamp,
+            titleStart: titleTop,
+            titleRamp: L.titleRamp
+        )
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            cover
-                .padding(.bottom, -L.titleOverlap)
+            if hasCover {
+                cover
+                    .padding(.bottom, -L.titleOverlap)
+            } else {
+                // Поля — макета: 8 сверху, до названия 16.
+                // Постоянный: ✕ нет, закрытие в «Скачанном» его здесь не убирает.
+                SmartDownloadsBanner(isDismissible: false)
+                    .padding(.horizontal, L.side)
+                    .padding(.top, L.bannerTop)
+                    .padding(.bottom, L.bannerToTitle)
+                    .transition(.opacity)
+            }
 
             VStack(alignment: .leading, spacing: L.titleToControls) {
                 VStack(alignment: .leading, spacing: L.titleToCount) {
@@ -112,9 +142,7 @@ struct CollectionTracksScreen: View {
             .padding(.bottom, L.headerBottom)
         }
         .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(CollectionLayout.divider)
-                .frame(height: L.divider)
+            ListDivider()
         }
     }
 

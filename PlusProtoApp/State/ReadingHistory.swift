@@ -74,11 +74,17 @@ final class ReadingHistory {
         }
     }
 
-    /// Сколько прочитано у книги в процессе чтения — бейдж на обложке (`BookProgressBadge`).
-    /// Не начинали листать или дочитали — `nil`: бейджа нет.
+    /// Начатые книги — прочитано больше 1 % (`ContentProgress`): «Читаю». Просто
+    /// открытая книга начатой не считается (правка пользователя 2026-10-22).
+    var started: [Entry] {
+        entries.filter { ContentProgress.isStarted($0.progress) }
+    }
+
+    /// Сколько прочитано у книги в процессе чтения — полоса под карточкой
+    /// (`CardProgressBar`). Не начата или дочитана — `nil`: полосы нет.
     func readingProgress(for id: String) -> Double? {
         guard let progress = entries.first(where: { $0.id == id })?.progress,
-              progress > 0, progress < 1 else { return nil }
+              ContentProgress.isStarted(progress), progress < 1 else { return nil }
         return progress
     }
 

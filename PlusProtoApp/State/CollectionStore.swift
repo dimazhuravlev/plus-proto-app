@@ -309,6 +309,7 @@ final class CollectionStore {
 
     private static let storageKey = "collection"
     private static let seriesSeededKey = "collectionSeriesSeeded"
+    private static let downloadedTracksSeededKey = "collectionDownloadedTracksSeeded"
 
     /// Порядок блоков (видов) на каждой полке — его задаёт пользователь драг-н-дропом
     /// в режиме редактирования «Моего». Свой у каждой полки, ключ — `Shelf.rawValue`.
@@ -328,6 +329,7 @@ final class CollectionStore {
                 UserDefaults.standard.removeObject(forKey: Self.kindsOrderKey(shelf))
             }
             UserDefaults.standard.removeObject(forKey: Self.seriesSeededKey)
+            UserDefaults.standard.removeObject(forKey: Self.downloadedTracksSeededKey)
         }
         #endif
         for shelf in Shelf.allCases {
@@ -346,10 +348,18 @@ final class CollectionStore {
                 }
                 UserDefaults.standard.set(true, forKey: Self.seriesSeededKey)
             }
+            // 30 скачанных треков стартового набора — и собранным раньше коллекциям
+            // (2026-10-21). Один раз; уже лежащие треки не трогаем.
+            if !UserDefaults.standard.bool(forKey: Self.downloadedTracksSeededKey) {
+                let known = Set(list.map(\.id))
+                list += CollectionSeeds.downloadedTrackItems(now: .now).filter { !known.contains($0.id) }
+                UserDefaults.standard.set(true, forKey: Self.downloadedTracksSeededKey)
+            }
             items = list
             persist()
         } else {
             UserDefaults.standard.set(true, forKey: Self.seriesSeededKey)
+            UserDefaults.standard.set(true, forKey: Self.downloadedTracksSeededKey)
             items = CollectionSeeds.items(now: .now)
             // Наблюдатель свойства в инициализаторе молчит — пишем сами: даты стартового
             // набора должны пережить перезапуск, иначе порядок пересобирался бы.

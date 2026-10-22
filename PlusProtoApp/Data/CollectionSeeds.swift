@@ -83,6 +83,8 @@ enum CollectionSeeds {
                 cover: deezer("playlist", playlist.picture)
             ))
         }
+        let known = Set(result.map(\.id))
+        result += downloadedTrackItems(now: now).filter { !known.contains($0.id) }
         return result.map(backfill)
     }
 
@@ -208,6 +210,68 @@ enum CollectionSeeds {
         (131744724, "Blitzkrieg Bop", "Ramones", (13995252, "Ramones"), "5e4fa09fd2de120d601098123f43e328"),
         (5093617, "There Is a Light That Never Goes Out", "The Smiths", (467267, "The Sound of the Smiths"), "d1005397b8a3a743fb0c8aad35f42db3"),
     ]
+
+    /// Ещё 30 скачанных треков — «Скачанное» не из пары строк (задача пользователя
+    /// 2026-10-21): только скачаны, «нравится» на них нет. Живые Deezer, превью играют
+    /// (замер 2026-10-21).
+    private static let downloadedTracks: [(id: Int, title: String, artist: String, album: (id: Int, title: String), cover: String, isExplicit: Bool)] = [
+        (138539981, "Karma Police", "Radiohead", (14879699, "OK Computer"), "05a186e0a859a36f9cd51cdae2158fe1", false),
+        (138546815, "Reckoner", "Radiohead", (14880659, "In Rainbows"), "a175af9b7d329bc678cb4d26fc13d6de", false),
+        (1021196862, "Love Will Tear Us Apart", "Joy Division", (160648172, "Love Will Tear Us Apart (2020 Digital Remaster)"), "782d05923f29f050b1c799e2d5994526", false),
+        (910120, "Just Like Heaven", "The Cure", (102619, "Kiss Me Kiss Me Kiss Me"), "5225e065ccb1c1d6375b10ddfc33a7c5", false),
+        (131744046, "Blue Monday", "New Order", (13995194, "Singles (2016 Remaster)"), "197e425f52b7841c402437f34594a7bb", false),
+        (68515055, "Enjoy the Silence", "Depeche Mode", (6709163, "The Singles 86-98"), "e73716d037ee24f1331a8c0332526590", false),
+        (70322130, "Do I Wanna Know?", "Arctic Monkeys", (6899610, "AM"), "64e54e307bd5e2bdb27ffeb662fd910d", false),
+        (958109, "Last Nite", "The Strokes", (101618, "Is This It"), "700f0375d5ac8570f16a2c7eb128303f", false),
+        (944791, "Obstacle 1", "Interpol", (106308, "Matador At Fifteen"), "6f32e755ee7d0534451309d4ea837c7f", false),
+        (936899, "Where Is My Mind?", "Pixies", (105352, "Death to the Pixies"), "fa4a3bb8ef29a683940f740a6ef85601", false),
+        (104234648, "Teen Age Riot", "Sonic Youth", (10843530, "Daydream Nation"), "72f81ca7d2e4d281468de1e417e3e671", false),
+        (2246288, "Alison", "Slowdive", (224401, "Souvlaki"), "4e045f8b3ff1cfc02bbd6211b87497d8", false),
+        (1265932532, "sometimes", "my bloody valentine", (212636922, "loveless"), "217f6c70913d113d09a561cb17b64f6e", false),
+        (942505, "Heaven or Las Vegas", "Cocteau Twins", (106054, "Heaven or Las Vegas"), "be62b1479e0baf17d8f9beca911ee8cd", false),
+        (106380372, "Space Song", "Beach House", (11093204, "Depression Cherry"), "399cffa2434760d22746a10a44c80bc2", false),
+        (982678, "Glory Box", "Portishead", (109301, "Dummy"), "5942b88996f33c82790023d5d99395d3", false),
+        (3129748, "Teardrop", "Massive Attack", (301773, "Mezzanine"), "85abbdc3ed4a7b94ace97f868fe70f63", false),
+        (3614317, "This Must Be the Place (Naive Melody)", "Talking Heads", (340889, "Speaking in Tongues (Deluxe Version)"), "70db13b9aec041ca74d0ec2b815846e9", false),
+        (3110852, "All My Friends", "LCD Soundsystem", (300592, "Sound of Silver"), "d5aec97cfc1581df6b32a267fe067827", false),
+        (103052662, "The Less I Know The Better", "Tame Impala", (10709540, "Currents"), "de5b9b704cd4ec36f8bf49beb3e17ba2", true),
+        (63480987, "Dreams", "Fleetwood Mac", (6237061, "Rumours"), "9732751ce91d786dcf30069853697078", false),
+        (461043312, "\"Heroes\"", "David Bowie", (56889262, "\"Heroes\""), "5fb91018679f65199308256be3c584ab", false),
+        (13791930, "Smells Like Teen Spirit", "Nirvana", (1262014, "Nevermind (Remastered)"), "f0282817b697279e56df13909962a54a", false),
+        (948331, "Cut Your Hair", "Pavement", (106700, "Crooked Rain, Crooked Rain: LA's Desert Origins"), "4f7553a1987ef17d30c6e7c3c78674ed", false),
+        (3360821, "Fade Into You", "Mazzy Star", (319814, "So Tonight That I Might See"), "5d3703e81301662626cc06a8b2843c78", false),
+        (448265892, "Звезда по имени Солнце", "Кино", (54718352, "Звезда по имени Солнце"), "b4076a916063e924824664e18292fad2", false),
+        (836932812, "Судно (Борис Рыжий)", "Молчат Дома", (123870262, "Этажи"), "9cfa05e131119b60cf1d5cfe124d7d59", true),
+        (2173954687, "Running Up That Hill (A Deal With God)", "Kate Bush", (413452427, "Hounds Of Love"), "22fedaf5d2b0ac8977b93bc1db7a4a2a", false),
+        (540172652, "Pale Blue Eyes", "The Velvet Underground", (70487632, "The Velvet Underground (45th Anniversary)"), "b8438109e927f41cf792f84503f15983", false),
+        (5093604, "This Charming Man", "The Smiths", (467267, "The Sound of the Smiths (Deluxe; 2008 Remaster)"), "d1005397b8a3a743fb0c8aad35f42db3", false),
+    ]
+
+    /// Записи 30 скачанных треков — старше остального стартового набора: свежие
+    /// отметки пользователя остаются сверху.
+    static func downloadedTrackItems(now: Date) -> [CollectionItem] {
+        downloadedTracks.enumerated().map { index, track in
+            let cover = deezer("cover", track.cover)
+            var item = CollectionItem.track(
+                MusicNowPlaying(
+                    id: "track-\(track.id)",
+                    cover: cover,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album.title,
+                    isExplicit: track.isExplicit
+                ),
+                album: .album(EntityRef(
+                    id: "dz-\(track.album.id)",
+                    title: track.album.title,
+                    subtitle: track.artist,
+                    artwork: cover
+                ))
+            )
+            item.downloadedAt = now.addingTimeInterval(-2 * 24 * 60 * 60 - TimeInterval(index) * 60)
+            return item
+        }
+    }
 
     private static let artists: [(id: Int, name: String, picture: String)] = [
         (8706544, "Dua Lipa", "877872aaf75694f11d53c318700ab2b5"),

@@ -43,6 +43,14 @@ struct EntityDestinations: ViewModifier {
                     }
                     #endif
             }
+            // Профиль — обычный экран стека (правка пользователя 2026-10-21): со слоями поиска,
+            // как все пуши, — бар на нём живой.
+            .navigationDestination(for: ProfileRoute.self) { _ in
+                SearchLayers(host: .pushed) {
+                    ProfileScreen()
+                }
+                .ignoresSafeArea(.keyboard)
+            }
             .navigationDestination(for: EntityRoute.self) { route in
                 // Слои поиска — и на пуше: поиск, открытый **с** альбома или книги,
                 // обязан лечь поверх них. В корне стека они его не накрывали бы —

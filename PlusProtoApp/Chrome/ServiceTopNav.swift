@@ -48,25 +48,31 @@ enum ServiceTopNavLayout {
         endPoint: .bottom
     )
 
-    /// Иконка-аксессуар справа от табов — «Моё», `icon / change order` `2584:26578`
-    /// на кадре 375: табы кончаются на x 277, иконка 20 стоит на x 279 (зазор 2), до
-    /// кадра аватара 311 — 12. Голая иконка без подложки; зона тапа шире — в вызывающем.
-    static let accessoryLeading: CGFloat = 2
-    static let accessoryTrailing: CGFloat = 12
+    /// Кнопка-аксессуар справа от табов — «Моё», `. / top navigation / buttons`
+    /// `17778:34241` файла «ЯПС · Mobile · Current State»: `PlusButton` plain M — круг 40
+    /// в раскладке целиком, иконка 20 по центру, до кадра аватара 8 (прежний макет
+    /// `2584:26578` ставил голую иконку 20 с полями 2 и 12 — иконка стояла на 6 правее).
+    /// Лента табов заходит под пустое поле кнопки на 14, как в макете (табы — до x 277,
+    /// кнопка — с 263 на кадре 375): ширина ленты та же, что при голой иконке, и
+    /// «Скачанное» не уходит в затухание. Кнопка лежит выше ленты — тап по полю её.
+    static let accessoryLeading: CGFloat = -14
+    static let accessoryTrailing: CGFloat = 8
 
     static let avatarFrame: CGFloat = 48
     static let avatarSize: CGFloat = 40
     static let auraWidth: CGFloat = 2
-    /// Ореол аватара — кольцо 2pt сверху вниз: фиолетовый → розовый (`aura` макета)
+    /// Ореол аватара — кольцо 2pt внутрь, градиент слева направо: коралловый → малиновый →
+    /// фиолетовый → синий (`aura` навигации «Моего» `17778:34241`, обводка ноды — 2026-10-21;
+    /// экспорт SVG ноды отдавал прежний вертикальный фиолетово-розовый).
     static let aura = LinearGradient(
         stops: [
-            .init(color: Color(red: 0x5C / 255, green: 0x28 / 255, blue: 0xB1 / 255), location: 0),
-            .init(color: Color(red: 0x92 / 255, green: 0x27 / 255, blue: 0xD5 / 255), location: 0.2577),
-            .init(color: Color(red: 0xE6 / 255, green: 0x68 / 255, blue: 0xE5 / 255), location: 0.61),
-            .init(color: Color(red: 0xF4 / 255, green: 0xBB / 255, blue: 0xE5 / 255), location: 1),
+            .init(color: Color(red: 0xFF / 255, green: 0x5C / 255, blue: 0x4D / 255), location: 0),
+            .init(color: Color(red: 0xEB / 255, green: 0x46 / 255, blue: 0x9F / 255), location: 0.2656),
+            .init(color: Color(red: 0x83 / 255, green: 0x41 / 255, blue: 0xEF / 255), location: 0.75),
+            .init(color: Color(red: 0x3F / 255, green: 0x68 / 255, blue: 0xF9 / 255), location: 1),
         ],
-        startPoint: .top,
-        endPoint: .bottom
+        startPoint: .leading,
+        endPoint: .trailing
     )
 }
 
@@ -116,7 +122,7 @@ struct ServiceTopNav: View {
     var holdsBackdrop = false
     /// Аватар профиля — из макета навигации (`userpics` `2455:75985`), кадр 40pt на ×3.
     var avatar: ArtworkSource = .asset(ProfileMock.avatar)
-    /// Иконка-кнопка между табами и аватаром (20 × 20, макет «Моего» `2584:26578`):
+    /// Кнопка между табами и аватаром (plain M 40, макет «Моего» `17778:34241`):
     /// у остальных экранов её нет и раскладка прежняя.
     var trailingAccessory: AnyView? = nil
 
@@ -359,7 +365,7 @@ private struct NavBackdropOpacity: ViewModifier, Animatable {
     }
 }
 
-/// Аватар — вход в профиль: экран выезжает снизу поверх всего (макет `2463:78551`).
+/// Аватар — вход в профиль: пуш в стек таба, справа налево (`AppNavigationState.openProfile`).
 /// Кольцо-ореол 2pt и фото 40 в кадре 48.
 struct ProfileAvatarButton: View {
     var avatar: ArtworkSource = .asset(ProfileMock.avatar)
@@ -367,7 +373,7 @@ struct ProfileAvatarButton: View {
     @Environment(AppNavigationState.self) private var navigation
 
     var body: some View {
-        Button { navigation.isProfileShown = true } label: {
+        Button { navigation.openProfile() } label: {
             ZStack {
                 Circle()
                     .strokeBorder(ServiceTopNavLayout.aura, lineWidth: ServiceTopNavLayout.auraWidth)

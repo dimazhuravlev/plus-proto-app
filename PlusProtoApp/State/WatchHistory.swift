@@ -29,6 +29,12 @@ final class WatchHistory {
             return max(0, runtime - (movie.position ?? 0))
         }
 
+        /// Начат — посмотрено больше 1 % (`ContentProgress`): просто открытый фильм
+        /// начатым не считается.
+        var isStarted: Bool {
+            ContentProgress.isStarted(progress)
+        }
+
         /// Досмотрен — дальше смотреть нечего.
         var isFinished: Bool {
             guard let remaining else { return false }
@@ -40,9 +46,10 @@ final class WatchHistory {
         didSet { persist() }
     }
 
-    /// Что показывает карусель: всё, что не досмотрено.
+    /// Что показывает карусель: начатое и не досмотренное (правка пользователя
+    /// 2026-10-22: открытый и сразу закрытый фильм — не «в процессе»).
     var continuing: [Entry] {
-        entries.filter { !$0.isFinished }
+        entries.filter { $0.isStarted && !$0.isFinished }
     }
 
     /// Больше карусели не нужно, а хвост истории ничего не стоит потерять.
@@ -136,5 +143,16 @@ final class WatchHistory {
     private func persist() {
         guard let data = try? JSONEncoder().encode(entries) else { return }
         UserDefaults.standard.set(data, forKey: Self.storageKey)
+    }
+}
+
+/// Когда фильм или книга «в процессе» — посмотрено или прочитано больше 1 % (правка
+/// пользователя 2026-10-22): просто открытое начатым не считается — ни в «Смотреть
+/// дальше» и «Смотрю», ни в «Читаю», ни полосой прогресса.
+enum ContentProgress {
+    static let startedShare: Double = 0.01
+
+    static func isStarted(_ progress: Double?) -> Bool {
+        (progress ?? 0) > startedShare
     }
 }

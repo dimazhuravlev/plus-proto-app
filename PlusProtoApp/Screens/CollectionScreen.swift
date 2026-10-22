@@ -56,6 +56,12 @@ enum CollectionLayout {
     @MainActor static var bookRowHeight: CGFloat { book.frameSize(coverWidth: 0).height }
     @MainActor static var coverRowHeight: CGFloat { cardWidth }
 
+    /// Лента вертикальных карточек — с местом под полосу прогресса, если в ней есть
+    /// начатое (`CardProgressBar`); без начатого высота прежняя.
+    static func rowHeight(_ base: CGFloat, progress: [Double?]) -> CGFloat {
+        base + (progress.contains { $0 != nil } ? CardProgressBar.footprint : 0)
+    }
+
     /// «Смотреть дальше» экрана «Кино» — горизонтальные карточки витрины Кинопоиска,
     /// две целые и край третьей 24 (правка пользователя 2026-10-20)
     static let historyFit = CarouselFit(
@@ -395,6 +401,14 @@ struct CollectionScreen: View {
                 .containerRelativeFrame(.vertical) { length, _ in length - CollectionLayout.contentTop }
         } else {
             VStack(spacing: CollectionLayout.sectionGap) {
+                // Умная загрузка — первым блоком «Скачанного» (задача пользователя 2026-10-21):
+                // закрыли — гаснет, место схлопывается, блоки поднимаются.
+                if shelf == .downloads, !SmartDownloads.shared.isBannerDismissed {
+                    SmartDownloadsBanner()
+                        .padding(.horizontal, CollectionLayout.side)
+                        .padding(.vertical, CollectionLayout.sectionPad)
+                        .transition(.opacity)
+                }
                 ForEach(kinds, id: \.self) { kind in
                     CollectionReorderBlock(kind: kind) {
                         section(kind, on: shelf)
@@ -429,12 +443,24 @@ struct CollectionScreen: View {
             }
             .task { await collection.backfillDownloadStills() }
         case .movie:
-            CollectionCarousel(title: kind.title, height: CollectionLayout.posterRowHeight, items: entries, openAll: openAll) { entry in
-                CollectionPosterCard(item: entry.item, resume: entry.resume)
+            let progress = entries.map { CollectionProgress.movie($0, history: actionBar.watchHistory) }
+            CollectionCarousel(
+                title: kind.title,
+                height: CollectionLayout.rowHeight(CollectionLayout.posterRowHeight, progress: progress),
+                items: entries,
+                openAll: openAll
+            ) { entry in
+                CollectionPosterCard(item: entry.item, resume: entry.resume, progress: CollectionProgress.movie(entry, history: actionBar.watchHistory))
             }
         case .book:
-            CollectionCarousel(title: kind.title, height: CollectionLayout.bookRowHeight, items: entries, openAll: openAll) { entry in
-                CollectionBookCard(item: entry.item)
+            let progress = entries.map { CollectionProgress.book($0, reading: actionBar.readingHistory) }
+            CollectionCarousel(
+                title: kind.title,
+                height: CollectionLayout.rowHeight(CollectionLayout.bookRowHeight, progress: progress),
+                items: entries,
+                openAll: openAll
+            ) { entry in
+                CollectionBookCard(item: entry.item, progress: CollectionProgress.book(entry, reading: actionBar.readingHistory))
             }
         case .artist:
             CollectionCarousel(title: kind.title, height: CollectionLayout.titleOnlyRowHeight, items: items, openAll: openAll) { item in
@@ -545,6 +571,9 @@ struct CollectionPosterCard: View {
     var resume: MovieInProgress? = nil
     /// Оценка пользователя — эмодзи над углом постера («Мои оценки»).
     var rating: MovieRating? = nil
+    /// Начатый фильм — полоса прогресса под постером (`CardProgressBar`). Ленте —
+    /// место под неё (`CollectionLayout.rowHeight`).
+    var progress: Double? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
@@ -552,17 +581,20 @@ struct CollectionPosterCard: View {
 
     var body: some View {
         Button(action: open) {
-            CollectionArtwork(
-                source: item.artwork,
-                width: CollectionLayout.cardWidth,
-                height: CollectionLayout.posterHeight,
-                shape: RoundedRectangle(cornerRadius: CollectionLayout.cardRadius, style: .continuous)
-            )
-            .collectionZoomSource(item.route, in: zoom)
-            .overlay(alignment: .topLeading) {
-                if let rating { MovieRatingBadge(rating: rating) }
+            VStack(spacing: CardProgressBar.gap) {
+                CollectionArtwork(
+                    source: item.artwork,
+                    width: CollectionLayout.cardWidth,
+                    height: CollectionLayout.posterHeight,
+                    shape: RoundedRectangle(cornerRadius: CollectionLayout.cardRadius, style: .continuous)
+                )
+                .collectionZoomSource(item.route, in: zoom)
+                .overlay(alignment: .topLeading) {
+                    if let rating { MovieRatingBadge(rating: rating) }
+                }
+                if let progress { CardProgressBar(progress: progress) }
             }
-            .frame(width: CollectionLayout.cardWidth, alignment: .leading)
+            .frame(width: CollectionLayout.cardWidth, alignment: .top)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
@@ -587,6 +619,8 @@ struct CollectionBookCard: View {
     let item: CollectionItem
     /// Начатая книга («Читаю»): тап — сразу читалка (правка пользователя 2026-10-20).
     var readBook: BookInProgress? = nil
+    /// Прочитанная доля — полоса под книгой (`CardProgressBar`).
+    var progress: Double? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
@@ -597,13 +631,16 @@ struct CollectionBookCard: View {
         let coverWidth = geometry.coverWidth(aspect: item.aspect)
         let width = geometry.frameSize(coverWidth: coverWidth).width
         Button(action: open) {
-            BookFigure(geometry: geometry, coverWidth: coverWidth, readingID: item.route?.ref.id) {
-                if let artwork = item.artwork {
-                    SkeletonArtwork(source: artwork)
+            VStack(spacing: CardProgressBar.gap) {
+                BookFigure(geometry: geometry, coverWidth: coverWidth) {
+                    if let artwork = item.artwork {
+                        SkeletonArtwork(source: artwork)
+                    }
                 }
+                .collectionZoomSource(item.route, in: zoom)
+                if let progress { CardProgressBar(progress: progress) }
             }
-            .collectionZoomSource(item.route, in: zoom)
-            .frame(width: width, alignment: .leading)
+            .frame(width: width, alignment: .top)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
@@ -891,10 +928,11 @@ private struct CollectionTracksBlock: View {
         HStack(spacing: CollectionLayout.tracksHeaderGap) {
             // В режиме порядка «play» остаётся на месте выключенной кнопкой ДС — как кнопка
             // навбара при одном блоке.
-            // `Size=M • 40px, Type=plain` макета; под ней — микрошейдер, как у «play» блока
-            // «Похоже на» (оверлей шапки ниже).
+            // «Любимое» — `Size=M • 40px, Type=plain` макета на микрошейдере, как у «play»
+            // блока «Похоже на» (оверлей шапки ниже); «Скачанное» — обычная круглая кнопка
+            // secondary без шейдера (правка пользователя 2026-10-21).
             PlusButton(
-                type: .plain,
+                type: shelf == .favorites ? .plain : .secondary,
                 size: CollectionLayout.playButton,
                 state: reorder.isReordering ? .disabled : .normal,
                 accessibilityTitle: isPlayingShelf ? "Пауза" : "Слушать",
@@ -925,10 +963,13 @@ private struct CollectionTracksBlock: View {
             .buttonStyle(.plain)
         }
         .overlay(alignment: .leading) {
-            SharedVideoLayer(video: .musicMicroShader, poster: "musicMicroShaderPoster")
-                .frame(width: CollectionLayout.tracksShader, height: CollectionLayout.tracksShader)
-                .offset(x: CollectionLayout.tracksShaderLeading)
-                .allowsHitTesting(false)
+            // Полка у блока не меняется — ветка постоянна, идентичность цела.
+            if shelf == .favorites {
+                SharedVideoLayer(video: .musicMicroShader, poster: "musicMicroShaderPoster")
+                    .frame(width: CollectionLayout.tracksShader, height: CollectionLayout.tracksShader)
+                    .offset(x: CollectionLayout.tracksShaderLeading)
+                    .allowsHitTesting(false)
+            }
         }
         .padding(.horizontal, CollectionLayout.side)
         .padding(.top, CollectionLayout.tracksHeaderTop)
@@ -1031,9 +1072,7 @@ struct CollectionTrackRow: View {
         .pressScale(PressMotion.rowScale)
         .overlay(alignment: .bottom) {
             if !isLast {
-                Rectangle()
-                    .fill(CollectionLayout.divider)
-                    .frame(height: 0.5)
+                ListDivider()
                     .padding(.horizontal, CollectionLayout.side)
             }
         }
@@ -1626,7 +1665,6 @@ private struct CollectionReorderButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let size = PlusButtonSize.m
-    private static var hitInset: CGFloat { (size.height - size.iconBox) / 2 }
 
     var body: some View {
         let isReordering = reorder.isReordering
@@ -1652,7 +1690,8 @@ private struct CollectionReorderButton: View {
             .animation(reduceMotion ? .easeInOut(duration: 0.2) : ActionBarMotion.iconSwap, value: isReordering)
             .animation(.easeInOut(duration: 0.2), value: isEnabled)
         }
-        .padding(-Self.hitInset)
+        // Круг 40 — в раскладке целиком, как в макете навбара (`17778:34241`), а не
+        // голой иконкой под отрицательным отступом.
     }
 
     /// «Изменить порядок» — приглушённый белый, «Готово» — фиолетовый акцент приложения;
@@ -1733,5 +1772,36 @@ private struct CollectionEmptyState: View {
         case .favorites: "Отмечайте «Нравится» у музыки и книг и «Позже» у фильмов — всё соберётся здесь"
         case .downloads: "Скачайте фильм, книгу, альбом или трек — они появятся здесь"
         }
+    }
+}
+
+// MARK: - Прогресс карточек
+
+/// Прогресс под вертикальными карточками коллекции: начатый и недосмотренный фильм —
+/// из истории просмотра, читаемая книга — из истории чтения. Дочитанное и нетронутое —
+/// без полосы.
+@MainActor
+enum CollectionProgress {
+    static func movie(_ entry: CollectionMixEntry, history: WatchHistory) -> Double? {
+        let id = entry.item.route?.ref.id ?? entry.resume?.id
+        let watched = history.continuing.first { $0.id == id }?.progress
+        return visible(entry.progress ?? watched)
+    }
+
+    static func movie(_ item: CollectionItem, history: WatchHistory) -> Double? {
+        visible(history.continuing.first { $0.id == item.route?.ref.id }?.progress)
+    }
+
+    static func book(_ entry: CollectionMixEntry, reading: ReadingHistory) -> Double? {
+        book(entry.item, reading: reading)
+    }
+
+    static func book(_ item: CollectionItem, reading: ReadingHistory) -> Double? {
+        item.route.flatMap { reading.readingProgress(for: $0.ref.id) }
+    }
+
+    private static func visible(_ progress: Double?) -> Double? {
+        guard let progress, ContentProgress.isStarted(progress), progress < 1 else { return nil }
+        return progress
     }
 }

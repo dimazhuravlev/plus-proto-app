@@ -31,7 +31,9 @@ struct AppRootView: View {
             Color.surfaceOne.ignoresSafeArea()
 
             tabContent
-                .environment(\.promoIntroReady, !isSplashShown && !navigation.isProfileShown)
+                // Вступление промо — когда заставка ушла и профиль не на экране: профиль теперь
+                // пуш стека и прячет хром (`isChromeHidden`), а не презентация поверх всего.
+                .environment(\.promoIntroReady, !isSplashShown && !navigation.isChromeHidden)
                 // Поджимаем контент скролла, а не фрейм: лента едет под хромом, но в покое
                 // из-под него выходит. `contentMargins` едет по environment, поэтому доходит
                 // и до запушенных экранов — `safeAreaInset` снаружи через NavigationStack
@@ -46,23 +48,20 @@ struct AppRootView: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            .modifier(BottomChromeHiding(isHidden: navigation.isChromeHidden))
         }
         // Между контентом и хромом: расфокусить надо экран, но не бар с клавиатурой.
         .overlay(alignment: .bottom) {
             BottomChrome()
-        }
-        // Профиль — с аватарки навигации витрин: выезжает снизу и закрывает всё,
-        // включая хром (в макете `2463:78551` таббара и бара нет).
-        .fullScreenCover(isPresented: $navigation.isProfileShown) {
-            ProfileScreen()
+                .modifier(BottomChromeHiding(isHidden: navigation.isChromeHidden))
         }
         #if DEBUG
         // `-debugProfile 1` — открыть профиль через 1.5 с после запуска: тапнуть аватарку
-        // из шелла нечем.
+        // из шелла нечем. Тот же пуш, что у аватарки.
         .task {
             guard UserDefaults.standard.bool(forKey: "debugProfile") else { return }
             try? await Task.sleep(for: .seconds(1.5))
-            navigation.isProfileShown = true
+            navigation.openProfile()
         }
         #endif
         // Киноплеер, читалка и плеер музыки живут не здесь, а отдельной презентацией
@@ -87,10 +86,11 @@ struct AppRootView: View {
                 search.collapse()
                 // 2. Экран шеринга лежит в окне тоста, сам себя не закроет.
                 if ShareState.shared.presented != nil { ShareState.shared.dismissImmediately() }
-                // 3. Плееры презентует UIKit поверх верхнего контроллера. Если под ними слой фильма
-                // или профиль — их снимет `showRoot`, и вместе с ними вся стопка: второй `dismiss`
-                // разом дал бы «dismiss is in progress». Иначе плееры закрываем сами.
-                if navigation.coveredRoute == nil, !navigation.isProfileShown {
+                // 3. Плееры презентует UIKit поверх верхнего контроллера. Если под ними слой фильма —
+                // его снимет `showRoot`, и вместе с ним вся стопка: второй `dismiss` разом дал бы
+                // «dismiss is in progress». Иначе плееры закрываем сами (профиль — пуш стека,
+                // не презентация).
+                if navigation.coveredRoute == nil {
                     actionBar.closeAllPlayers()
                 }
                 // 4. Таб — мгновенно, без анимации; слой фильма — тоже без зума: его источник
@@ -273,5 +273,42 @@ struct AppRootView: View {
             // съезжала на 54pt вниз (замер 2026-10-03).
             .toolbar(.hidden, for: .navigationBar)
         }
+    }
+}
+
+// MARK: - Скрытие нижнего хрома
+
+enum BottomChromeHidingMotion {
+    /// Хром уезжает за нижнюю кромку целиком — с подложкой и home indicator
+    static let distance: CGFloat = 240
+    /// Вместе с пушем экрана: ease-in-out, длительность перехода стека
+    static let slide: Animation = .easeInOut(duration: 0.35)
+    static let fade: Animation = .easeInOut(duration: 0.2)
+}
+
+/// Нижний хром прячется на экранах, где его нет (профиль): уезжает за нижнюю кромку,
+/// а не гаснет; с Reduce Motion — только прозрачность.
+struct BottomChromeHiding: ViewModifier {
+    let isHidden: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: isHidden && !reduceMotion ? BottomChromeHidingMotion.distance : 0)
+            .opacity(isHidden && reduceMotion ? 0 : 1)
+            .allowsHitTesting(!isHidden)
+            .animation(reduceMotion ? BottomChromeHidingMotion.fade : BottomChromeHidingMotion.slide, value: isHidden)
+    }
+}
+
+/// Экран без нижнего хрома — пока он на экране, таббар и action bar спрятаны.
+struct HidesBottomChrome: ViewModifier {
+    @Environment(AppNavigationState.self) private var navigation
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { navigation.hideChrome() }
+            .onDisappear { navigation.showChrome() }
     }
 }

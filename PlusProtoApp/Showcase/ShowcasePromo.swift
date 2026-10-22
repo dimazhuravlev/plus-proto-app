@@ -874,7 +874,7 @@ private struct PromoCardFace: View {
                 .showcaseSwappable()
         case .book(let book):
             let figure = Layout.book
-            BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth, readingID: book.resume?.id ?? book.id) {
+            BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth) {
                 SkeletonArtwork(source: book.cover)
             }
             .showcaseSwappable()
