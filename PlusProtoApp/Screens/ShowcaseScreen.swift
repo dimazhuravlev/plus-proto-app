@@ -14,6 +14,7 @@ struct ShowcaseScreen: View {
     @Namespace private var ownZoom
     private var zoom: Namespace.ID { stackZoom ?? ownZoom }
     @State private var scrollOffset: CGFloat = 0
+    @State private var isHomeDevShown = false
 
     #if DEBUG
     @Environment(AppNavigationState.self) private var navigation
@@ -35,9 +36,21 @@ struct ShowcaseScreen: View {
         }
         // Навигация «Главной» — как у сервисных табов: поверх ленты, со своей подложкой.
         .overlay(alignment: .top) {
-            HomeTopNav(scrollOffset: scrollOffset)
+            HomeTopNav(scrollOffset: scrollOffset, openDevMenu: { isHomeDevShown = true })
         }
+        .navigationDestination(for: CollectionListRoute.self) { route in
+            SearchLayers(host: .pushed) { CollectionListScreen(route: route) }
+                .ignoresSafeArea(.keyboard)
+        }
+        .homeDevMenu(isPresented: $isHomeDevShown)
         #if DEBUG
+        // Только аргумент процесса: контрольный показ шита не меняет настройки на диске.
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-debugHomeDevMenu") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            isHomeDevShown = true
+        }
         // `-debugPerson <artist|director|writer>` — открыть экран персоны: The Weeknd,
         // Альфред Хичкок (персона Кинопоиска известна) или Михаил Булгаков (по имени,
         // без фото — его экран ищет сам). Тапнуть по выдаче из шелла нечем. Раз за запуск.

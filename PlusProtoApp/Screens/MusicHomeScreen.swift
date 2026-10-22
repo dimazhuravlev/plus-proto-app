@@ -180,7 +180,9 @@ private struct MyVibeHero: View {
 /// Шейдер «Моей волны» — видео, присланное пользователем (`New_shader.mov`):
 /// 1080×1080, 30 к/с, петля сшита кроссфейдом в секунду — у исходника первый
 /// и последний кадры не совпадали. Пятно на чёрном — кромок у кадра нет.
-private struct VibeShader: View {
+struct VibeShader: View {
+    var isPlaying = true
+    var opacity: Double = MyVibeLayout.shaderOpacity
     @State private var playback = LoopingVideoPlayback()
     @State private var isReady = false
 
@@ -188,11 +190,20 @@ private struct VibeShader: View {
         LoopingVideoLayer(player: playback.queue) {
             isReady = true
         }
-        .opacity(isReady ? MyVibeLayout.shaderOpacity : 0)
+        .opacity(isReady ? opacity : 0)
         .animation(.easeOut(duration: 0.4), value: isReady)
         .allowsHitTesting(false)
-        .onAppear { playback.start(bundled: "my-vibe-shader") }
+        .onAppear {
+            playback.prepare(bundled: "my-vibe-shader")
+            updatePlayback()
+        }
+        .onChange(of: isPlaying) { _, _ in updatePlayback() }
         .onDisappear { playback.pause() }
         .accessibilityHidden(true)
+    }
+
+    private func updatePlayback() {
+        if isPlaying { playback.start(bundled: "my-vibe-shader") }
+        else { playback.pause() }
     }
 }

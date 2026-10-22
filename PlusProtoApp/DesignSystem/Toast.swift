@@ -98,6 +98,9 @@ enum ToastCopy {
 enum ToastLayout {
     static let height: CGFloat = 56
     static let maxWidth: CGFloat = 280
+    /// Дизлайк промо, Figma 464:27924: текст 114 + кнопка 94 + поля/зазор.
+    static let dislikeWidth: CGFloat = 256
+    static let undoButtonWidth: CGFloat = 94
     /// Зазор между текстом и кнопкой (и между иконкой и текстом).
     static let gap: CGFloat = 12
     static var buttonSize: CGFloat { PlusButtonSize.s.height }
@@ -167,13 +170,21 @@ enum ToastLayout {
     private static func nonTextWidth(for config: ToastConfig) -> CGFloat {
         let hasButton = config.action != nil
         var width = leadingInset(for: config.graphic) + graphicWidth(for: config.graphic)
-        width += hasButton ? gap + buttonSize + trailingWithButton : trailingNoButton
+        width += hasButton ? gap + actionButtonWidth(for: config) + trailingWithButton : trailingNoButton
         return width
+    }
+
+    static func actionButtonWidth(for config: ToastConfig) -> CGFloat {
+        if config.action == .undoRecommendation { return undoButtonWidth }
+        guard config.action?.isSaveRecommendation == true else { return buttonSize }
+        let font = UIFont(name: PlusFont.textSemibold, size: PlusTextSize.textS.size)
+            ?? .systemFont(ofSize: PlusTextSize.textS.size, weight: .semibold)
+        return 14 + 16 + 6 + ceil(("Сохранить" as NSString).size(withAttributes: [.font: font]).width) + 16
     }
 
     /// Места под фразу: от `max-width` вычитаем всё остальное в ряду.
     static func textMaxWidth(for config: ToastConfig) -> CGFloat {
-        maxWidth - nonTextWidth(for: config)
+        (config.action == .undoRecommendation ? dislikeWidth : maxWidth) - nonTextWidth(for: config)
     }
 
     /// Ширина фразы: самая длинная строка после переноса по словам в `maxWidth`.
@@ -201,7 +212,9 @@ enum ToastLayout {
 
     /// Ширина пилюли: обнимает текст, не шире `maxWidth`.
     static func pillWidth(for config: ToastConfig) -> CGFloat {
-        nonTextWidth(for: config)
+        if config.action == .undoRecommendation { return dislikeWidth }
+        if config.action?.isSaveRecommendation == true { return maxWidth }
+        return nonTextWidth(for: config)
             + textWidth(config.title, maxWidth: textMaxWidth(for: config))
     }
 }
@@ -225,7 +238,8 @@ struct ToastView: View {
 
     /// Ширина фразы считается заранее (`ToastLayout.textWidth`), от констант и шрифта.
     private var textWidth: CGFloat {
-        ToastLayout.textWidth(config.title, maxWidth: ToastLayout.textMaxWidth(for: config))
+        if config.action?.requiresExplicitButton == true { return ToastLayout.textMaxWidth(for: config) }
+        return ToastLayout.textWidth(config.title, maxWidth: ToastLayout.textMaxWidth(for: config))
     }
 
     var body: some View {
@@ -268,8 +282,33 @@ struct ToastView: View {
                 .contentTransition(.opacity)
 
             if hasButton {
-                chevronButton
+                if config.action?.isSaveRecommendation == true {
+                    Button { ToastCenter.shared.activate() } label: {
+                        HStack(spacing: 6) {
+                            Image("toastSavePlus").renderingMode(.template).resizable().frame(width: 16, height: 16)
+                            Text("Сохранить").plusText(.textS, .semibold)
+                        }
+                        .foregroundStyle(Color.fillOne)
+                        .padding(.leading, 14).padding(.trailing, 16)
+                        .frame(width: ToastLayout.actionButtonWidth(for: config), height: 32)
+                        .background(Color.buttonsSecondary, in: Capsule())
+                    }
+                    .buttonStyle(PressScaleButtonStyle())
                     .padding(.leading, ToastLayout.gap)
+                } else if config.action == .undoRecommendation {
+                    Button { ToastCenter.shared.activate() } label: {
+                        Text("Отменить")
+                            .plusText(.textS, .semibold)
+                            .foregroundStyle(Color.fillOne)
+                            .frame(width: ToastLayout.undoButtonWidth, height: ToastLayout.buttonSize)
+                            .background(Color.buttonsSecondary, in: Capsule())
+                    }
+                    .buttonStyle(PressScaleButtonStyle())
+                    .padding(.leading, ToastLayout.gap)
+                } else {
+                    chevronButton
+                        .padding(.leading, ToastLayout.gap)
+                }
             }
         }
         .padding(.leading, leadingInset)
@@ -381,9 +420,14 @@ private struct ToastPresenter: View {
                     .offset(y: dragY)
                     .opacity(opacity)
                     .blur(radius: blurRadius)
-                    .onTapGesture { tap() }
+                    .onTapGesture {
+                        // Сохранение и отмена выполняются только явной кнопкой.
+                        // Фиксируем config этого кадра: смена тоста внутри кнопки
+                        // не должна тем же тапом активировать следующий тост.
+                        if config.action?.requiresExplicitButton != true { tap() }
+                    }
                     .simultaneousGesture(swipeGesture)
-                    .accessibilityAddTraits(config.action != nil ? .isButton : [])
+                    .accessibilityAddTraits(config.action != nil && config.action?.requiresExplicitButton != true ? .isButton : [])
                     .onAppear { animateIn() }
                     .onDisappear { OverlayLayerState.shared.setInteractiveFrame(nil, for: "toast") }
             }
@@ -421,8 +465,12 @@ private struct ToastPresenter: View {
     /// Тап по тосту. Тап того же касания, что вело тост, не считается: рядом с порогом жеста
     /// (6 pt) системный тап ещё может сработать.
     private func tap() {
-        guard !swipeActive, !flyingOut else { return }
-        center.activate()
+        guard !swipeActive, !flyingOut, displayed?.id == center.current?.id else { return }
+        if displayed?.action?.isSaveRecommendation == true {
+            center.dismiss()
+        } else {
+            center.activate()
+        }
     }
 
     private func finishSwipe(_ value: DragGesture.Value) {

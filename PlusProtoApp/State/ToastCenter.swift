@@ -15,11 +15,25 @@ enum ToastGraphic: Equatable {
     case icon(String)
 }
 
-/// Действие тоста. Есть действие — справа кнопка-шеврон (`button=on`), тап по всему тосту
-/// его выполняет. Замыканий внутри нет: `ToastConfig` остаётся `Equatable`.
+/// Действие тоста: переход доступен по всей пилюле, сохранение и отмена — только кнопкой.
+/// Замыкание отмены хранится в центре, поэтому `ToastConfig` остаётся `Equatable`.
 enum ToastAction: Equatable {
     /// Открыть таб «Моё».
     case openCollection
+    case saveRecommendation(CollectionItem)
+    case undoRecommendation
+
+    var requiresExplicitButton: Bool {
+        switch self {
+        case .saveRecommendation, .undoRecommendation: true
+        case .openCollection: false
+        }
+    }
+
+    var isSaveRecommendation: Bool {
+        if case .saveRecommendation = self { return true }
+        return false
+    }
 }
 
 /// Один тост: графика (необязательна), фраза, действие (необязательно).
@@ -48,6 +62,9 @@ final class ToastCenter {
     @ObservationIgnored
     private var token = 0
 
+    @ObservationIgnored
+    private var undoRecommendation: (@MainActor () -> Void)?
+
     /// Открывает «Моё» откуда угодно (закрывает фильм, плееры, профиль, поиск). Регистрирует
     /// корень приложения: окно тоста окружения корня не видит, а навигация живёт в `@State` корня.
     @ObservationIgnored
@@ -59,8 +76,15 @@ final class ToastCenter {
         action: ToastAction? = nil,
         duration: Duration = .seconds(4)
     ) {
+        undoRecommendation = nil
         current = ToastConfig(title: title, graphic: graphic, action: action, duration: duration)
         startTimer(duration)
+    }
+
+    /// Отмена относится только к текущему сообщению; замена/скрытие освобождает действие.
+    func showDislikedRecommendation(undo: @escaping @MainActor () -> Void) {
+        show(title: "Будем показывать меньше такого", action: .undoRecommendation)
+        undoRecommendation = undo
     }
 
     /// Таймер автоскрытия. Меняет токен — предыдущий таймер больше ничего не закроет.
@@ -93,14 +117,20 @@ final class ToastCenter {
             return
         }
         PlayerHaptics.tap()
+        let undo = undoRecommendation
         dismiss()
         switch action {
+        case .undoRecommendation: undo?()
         case .openCollection: openCollection?()
+        case .saveRecommendation(let item):
+            CollectionStore.shared.setFavorite(item, true)
+            show(title: "Добавили в Любимое", action: .openCollection)
         }
     }
 
     func dismiss() {
         token += 1
         current = nil
+        undoRecommendation = nil
     }
 }

@@ -117,6 +117,7 @@ struct MovieBlock {
     let caption: String
     /// Подпись тонируется в цвет постера — в макете градиент уводит текст к его палитре.
     let captionTint: Color
+    var synopsis: String? = nil
     /// Начатый фильм — карточка «Продолжить» промо «Главной» (задача 69): тап запускает
     /// киноплеер с места остановки, а не открывает экран тайтла. `nil` — обычная карточка.
     var resume: MovieInProgress? = nil
@@ -172,6 +173,7 @@ struct BookBlock {
     let cover: ArtworkSource
     let caption: String
     let captionTint: Color
+    var synopsis: String? = nil
     /// Последняя открытая книга — карточка «Продолжить» промо «Главной» (задача 69): тап
     /// открывает читалку, а не экран книги. `nil` — обычная карточка.
     var resume: BookInProgress? = nil
