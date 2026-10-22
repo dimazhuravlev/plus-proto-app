@@ -31,6 +31,9 @@ struct AppRootView: View {
             Color.surfaceOne.ignoresSafeArea()
 
             tabContent
+                // Вступление промо — когда заставка ушла и профиль не на экране: профиль теперь
+                // пуш стека и прячет хром (`isChromeHidden`), а не презентация поверх всего.
+                .environment(\.promoIntroReady, !isSplashShown && !navigation.isChromeHidden)
                 // Поджимаем контент скролла, а не фрейм: лента едет под хромом, но в покое
                 // из-под него выходит. `contentMargins` едет по environment, поэтому доходит
                 // и до запушенных экранов — `safeAreaInset` снаружи через NavigationStack
@@ -177,20 +180,18 @@ struct AppRootView: View {
         await actionBar.watchHistory.backfillContinuingPoster()
         if shouldLoadLiveFeed {
             await catalog.loadIfNeeded()
-            // Карточки «Продолжить» промо (задача 69) — из истории и бара, не из каталога:
-            // первая из них — стартовый центр слайдера.
-            let resumes = ShowcasePromo.composed(catalog.feed.promo, actionBar: actionBar)
-                .filter { $0.promoResume != nil }
-            // И ряд «продолженного» над промо (задача 71) — он на первом экране.
+            // История прогревается отдельно от рекомендательного промоблока.
             await ArtworkLoader.shared.prewarm(
-                catalog.feed.artworks + resumes.flatMap(\.artworks) + actionBar.recently.artworks
+                catalog.feed.artworks + actionBar.recently.artworks
             )
         }
+        let promo = ShowcasePromo.composed(catalog.homePromo(catalog.feed.promo))
+        PromoCardGlowRaster.retain(promo)
+        // Prepare glows before a swipe, not while the next card becomes active.
+        for item in promo { await PromoCardGlowRaster.render(item) }
         // Капля станции промо — растр на цвет: считается под заставкой, а не на первом
         // кадре показа. И на моках: станция в круге есть всегда.
-        PromoStationPetal.prewarm(catalog.feed.promo)
-        // Растры теней под кавером и их цвета — там же, по тем же причинам.
-        PromoCoverShadow.prewarm(ShowcasePromo.composed(catalog.feed.promo, actionBar: actionBar))
+        PromoStationPetal.prewarm(promo)
 
         // Минимальная выдержка: когда всё пришло из кэша за сотню миллисекунд,
         // заставка не должна мигнуть и пропасть — это читается сбоем, а не запуском.

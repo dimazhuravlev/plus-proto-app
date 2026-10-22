@@ -398,6 +398,7 @@ struct HomeTopNav: View {
     var scrollOffset: CGFloat = 0
     /// «Люмен в поиске» (дебаг-меню): голова уходит в поле поиска, аватар остаётся на месте.
     @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
+    var openDevMenu: () -> Void = {}
 
     private enum Layout {
         /// Логотип — 161.52 × 24 (`.header-logo`)
@@ -420,16 +421,18 @@ struct HomeTopNav: View {
                 .padding(.leading, ServiceTopNavLayout.side)
             Spacer(minLength: 0)
             HStack(spacing: 0) {
-                // Люмен — маскот в макете без действия: видео, а не кнопка. Слот слева
-                // от аватара: без него аватар стоит там же, у поля экрана.
+                // Видео не принимает касания; явная область нажатия покрывает весь слот.
+                // Тап открывает локальное девменю.
                 if !lumenInSearch {
-                    Color.clear
+                    HomeDevMenuEntry(action: openDevMenu) {
+                        Color.clear
                         .frame(width: Layout.lumenVideo, height: Layout.lumenSlotHeight)
                         .overlay {
                             LumenHeadVideo()
                                 .frame(width: Layout.lumenVideo, height: Layout.lumenVideo)
                         }
-                        .accessibilityHidden(true)
+                        .contentShape(Rectangle())
+                    }
                 }
                 ProfileAvatarButton()
             }

@@ -110,7 +110,7 @@ enum ProfileLayout {
 
     // MARK: Общее с дебаг-меню
 
-    /// Заголовки секций дебаг-меню — поля 16 сверху и 12 снизу (`DebugMenuScreen`)
+    /// Заголовки секций дебаг-меню — поля 16 сверху и 12 снизу (общая вкладка девменю)
     static let titleTop: CGFloat = 16
     static let titleBottom: CGFloat = 12
     static let bottomPadding: CGFloat = 24
@@ -130,16 +130,12 @@ struct ProfileScreen: View {
     @State private var isDebugMenuShown = false
 
     var body: some View {
-        // Пуш в стек таба (правка пользователя 2026-10-21): дебаг-меню — следующий экран
-        // того же стека, «назад» возвращает к профилю.
+        // Пуш в стек таба (правка пользователя 2026-10-21), без таббара и action bar.
+        // Девменю — тем же нижним шитом, что и по Люмену на главной (PR #26).
         profile
             .toolbar(.hidden, for: .navigationBar)
-            // Без таббара и action bar (правка пользователя 2026-10-21).
             .modifier(HidesBottomChrome())
-            .navigationDestination(isPresented: $isDebugMenuShown) {
-                DebugMenuScreen()
-                    .modifier(HidesBottomChrome())
-            }
+            .homeDevMenu(isPresented: $isDebugMenuShown)
         #if DEBUG
         // `-debugMenu 1` (с `-debugProfile 1`) — через 1 с открыть дебаг-меню, как тап
         // по ячейке.

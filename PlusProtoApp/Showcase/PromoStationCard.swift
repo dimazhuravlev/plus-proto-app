@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Числа карточки станции «Моей волны» в промо «Главной» — макет `2688:26198` (задача 65).
-/// Кадр 208×249 на 402; вся геометрия умножается на `ShowcasePromoLayout.scale`, шрифты — нет.
+/// Кадр 208×249 на 402; вся геометрия умножается на `ShowcasePromoLayout.stationScale`, шрифты — нет.
 enum PromoStationLayout {
     static let frame = CGSize(width: 208, height: 249)
 
@@ -78,11 +78,12 @@ enum PromoStationLayout {
 struct PromoStationCard: View {
     let title: String
     let station: VibePromoStation
+    var showsCaption = true
 
     private typealias Layout = PromoStationLayout
 
     var body: some View {
-        let scale = ShowcasePromoLayout.scale
+        let scale = ShowcasePromoLayout.stationScale
         Color.clear
             .frame(width: Layout.frame.width * scale, height: Layout.frame.height * scale)
             .background(alignment: .topLeading) {
@@ -96,21 +97,11 @@ struct PromoStationCard: View {
                     .accessibilityHidden(true)
             }
             .overlay(alignment: .topLeading) {
-                let isArtist = station.artist != nil
-                VStack(spacing: Layout.textGap * scale) {
-                    Text(title)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillOne)
-                        .lineLimit(isArtist ? Layout.artistTitleLines : 1)
-                    Text(station.name)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillSubtitle)
-                        .lineLimit(isArtist ? Layout.artistNameLines : Layout.nameLines)
+                if showsCaption {
+                    PromoStationCaption(title: title, station: station)
+                        .showcaseSwappable()
+                        .offset(x: Layout.textLeading * scale, y: Layout.textTop * scale)
                 }
-                .multilineTextAlignment(.center)
-                .frame(width: Layout.textWidth * scale)
-                .showcaseSwappable()
-                .offset(x: Layout.textLeading * scale, y: Layout.textTop * scale)
             }
             .contentShape(.rect)
     }
@@ -119,7 +110,7 @@ struct PromoStationCard: View {
     /// круг во весь квадрат.
     @ViewBuilder
     private var art: some View {
-        let scale = ShowcasePromoLayout.scale
+        let scale = ShowcasePromoLayout.stationScale
         switch station.kind {
         case .genre(let asset):
             Image(asset)
@@ -129,6 +120,26 @@ struct PromoStationCard: View {
         case .artist(let artist):
             PromoArtistWavePhoto(picture: artist.picture, diameter: Layout.artBox * scale)
         }
+    }
+}
+
+/// Общая текстовая колонка: её реальная высота определяет положение кнопок,
+/// без GeometryReader и обратной связи размера в раскладку.
+struct PromoStationCaption: View {
+    let title: String
+    let station: VibePromoStation
+
+    var body: some View {
+        let isArtist = station.artist != nil
+        let scale = ShowcasePromoLayout.stationScale
+        VStack(spacing: PromoStationLayout.textGap * scale) {
+            Text(title).plusText(.textM, .medium).foregroundStyle(Color.fillOne)
+                .lineLimit(isArtist ? PromoStationLayout.artistTitleLines : 1)
+            Text(station.name).plusText(.textM, .medium).foregroundStyle(Color.fillSubtitle)
+                .lineLimit(isArtist ? PromoStationLayout.artistNameLines : PromoStationLayout.nameLines)
+        }
+        .multilineTextAlignment(.center)
+        .frame(width: PromoStationLayout.textWidth * scale)
     }
 }
 
@@ -159,7 +170,7 @@ private struct PromoArtistWavePhoto: View {
                 Circle()
                     .strokeBorder(
                         Color.fillEight,
-                        lineWidth: Layout.artistStroke * ShowcasePromoLayout.scale
+                        lineWidth: Layout.artistStroke * ShowcasePromoLayout.stationScale
                     )
                     .allowsHitTesting(false)
             }
@@ -191,7 +202,7 @@ private struct PromoArtistGlowShape: View {
     private typealias Layout = PromoStationLayout
 
     var body: some View {
-        let radius = Layout.artistGlowRadius * ShowcasePromoLayout.scale
+        let radius = Layout.artistGlowRadius * ShowcasePromoLayout.stationScale
         let side = diameter + radius * 6
         Ring(diameter: diameter)
             .fill(Color.white.opacity(Layout.artistGlowOpacity), style: FillStyle(eoFill: true))
@@ -227,7 +238,7 @@ struct PromoStationPetal: View {
     private typealias Layout = PromoStationLayout
 
     var body: some View {
-        let scale = ShowcasePromoLayout.scale
+        let scale = ShowcasePromoLayout.stationScale
         let canvas = PromoStationBlob.canvas(scale: scale)
         let center = PromoStationBlob.center(scale: scale)
         if let image = PromoPetalCache.image(for: station) {
@@ -247,8 +258,8 @@ struct PromoStationPetal: View {
 
     /// Растры капель станций среди айтемов — заранее: под заставкой (`AppRootView`)
     /// и в подготовке замены по ✕ (`ShowcaseCatalog`), а не на первом кадре показа.
-    /// У волны «в стиле артиста» — и растр свечения фото; само фото греет `ArtworkLoader`
-    /// по `ShowcaseBlock.artworks`.
+    /// Фото артиста отдельно греет `ArtworkLoader` по `ShowcaseBlock.artworks`;
+    /// в растр свечения промо входит только лепесток, без фото.
     /// Фон промо под волной «в стиле артиста» — растр её капли (цвет станции), а не фото.
     /// Источник фона — `ArtworkSource.asset` с этим префиксом и номером цвета палитры.
     static let backdropPrefix = "promoPetalBackdrop:"
@@ -267,7 +278,7 @@ struct PromoStationPetal: View {
             guard let station = vibe.station else { continue }
             _ = PromoPetalCache.image(for: station)
             if station.artist != nil {
-                _ = PromoArtistGlow.image(diameter: PromoStationLayout.artBox * ShowcasePromoLayout.scale)
+                _ = PromoArtistGlow.image(diameter: PromoStationLayout.artBox * ShowcasePromoLayout.stationScale)
             }
         }
     }
@@ -290,7 +301,7 @@ private enum PromoPetalCache {
         let renderer = ImageRenderer(content: PromoStationBlob(
             fill: station.fill,
             rim: station.rim,
-            scale: ShowcasePromoLayout.scale
+            scale: ShowcasePromoLayout.stationScale
         ))
         renderer.scale = displayScale
         guard let image = renderer.uiImage else { return nil }

@@ -214,7 +214,7 @@ private struct BookPagesShape: Shape {
 
 /// Бордер обложки на трёх сторонах — сверху, справа и снизу: слева корешок,
 /// и кромки там нет (макет `2311:25096`). Линия внутри кадра, как `border` макета.
-private struct BookCoverEdge: Shape {
+struct BookCoverEdge: Shape {
     let radius: CGFloat
     var lineWidth: CGFloat = CoverBorder.width
 
