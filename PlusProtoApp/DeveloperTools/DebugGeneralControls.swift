@@ -1,33 +1,10 @@
 import SwiftUI
 
-/// Вид выдачи поиска — переключатель дебаг-меню (задача пользователя 2026-10-05).
-/// Хранится в `UserDefaults` и переживает перезапуск; на один запуск его подменяет
-/// аргумент `-searchResultsStyle masonry` (docs/DEBUG.md).
-enum SearchResultsStyle: String, CaseIterable, Identifiable {
-    /// Карусели по разделам — первая версия (макет `2118:17378`)
-    case carousels
-    /// Сетка вперемешку с фильтрами — вторая версия (макет `2479:24822`)
-    case masonry
-
-    static let storageKey = "searchResultsStyle"
-    /// По умолчанию — единая лента (правка пользователя 2026-10-12); выбор в дебаг-меню
-    /// сохраняется и перекрывает умолчание.
-    static let defaultStyle: SearchResultsStyle = .masonry
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .carousels: "Карусели по разделам"
-        case .masonry: "Единая лента выдачи"
-        }
-    }
-}
-
-/// Дебаг-меню — переключатели прототипа. Вход — ячейка профиля над «Настройками».
-/// Своего макета нет: собрано из островков профиля и навбара внутренних экранов.
-struct DebugMenuScreen: View {
-    @AppStorage(SearchResultsStyle.storageKey) private var searchStyle: SearchResultsStyle = SearchResultsStyle.defaultStyle
+/// Общие настройки из upstream: один набор bindings для модального девменю.
+/// Контейнер задаёт скролл и внешние поля; здесь только содержимое вкладки.
+struct DebugGeneralControls: View {
+    @AppStorage(SearchResultsStyle.storageKey) private var searchStyle: SearchResultsStyle = SearchResultsStyle
+        .defaultStyle
     /// Громкость звука музыки — превью Deezer (`MusicAudio`), по умолчанию 50 %.
     @AppStorage(MusicAudio.volumeKey) private var musicVolume = MusicAudio.defaultVolume
     /// Затемнение фона под стеклом хрома (`ChromeGlass`), по умолчанию 40 %.
@@ -36,8 +13,6 @@ struct DebugMenuScreen: View {
     @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActiveTab = false
     /// Голова Люмена в поле поиска вместо навигации «Главной» — ключ `lumenInSearch` (`LumenDebug`).
     @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
-    /// Сколько пунктов ленты ушло вверх — для подложки навбара
-    @State private var scrollOffset: CGFloat = 0
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
@@ -59,74 +34,44 @@ struct DebugMenuScreen: View {
         static let resetTop: CGFloat = 12
     }
 
-    /// Название раздела видно всегда, подложка (блюр с затемнением) проявляется
-    /// с первых пунктов скролла — как у профиля и списков.
-    private static let navThresholds = EntityNavBarThresholds(
-        backgroundStart: 0,
-        backgroundRamp: ServiceTopNavMotion.backdropRamp,
-        titleStart: -.greatestFiniteMagnitude,
-        titleRamp: 0
-    )
-
     var body: some View {
-        ZStack(alignment: .top) {
-            Color.surfaceOne.ignoresSafeArea()
+        VStack(alignment: .leading, spacing: 0) {
+            title("Настройка заголовков", top: 0)
+            headlineIsland
+            headlineReset
+                .padding(.top, Layout.resetTop)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    title("Настройка заголовков")
-                    headlineIsland
-                        .padding(.horizontal, ProfileLayout.side)
-                    headlineReset
-                        .padding(.top, Layout.resetTop)
-                        .padding(.horizontal, ProfileLayout.side)
+            title("Вид поисковой выдачи", top: Layout.sectionGap)
 
-                    title("Вид поисковой выдачи", top: Layout.sectionGap)
+            optionsIsland
 
-                    optionsIsland
-                        .padding(.horizontal, ProfileLayout.side)
+            title("Громкость музыки", top: Layout.sectionGap)
+            volumeIsland
 
-                    title("Громкость музыки", top: Layout.sectionGap)
-                    volumeIsland
-                        .padding(.horizontal, ProfileLayout.side)
+            title("Прозрачность навигации", top: Layout.sectionGap)
+            sliderIsland(
+                "Затемнение фона",
+                value: $glassDim,
+                in: Layout.glassDimRange,
+                accessibility: "Затемнение фона под стеклом хрома"
+            )
+            note("Затемнение под стеклом таббара, action bar, тостов и кнопок навбаров")
 
-                    title("Прозрачность навигации", top: Layout.sectionGap)
-                    sliderIsland(
-                        "Затемнение фона",
-                        value: $glassDim,
-                        in: Layout.glassDimRange,
-                        accessibility: "Затемнение фона под стеклом хрома"
-                    )
-                    .padding(.horizontal, ProfileLayout.side)
-                    note("Затемнение под стеклом таббара, action bar, тостов и кнопок навбаров")
+            title("Таббар", top: Layout.sectionGap)
+            toggleIsland(
+                "Активный таб без свечения",
+                isOn: $whiteActiveTab,
+                accessibility: "Активный таб: белая иконка без свечения"
+            )
+            note("Белая иконка активного таба вместо фиолетового свечения")
 
-                    title("Таббар", top: Layout.sectionGap)
-                    toggleIsland(
-                        "Активный таб без свечения",
-                        isOn: $whiteActiveTab,
-                        accessibility: "Активный таб: белая иконка без свечения"
-                    )
-                    .padding(.horizontal, ProfileLayout.side)
-                    note("Белая иконка активного таба вместо фиолетового свечения")
-
-                    title("Люмен", top: Layout.sectionGap)
-                    toggleIsland(
-                        "Люмен в поиске",
-                        isOn: $lumenInSearch,
-                        accessibility: "Люмен в поле поиска"
-                    )
-                    .padding(.horizontal, ProfileLayout.side)
-                }
-                .padding(.top, EntityNavBarGeometry.barHeight)
-                .padding(.bottom, ProfileLayout.bottomPadding)
-            }
-            .scrollIndicators(.hidden)
-            .trackNavBarScroll(into: $scrollOffset)
+            title("Люмен", top: Layout.sectionGap)
+            toggleIsland(
+                "Люмен в поиске",
+                isOn: $lumenInSearch,
+                accessibility: "Люмен в поле поиска"
+            )
         }
-        .overlay(alignment: .top) {
-            EntityNavBar(title: "Дебаг меню", scrollOffset: scrollOffset, thresholds: Self.navThresholds)
-        }
-        .toolbar(.hidden, for: .navigationBar)
     }
 
     private func title(_ text: String, top: CGFloat = ProfileLayout.titleTop) -> some View {
@@ -135,7 +80,6 @@ struct DebugMenuScreen: View {
             .foregroundStyle(Color.fillOne)
             .padding(.top, top)
             .padding(.bottom, ProfileLayout.titleBottom)
-            .padding(.horizontal, ProfileLayout.side)
     }
 
     private func note(_ text: String) -> some View {
@@ -143,7 +87,7 @@ struct DebugMenuScreen: View {
             .plusText(.textS, .medium)
             .foregroundStyle(Color.fillSubtitle)
             .padding(.top, Layout.noteTop)
-            .padding(.horizontal, ProfileLayout.side + ProfileLayout.cellHorizontal)
+            .padding(.horizontal, ProfileLayout.cellHorizontal)
     }
 
     /// Громкость — меняется на лету, играет музыка или нет.

@@ -121,7 +121,7 @@ enum ProfileLayout {
 
     // MARK: Общее с дебаг-меню
 
-    /// Заголовки секций дебаг-меню — поля 16 сверху и 12 снизу (`DebugMenuScreen`)
+    /// Заголовки секций дебаг-меню — поля 16 сверху и 12 снизу (общая вкладка девменю)
     static let titleTop: CGFloat = 16
     static let titleBottom: CGFloat = 12
     static let bottomPadding: CGFloat = 24
@@ -139,14 +139,12 @@ struct ProfileScreen: View {
     @State private var isDebugMenuShown = false
 
     var body: some View {
-        // Стек — ради дебаг-меню: оно пушится из ячейки и уходит назад к профилю.
+        // Девменю открывается тем же нижним шитом, что и по Люмену на главной.
         // `dismiss` взят снаружи стека — крестик закрывает весь профиль.
         NavigationStack {
             profile
                 .toolbar(.hidden, for: .navigationBar)
-                .navigationDestination(isPresented: $isDebugMenuShown) {
-                    DebugMenuScreen()
-                }
+                .homeDevMenu(isPresented: $isDebugMenuShown)
         }
         #if DEBUG
         // `-debugMenu 1` (с `-debugProfile 1`) — через 1 с открыть дебаг-меню, как тап

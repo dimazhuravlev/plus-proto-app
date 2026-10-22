@@ -224,7 +224,7 @@ private struct DrumGeometry: Equatable {
     let contentWidth: CGFloat
 }
 
-/// Лепесток: размытая капля, иконка агента сверху, подпись внутри.
+/// Лепесток барабана: размытая капля, иконка агента сверху, подпись внутри.
 private struct VibePetal: View {
     let station: VibeStation
 
@@ -290,12 +290,13 @@ private struct VibeBlobRaster: View {
 private enum VibeBlobCache {
     private static var images: [String: UIImage] = [:]
 
-    static func image(for station: VibeStation) -> UIImage? {
-        if let hit = images[station.id] { return hit }
-        let renderer = ImageRenderer(content: VibeBlobShape(fill: station.fill, rim: station.rim))
+    static func image(for station: VibeStation, compact: Bool = false) -> UIImage? {
+        let key = station.id + (compact ? "-compact" : "")
+        if let hit = images[key] { return hit }
+        let renderer = ImageRenderer(content: VibeBlobShape(fill: station.fill, rim: station.rim, compact: compact))
         renderer.scale = 2
         let image = renderer.uiImage
-        images[station.id] = image
+        images[key] = image
         return image
     }
 }
@@ -310,6 +311,7 @@ private enum VibeBlobCache {
 private struct VibeBlobShape: View {
     let fill: Color
     let rim: Color
+    var compact = false
 
     private typealias Layout = VibeDrumLayout
 
@@ -342,9 +344,14 @@ private struct VibeBlobShape: View {
             // Клип макета — прямоугольник капли 213×244
             context.clip(to: Path(CGRect(x: p, y: p + Layout.blobTop, width: Layout.petal.width, height: Layout.petal.height - Layout.blobTop)))
             context.fill(shape, with: .linearGradient(
-                VibeBlobFill.gradient(fill),
+                compact ? Gradient(stops: [
+                    .init(color: fill, location: 0),
+                    .init(color: fill.opacity(0.85), location: 0.35),
+                    .init(color: fill.opacity(0.5), location: 0.7),
+                    .init(color: fill.opacity(0), location: 1)
+                ]) : VibeBlobFill.gradient(fill),
                 startPoint: CGPoint(x: p + 176.187, y: p + 35.751),
-                endPoint: CGPoint(x: p + 90.064, y: p + 152.698)
+                endPoint: CGPoint(x: p + 90.064, y: p + (compact ? 250 : 152.698))
             ))
             // Кромка 2 по контуру, срезанная по самой капле, — внутренняя 1
             var rimContext = context
@@ -352,7 +359,7 @@ private struct VibeBlobShape: View {
             rimContext.stroke(shape, with: .linearGradient(
                 Gradient(colors: [rim, rim.opacity(0)]),
                 startPoint: CGPoint(x: p + 184.771, y: p + 36.502),
-                endPoint: CGPoint(x: p + 122.291, y: p + 143.540)
+                endPoint: CGPoint(x: p + 122.291, y: p + (compact ? 220 : 143.540))
             ), lineWidth: 2)
         }
         .frame(width: Self.canvas.width, height: Self.canvas.height)

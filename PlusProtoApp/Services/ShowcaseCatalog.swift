@@ -310,7 +310,8 @@ final class ShowcaseCatalog {
             poster: .remote(poster),
             still: .remote(still?.url(size: .wide) ?? movie.backdrop?.url(size: .frame) ?? poster),
             caption: (movie.shortDescription ?? "").showcaseCaption(maxCharacters: ShowcaseSeeds.promoCaptionLimit),
-            captionTint: mockMovieTint
+            captionTint: mockMovieTint,
+            synopsis: movie.shortDescription ?? movie.description
         )
     }
 
@@ -514,12 +515,12 @@ final class ShowcaseCatalog {
 
     /// Фото исполнителя для подписи альбома промо: у «похожих» оно пришло с кругом,
     /// за остальными — один запрос. Без своего фото (серый силуэт Deezer) — `nil`.
-    /// Аватар 40 — хватает 250 px.
+    /// В новом альбоме это большое фото: сразу берём XL вместо миниатюры 250 px.
     private static func artistPhoto(id: Int, known: [Int: DeezerArtistBrief] = [:]) async -> URL? {
         var artist = known[id]
         if artist == nil { artist = try? await DeezerService.shared.artist(id: id) }
-        guard let artist, artist.hasPhoto, let picture = artist.pictureMedium ?? artist.pictureBig else { return nil }
-        return URL(string: picture)
+        guard let artist, artist.hasPhoto, let picture = artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium else { return nil }
+        return picture.deezerUpscaled
     }
 
     /// Студийный альбом с обложкой: синглы, EP, концертники и сборники витрине не годятся.
@@ -655,7 +656,8 @@ final class ShowcaseCatalog {
             cover: .remote(cover),
             caption: (book.volumeInfo.description ?? book.volumeInfo.subtitle ?? "")
                 .showcaseCaption(maxCharacters: ShowcaseSeeds.promoCaptionLimit),
-            captionTint: mockBookTint
+            captionTint: mockBookTint,
+            synopsis: book.volumeInfo.description ?? book.volumeInfo.subtitle
         )
     }
 
@@ -739,6 +741,12 @@ final class ShowcaseCatalog {
         dismissedPromoIDs.contains(id) || feed.promo.contains { $0.id == id }
     }
 
+    /// Подмена только промоблока: recently, полки и книги сохраняют исходные данные.
+    func homePromo(_ original: [ShowcaseBlock]) -> [ShowcaseBlock] {
+        let blocks = PromoCuratedContent.compose(original, excluding: dismissedPromoIDs)
+        return PromoCuratedContent.uniqueArtists(blocks)
+    }
+
     /// Новый айтем — в круг сразу за айтемом `id`. И в набор своего вида, чтобы поздняя
     /// сборка (`publishPromo`) его не потеряла. `nil` — в начало набора: в круге там стоят
     /// карточки «Продолжить» (задача 69), которых в наборе каталога нет.
@@ -759,8 +767,14 @@ final class ShowcaseCatalog {
         prefetchPromoAdditions()
     }
 
-    /// Айтем уходит из круга насовсем: новые его не вернут.
-    func removePromo(id: String) {
+    /// Убирает айтем и возвращает точечную отмену, не откатывающую другие изменения каталога.
+    func removePromo(id: String) -> @MainActor () -> Void {
+        let originalIndex = feed.promo.firstIndex { $0.id == id }
+        let original = originalIndex.map { feed.promo[$0] }
+        let previousID = originalIndex.flatMap { $0 > 0 ? feed.promo[$0 - 1].id : nil }
+        let work = original.flatMap(Self.workKey(of:))
+        let wasDismissed = dismissedPromoIDs.contains(id)
+        let wasWorkDismissed = work.map { dismissedPromoWorks.contains($0) } ?? false
         dismissedPromoIDs.insert(id)
         if let removed = feed.promo.first(where: { $0.id == id }), let work = Self.workKey(of: removed) {
             dismissedPromoWorks.insert(work)
@@ -774,6 +788,16 @@ final class ShowcaseCatalog {
         promoArtistCards.removeAll { ShowcaseBlock.artist($0).id == id }
         promoVibes.removeAll { ShowcaseBlock.vibe($0).id == id }
         feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks)
+        return { [weak self] in
+            guard let self else { return }
+            if !wasDismissed { self.dismissedPromoIDs.remove(id) }
+            if let work, !wasWorkDismissed { self.dismissedPromoWorks.remove(work) }
+            // У HQ-карточки может не быть записи в исходной ленте: ей достаточно
+            // снять исключение, и homePromo снова включит её в проекцию.
+            if let original, !self.feed.promo.contains(where: { $0.id == id }) {
+                self.insertPromo(ShowcasePromoAddition(block: original, commit: {}), after: previousID)
+            }
+        }
     }
 
     private func makePromoReplacement(for block: ShowcaseBlock) async -> Replacement? {
@@ -1136,7 +1160,7 @@ final class ShowcaseCatalog {
     // MARK: - Фолбэки моковой ленты
 
     /// Логотип в блоке «продолжить смотреть» рисуется в боксе 147pt — на ×3 это 441px.
-    private static let logoPixelWidth = 441
+    private nonisolated static let logoPixelWidth = 441
 
     private static let mockMovieTint = Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
     private static let mockBookTint = Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
