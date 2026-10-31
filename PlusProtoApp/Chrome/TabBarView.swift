@@ -192,8 +192,40 @@ struct TabBarView: View {
             guard !Task.isCancelled else { return }
             select(navigation.activeTab)
         }
+        // `-debugLayerTab <таб>` — через 2 с после появления таббара экрана в слое фильма
+        // (режиссёр из «Съёмочной группы») тап по этому табу тем же `select`, что настоящий:
+        // смену таба из слоя иначе не проверить. Один раз за процесс.
+        .task {
+            guard let key = UserDefaults.standard.string(forKey: "debugLayerTab"),
+                  let tab = AppTab(debugKey: key), chromeLayer != nil, !Self.didDebugLayerTab else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, !Self.didDebugLayerTab, navigation.isTop(layer: chromeLayer) else { return }
+            Self.didDebugLayerTab = true
+            Self.debugLayerTabOrigin = navigation.activeTab
+            select(tab)
+        }
+        // `-debugLayerTabBack 1` — в паре с `-debugLayerTab`: через 2.5 с после ухода из слоя
+        // на другой таб корневой таббар возвращает на таб слоя — слой с его стопкой должен
+        // встать на место (у каждого таба свой стек, 2026-10-31).
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugLayerTabBack"), chromeLayer == nil else { return }
+            while Self.debugLayerTabOrigin == nil {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+            }
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled, let origin = Self.debugLayerTabOrigin else { return }
+            Self.debugLayerTabOrigin = nil
+            select(origin)
+        }
         #endif
     }
+
+    #if DEBUG
+    private static var didDebugLayerTab = false
+    /// Таб, из слоя которого ушли по `-debugLayerTab`, — для `-debugLayerTabBack`.
+    private static var debugLayerTabOrigin: AppTab?
+    #endif
 
     /// ВРЕМЕННОЕ: шелл симулятор не тапает, поэтому тап воспроизводится синтетически —
     /// нажатие держится 110ms, отпускание и `select` уходят одним апдейтом, как у `Button`
@@ -227,10 +259,9 @@ struct TabBarView: View {
         // лёг бы поверх контента таба (второе ревью 2026-10-03). Только когда есть что
         // снимать: на корне тап — уезд к началу экрана, и ему анимация нужна.
         //
-        // Из слоя фильма (таббар его экранов, 2026-10-04) — так же мгновенно и на любой
-        // таб: слой снимается срезом, а не сворачивается зумом в карточку, которой
-        // на новом табе нет.
-        if navigation.coveredRoute != nil || (tab == navigation.activeTab && navigation.stackDepth > 0) {
+        // Из слоя фильма (таббар его экранов, 2026-10-04) свой таб — так же мгновенно:
+        // слой снимается срезом, а не сворачивается зумом.
+        if tab == navigation.activeTab && (navigation.coveredRoute != nil || navigation.stackDepth > 0) {
             var instant = Transaction()
             instant.disablesAnimations = true
             withTransaction(instant) {
@@ -241,6 +272,9 @@ struct TabBarView: View {
             }
             return
         }
+        // Другой таб — со своим стеком, слоем и поиском (решение пользователя 2026-10-31):
+        // поиск этого таба не закрывается, а паркуется и вернётся вместе с табом
+        // (`AppNavigationState.onTabChange`); слой — мгновенно, это решает сама навигация.
         navigation.select(tab)
     }
 }

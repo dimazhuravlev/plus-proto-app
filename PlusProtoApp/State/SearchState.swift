@@ -29,6 +29,17 @@ final class SearchState {
         }
     }
 
+    /// Последний введённый в поле запрос — на сессию, до перезапуска приложения (решение
+    /// пользователя 2026-10-31): поиск, открытый там, где свой не запущен, начинается с него —
+    /// в любом табе. Пишется только вводом в поле (`rememberTyped`): «Назад» и смена таба поле
+    /// чистят, но запрос помнят; ✕ в поле стирает и его. У таба с припаркованным поиском —
+    /// свой запрос: текст поля всегда тот, чья выдача на экране.
+    private(set) var lastQuery = ""
+
+    func rememberTyped(_ text: String) {
+        lastQuery = text
+    }
+
     /// Выдача на экране: все три домена разом и уже в окончательном порядке.
     /// Меняется только целиком — одним присваиванием, когда новая выдача собрана.
     /// `nil` — показывать ещё нечего: на первом запросе на её месте скелетон.
@@ -233,10 +244,86 @@ final class SearchState {
         hostDepth = depth
     }
 
-    /// Забыть точку ухода в карточку: поиск начали заново (новый фокус), вышли из него
-    /// или ушли на другой таб. Отметка гаснет и сама — на возврате (`consumeResume`).
+    /// Забыть точку ухода в карточку: поиск начали заново (новый фокус) или вышли из него.
+    /// Отметка гаснет и сама — на возврате (`consumeResume`); на смене таба она паркуется
+    /// вместе со всем поиском (`park`).
     func dropSuspension() {
         suspended = nil
+    }
+
+    // MARK: - Поиск таба
+
+    /// Поиск таба, с которого ушли на другой таб. Поиск живёт в табе, где его открыли
+    /// (решение пользователя 2026-10-31): уходя с таба, он не закрывается, а паркуется —
+    /// запрос, экран, на котором открыт, раскрытый раздел и таб выдачи, — и возвращается
+    /// вместе с табом. Прежде смена таба поиск закрывала, и выдача из карточки не
+    /// возвращалась.
+    private struct Parked {
+        let query: String
+        let hostDepth: Int
+        /// Ушли из выдачи в карточку — глубина, на которой выдача ждёт возврата; `nil` —
+        /// поиск был на экране (в фокусе или в просмотре).
+        let suspendedDepth: Int?
+        let expanded: Section.Kind?
+        let isHistoryShown: Bool
+        let tab: SearchTab
+        let subfilter: SearchSubfilter
+    }
+
+    private var parked: [AppTab: Parked] = [:]
+
+    /// Ушли с таба `appTab`: открытый поиск этого таба — в фокусе, в просмотре или ушедший
+    /// в карточку — паркуется, а живой очищается: на новом табе поиска нет, поле пустое.
+    func park(leaving appTab: AppTab, isFocused: Bool) {
+        let suspendedHere = suspended?.tab == appTab ? suspended?.depth : nil
+        if isFocused || isBrowsing || suspendedHere != nil {
+            parked[appTab] = Parked(
+                query: query,
+                hostDepth: hostDepth,
+                suspendedDepth: suspendedHere,
+                expanded: expanded,
+                isHistoryShown: isHistoryShown,
+                tab: tab,
+                subfilter: subfilter
+            )
+        } else {
+            parked[appTab] = nil
+        }
+        #if DEBUG
+        NavTrace.log("search park \(appTab): \(parked[appTab].map { "query «\($0.query)» host \($0.hostDepth) suspended \($0.suspendedDepth.map(String.init) ?? "—")" } ?? "nothing")")
+        #endif
+        isBrowsing = false
+        suspended = nil
+        collapse()
+        query = ""
+        hostDepth = 0
+    }
+
+    /// Пришли на таб `appTab`: его поиск возвращается таким, каким его оставили, — без
+    /// клавиатуры, как возврат из карточки. Выдача — из кэша процесса, без запросов.
+    func unpark(entering appTab: AppTab) {
+        guard let session = parked.removeValue(forKey: appTab) else { return }
+        #if DEBUG
+        NavTrace.log("search unpark \(appTab): query «\(session.query)» host \(session.hostDepth) suspended \(session.suspendedDepth.map(String.init) ?? "—")")
+        #endif
+        query = session.query
+        hostDepth = session.hostDepth
+        if session.tab != .all {
+            selectTab(session.tab)
+            subfilter = session.subfilter
+        }
+        if let kind = session.expanded { expand(kind) }
+        if session.isHistoryShown { isHistoryShown = true }
+        if let depth = session.suspendedDepth {
+            suspended = (appTab, depth)
+        } else {
+            isBrowsing = true
+        }
+    }
+
+    /// Забыть поиск таба: его открывают «с корня» (тап по тосту «Моё»).
+    func forgetParked(_ appTab: AppTab) {
+        parked[appTab] = nil
     }
 
     /// Запомнить точку, из которой пользователь ушёл в открытую карточку.
@@ -751,10 +838,11 @@ final class SearchState {
     /// публикуется целиком, а «Смотреть» на глазах не появляется и не пропадает.
     /// Не дождались — фильмы считаются доступными; ответ ляжет в кэш для экрана тайтла.
     private static let availabilityWait: Duration = .seconds(3)
-    /// Аудиокниг в ответе — не больше двух: аудиоверсии первых найденных книг.
-    private static let audiobooksPerResponse = 2
-    /// Мок-обложки аудиокниг — из макета (`18352:41985` и коллекции «Моё»).
-    private static let audiobookCovers = ["mockAudiobook1", "mockAudiobook2", "mockAudiobook3"]
+    /// У скольких первых книг ответа искать аудиокнигу: по запросу в Deezer на книгу.
+    private static let audiobookCandidates = 5
+    /// Сколько ждём аудиокниг, прежде чем показать список: он публикуется целиком.
+    /// Не успевшие — без аудиокниги.
+    private static let audiobooksWait: Duration = .seconds(2)
 
     /// Выдача раздела для таба — та же полная выдача, что у раскрытого раздела (кэш общий),
     /// и сверх неё: создатели за своими работами, как в сетке; у кино — доступность
@@ -784,7 +872,7 @@ final class SearchState {
                 if let aspect = aspects[books[index].id] { books[index].artworkAspect = aspect }
             }
             let writers = await Self.writers(for: books)
-            let hits = Self.withAudiobooks(Self.withCreators(writers, in: books, for: text).hits)
+            let hits = await Self.withAudiobooks(Self.withCreators(writers, in: books, for: text).hits)
             return TabResults(kind: kind, text: text, hits: hits, wizard: nil, unwatchable: [], personCounts: Self.writerCounts(hits))
         }
     }
@@ -891,41 +979,41 @@ final class SearchState {
         return counts
     }
 
-    /// Аудиоверсии первых найденных книг — сразу за своей книгой (решения пользователя
-    /// 2026-10-31): название и автор те же, обложка — мок, разная у двух аудиокниг ответа
-    /// и своя у разных книг (стабильно, по id книги). Нет ни одной книги — нет и аудиокниг.
-    /// Аудиокнига — своя сущность, не книга: свой «+» в коллекцию, экрана пока нет —
-    /// строка никуда не ведёт.
-    private static func withAudiobooks(_ hits: [SearchHit]) -> [SearchHit] {
+    /// Аудиокниги первых найденных книг — сразу за своей книгой. Источник — Deezer:
+    /// аудиокнига там альбом без жанра (`genre_id` −1), главы — его треки (находка
+    /// пользователя 2026-10-31: «Ставок больше нет» Сартра). Поиск по названию и фамилии
+    /// автора, по запросу на книгу (без ключа и квоты, ответы — в `URLCache`). Нет книг —
+    /// нет и аудиокниг; у книги аудиокниги не нашлось — её и нет, моков не подставляем.
+    /// Аудиокнига — своя сущность: свой «+» в коллекцию, тап — экран альбома с главами.
+    private static func withAudiobooks(_ hits: [SearchHit]) async -> [SearchHit] {
+        let books = hits.filter { $0.kind == .book && $0.isAudiobook != true }.prefix(audiobookCandidates)
+        guard !books.isEmpty else { return hits }
+        let found = FoundAudiobooks()
+        let load = Task { @MainActor in
+            await withTaskGroup(of: (String, DeezerAlbumBrief?).self) { group in
+                for book in books {
+                    group.addTask {
+                        guard let query = AudiobookMatch.query(title: book.title, author: book.subtitle),
+                              let albums = try? await DeezerService.shared.searchAlbums(query: query, limit: 10)
+                        else { return (book.id, nil) }
+                        return (book.id, AudiobookMatch.best(in: albums, title: book.title, author: book.subtitle))
+                    }
+                }
+                for await (id, album) in group {
+                    if let album { found.values[id] = album }
+                }
+            }
+        }
+        await wait(for: load, atMost: audiobooksWait)
         var result: [SearchHit] = []
-        var made = 0
-        var start: Int?
+        var used = Set<Int>()
         for hit in hits {
             result.append(hit)
-            guard made < audiobooksPerResponse, hit.kind == .book, hit.isAudiobook != true else { continue }
-            let first = start ?? stableIndex(hit.id, count: audiobookCovers.count)
-            start = first
-            result.append(SearchHit(
-                id: SearchHit.audiobookPrefix + hit.id,
-                kind: .book,
-                title: hit.title,
-                subtitle: hit.subtitle,
-                artwork: .asset(audiobookCovers[(first + made) % audiobookCovers.count]),
-                route: nil,
-                authority: hit.authority,
-                artworkAspect: 1,
-                isAudiobook: true
-            ))
-            made += 1
+            // Две редакции одной книги находят один и тот же альбом — он один раз.
+            guard let album = found.values[hit.id], used.insert(album.id).inserted else { continue }
+            result.append(SearchHit(audiobook: album, of: hit))
         }
         return result
-    }
-
-    /// Номер по строке, одинаковый от запуска к запуску (`hashValue` Swift — случайный).
-    private static func stableIndex(_ text: String, count: Int) -> Int {
-        var hash: UInt64 = 1469598103934665603
-        for byte in text.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
-        return Int(hash % UInt64(max(count, 1)))
     }
 
     // MARK: - Сетка
@@ -1658,6 +1746,29 @@ private extension SearchHit {
         )
     }
 
+    /// Аудиокнига книги `book` — альбом Deezer (`AudiobookMatch`): название, обложка
+    /// и главы — его, подпись — автор книги (исполнитель бывает издательством).
+    /// Тап — экран альбома, там главы.
+    init(audiobook album: DeezerAlbumBrief, of book: SearchHit) {
+        let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled
+        self.init(
+            id: SearchHit.audiobookPrefix + "dz-\(album.id)",
+            kind: .book,
+            title: album.title,
+            subtitle: book.subtitle,
+            artwork: cover.map { .remote($0) },
+            route: .album(EntityRef(
+                id: "dz-\(album.id)",
+                title: album.title,
+                subtitle: album.artist?.name ?? book.subtitle,
+                artwork: cover.map { ArtworkSource.remote($0) } ?? .asset("mockAlbumCover")
+            )),
+            authority: book.authority,
+            artworkAspect: 1,
+            isAudiobook: true
+        )
+    }
+
     init(artist: DeezerArtistBrief) {
         let picture = (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled
             .map { ArtworkSource.remote($0) }
@@ -1892,6 +2003,68 @@ private final class ResumeOnce {
 @MainActor
 private final class AlbumYears {
     var values: [Int: String] = [:]
+}
+
+/// Аудиокниги, успевшие приехать (`SearchState.withAudiobooks`), — по id книги.
+@MainActor
+private final class FoundAudiobooks {
+    var values: [String: DeezerAlbumBrief] = [:]
+}
+
+/// Какой альбом Deezer — аудиокнига этой книги.
+///
+/// Аудиокнига в Deezer — альбом без жанра (`genre_id` −1) и с главами-треками. Её
+/// название содержит название книги («Анна Каренина. Книга 1»), автор — исполнитель
+/// альбома («Михаил Афанасьевич Булгаков») или, у издательских записей, назван
+/// в самом названии («Лев Толстой - Анна Каренина, Том 1»). Без фамилии автора не
+/// узнать: по одному названию первым приходит рок-альбом тёзки (замер 2026-10-31:
+/// «Ставок больше нет» — сперва группа Asternam, Сартр вторым).
+enum AudiobookMatch {
+    /// Запрос в поиск: название книги до подзаголовка и фамилия первого автора.
+    /// Автора нет — не ищем.
+    static func query(title: String, author: String) -> String? {
+        guard let surname = surname(of: author) else { return nil }
+        return core(title) + " " + surname
+    }
+
+    /// Лучший кандидат: исполнитель — сам автор и название совпадает целиком — выше.
+    static func best(in albums: [DeezerAlbumBrief], title: String, author: String) -> DeezerAlbumBrief? {
+        guard let surname = surname(of: author).map(fold) else { return nil }
+        let book = fold(core(title))
+        guard !book.isEmpty else { return nil }
+        var best: (album: DeezerAlbumBrief, score: Int)?
+        for album in albums where album.genreId == -1 && (album.nbTracks ?? 0) > 1 {
+            let name = fold(album.title)
+            let artist = fold(album.artist?.name ?? "")
+            guard name.contains(book) else { continue }
+            let byAuthor = artist.contains(surname)
+            guard byAuthor || name.contains(surname) else { continue }
+            let score = (byAuthor ? 2 : 0) + (name == book ? 2 : 1)
+            if score > (best?.score ?? 0) { best = (album, score) }
+        }
+        return best?.album
+    }
+
+    /// Название без подзаголовка: «Мастер и Маргарита: роман» → «Мастер и Маргарита».
+    private static func core(_ title: String) -> String {
+        (title.split(separator: ":").first.map(String.init) ?? title)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Фамилия первого автора — последнее слово до запятой.
+    private static func surname(of author: String) -> String? {
+        let first = author.split(separator: ",").first.map(String.init) ?? ""
+        return first.split(separator: " ").last.map(String.init).flatMap { $0.count > 1 ? $0 : nil }
+    }
+
+    /// Без регистра, диакритики («ё» — «е») и знаков: «Война и мир. Аудиоспектакль».
+    private static func fold(_ text: String) -> String {
+        text.folded
+            .map { $0.isLetter || $0.isNumber ? $0 : " " }
+            .reduce(into: "") { $0.append($1) }
+            .split(separator: " ")
+            .joined(separator: " ")
+    }
 }
 
 /// Имена, успевшие приехать (`SearchState.actresses`).

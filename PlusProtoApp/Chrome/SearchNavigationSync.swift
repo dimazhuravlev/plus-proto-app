@@ -71,6 +71,11 @@ struct SearchNavigationSync: ViewModifier {
                 // с обзора: раскрытый раздел остался бы от прошлого поиска.
                 if !search.isBrowsing {
                     search.collapse()
+                    // Свой поиск здесь не запущен — поле встаёт с последним запросом сессии,
+                    // выдача к нему — из кэша (решение пользователя 2026-10-31).
+                    if search.query.isEmpty, !search.lastQuery.isEmpty {
+                        search.query = search.lastQuery
+                    }
                 }
                 search.dropSuspension()
                 search.host(at: navigation.depth)

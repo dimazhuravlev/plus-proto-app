@@ -38,7 +38,8 @@ enum SearchMediaLayout {
 }
 
 extension SearchHit {
-    /// Аудиокнига выдачи — `audiobook-<id книги>` (`SearchState.withAudiobooks`).
+    /// Аудиокнига выдачи — `audiobook-dz-<id альбома Deezer>` (`SearchState.withAudiobooks`);
+    /// у прежних моков в коллекции — `audiobook-<id книги>`.
     static let audiobookPrefix = "audiobook-"
 }
 

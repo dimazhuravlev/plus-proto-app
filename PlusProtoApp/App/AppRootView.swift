@@ -63,6 +63,25 @@ struct AppRootView: View {
             try? await Task.sleep(for: .seconds(1.5))
             navigation.openProfile()
         }
+        // `-debugSeedAudiobook 1` — положить в «Буду читать» две аудиокниги тем же путём, что
+        // «+» аудиокниги в выдаче: проверить квадрат аудиокниги среди книг (`AudiobookFigure`)
+        // без поиска. Пишет в коллекцию на диске — перед прогоном сохранить ключ `collection`.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "debugSeedAudiobook") else { return }
+            for (index, title) in ["Мастер и Маргарита", "Преступление и наказание"].enumerated() {
+                let hit = SearchHit(
+                    id: SearchHit.audiobookPrefix + "debug-\(index)",
+                    kind: .book,
+                    title: title,
+                    subtitle: "Аудиокнига",
+                    artwork: .asset("mockAudiobook\(index + 1)"),
+                    route: nil,
+                    artworkAspect: 1,
+                    isAudiobook: true
+                )
+                CollectionStore.shared.setFavorite(.audiobook(hit), true)
+            }
+        }
         #endif
         // Киноплеер, читалка и плеер музыки живут не здесь, а отдельной презентацией
         // поверх всего, включая слой карточки тайтла, — см. `ContentPlayerPresenter`.
@@ -76,14 +95,30 @@ struct AppRootView: View {
         .onAppear {
             // Конец превью — в очередь живого бара, а не лишнего экземпляра `@State`.
             actionBar.attachAudio()
+            // Поиск живёт в табе, где его открыли (решение пользователя 2026-10-31): уходя
+            // с таба, он паркуется со своим запросом и местом в стеке, а на другом табе его
+            // нет; вернулись — он снова там, без клавиатуры. В том же апдейте, что смена
+            // таба: выдача не гаснет поверх чужого контента. Ставится отсюда, а не из `init`
+            // состояния — лишний экземпляр корня перезаписал бы обработчик собой.
+            navigation.onTabChange = { [search, actionBar] old, new in
+                search.park(leaving: old, isFocused: actionBar.isSearchFocused)
+                if actionBar.isSearchFocused { actionBar.isSearchFocused = false }
+                search.unpark(entering: new)
+            }
+            navigation.onShowRoot = { [search] tab in
+                search.forgetParked(tab)
+            }
             ToastCenter.shared.openCollection = { [navigation, actionBar, keyboard, search] in
-                // 1. Поиск: как тап по затемнению (`SearchLayers`); `dropSuspension` обязателен,
-                // иначе `SearchNavigationSync` вернёт выдачу.
+                // 1. Клавиатура уходит мягко. Поиск «Моего» закрывается, как тапом по затемнению
+                // (`dropSuspension` обязателен, иначе `SearchNavigationSync` вернёт выдачу); поиск
+                // другого таба паркуется вместе с его слоем (`onTabChange`) — не стирается.
                 if keyboard.isUp { keyboard.dismissSmoothly() }
-                actionBar.isSearchFocused = false
-                search.isBrowsing = false
-                search.dropSuspension()
-                search.collapse()
+                if navigation.activeTab == .collection {
+                    actionBar.isSearchFocused = false
+                    search.isBrowsing = false
+                    search.dropSuspension()
+                    search.collapse()
+                }
                 // 2. Экран шеринга лежит в окне тоста, сам себя не закроет.
                 if ShareState.shared.presented != nil { ShareState.shared.dismissImmediately() }
                 // 3. Плееры презентует UIKit поверх верхнего контроллера. Если под ними слой фильма —
@@ -94,7 +129,8 @@ struct AppRootView: View {
                     actionBar.closeAllPlayers()
                 }
                 // 4. Таб — мгновенно, без анимации; слой фильма — тоже без зума: его источник
-                // уходит вместе с табом (`AppNavigationState.withoutLayerZoom`).
+                // уходит вместе с табом (`AppNavigationState.withoutLayerZoom`). «Моё» — с корня,
+                // и его припаркованный поиск не возвращается (`onShowRoot`).
                 navigation.showRoot(of: .collection)
                 TabBarMotion.tapHaptic()
             }
@@ -144,16 +180,9 @@ struct AppRootView: View {
         // по стеку, привязка к экрану фокуса. Висит и на экранах слоя фильма (у них
         // свой хром, 2026-10-04), решает верхний — см. `SearchNavigationSync`.
         .modifier(SearchNavigationSync(layer: nil))
-        // Выдача без фокуса принадлежит своему табу: на другом табе её слой встал бы
-        // на корне чужого стека.
-        .onChange(of: navigation.activeTab) {
-            search.isBrowsing = false
-            // Ушли из карточки выдачи на другой таб — отметка ухода больше не наша:
-            // иначе выдача «Плюса» вставала бы на корне чужого таба.
-            search.dropSuspension()
-            // И раскрытый раздел: новый поиск на другом табе начинается с обзора.
-            search.collapse()
-        }
+        // Слой фильма активного таба — с корня, который смену таба переживает
+        // (`CoveredLayerPresenter`). Поиск на смене таба паркуется (`onTabChange` выше).
+        .modifier(CoveredLayerPresenter(zoom: stackZoom))
         .environment(navigation)
         .environment(actionBar)
         .environment(keyboard)
@@ -175,6 +204,9 @@ struct AppRootView: View {
     /// на глазах: с точки зрения пользователя это то же самое мигание.
     private func prepareShowcase() async {
         let started = ContinuousClock.now
+        // Шейдер голографии обложки альбома — под заставкой, параллельно с данными: первый
+        // блик не должен собирать пайплайн на экране альбома (`CoverHoloShader`).
+        async let holoShader: Void = CoverHoloShader.prewarm()
 
         // Постер начатого фильма для карточки «Продолжить» — до её первого кадра.
         await actionBar.watchHistory.backfillContinuingPoster()
@@ -192,6 +224,7 @@ struct AppRootView: View {
         // Капля станции промо — растр на цвет: считается под заставкой, а не на первом
         // кадре показа. И на моках: станция в круге есть всегда.
         PromoStationPetal.prewarm(promo)
+        await holoShader
 
         // Минимальная выдержка: когда всё пришло из кэша за сотню миллисекунд,
         // заставка не должна мигнуть и пропасть — это читается сбоем, а не запуском.

@@ -68,6 +68,9 @@ struct AlbumScreen: View {
     @State private var store: AlbumDetailsStore
     @State private var scrollOffset: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
+    /// Экран на виду по UIKit — от конца появления до начала ухода: голография обложки
+    /// живёт только в этом окне (`CoverHoloPresence`).
+    @State private var isPresented = false
 
     init(entity: EntityRef) {
         self.entity = entity
@@ -132,6 +135,12 @@ struct AlbumScreen: View {
             )
         }
         .background(Color.surfaceOne.ignoresSafeArea())
+        // Начало и конец переходов знает только UIKit; трекер — вне ленты, как
+        // `ZoomPresenceTracker` у `EntityScreen`.
+        .background {
+            CoverHoloPresence { isPresented = $0 }
+                .frame(width: 0, height: 0)
+        }
         .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         // `-debugTapPlay` — нажать «Слушать»: тот же флаг, что у «Смотреть»
@@ -220,6 +229,12 @@ struct AlbumScreen: View {
             .frame(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize)
             .clipShape(shape)
             .coverBorder(shape)
+            // Голографический блик и едва заметный плавающий наклон от гироскопа (просьба
+            // пользователя 2026-10-31) — на готовой обложке с кромкой; раскладку не трогает.
+            .coverHolo(
+                isPresented: isPresented,
+                isOnScreen: scrollOffset < EntityCoverLayout.coverHiddenScroll(coverHeight: AlbumLayout.coverSize)
+            )
     }
 
     /// Детали альбома разобраны, либо их не будет: не из Deezer (мок) или загрузка упала.

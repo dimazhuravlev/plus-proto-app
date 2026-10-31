@@ -131,6 +131,30 @@ struct BookFigure<Cover: View>: View {
     }
 }
 
+// MARK: - Аудиокнига
+
+/// Аудиокнига среди книг — вариант `card / book` (макет `18352:41986` файла «ЯПС · Mobile ·
+/// Current State», 2026-10-31): квадрат высотой книги ряда, скруглены все четыре угла — тем же
+/// радиусом, что правые углы книги этой высоты (на 114 — 8), бордер Fill/Nine 0.67 внутрь.
+/// Ни корешка, ни тона «разницей»: это не книга в проекции, а квадратная обложка. Бордер
+/// встаёт вместе с картинкой (`coverBorder`), у скелетона его нет.
+struct AudiobookFigure<Cover: View>: View {
+    let geometry: BookFigureGeometry
+    @ViewBuilder var cover: Cover
+
+    /// Сторона квадрата — высота книги ряда.
+    var side: CGFloat { geometry.coverHeight }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: geometry.coverRadius, style: .continuous)
+        PlusSkeleton.fill
+            .overlay { cover }
+            .frame(width: side, height: side)
+            .clipShape(shape)
+            .coverBorder(shape)
+    }
+}
+
 // MARK: - Форма обложки
 
 /// Форма обложки книги: правые углы скруглены (сглаживание 60 % — `.continuous`),

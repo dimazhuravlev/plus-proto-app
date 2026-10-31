@@ -248,6 +248,13 @@ struct TabBarUnderlay: View {
 
             PlusGradient.tabBarUnderlay
                 .frame(height: PlusMetrics.bottomUnderlayHeight)
+                // В поиске затемнение под баром — как тень сверху у навигации витрин: те же
+                // 16 стопов, пик 50 % вместо 90 (правка пользователя 2026-10-31: «слишком
+                // тёмный, сильно отличается от верхнего»). Высота прежняя. Стопы — доли пика,
+                // поэтому прозрачность слоя даёт ровно такой градиент и анимируется вместе
+                // с блюром той же кривой.
+                .opacity(isSearchMode ? ServiceTopNavLayout.topShadePeak / PlusGradient.tabBarUnderlayPeak : 1)
+                .animation(keyboard.motion ?? ActionBarMotion.morph, value: isSearchMode)
         }
         .allowsHitTesting(false)
     }
@@ -314,6 +321,7 @@ final class KeyboardObserver {
     init() {
         let center = NotificationCenter.default
         #if DEBUG
+        FrameGapTrace.startIfRequested()
         if UserDefaults.standard.bool(forKey: "debugKeyboardTrace") {
             for name in [UIApplication.willResignActiveNotification, UIApplication.didEnterBackgroundNotification,
                          UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
@@ -410,7 +418,7 @@ final class KeyboardObserver {
             : (reported >= Self.minReportedDuration ? reported : lastDuration)
         let curve = isOwnDismiss
             ? KeyboardDismissMotion.bar
-            : Self.animation(curve: rawCurve, duration: duration, leads: up)
+            : Self.animation(curve: rawCurve, duration: duration, leads: up, notedAt: CACurrentMediaTime())
 
         motion = curve
         withAnimation(curve) {
@@ -428,43 +436,183 @@ final class KeyboardObserver {
         }
     }
 
-    /// Фора, которую бар отыгрывает у собственной задержки.
+    /// Фора, которую бар отыгрывает у собственной задержки, — только когда пружину
+    /// клавиатуры не нашли и бар едет кубической кривой от своего первого кадра.
     ///
-    /// Клавиатуру двигает UIKit прямо в момент нотификации, а SwiftUI применяет наше
-    /// состояние следующим проходом рендера — бар трогается на кадр-полтора позже.
-    /// Догнать это кривой нельзя: замер записи показал, что на первых кадрах перехода
-    /// клавиатура успевала накрыть бар собой. Поэтому бар едет **той же** кривой, но
-    /// на длительность одного-двух кадров короче — фазы совпадают, и он оказывается
-    /// не ниже клавиатуры, а чуть выше. Ошибка в эту сторону не видна: бар просто
-    /// приходит на место раньше, а не выныривает из-под клавиатуры.
-    /// 30мс — это 2–4 кадра в зависимости от частоты дисплея, то есть число
-    /// подобрано, а не выведено. Ошибка в большую сторону безопасна: бар просто
-    /// приходит на место чуть раньше клавиатуры, и это не видно. Ошибка в меньшую
-    /// видна сразу — клавиатура накрывает бар. Уточнять покадровым замером на
-    /// 60Гц-устройстве, если появится.
+    /// SwiftUI применяет наше состояние следующим проходом рендера — бар трогается
+    /// на кадр-полтора позже. Поэтому он едет **той же** кривой, но на длительность
+    /// одного-двух кадров короче: оказывается не ниже клавиатуры, а чуть выше.
+    /// Ошибка в эту сторону не видна, в обратную — клавиатура накрывает бар.
     private static let commitLatency: Double = 0.03
 
     /// Кривая анимации клавиатуры по сырому значению из нотификации.
     ///
     /// Системная клавиатура присылает **7** — приватную кривую, которой нет среди
-    /// публичных `UIView.AnimationCurve`. Её общепринятая аппроксимация в кубических
-    /// коэффициентах — `(0.38, 0.7, 0.125, 1.0)`: резкий старт и долгое торможение.
+    /// публичных `UIView.AnimationCurve`. За ней стоит пружина `CASpringAnimation`
+    /// (`KeyboardSpringTrack`), и подъём едет ею самой; кубическая аппроксимация
+    /// `(0.38, 0.7, 0.125, 1.0)` — запас на случай, когда пружины не нашлось.
     /// Остальные значения — стандартные CSS-эквиваленты ease-in-out / in / out / linear.
     ///
-    /// Фора (`commitLatency`) — только пока клавиатура на экране и бар обязан от неё
-    /// не отстать (`leads`). На уходе форы нет: бар трогается на кадр позже и едет
-    /// полную длительность — то есть чуть отстаёт и остаётся над клавиатурой. С форой
+    /// На уходе (`leads == false`) форы нет: бар трогается на кадр позже и едет
+    /// полную длительность — чуть отстаёт и остаётся над клавиатурой. С форой
     /// он её обгонял и на пару кадров нырял под неё, когда ехал на место таббара
     /// в просмотр выдачи: ход 314 против её 336 (замер записи 2026-10-03).
-    private static func animation(curve raw: Int?, duration rawDuration: Double, leads: Bool) -> Animation {
-        let duration = max(0.12, rawDuration - (leads ? commitLatency : 0))
-        return switch raw {
-        case 0: .timingCurve(0.42, 0, 0.58, 1, duration: duration)
-        case 1: .timingCurve(0.42, 0, 1, 1, duration: duration)
-        case 2: .timingCurve(0, 0, 0.58, 1, duration: duration)
-        case 3: .linear(duration: duration)
-        default: .timingCurve(0.38, 0.7, 0.125, 1, duration: duration)
+    private static func animation(curve raw: Int?, duration rawDuration: Double, leads: Bool, notedAt: CFTimeInterval) -> Animation {
+        let curve: UnitCurve = switch raw {
+        case 0: .bezier(startControlPoint: UnitPoint(x: 0.42, y: 0), endControlPoint: UnitPoint(x: 0.58, y: 1))
+        case 1: .bezier(startControlPoint: UnitPoint(x: 0.42, y: 0), endControlPoint: UnitPoint(x: 1, y: 1))
+        case 2: .bezier(startControlPoint: UnitPoint(x: 0, y: 0), endControlPoint: UnitPoint(x: 0.58, y: 1))
+        case 3: .linear
+        default: .bezier(startControlPoint: UnitPoint(x: 0.38, y: 0.7), endControlPoint: UnitPoint(x: 0.125, y: 1))
         }
+        guard leads else { return .timingCurve(curve, duration: max(0.12, rawDuration)) }
+        return Animation(KeyboardPhaseAnimation(
+            curve: curve,
+            duration: max(0.12, rawDuration - commitLatency),
+            keyboard: KeyboardSpringTrack(notedAt: notedAt)
+        ))
     }
 
+}
+
+/// Подъём бара — **той же пружиной и с того же мгновения**, что клавиатура.
+///
+/// Клавиатура трогается на коммите, через ~40 мс после нотификации, а наш апдейт ждёт
+/// главного потока: в фокусе с запросом он занят монтированием выдачи, и бар
+/// трогался на 25–80 мс позже клавиатуры при повторной активации и на 450 мс при
+/// первой — она накрывала его, и он выныривал из-под неё (запись 2026-10-31).
+/// Время от нотификации тоже не годится: бар уходил вперёд на те же 40 мс.
+/// Поэтому анимация читает у самой клавиатуры её пружину и время старта
+/// и ставит бар в её фазу на каждом кадре, сколько бы ни опоздал первый.
+private struct KeyboardPhaseAnimation: CustomAnimation {
+    /// Кривая и длительность на случай, когда пружины клавиатуры не нашлось
+    /// (аппаратная или плавающая клавиатура): от первого кадра SwiftUI, как прежде.
+    let curve: UnitCurve
+    let duration: TimeInterval
+    let keyboard: KeyboardSpringTrack
+
+    func animate<V: VectorArithmetic>(value: V, time: TimeInterval, context: inout AnimationContext<V>) -> V? {
+        switch keyboard.phase(atAnimationTime: time) {
+        case .waiting:
+            return value.scaled(by: 0)
+        case .running(let elapsed, let spring, let length):
+            guard elapsed < length else { return nil }
+            return value.scaled(by: spring.value(target: 1.0, time: max(0, elapsed)))
+        case .unknown:
+            guard time < duration else { return nil }
+            return value.scaled(by: curve.value(at: time / duration))
+        }
+    }
+}
+
+/// Пружина, которой UIKit двигает клавиатуру, и момент её старта.
+///
+/// Анимация `position` (`CASpringAnimation`) висит на контейнере клавиатуры в окне
+/// `UITextEffectsWindow` (`UIKeyboardItemContainerView`, зонд 2026-10-31): она
+/// добавлена уже к нотификации, а `beginTime` получает на коммите. Один объект
+/// на подъём — его делят все значения, которые едут этой анимацией.
+final class KeyboardSpringTrack: Hashable, @unchecked Sendable {
+    enum Phase {
+        /// Клавиатура ещё не тронулась — бар тоже стоит.
+        case waiting
+        /// Сколько клавиатура уже едет, её пружина и длина анимации.
+        case running(elapsed: TimeInterval, spring: Spring, length: TimeInterval)
+        /// Пружины нет — бар едет своей кривой.
+        case unknown
+    }
+
+    /// Сколько ждать, пока у клавиатуры появится пружина.
+    private static let patience: TimeInterval = 0.15
+    /// Сколько ждать коммита найденной пружины: на первой активации главный поток
+    /// стоит до 470 мс, и клавиатура трогается только после него.
+    private static let commitPatience: TimeInterval = 1
+    /// Вызовы ближе этого — один проход рендера.
+    private static let sameFrameGap: TimeInterval = 0.003
+
+    private let notedAt: CFTimeInterval
+    private weak var layer: CALayer?
+    private var spring: Spring?
+    private var length: TimeInterval = 0
+    private var begin: CFTimeInterval?
+    /// Метка кадра: все значения одного прохода рендера получают одно время, иначе
+    /// за проход (до 6 мс на тяжёлом кадре) поля бара расходились бы по фазе.
+    private var frameStamp: CFTimeInterval = 0
+    private var lastCall: CFTimeInterval = 0
+    /// Кадр, посчитанный сейчас, покажется на следующем обновлении экрана, а клавиатуру
+    /// система рисует в фазе на момент показа — бар считаем на кадр вперёд.
+    private var presentationLead: TimeInterval = 1.0 / 60
+    private var isMissing = false
+
+    init(notedAt: CFTimeInterval) {
+        self.notedAt = notedAt
+    }
+
+    /// Счёт — по реальному времени, а не по `time` анимации: тот на подвисании
+    /// главного потока прибавляет один шаг кадра вместо прошедших 50 мс, и бар
+    /// навсегда отставал от клавиатуры на эту разницу (замер 2026-10-31: 33–60 мс).
+    func phase(atAnimationTime time: TimeInterval) -> Phase {
+        let now = CACurrentMediaTime()
+        if now - lastCall > Self.sameFrameGap { frameStamp = now }
+        lastCall = now
+        if begin == nil, !isMissing, Thread.isMainThread {
+            MainActor.assumeIsolated { resolve(now: now) }
+        }
+        guard let begin, let spring else { return isMissing ? .unknown : .waiting }
+        return .running(elapsed: frameStamp + presentationLead - begin, spring: spring, length: length)
+    }
+
+    @MainActor
+    private func resolve(now: CFTimeInterval) {
+        if layer == nil, let found = Self.keyboardLayer() {
+            layer = found.layer
+            presentationLead = 1 / Double(max(60, found.framesPerSecond))
+        }
+        if let layer, let animation = layer.animation(forKey: "position") as? CASpringAnimation {
+            if spring == nil {
+                spring = Spring(mass: animation.mass, stiffness: animation.stiffness,
+                                damping: animation.damping, allowOverDamping: true)
+                length = animation.duration
+            }
+            let start = layer.convertTime(animation.beginTime, to: nil)
+            // Старт раньше нотификации — пружина прошлого движения, а не этого.
+            if animation.beginTime > 0, start > notedAt - Self.sameFrameGap {
+                begin = start
+                #if DEBUG
+                if UserDefaults.standard.bool(forKey: "debugKeyboardTrace") {
+                    NSLog("[kb] пружина клавиатуры: старт через %.0f мс после нотификации, бар — с %.0f мс её хода; m %.2f k %.1f c %.1f, %.3f с",
+                          (begin! - notedAt) * 1000, (now - begin!) * 1000,
+                          animation.mass, animation.stiffness, animation.damping, animation.duration)
+                }
+                #endif
+                return
+            }
+        }
+        if now - notedAt > (spring == nil ? Self.patience : Self.commitPatience) { isMissing = true }
+    }
+
+    @MainActor
+    private static func keyboardLayer() -> (layer: CALayer, framesPerSecond: Int)? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .filter { String(describing: type(of: $0)).contains("TextEffects") }
+        for window in windows {
+            if let layer = springLayer(in: window.layer, depth: 0) {
+                return (layer, window.screen.maximumFramesPerSecond)
+            }
+        }
+        return nil
+    }
+
+    private static func springLayer(in layer: CALayer, depth: Int) -> CALayer? {
+        if layer.animation(forKey: "position") is CASpringAnimation { return layer }
+        guard depth < 6 else { return nil }
+        for sublayer in layer.sublayers ?? [] {
+            if let found = springLayer(in: sublayer, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+
+    static func == (lhs: KeyboardSpringTrack, rhs: KeyboardSpringTrack) -> Bool { lhs === rhs }
+    func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 }

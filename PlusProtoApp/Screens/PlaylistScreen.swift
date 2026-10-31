@@ -17,6 +17,8 @@ struct PlaylistScreen: View {
     @Environment(ActionBarState.self) private var actionBar
     @State private var store = PlaylistDetailsStore()
     @State private var scrollOffset: CGFloat = 0
+    /// Экран на виду по UIKit — голография обложки живёт только в этом окне (`CoverHoloPresence`).
+    @State private var isPresented = false
 
     /// Строк скелетона, пока едет треклист, — первый экран.
     private static let skeletonRows = 8
@@ -54,6 +56,11 @@ struct PlaylistScreen: View {
             )
         }
         .background(Color.surfaceOne.ignoresSafeArea())
+        // Начало и конец переходов знает только UIKit — как у альбома.
+        .background {
+            CoverHoloPresence { isPresented = $0 }
+                .frame(width: 0, height: 0)
+        }
         .toolbar(.hidden, for: .navigationBar)
         #if DEBUG
         // `-debugTapPlay` — нажать «Слушать», как на альбоме.
@@ -119,6 +126,11 @@ struct PlaylistScreen: View {
             .frame(width: AlbumLayout.coverSize, height: AlbumLayout.coverSize)
             .clipShape(shape)
             .coverBorder(shape)
+            // Голография — как у альбома (просьба пользователя 2026-10-31: «одинаково»).
+            .coverHolo(
+                isPresented: isPresented,
+                isOnScreen: scrollOffset < EntityCoverLayout.coverHiddenScroll(coverHeight: AlbumLayout.coverSize)
+            )
     }
 
     // MARK: Воспроизведение

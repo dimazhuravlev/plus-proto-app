@@ -103,6 +103,8 @@ struct BookScreen: View {
     /// Фото автора — из Википедии; пока ищется — скелетон круга.
     @State private var portrait: EntityPersonRow.Picture = .loading
     @State private var scrollOffset: CGFloat = 0
+    /// Экран на виду по UIKit — голография обложки живёт только в этом окне (`CoverHoloPresence`).
+    @State private var isPresented = false
     #if DEBUG
     /// `-debugTapPlay` уже нажал «Читать» на этом экране: читалка открывается
     /// поверх, и на её закрытии экран возвращается в окно — `.task` стартует заново.
@@ -153,6 +155,11 @@ struct BookScreen: View {
             )
         }
         .background(Color.surfaceOne.ignoresSafeArea())
+        // Начало и конец переходов знает только UIKit — как у альбома.
+        .background {
+            CoverHoloPresence { isPresented = $0 }
+                .frame(width: 0, height: 0)
+        }
         // Системный бар выключен: на пуше он рисовал бы свой back поверх нашего.
         .toolbar(.hidden, for: .navigationBar)
         .task { await text.load(bookID: entity.id) }
@@ -257,11 +264,19 @@ struct BookScreen: View {
                 BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: nil)) {
                     EmptyView()
                 }
+                // Картинки ещё нет — для голографии это скелетон: блика на нём нет.
+                .coverArtworkMissing(true)
                 .transition(.opacity)
                 .accessibilityLabel("Загрузка")
             }
         }
         .frame(height: BookScreenLayout.bookHeight)
+        // Голография — как у альбома (просьба пользователя 2026-10-31): блик по книге и
+        // её корешку, наклон всей книги.
+        .coverHolo(
+            isPresented: isPresented,
+            isOnScreen: scrollOffset < EntityCoverLayout.coverHiddenScroll(coverHeight: BookScreenLayout.bookHeight)
+        )
     }
 
     // MARK: Автор
