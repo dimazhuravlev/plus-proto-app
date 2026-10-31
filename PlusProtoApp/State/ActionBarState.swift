@@ -708,6 +708,9 @@ final class ActionBarState {
     /// Открыть полноэкранный плеер музыки — тап по широкой пилюле мини-плеера.
     func openMusicPlayer() {
         guard music != nil else { return }
+        // Мини-плеер под большим — развёрнутой пилюлей: закрыли плеер — он не круг
+        // (просьба пользователя 2026-10-31). Меняется под выезжающим плеером, морфа не видно.
+        if mode == .search, !isSearchFocused { mode = .music }
         if case .reader = contentPlayer {
             isMusicOverReader = true
         } else {

@@ -136,6 +136,9 @@ enum MusicPlayerMotion {
 struct MusicPlayerView: View {
     @Environment(ActionBarState.self) private var actionBar
     @State private var scrollOffset: CGFloat = 0
+    /// Плеер на виду по UIKit — голография центральной обложки живёт только в этом окне
+    /// (`CoverHoloPresence`): с начала ухода вниз она гаснет.
+    @State private var isPresented = false
     @State private var ratchet = ScrubRatchet(
         step: MusicPlayerMotion.scrubTickStep,
         interval: MusicPlayerMotion.scrubTickInterval,
@@ -181,6 +184,10 @@ struct MusicPlayerView: View {
             .ignoresSafeArea()
         }
         .background(Color.surfaceOne.ignoresSafeArea())
+        .background {
+            CoverHoloPresence { isPresented = $0 }
+                .frame(width: 0, height: 0)
+        }
     }
 
     // MARK: Навбар
@@ -241,7 +248,10 @@ struct MusicPlayerView: View {
                 next: actionBar.upcoming.first?.cover,
                 isPlaying: actionBar.isMusicPlaying,
                 side: column,
-                screenWidth: width
+                screenWidth: width,
+                isHoloPresented: isPresented,
+                // Обложка целиком ушла за верх ленты — голографию не считаем.
+                isHoloOnScreen: scrollOffset < safeTop + MusicPlayerLayout.barHeight + MusicPlayerLayout.coverTop + column
             )
             .padding(.top, safeTop + MusicPlayerLayout.barHeight + MusicPlayerLayout.coverTop)
 
@@ -584,6 +594,10 @@ private struct CoverCarousel: View {
     /// Сторона обложки на воспроизведении — ширина колонки.
     let side: CGFloat
     let screenWidth: CGFloat
+    /// Голография центральной обложки (`CoverHolo`, просьба пользователя 2026-10-31) —
+    /// как у обложек экранов альбома, плейлиста и книги. У соседей её нет.
+    let isHoloPresented: Bool
+    let isHoloOnScreen: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -604,7 +618,9 @@ private struct CoverCarousel: View {
                     .rotationEffect(.degrees(MusicPlayerLayout.neighborTilt))
                     .offset(x: shift, y: drop)
             }
-            artwork(cover, size: current)
+            framed(cover, size: current)
+                .coverHolo(isPresented: isHoloPresented, isOnScreen: isHoloOnScreen, isInPlayer: true)
+                .modifier(CoverShadow())
         }
         .frame(width: screenWidth, height: side)
         .animation(reduceMotion ? MusicPlayerMotion.pauseReduced : MusicPlayerMotion.pauseSpring, value: isPlaying)
@@ -613,22 +629,31 @@ private struct CoverCarousel: View {
     /// Соседи видны только на паузе: на воспроизведении обложка во всю колонку,
     /// и их кромки у краёв экрана читались бы мусором.
     private func neighborCover(_ source: ArtworkSource, size: CGFloat) -> some View {
-        artwork(source, size: size)
+        framed(source, size: size)
+            .modifier(CoverShadow())
             .opacity(isPlaying ? 0 : 1)
     }
 
-    private func artwork(_ source: ArtworkSource, size: CGFloat) -> some View {
+    /// Обложка с кромкой — без тени: голография ложится между ними, иначе блик лёг бы
+    /// и на тень.
+    private func framed(_ source: ArtworkSource, size: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: MusicPlayerLayout.coverCorner, style: .continuous)
         return Color.clear
             .frame(width: size, height: size)
             .overlay { ArtworkImage(source: source).scaledToFill() }
             .clipShape(shape)
             .coverBorder(shape)
-            .shadow(
-                color: .black.opacity(MusicPlayerLayout.coverShadowOpacity),
-                radius: MusicPlayerLayout.coverShadowRadius,
-                y: MusicPlayerLayout.coverShadowY
-            )
+    }
+}
+
+/// Тень обложки плеера.
+private struct CoverShadow: ViewModifier {
+    func body(content: Content) -> some View {
+        content.shadow(
+            color: .black.opacity(MusicPlayerLayout.coverShadowOpacity),
+            radius: MusicPlayerLayout.coverShadowRadius,
+            y: MusicPlayerLayout.coverShadowY
+        )
     }
 }
 

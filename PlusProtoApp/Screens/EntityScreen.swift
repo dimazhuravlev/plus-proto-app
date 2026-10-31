@@ -13,6 +13,9 @@ struct EntityScreen: View {
                 ZoomPresenceTracker(route: route)
                     .frame(width: 0, height: 0)
             }
+            #if DEBUG
+            .onAppear { LayerProbe.dumpGesturesIfRequested() }
+            #endif
     }
 
     @ViewBuilder
@@ -50,11 +53,16 @@ struct EntityScreen: View {
 /// накрывает, остальные экраны живут с ним, как в стеке таба. Корневой хром под
 /// полноэкранным слоем не виден, поэтому у такого экрана хром свой — тот же
 /// `BottomChrome` с подложкой и слоями поиска. Фокус поиска берёт только верхний бар
-/// (`AppNavigationState.isTop`), тап по табу снимает слой (`AppNavigationState.select`).
+/// (`AppNavigationState.isTop`). Тап по своему табу снимает слой, по другому — уводит
+/// на тот таб, а слой со стопкой остаётся за своим и встаёт на место, когда таб выбирают
+/// снова (`AppNavigationState.select`, 2026-10-31).
 struct CoveredEntityScreen: View {
     let route: EntityRoute
     /// Сколько экранов слоя лежит под этим: корень — 0, его «похожее» — 1…
     let depth: Int
+    /// Таб, которому принадлежит слой (`CoveredLayer`): стопку экран читает у него, а не
+    /// у активного таба — на смене таба она не должна подменяться чужой.
+    let tab: AppTab
     @Environment(AppNavigationState.self) private var navigation
     @Namespace private var zoom
 
@@ -65,9 +73,15 @@ struct CoveredEntityScreen: View {
             // решает верхний, а корень под слоем снят с окна (`SearchNavigationSync`).
             .modifier(SearchNavigationSync(layer: depth))
             .fullScreenCover(item: next) { pushed in
-                CoveredEntityScreen(route: pushed, depth: depth + 1)
+                CoveredEntityScreen(route: pushed, depth: depth + 1, tab: tab)
                     .navigationTransition(.zoom(sourceID: pushed, in: zoom))
             }
+            // Возврат на таб: стопка слоя встаёт по экрану — следующий за этим (`AppNavigationState.revealedLayerDepth`).
+            .onAppear { navigation.layerScreenAppeared(depth: depth, of: tab) }
+            #if DEBUG
+            .onAppear { NavTrace.log("layer screen + d\(depth) \(tab) \(route.id)") }
+            .onDisappear { NavTrace.log("layer screen − d\(depth) \(tab) \(route.id)") }
+            #endif
     }
 
     @ViewBuilder
@@ -107,11 +121,19 @@ struct CoveredEntityScreen: View {
     private var next: Binding<EntityRoute?> {
         Binding(
             get: {
-                navigation.coveredPath.indices.contains(depth) ? navigation.coveredPath[depth] : nil
+                let path = navigation.layerPath(of: tab)
+                guard depth < navigation.layerRevealLimit(of: tab) else { return nil }
+                return path.indices.contains(depth) ? path[depth] : nil
             },
             set: { value in
-                if value == nil, navigation.coveredPath.count > depth {
-                    navigation.coveredPath.removeSubrange(depth...)
+                // Слой ушёл вместе с табом — SwiftUI снимает и вложенные экраны и пишет сюда
+                // `nil`, но стопка остаётся за табом: вернутся — она встанет целиком.
+                // Срезает её только закрытие внутри слоя активного таба (свайп, крестик).
+                guard navigation.activeTab == tab, navigation.coveredRoute != nil else { return }
+                var path = navigation.layerPath(of: tab)
+                if value == nil, path.count > depth {
+                    path.removeSubrange(depth...)
+                    navigation.setLayerPath(path, of: tab)
                 }
             }
         )

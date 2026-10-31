@@ -715,16 +715,13 @@ struct CollectionBookCard: View {
 
     var body: some View {
         let geometry = CollectionLayout.book
-        let coverWidth = geometry.coverWidth(aspect: item.aspect)
+        // Аудиокнига — квадрат высотой книги (макет `18352:41986`), книга — по пропорциям обложки.
+        let coverWidth = item.isAudiobook ? geometry.coverHeight : geometry.coverWidth(aspect: item.aspect)
         let width = geometry.frameSize(coverWidth: coverWidth).width
         Button(action: open) {
             VStack(spacing: CardProgressBar.gap) {
-                BookFigure(geometry: geometry, coverWidth: coverWidth) {
-                    if let artwork = item.artwork {
-                        SkeletonArtwork(source: artwork)
-                    }
-                }
-                .collectionZoomSource(item.route, in: zoom)
+                cover(geometry: geometry, coverWidth: coverWidth)
+                    .collectionZoomSource(item.route, in: zoom)
                 if let progress {
                     CardProgressBar(progress: progress)
                         .zoomSourceCaption(item.route)
@@ -736,6 +733,23 @@ struct CollectionBookCard: View {
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .accessibilityLabel(item.title)
         .collectionItemActions(item, shelf: shelf)
+    }
+
+    /// Аудиокнига среди книг — квадратом (`AudiobookFigure`), книга — в проекции (`BookFigure`).
+    @ViewBuilder
+    private func cover(geometry: BookFigureGeometry, coverWidth: CGFloat) -> some View {
+        if item.isAudiobook {
+            AudiobookFigure(geometry: geometry) { artwork }
+        } else {
+            BookFigure(geometry: geometry, coverWidth: coverWidth) { artwork }
+        }
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        if let artwork = item.artwork {
+            SkeletonArtwork(source: artwork)
+        }
     }
 
     private func open() {

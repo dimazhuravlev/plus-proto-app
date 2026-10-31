@@ -251,7 +251,8 @@ enum PlusGradient {
     ]
 
     /// Подложка таббара — исходная глубина макета.
-    static let tabBarUnderlay = bottomUnderlay(peak: 0.90)
+    static let tabBarUnderlayPeak: Double = 0.90
+    static let tabBarUnderlay = bottomUnderlay(peak: tabBarUnderlayPeak)
 
     /// Заливка глифа активного таба — диагональный градиент слева-сверху вниз-вправо
     static let activeTabGlyph = LinearGradient(

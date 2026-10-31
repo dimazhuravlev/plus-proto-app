@@ -97,6 +97,10 @@ struct ActionBarRaise: Equatable {
 enum ActionBarGeometry {
     static let searchPaddingH: CGFloat = 18
     static let searchIconBox: CGFloat = 24
+    /// Насколько маска поля поиска выходит за его кадр, когда ничего не гасит (`SearchInputFade`).
+    static let unmaskedInputBleed: CGFloat = 200
+    /// Запас ширины поля поиска на каретку сверх текста.
+    static let searchCaretAllowance: CGFloat = 4
     /// Кнопки без подложки (крест поля, play и лайк мини-плеера) — `PlusButton` plain L:
     /// круг 48 вокруг глифа 24 под отрицательным отступом, раскладка держит глиф.
     static var plainHitInset: CGFloat { (PlusButtonSize.l.height - PlusButtonSize.l.iconBox) / 2 }
@@ -297,7 +301,17 @@ struct ActionBarView: View {
             SearchPill(
                 layout: layout,
                 searchFocused: $searchFocused,
-                query: $search.query,
+                // Ввод в поле — и только он — запоминает запрос на сессию (`SearchState.lastQuery`).
+                // Только настоящая смена текста: поле на уходе фокуса пишет в привязку то же,
+                // что в ней уже лежит, — и после «Назад» стирало бы запомненное пустотой.
+                query: Binding(
+                    get: { search.query },
+                    set: { text in
+                        guard text != search.query else { return }
+                        search.query = text
+                        search.rememberTyped(text)
+                    }
+                ),
                 isBrowsing: $search.isBrowsing,
                 // Стоит над клавиатурой, а не просто стоит: в просмотре раскладка
                 // тоже фокусная, и крест (фокус полю) взводил волну ещё до подъёма.
@@ -374,6 +388,7 @@ struct ActionBarView: View {
             guard !Task.isCancelled else { return }
             searchFocused = true
             search.query = text
+            search.rememberTyped(text)
         }
         .task {
             // `-debugSearchCycle` — фокус и расфокус поля по кругу. Нужен, чтобы снять
@@ -608,6 +623,8 @@ private struct SearchPill: View {
     @Binding var isBrowsing: Bool
     /// Бар стоит: клавиатура не едет. По этому признаку взводится «Поиск по всему».
     let isBarSettled: Bool
+    /// Ширина поля ввода — только для его маски (раскладку она не трогает).
+    @State private var inputWidth: CGFloat = 0
 
     /// «Поиск по всему» взведён: в этом фокусе бар уже доехал до клавиатуры.
     /// Защёлка, а не прямое условие: клавиатура едет и без смены фокуса (переход
@@ -942,6 +959,24 @@ private struct SearchPill: View {
             // перехватывало бы касания мимо жеста резины. Гейт тот же, что и у opacity.
             .allowsHitTesting(searchFocused)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // Длинный запрос UIKit прокручивает влево и режет по левому краю поля — там его
+            // гасит маска (правки пользователя 2026-10-31). Поле не двигается и не растёт:
+            // любые перемены его кадра при наборе дёргали текст, а обрезка по кадру лишала
+            // фокуса поле в круге поиска.
+            .mask { SearchInputFade(overflow: inputOverflow) }
+            // Ширина — только для маски, раскладку она не трогает.
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { inputWidth = $0 }
+    }
+
+    /// На сколько запрос не влез в поле — только при вводе: без фокуса поле показывает
+    /// начало строки, и гасить там нечего. Ширина текста — замером стилем поля, с запасом
+    /// на каретку.
+    private var inputOverflow: CGFloat {
+        guard searchFocused, inputWidth > 0, !query.isEmpty else { return 0 }
+        let font = PlusTextSize.textL.uiFont(.semibold)
+        let text = (query as NSString).size(withAttributes: [.font: font]).width
+            + ActionBarGeometry.searchCaretAllowance
+        return max(text - inputWidth, 0)
     }
 
     /// Крест виден в поиске, когда в поле есть хоть один символ.
@@ -1335,7 +1370,10 @@ private struct TrailingSlot: View {
                         } else {
                             actionBar.openMusicPlayer()
                         }
-                    }
+                    },
+                    // Оттяг вверх — большой плеер и из круга (просьба пользователя 2026-10-31):
+                    // тап разворачивает круг, свайп открывает плеер.
+                    onPullUp: { actionBar.openMusicPlayer() }
                 )
                 .zoneWidth(layout)
                 .blurReplaceLayer(layout.showMiniPlayer)
@@ -1510,12 +1548,22 @@ struct MiniPlayerPill: View {
     /// Ширина, по которой разложено содержимое. В баре рядом с пилюлей стоит круг
     /// поиска (286 на 402); в читалке круга нет, и в макете `2565:25233` пилюля 354 на 402.
     var expandedWidth: CGFloat = ActionBarGeometry.miniPlayerExpandedWidth
+    /// Оттяг вверх за порог открывает большой плеер (просьба пользователя 2026-10-31) —
+    /// как оттяг поля поиска открывает поиск; у пилюли и у круга. `nil` — оттяг без действия.
+    var onPullUp: (() -> Void)? = nil
 
     /// Вращение обложки — см. `CoverSpin`.
     @State private var spin = CoverSpin()
     /// Крутится ли диск прямо сейчас (включая выбег). Отдельный флаг, а не
     /// производная от `isPlaying`: после паузы диск ещё докатывается.
     @State private var isSpinning = false
+    /// Резина оттяга вверх — та же, что у поля поиска вне фокуса (`SearchPullConfig`, правки
+    /// пользователя 2026-10-31): круг и пилюля чуть вытягиваются за пальцем вверх, нижняя
+    /// кромка стоит, отпустили — возврат пружиной; за порогом — большой плеер. Вниз бар
+    /// не тянется. В `@State`, а не в баре: запись на кадр жеста перерисовывает только пилюлю.
+    @State private var pull: CGFloat = 0
+    /// Хаптика порога уже отдана.
+    @State private var tickArmed = false
 
     var body: some View {
         // Ширину пилюли задаёт родитель. Контент лежит в overlay, а не внутри —
@@ -1531,7 +1579,7 @@ struct MiniPlayerPill: View {
             // обрезку невозможной в обоих случаях: в фокусе круг просто уезжает
             // целым, а левый вылет за зону срезает `TrailingClipShape`.
             .frame(minWidth: PlusMetrics.actionBarCompact, maxWidth: .infinity)
-            .frame(height: PlusMetrics.actionBarHeight)
+            .frame(height: PlusMetrics.actionBarHeight + stretch)
             .glassPill()
             .overlay(alignment: .leading) {
                 MiniPlayerProgressFill(clock: progress)
@@ -1543,11 +1591,57 @@ struct MiniPlayerPill: View {
             .overlay(alignment: .leading) { content }
             .clipShape(Capsule(style: .continuous))
             .contentShape(Capsule(style: .continuous))
+            // Рост — вокруг центра; сдвиг на половину держит кромку напротив пальца.
+            // Место в раскладке — прежние 60: сосед по бару не едет.
+            .offset(y: pull > 0 ? -stretch / 2 : stretch / 2)
+            .frame(height: PlusMetrics.actionBarHeight)
+            // simultaneousGesture: у сердца и play приоритет выше, обычный жест они бы перебили.
+            .simultaneousGesture(pullGesture)
             // Тап по пилюле раскрывает полноэкранный плеер. Кнопки сердца и play
             // лежат выше по дереву и перехватывают касание сами.
             .onTapGesture(perform: onExpand)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(item.title), \(item.artist)")
+    }
+
+    private var stretch: CGFloat { abs(pull) * SearchPullConfig.heightLimit }
+
+    /// Оттяг за пальцем один в один, без анимации; только вертикальный — горизонтальный
+    /// свайп выбрасывает круг в читалке и резину не тянет. Вверх за порог (или резким
+    /// рывком) — большой плеер, на отпускании, как поиск у поля: порог и рывок — его же.
+    private var pullGesture: some Gesture {
+        DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .global)
+            .onChanged { value in
+                let dy = value.translation.height
+                guard abs(dy) > abs(value.translation.width) else { return }
+                // Только вверх: бар стоит внизу, тянуть его вниз некуда — как поле поиска
+                // вне фокуса (правка пользователя 2026-10-31).
+                pull = dy < 0 ? SearchPullConfig.progress(travel: -dy) : 0
+                if onPullUp != nil { updateTick(travel: -dy) }
+            }
+            .onEnded { value in
+                tickArmed = false
+                let travel = -value.translation.height
+                let flick = -value.velocity.height >= SearchPullConfig.flickVelocity
+                    && travel >= SearchPullConfig.flickMinDistance
+                    && travel > abs(value.translation.width)
+                if let onPullUp, pull > 0, travel >= SearchPullConfig.triggerDistance || flick {
+                    onPullUp()
+                }
+                guard pull != 0 else { return }
+                withAnimation(SearchPullConfig.release) { pull = 0 }
+            }
+    }
+
+    /// Тик на пересечении порога вверх — тот же, что у поля поиска.
+    private func updateTick(travel: CGFloat) {
+        if travel >= SearchPullConfig.triggerDistance, !tickArmed {
+            tickArmed = true
+            UIImpactFeedbackGenerator(style: .medium)
+                .impactOccurred(intensity: SearchPullConfig.tickHapticIntensity)
+        } else if travel < SearchPullConfig.triggerDistance - SearchPullConfig.triggerHysteresis {
+            tickArmed = false
+        }
     }
 
     /// Два вложенных стека, а не один плоский: в макете зазор обложка↔тексты 8,
@@ -1811,6 +1905,44 @@ private extension View {
     /// по неактивному соседу (см. комментарий в `TrailingSlot`).
     func zoneWidth(_ layout: ActionBarLayout) -> some View {
         frame(width: layout.trailingWidth, alignment: .leading)
+    }
+}
+
+
+
+
+/// Маска поля поиска (правки пользователя 2026-10-31): у левого края, где UIKit режет
+/// уехавший запрос, буквы прозрачные — среза не видно — и за `length` набирают полную
+/// яркость. Кривая выпуклая: буквы долго остаются читаемыми и гаснут у самой кромки,
+/// а не тускнеют всей полосой. Сила — от того, насколько запрос не влез: на первых пунктах
+/// переполнения маска только намечается, а не включается разом. Запрос влезает — маска
+/// сплошная и выходит за кадр поля: в круге поиска оно шириной ноль, и обрезанное по кадру
+/// не получало фокус.
+private struct SearchInputFade: View {
+    let overflow: CGFloat
+
+    /// Длина затухания от края поля.
+    private static let length: CGFloat = 24
+    /// За сколько пунктов переполнения маска набирает полную силу.
+    private static let ramp: CGFloat = 12
+    /// Видимость по полосе: t^0.6 — выпуклая, у края 0.
+    private static let curve: [Double] = (0...8).map { pow(Double($0) / 8, 0.6) }
+
+    var body: some View {
+        let strength = Double(min(overflow / Self.ramp, 1))
+        let stops = Self.curve.enumerated().map { index, visible in
+            Gradient.Stop(
+                color: .black.opacity(1 - strength * (1 - visible)),
+                location: CGFloat(index) / CGFloat(Self.curve.count - 1)
+            )
+        }
+        HStack(spacing: 0) {
+            LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
+                .frame(width: Self.length)
+            Color.black
+        }
+        .padding(.vertical, -ActionBarGeometry.unmaskedInputBleed)
+        .padding(.trailing, -ActionBarGeometry.unmaskedInputBleed)
     }
 }
 

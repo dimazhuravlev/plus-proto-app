@@ -540,6 +540,15 @@ private struct CollectionListRow: View {
                 height: CollectionListLayout.posterHeight,
                 shape: RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
             ))
+        case .book where item.isAudiobook:
+            // Аудиокнига — квадрат, как в каруселях (`AudiobookFigure`); в строке — тем же
+            // квадратом, что альбомы и треки списка (просьба пользователя 2026-10-31).
+            source(CollectionArtwork(
+                source: item.artwork,
+                width: CollectionListLayout.cover,
+                height: CollectionListLayout.cover,
+                shape: RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
+            ))
         case .book:
             source(bookFigure)
         case .artist:

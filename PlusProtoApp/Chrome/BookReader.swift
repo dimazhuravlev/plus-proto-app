@@ -746,7 +746,13 @@ private struct ReaderMusicPlayer: View {
                 onTogglePlay: { actionBar.toggleMusicPlayback() },
                 onToggleLike: { actionBar.toggleMusicLike() },
                 onExpand: handleTap,
-                expandedWidth: BookReaderLayout.musicExpandedWidth
+                expandedWidth: BookReaderLayout.musicExpandedWidth,
+                // Оттяг вверх — большой плеер, как в баре, и из круга тоже; под плеером
+                // круг разворачивается — закрыли плеер, а мини-плеер уже пилюлей.
+                onPullUp: {
+                    isExpanded = true
+                    actionBar.openMusicPlayer()
+                }
             )
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
             // левый уезжает, внутренности только проявляются. Ширина — экран минус поля 24
