@@ -8,7 +8,6 @@ struct HomeShelfItem: Identifiable {
     let subtitle: String
     let artwork: ArtworkSource
     let route: EntityRoute
-    var rating: String? = nil
 }
 
 enum HomeShelfSamples {
@@ -41,11 +40,11 @@ enum HomeShelfSamples {
     }
     private static func movie(_ id: String, _ title: String, _ asset: String) -> HomeShelfItem {
         let ref = EntityRef(id: "local-shelf-\(id)", title: title, subtitle: "", artwork: .asset(asset))
-        return HomeShelfItem(id: ref.id, title: title, subtitle: "", artwork: ref.artwork, route: .movie(ref), rating: "7.0")
+        return HomeShelfItem(id: ref.id, title: title, subtitle: "", artwork: ref.artwork, route: .movie(ref))
     }
     private static func book(_ id: String, _ title: String, _ asset: String) -> HomeShelfItem {
         let ref = EntityRef(id: "local-shelf-\(id)", title: title, subtitle: "", artwork: .asset(asset))
-        return HomeShelfItem(id: ref.id, title: title, subtitle: "", artwork: ref.artwork, route: .book(ref), rating: "7.0")
+        return HomeShelfItem(id: ref.id, title: title, subtitle: "", artwork: ref.artwork, route: .book(ref))
     }
     private static func artist(_ id: String, _ title: String, _ asset: String) -> HomeShelfItem {
         let ref = EntityRef(id: "name-\(id)", title: title, subtitle: "", artwork: .asset(asset))

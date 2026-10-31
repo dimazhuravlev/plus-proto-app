@@ -128,8 +128,11 @@ struct CinemaHomeScreen: View {
             CinemaPromoCarousel(promos: catalog.promos, pull: max(0, -scrollOffset), savedIndex: $catalog.promoIndex)
         }
         history
+        if !catalog.topTitles.isEmpty {
+            CinemaPosterCarousel(title: CinemaCatalog.topTitle, titles: catalog.topTitles, isRanked: true)
+        }
         ForEach(catalog.rows) { row in
-            CinemaPosterRow(row: row)
+            CinemaPosterCarousel(title: row.title, titles: row.titles)
         }
     }
 
@@ -167,24 +170,34 @@ private struct CinemaHistoryRow: View {
     }
 }
 
-/// Подборка — постеры с названием.
-private struct CinemaPosterRow: View {
-    let row: CinemaCatalog.Row
+/// Подборка постерами — общая карусель Кино: главная Кинопоиска и «Главная». С `isRanked` —
+/// «Топ-10» (`card / poster / top-10`): первые десять, перед постером цифра места, название
+/// в одну строку.
+struct CinemaPosterCarousel: View {
+    let title: String
+    let titles: [CinemaCatalog.Title]
+    var isRanked = false
+    /// Тап по шапке — на «Главной» ведёт в таб Кинопоиска.
+    var headerAction: (() -> Void)? = nil
 
     var body: some View {
+        let items = isRanked ? Array(titles.prefix(ServiceCarouselRank.limit)) : titles
         // Высота подписи — по всей подборке, а не по карточке: `LazyHStack` меряет ряд
         // по уже созданным карточкам, и длинное название дальше по ленте резалось бы
         // в одну строку (та же беда, что у каруселей персон карточки тайтла).
-        let lines = row.titles
+        let lines = isRanked ? 1 : items
             .map { TileCaptionRuler.lines($0.title, width: CinemaLayout.posterWidth - CinemaLayout.captionTrailing) }
             .max() ?? 1
         let captionHeight = CGFloat(lines) * CinemaLayout.captionLine
         ServiceCarousel(
-            title: row.title,
-            cardHeight: CinemaLayout.posterHeight + CinemaLayout.captionGap + captionHeight
+            title: title,
+            cardHeight: CinemaLayout.posterHeight + CinemaLayout.captionGap + captionHeight,
+            isRanked: isRanked,
+            headerAction: headerAction
         ) {
-            ForEach(row.titles) { title in
-                CinemaPosterCard(title: title, captionHeight: captionHeight)
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, title in
+                CinemaPosterCard(title: title, captionHeight: captionHeight, place: isRanked ? index + 1 : nil)
+                    .zIndex(isRanked ? ServiceCarouselRank.zIndex(place: index + 1) : 0)
             }
         }
     }
@@ -192,28 +205,36 @@ private struct CinemaPosterRow: View {
 
 // MARK: - Карточки
 
-/// Постер подборки с названием.
+/// Постер подборки с названием; с местом — карточка «Топ-10»: поле под цифру слева.
 private struct CinemaPosterCard: View {
     let title: CinemaCatalog.Title
     let captionHeight: CGFloat
+    var place: Int? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
 
     var body: some View {
+        let scale = CinemaLayout.posterFit.scale
         Button { navigation.open(title.route) } label: {
             VStack(alignment: .leading, spacing: CinemaLayout.captionGap) {
                 posterSource
+                    .overlay(alignment: .topLeading) {
+                        if let place {
+                            ServiceCarouselRankNumber(place: place, coverCenter: CinemaLayout.posterHeight / 2, scale: scale)
+                        }
+                    }
 
                 Text(title.title)
                     .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillOne)
-                    .lineLimit(CinemaLayout.posterTitleLines)
+                    .lineLimit(place == nil ? CinemaLayout.posterTitleLines : 1)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(height: captionHeight, alignment: .top)
                     .padding(.trailing, CinemaLayout.captionTrailing)
             }
             .frame(width: CinemaLayout.posterWidth, alignment: .leading)
+            .padding(.leading, place == nil ? 0 : ServiceCarouselRank.lead * scale)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))

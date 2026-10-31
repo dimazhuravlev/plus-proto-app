@@ -42,6 +42,9 @@ final class BooksHomeCatalog {
     }
 
     private(set) var promos: [Book] = []
+    /// «Топ книг за месяц» — карусель с цифрами мест (`BooksCarousel`, `isRanked`): здесь
+    /// и на «Главной». Популярности Google Books не отдаёт — по книге из каждой темы по кругу.
+    private(set) var top: [Book] = []
     private(set) var rows: [Row] = []
     /// Книга промо, на которой остановились, — на всю сессию (экран таба
     /// пересоздаётся на каждом переключении).
@@ -65,6 +68,7 @@ final class BooksHomeCatalog {
         ("decisions", "Психология решений", [Seed(query: "Даниэль Канеман", surname: "Канеман"), Seed(query: "Дэн Ариели", surname: "Ариели")]),
     ]
 
+    static let topTitle = "Топ книг за месяц"
     private static let rowLimit = 10
     /// Сколько ждём обложки, чтобы знать их пропорции, — дольше книга встаёт
     /// с пропорциями по умолчанию, а обложка доедет на месте.
@@ -126,10 +130,20 @@ final class BooksHomeCatalog {
         // карусели её уже нет. Порядок тем в промо — тоже свой на запуск.
         promos = built.compactMap { $0.volumes.first.map { Self.book($0, aspects) } }
             .shuffled(using: &rng)
-        rows = built.map { row in
+        applyRows(built.map { row in
             Row(id: row.id, title: row.title, books: row.volumes.dropFirst().map { Self.book($0, aspects) })
-        }
+        })
         isLoaded = true
+    }
+
+    /// Темы и «Топ»: книги топа из тем уходят — книга одна на экран. Тема без книг не встаёт.
+    private func applyRows(_ themes: [Row]) {
+        top = TopPicks.roundRobin(themes.map(\.books), key: \.title)
+        let topIDs = Set(top.map(\.id))
+        rows = themes.compactMap { row in
+            let books = row.books.filter { !topIDs.contains($0.id) }
+            return books.isEmpty ? nil : Row(id: row.id, title: row.title, books: books)
+        }
     }
 
     private static func book(_ volume: GoogleBook, _ aspects: [String: CGFloat]) -> Book {
@@ -239,7 +253,7 @@ final class BooksHomeCatalog {
             Book(id: "\(book.id)-\(index)", title: book.title, author: book.author, cover: book.cover, aspect: book.aspect, blurb: book.blurb)
         }
         #endif
-        rows = Self.rowSpecs.enumerated().map { rowIndex, spec in
+        applyRows(Self.rowSpecs.enumerated().map { rowIndex, spec in
             Row(
                 id: spec.id,
                 title: spec.title,
@@ -252,7 +266,7 @@ final class BooksHomeCatalog {
                     return mockBook("\(spec.id)-\(book.id)", book.title, book.author, index)
                 }
             )
-        }
+        })
         isLoaded = true
     }
 }

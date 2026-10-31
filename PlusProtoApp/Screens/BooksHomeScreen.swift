@@ -122,8 +122,11 @@ struct BooksHomeScreen: View {
                                 savedIndex: $catalog.promoIndex
                             )
                         }
+                        if !catalog.top.isEmpty {
+                            BooksCarousel(title: BooksHomeCatalog.topTitle, books: catalog.top, isRanked: true)
+                        }
                         ForEach(catalog.rows) { row in
-                            BooksRow(row: row)
+                            BooksCarousel(title: row.title, books: row.books)
                         }
                     }
                     .transition(.opacity)
@@ -384,27 +387,43 @@ private struct BooksPromoSkeleton: View {
 
 // MARK: - Карусели тем
 
-private struct BooksRow: View {
-    let row: BooksHomeCatalog.Row
+/// Карусель книг — общая у главной Книг и «Главной». С `isRanked` — «Топ-10»: первые
+/// десять, перед книгой цифра места (как `card / poster / top-10` у Кино, той же геометрией
+/// от обложки).
+struct BooksCarousel: View {
+    let title: String
+    let books: [BooksHomeCatalog.Book]
+    var isRanked = false
+    /// Тап по шапке — на «Главной» ведёт в таб Книг.
+    var headerAction: (() -> Void)? = nil
 
     var body: some View {
-        ServiceCarousel(title: row.title, cardHeight: BooksCardLayout.cardHeight) {
-            ForEach(row.books) { book in
-                BooksCard(book: book)
+        let items = isRanked ? Array(books.prefix(ServiceCarouselRank.limit)) : books
+        ServiceCarousel(
+            title: title,
+            cardHeight: BooksCardLayout.cardHeight,
+            isRanked: isRanked,
+            headerAction: headerAction
+        ) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, book in
+                BooksCard(book: book, place: isRanked ? index + 1 : nil)
+                    .zIndex(isRanked ? ServiceCarouselRank.zIndex(place: index + 1) : 0)
             }
         }
     }
 }
 
-/// Книга в проекции, под ней название (до двух строк) и автор.
+/// Книга в проекции, под ней название (до двух строк) и автор; с местом — цифра слева.
 private struct BooksCard: View {
     let book: BooksHomeCatalog.Book
+    var place: Int? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
 
     var body: some View {
         let geometry = BooksCardLayout.geometry
+        let scale = BooksCardLayout.fit.scale
         let coverWidth = geometry.coverWidth(aspect: book.aspect)
         let width = geometry.frameSize(coverWidth: coverWidth).width
         let figure = BookFigure(geometry: geometry, coverWidth: coverWidth) {
@@ -412,10 +431,22 @@ private struct BooksCard: View {
         }
         Button { navigation.open(book.route) } label: {
             VStack(alignment: .leading, spacing: BooksCardLayout.captionGap) {
-                if let zoom {
-                    figure.matchedTransitionSource(id: book.route, in: zoom)
-                } else {
-                    figure
+                Group {
+                    if let zoom {
+                        figure.matchedTransitionSource(id: book.route, in: zoom)
+                    } else {
+                        figure
+                    }
+                }
+                // Обложка — под выступом страниц: её центр ниже середины кадра книги.
+                .overlay(alignment: .topLeading) {
+                    if let place {
+                        ServiceCarouselRankNumber(
+                            place: place,
+                            coverCenter: geometry.pagesTop + geometry.coverHeight / 2,
+                            scale: scale
+                        )
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -431,6 +462,7 @@ private struct BooksCard: View {
                 .padding(.trailing, CinemaLayout.captionTrailing)
             }
             .frame(width: width, alignment: .leading)
+            .padding(.leading, place == nil ? 0 : ServiceCarouselRank.lead * scale)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))

@@ -47,6 +47,9 @@ final class CinemaCatalog {
     }
 
     private(set) var promos: [Promo] = []
+    /// «Топ кино за месяц» — карусель с цифрами мест (`CinemaPosterCarousel`, `isRanked`):
+    /// здесь и на «Главной».
+    private(set) var topTitles: [Title] = []
     private(set) var rows: [Row] = []
     /// Слайд промо, на котором остановились, — на всю сессию: экран таба
     /// пересоздаётся на каждом переключении, а позиция должна пережить возврат.
@@ -72,6 +75,7 @@ final class CinemaCatalog {
         ("top_100_animation_by_time_out", "Мультфильмы"),
     ]
     static let promoLimit = 6
+    static let topTitle = "Топ кино за месяц"
     private static let rowLimit = 15
     /// Берём с запасом: часть отсеется — без постера или уже стоит выше, а из остатка
     /// карусель каждый холодный запуск набирает свои 15 (`rowPool`).
@@ -97,7 +101,13 @@ final class CinemaCatalog {
                 )
             }
             #endif
-            rows = CinemaMocks.rows
+            // По тайтлу из каждой подборки по кругу; в подборках их уже нет — тайтл один раз на экран.
+            topTitles = TopPicks.roundRobin(CinemaMocks.rows.map(\.titles), key: \.title)
+            let topIDs = Set(topTitles.map(\.id))
+            rows = CinemaMocks.rows.compactMap { row in
+                let titles = row.titles.filter { !topIDs.contains($0.id) }
+                return titles.isEmpty ? nil : Row(id: row.id, title: row.title, titles: titles)
+            }
             isLoaded = true
             return
         }
@@ -130,6 +140,14 @@ final class CinemaCatalog {
 
         // Тайтл — один раз на экран: промо выше подборок, подборки — по порядку.
         var used = Set(builtPromos.compactMap { Int($0.id.dropFirst("kp-".count)) })
+        // «Топ кино за месяц» — самые заметные тайтлы всех подборок (по голосам), выше
+        // подборок: из них эти тайтлы уходят. Новых запросов нет.
+        var topIDs = Set<Int>()
+        let top = fetched.values.joined()
+            .filter { $0.poster?.url != nil && !used.contains($0.id) && topIDs.insert($0.id).inserted }
+            .sorted { ($0.votes?.kp ?? 0) > ($1.votes?.kp ?? 0) }
+            .prefix(TopPicks.limit)
+        used.formUnion(top.map(\.id))
         var builtRows: [Row] = []
         for spec in Self.rowSpecs {
             let movies = (fetched[spec.slug] ?? [])
@@ -153,10 +171,12 @@ final class CinemaCatalog {
         await Self.prewarm(neighbors.flatMap { [$0.cover] + [$0.logo].compactMap { $0 } })
         ArtworkLoader.shared.preload(
             builtPromos.flatMap { [$0.cover] + [$0.logo].compactMap { $0 } }
+                + top.prefix(4).compactMap { Self.title($0).poster }
                 + builtRows.flatMap { $0.titles.prefix(4).compactMap(\.poster) }
         )
 
         promos = builtPromos.isEmpty ? CinemaMocks.promos : builtPromos
+        topTitles = top.map(Self.title)
         rows = builtRows
         isLoaded = true
     }
