@@ -145,6 +145,7 @@ struct PPMovieCard: View {
             }
             .frame(width: width, height: Self.stillHeight(width: width))
             .clipShape(shape)
+            .coverArtworkMissing(still == nil)
             .coverBorder(shape)
     }
 

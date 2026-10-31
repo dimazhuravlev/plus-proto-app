@@ -149,7 +149,7 @@ enum ToastLayout {
     static func leadingInset(for graphic: ToastGraphic) -> CGFloat {
         switch graphic {
         case .avatar: avatarLeading
-        case .cover, .poster: coverLeading
+        case .cover, .poster, .book: coverLeading
         case .icon: iconLeading
         case .none: noneLeading
         }
@@ -159,7 +159,7 @@ enum ToastLayout {
     static func graphicWidth(for graphic: ToastGraphic) -> CGFloat {
         switch graphic {
         case .cover: coverFrame + coverGap
-        case .poster: posterFrameWidth + coverGap
+        case .poster, .book: posterFrameWidth + coverGap
         case .icon: iconSlot + gap
         case .avatar: avatarSize + gap
         case .none: 0
@@ -254,13 +254,14 @@ struct ToastView: View {
                     frameHeight: ToastLayout.coverFrame
                 )
                 .padding(.trailing, ToastLayout.coverGap)
-            case .poster(let source):
+            case .poster(let source), .book(let source):
                 cover(
                     source,
                     width: ToastLayout.posterWidth,
                     height: ToastLayout.posterHeight,
                     frameWidth: ToastLayout.posterFrameWidth,
-                    frameHeight: ToastLayout.posterFrameHeight
+                    frameHeight: ToastLayout.posterFrameHeight,
+                    isBook: config.graphic == .book(source)
                 )
                 .padding(.trailing, ToastLayout.coverGap)
             case .icon(let name):
@@ -325,21 +326,38 @@ struct ToastView: View {
         width: CGFloat,
         height: CGFloat,
         frameWidth: CGFloat,
-        frameHeight: CGFloat
+        frameHeight: CGFloat,
+        isBook: Bool = false
     ) -> some View {
-        Color.clear
-            .frame(width: width, height: height)
-            .overlay { ArtworkImage(source: source).scaledToFill() }
-            .clipShape(RoundedRectangle(cornerRadius: ToastLayout.coverRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: ToastLayout.coverRadius)
-                    .strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
-            }
+        coverFace(source, width: width, height: height, isBook: isBook)
             .shadow(color: .black.opacity(0.2), radius: ToastLayout.coverShadowRadius, y: ToastLayout.coverShadowY)
             .rotationEffect(.degrees(coverRotation))
             .offset(y: coverOffsetY)
             .frame(width: frameWidth, height: frameHeight)
             .transition(.opacity)
+    }
+
+    /// Книга — карточка книги (`card / book`) со скруглением обложек тоста; остальное —
+    /// обложка r4.
+    @ViewBuilder
+    private func coverFace(_ source: ArtworkSource, width: CGFloat, height: CGFloat, isBook: Bool) -> some View {
+        if isBook {
+            BookFigure(
+                geometry: BookFigureGeometry(coverHeight: height).cornerRadius(ToastLayout.coverRadius),
+                coverWidth: width
+            ) {
+                ArtworkImage(source: source).scaledToFill()
+            }
+        } else {
+            Color.clear
+                .frame(width: width, height: height)
+                .overlay { ArtworkImage(source: source).scaledToFill() }
+                .clipShape(RoundedRectangle(cornerRadius: ToastLayout.coverRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: ToastLayout.coverRadius)
+                        .strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
+                }
+        }
     }
 
     /// Круглое фото: кадр задаёт распорка, картинка — `scaledToFill` в overlay; под ней заливка
@@ -615,9 +633,17 @@ private struct ToastPresenter: View {
 /// над ним тост.
 struct OverlayLayer: View {
     private let share = ShareState.shared
+    private let actionSheet = ActionSheetState.shared
 
     var body: some View {
         ZStack {
+            // Шторка действий — под шерингом: «Поделиться» из неё открывает шеринг поверх
+            // уезжающей шторки.
+            if let content = actionSheet.content {
+                ActionSheetOverlay(content: content)
+                    .id(actionSheet.presentationID)
+                    .zIndex(0.5)
+            }
             if let entity = share.presented {
                 ShareOverlay(entity: entity)
                     .id(share.presentationID)

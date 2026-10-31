@@ -64,6 +64,7 @@ struct MusicTileCard: View {
                     .padding(.bottom, bottomInset)
             }
             .clipShape(shape)
+            .coverArtworkMissing(image == nil)
             .coverBorder(shape)
     }
 
@@ -110,6 +111,7 @@ struct MusicTileCard: View {
                             }
                         }
                         .clipShape(Circle())
+                        .coverArtworkMissing(avatar == nil)
                         .coverBorder(Circle())
                     Text(name)
                         .plusText(.textM, .medium)

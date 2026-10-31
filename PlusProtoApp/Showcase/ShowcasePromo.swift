@@ -187,6 +187,8 @@ struct ShowcasePromo: View {
                                 .showcaseSwappable()
                                 .modifier(PromoReveal(isShown: revealed == item.id,
                                                       hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
+                                // Аннотация уходит вместе с обложкой, пока открыт экран.
+                                .zoomSourceCaption(Self.zoomRoute(item, isCurrent: true))
                                 .offset(y: Layout.cardCenterY + coverHeight / 2 + 16)
                                 .environment(feedback.state(for: item.id))
                         }
@@ -410,6 +412,9 @@ struct ShowcasePromo: View {
         let isCurrent = slotIndex == page
         let pair = PromoPairPlacement(item)
         let petalLayout = item.homePromoKind == .station
+        // Обвязка обложки — бадж, реакции, подписи — уходит вместе с ней, пока открыт
+        // экран карточки: зум прячет только саму обложку (источник).
+        let captionRoute = Self.zoomRoute(item, isCurrent: isCurrent)
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
             // Смена по ✕ (`showcaseSwappable`) — внутри лица: у станции она на слоях
             // по отдельности (`PromoStationCard`).
@@ -429,6 +434,7 @@ struct ShowcasePromo: View {
                     .padding(.leading, 16)
                     .offset(y: -PromoAlbumBadge.boundsSize.height - 8)
                     .allowsHitTesting(false)
+                    .zoomSourceCaption(captionRoute)
             }
         }
         .overlay(alignment: pair.alignment) {
@@ -444,6 +450,7 @@ struct ShowcasePromo: View {
                     ))
                     .rotationEffect(pair.rotation)
                     .offset(pair.offset)
+                    .zoomSourceCaption(captionRoute)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -477,6 +484,7 @@ struct ShowcasePromo: View {
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
+                    .zoomSourceCaption(captionRoute)
             }
         }
 
@@ -488,15 +496,22 @@ struct ShowcasePromo: View {
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
                     .offset(y: Layout.artist + Layout.centeredCaptionTop)
+                    .zoomSourceCaption(captionRoute)
             }
         }
     }
 
     private func zoomID(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) -> AnyHashable {
-        // «Продолжить» книги экрана не открывает — источником зума не становится; фильм
-        // открывает экран тайтла, как обычная карточка.
-        if isCurrent, item.opensPlayerOnTap == false, let route = item.entityRoute { return AnyHashable(route) }
+        if let route = Self.zoomRoute(item, isCurrent: isCurrent) { return AnyHashable(route) }
         return AnyHashable("showcase-promo-copy-\(slotIndex)")
+    }
+
+    /// Экран, который разворачивается из карточки, — только у центральной копии.
+    /// «Продолжить» книги экрана не открывает — источником зума не становится; фильм
+    /// открывает экран тайтла, как обычная карточка.
+    private static func zoomRoute(_ item: ShowcaseBlock, isCurrent: Bool) -> EntityRoute? {
+        guard isCurrent, item.opensPlayerOnTap == false else { return nil }
+        return item.entityRoute
     }
 
     /// Тап по центральной — её экран; по соседу — сосед доезжает в центр. Станция «Моей
@@ -1021,11 +1036,10 @@ private struct PromoPairPlacement {
                 offset: CGSize(width: origin.x * Layout.stationScale, height: origin.y * Layout.stationScale),
                 anchor: .center
             )
-        case .movie:
+        case .movie, .book:
+            // Книга без блока страниц (`card / book`): кромка обложки — кромка карточки,
+            // пара встаёт так же, как у постера.
             self.init(alignment: .topTrailing, offset: CGSize(width: -8, height: -PlusMetrics.circleButton / 2), anchor: .topTrailing)
-        case .book:
-            let inset = Layout.book.geometry.pagesInset
-            self.init(alignment: .topTrailing, offset: CGSize(width: -8 - inset, height: inset - PlusMetrics.circleButton / 2), anchor: .topTrailing)
         case .reading, .watching:
             self.init(
                 alignment: .bottomLeading,

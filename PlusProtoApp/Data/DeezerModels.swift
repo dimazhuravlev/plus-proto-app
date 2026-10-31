@@ -43,6 +43,8 @@ struct DeezerPlaylistBrief: Decodable, Identifiable {
     let pictureBig: String?
     let pictureXl: String?
     let user: Owner?
+    /// Число треков — подпись строки таба «Музыка» выдачи («Плейлист · 53 трека»)
+    let nbTracks: Int?
 
     struct Owner: Decodable {
         let name: String?

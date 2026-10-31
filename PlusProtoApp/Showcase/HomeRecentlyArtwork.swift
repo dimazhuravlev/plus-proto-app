@@ -62,31 +62,13 @@ extension HomeQuickAccess {
             .frame(width: bookSlotWidth * HomeQuickAccessLayout.scale, height: HomeQuickAccessLayout.height)
     }
 
+    /// Книга — общая карточка книги (`BookFigure`, `card / book`) высотой ряда: слот
+    /// 54 × 80 макета, обложка заполняет его целиком.
     private func bookArtwork(_ source: ArtworkSource) -> some View {
-        // У миниатюры свой сгиб и подложка Figma: рендер большой книги масштабирует
-        // их иначе. Обложка остаётся живой, декоративные слои — оригиналы макета.
         let scale = HomeQuickAccessLayout.scale
-        let shape = UnevenRoundedRectangle(
-            topLeadingRadius: 0, bottomLeadingRadius: 0,
-            bottomTrailingRadius: 4.051 * scale, topTrailingRadius: 4.051 * scale
-        )
-        return ZStack(alignment: .topLeading) {
-            Image("quickAccessBookPages").resizable()
-                .frame(width: 53.671 * scale, height: 80 * scale)
-            Color.clear
-                .frame(width: 52.658 * scale, height: 78.987 * scale)
-                .overlay { ArtworkImage(source: source).scaledToFill() }
-                .clipShape(shape)
-                .overlay {
-                    BookCoverEdge(radius: 4.051 * scale)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.339)
-                }
-                .overlay(alignment: .leading) {
-                    Image("quickAccessBookHinge").resizable()
-                        .frame(width: 5 * scale, height: 79 * scale)
-                }
-                .padding(.top, 1.013 * scale)
+        let geometry = BookFigureGeometry(coverHeight: 80 * scale)
+        return BookFigure(geometry: geometry, coverWidth: bookSlotWidth * scale) {
+            ArtworkImage(source: source).scaledToFill()
         }
-        .frame(width: 54 * scale, height: 80 * scale, alignment: .topLeading)
     }
 }

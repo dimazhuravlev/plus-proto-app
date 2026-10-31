@@ -297,6 +297,7 @@ struct StillListRow<Trailing: View>: View {
             }
             .frame(width: StillRowLayout.stillWidth, height: StillRowLayout.stillHeight)
             .clipShape(shape)
+            .coverArtworkMissing(still == nil)
             .coverBorder(shape)
     }
 
@@ -596,30 +597,24 @@ struct SeriesDownloadsScreen: View {
             remaining: current?.remaining ?? episode.runtime,
             isFirst: isFirst
         ) {
-            guard let series = item?.route?.ref else { return }
+            // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+            guard !ActionSheetState.shared.isPresented, let series = item?.route?.ref else { return }
             SeriesPlayback.play(episode, of: series, details: nil, still: downloaded.still, actionBar: actionBar)
         } trailing: {
-            Menu {
-                deleteButton(episode)
-            } label: {
-                // Вид `PlusButton` plain M; круг 40 — под отрицательным отступом.
-                TrackMoreLabel()
-                    .pressScale(PressMotion.buttonScale)
-            }
-            .simultaneousGesture(TapGesture().onEnded { PlayerHaptics.tap() })
-            .padding(-TrackMoreLabel.hitInset)
-            .accessibilityLabel("Ещё")
+            ActionSheetMoreButton { actions(episode) }
         }
-        .contextMenu { deleteButton(episode) }
+        .actionSheetOnHold { actions(episode) }
     }
 
-    private func deleteButton(_ episode: SeriesEpisode) -> some View {
-        Button {
-            guard let item else { return }
-            collection.toggleEpisode(item, episode, still: nil)
-        } label: {
-            Label("Удалить из скачанного", systemImage: "trash")
-        }
+    /// Шторка серии — «Удалить из загрузок», как у скачанного фильма (`18487:220129`).
+    private func actions(_ episode: SeriesEpisode) -> ActionSheetContent? {
+        guard let item else { return nil }
+        let collection = collection
+        return ActionSheetContent(groups: [[
+            ActionSheetItem(icon: "iconDelete", title: "Удалить из загрузок") {
+                collection.toggleEpisode(item, episode, still: nil)
+            },
+        ]])
     }
 
     /// «Загрузить другие серии» — все серии сериала; экран разворачивается из кнопки.
@@ -698,6 +693,8 @@ struct CollectionDownloadCard: View {
     var body: some View {
         let time = CollectionDownloadAction.progress(item, history: actionBar.watchHistory)
         Button {
+            // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+            guard !ActionSheetState.shared.isPresented else { return }
             CollectionDownloadAction.open(item, actionBar: actionBar, navigation: navigation)
         } label: {
             PPMovieCard(
@@ -711,7 +708,7 @@ struct CollectionDownloadCard: View {
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .accessibilityLabel(item.title)
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: .downloads)
     }
 }
 
@@ -734,6 +731,7 @@ struct CollectionDownloadRow: View {
             remaining: time.remaining,
             isFirst: isFirst
         ) {
+            guard !ActionSheetState.shared.isPresented else { return }
             CollectionDownloadAction.open(item, actionBar: actionBar, navigation: navigation)
         } trailing: {
             if item.isSeries == true {
@@ -746,17 +744,9 @@ struct CollectionDownloadRow: View {
                     .foregroundStyle(Color.fillSubtitle)
                     .accessibilityHidden(true)
             } else {
-                Menu {
-                    CollectionItemMenu(item: item)
-                } label: {
-                    TrackMoreLabel()
-                        .pressScale(PressMotion.buttonScale)
-                }
-                .simultaneousGesture(TapGesture().onEnded { PlayerHaptics.tap() })
-                .padding(-TrackMoreLabel.hitInset)
-                .accessibilityLabel("Ещё")
+                CollectionItemMoreButton(item: item, shelf: .downloads)
             }
         }
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: .downloads)
     }
 }

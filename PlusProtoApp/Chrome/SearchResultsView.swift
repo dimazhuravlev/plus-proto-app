@@ -11,7 +11,8 @@ import SwiftUI
 /// остаётся рабочим вокруг выдачи, а бар с полем ввода рисуется поверх и не перекрыт.
 ///
 /// Пока запрос короче двух символов, на месте выдачи — нулевое состояние: карусель
-/// «Искали недавно» (`SearchRecents`, макет `2118:17378`).
+/// «Искали недавно» (`SearchRecents`, макет `2118:17378`), а пока истории нет —
+/// три карусели рекомендаций (`SearchDiscovery`).
 struct SearchResultsView: View {
     /// Показывать ли слой. Считает корень: признак шире клавиатуры — поиск остаётся
     /// на экране и пока пользователь возвращается из открытой карточки
@@ -22,6 +23,10 @@ struct SearchResultsView: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.stackZoomNamespace) private var zoom
+    /// Каталоги витрин — данные пустого нулевого состояния (`SearchDiscovery`).
+    @Environment(CinemaCatalog.self) private var cinema
+    @Environment(MusicHomeCatalog.self) private var music
+    @Environment(BooksHomeCatalog.self) private var books
     /// Вид выдачи — карусели или сетка; переключается в дебаг-меню профиля.
     @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = SearchResultsStyle.defaultStyle
 
@@ -29,6 +34,13 @@ struct SearchResultsView: View {
     /// открыт; на закрытии замирает: «Назад» стирает запрос тем же движением, что
     /// гасит слой, и на гаснущей выдаче на миг проявлялась бы лента «Искали недавно».
     @State private var showsResults = false
+    /// Нулевое состояние — пустое (`SearchDiscovery`): истории ещё нет или её удалили.
+    /// Своё состояние, а не прямое `!search.hasHistory`: удаление истории идёт без
+    /// анимации (сетка гаснет сама, `SearchRecentsMosaicView.clearHistory`), а смене
+    /// списков нужна своя — последовательная, как у «Искали недавно» ↔ выдача.
+    @State private var showsDiscovery = false
+    /// Лента «Искали недавно» гаснет перед удалением истории (`clearSearchHistoryFading`).
+    @State private var recentsOpacity: Double = 1
 
     #if DEBUG
     @MainActor private static var didDebugTapHit = false
@@ -87,8 +99,6 @@ struct SearchResultsView: View {
         let designCard: CGFloat
         /// Целых карточек на 402
         let whole: Int
-        /// Высота обложки книги на 402 — ширина её карточки идёт от неё по пропорциям обложки
-        let designBookCoverHeight: CGFloat
         /// Собственное поле секции по вертикали
         let sectionVertical: CGFloat
         /// Правое поле подписи у постеров и книг; у квадратов оно всегда 8
@@ -100,7 +110,6 @@ struct SearchResultsView: View {
         static let regular = CardMetrics(
             designCard: 109,
             whole: 3,
-            designBookCoverHeight: 156,
             sectionVertical: 2,
             posterLabelTrailing: 8
         )
@@ -110,7 +119,6 @@ struct SearchResultsView: View {
         static let small = CardMetrics(
             designCard: 86,
             whole: 4,
-            designBookCoverHeight: 128,
             sectionVertical: 0,
             posterLabelTrailing: 0
         )
@@ -123,10 +131,6 @@ struct SearchResultsView: View {
         /// Ширина колонки карусели на текущей ширине экрана
         @MainActor
         var card: CGFloat { fit.cardWidth }
-
-        /// Высота обложки книги — те же пропорции, что на 402
-        @MainActor
-        var bookCoverHeight: CGFloat { designBookCoverHeight * fit.scale }
 
         /// Карточек в скелетоне: видимые целиком и та, что торчит из-под края
         var skeletonCards: Int { whole + 1 }
@@ -190,27 +194,20 @@ struct SearchResultsView: View {
         /// яркого серого (правка пользователя 2026-10-03) — общим `PlusSkeleton`.
         static let coverAppear: Animation = PlusSkeleton.appear
 
-        // Карточка книги — макеты `2311:25096` и `2385:33949`: книга в небольшой проекции.
-        /// Высота обложки — по размеру карточек; ширина — по её пропорциям, обложка
-        /// не режется.
+        // Карточка книги — `card / book` ДС (`8423:59895`): высота — как у постера
+        // той же карусели, ширина — по пропорциям обложки.
         @MainActor
-        static var bookCoverHeight: CGFloat { size.bookCoverHeight }
+        static var bookCoverHeight: CGFloat { card / posterAspect }
         /// Сама книга — общий рисунок `BookFigure` (он же на экране книги и в «Книгах
-        /// писателя»); числа его эталона сняты на высоте обложки 128 и растут вместе с ней.
+        /// писателя»).
         @MainActor
         static var book: BookFigureGeometry { BookFigureGeometry(coverHeight: bookCoverHeight) }
-        /// Блок страниц над обложкой — в высоту книги.
-        @MainActor
-        static var bookPagesTop: CGFloat { book.pagesTop }
 
         /// «Искали недавно» — лента вперемешку: обложки разной высоты стоят на одном
         /// низе, а подписи — на одной линии (`cover` макета: 129 и квадрат внизу).
-        /// Бокс — по самой высокой обложке: книга с блоком страниц (130) чуть выше
-        /// постера (129).
+        /// Бокс — по самой высокой обложке: постер и книга одной высоты.
         @MainActor
-        static var recentsCoverBox: CGFloat {
-            max(card / posterAspect, bookCoverHeight + bookPagesTop)
-        }
+        static var recentsCoverBox: CGFloat { card / posterAspect }
     }
 
     private static let recentsTitle = "Искали недавно"
@@ -228,6 +225,11 @@ struct SearchResultsView: View {
                 .onChange(of: isShown) { _, shown in
                     // Погасший слой встретит следующее открытие уже нужной лентой.
                     if !shown { showsResults = search.isActive }
+                }
+                .onChange(of: search.hasHistory, initial: true) { _, hasHistory in
+                    // Новой транзакцией: стирание истории приходит с выключенными
+                    // анимациями, а переход списков должен сыграть.
+                    withTransaction(Transaction()) { showsDiscovery = !hasHistory }
                 }
                 .onChange(of: showsResults) { _, results in
                     // Нулевое состояние уже снято и гаснет замороженным, со списком
@@ -346,13 +348,107 @@ struct SearchResultsView: View {
 
     // MARK: Искали недавно
 
-    /// Нулевое состояние — в виде выдачи: у сетки и история сеткой (переключаются
+    /// Нулевое состояние: «Искали недавно», а пока истории нет — пустое, три карусели
+    /// рекомендаций. Смена — тем же последовательным переходом, что «Искали недавно» ↔
+    /// выдача: видно её только после «Удалить историю», первый найденный айтем
+    /// появляется, пока на экране выдача.
+    private var zeroState: some View {
+        ZStack {
+            if showsDiscovery {
+                discoveryList
+                    .transition(RecentsMotion.swap)
+            } else {
+                recentsZeroState
+                    .transition(RecentsMotion.swap)
+            }
+        }
+    }
+
+    /// «Искали недавно» — в виде выдачи: у сетки и история сеткой (переключаются
     /// вместе, одним пунктом дебаг-меню). Ветвление статическое, как у выдачи.
     @ViewBuilder
-    private var zeroState: some View {
+    private var recentsZeroState: some View {
         switch resultsStyle {
         case .carousels: carouselZeroState
         case .masonry: SearchRecentsMosaicView(open: open, zoom: zoom)
+        }
+    }
+
+    // MARK: Пустое нулевое состояние
+
+    /// Три карусели рекомендаций — у обоих видов выдачи одни (задача пользователя
+    /// 2026-10-30): у сетки нечего показывать сеткой, это не история. Карусели и карточки —
+    /// витринные, крупнее выдачи (правка пользователя того же дня): постеры главной
+    /// Кинопоиска, исполнители кругом `MusicCard` Medium, книги главной Книг. Без шеврона —
+    /// полного списка у рекомендаций нет.
+    private var discoveryList: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                discoveryMovies
+                discoveryArtists
+                discoveryBooks
+            }
+            // Первый заголовок — там же под статус-баром, что «Искали недавно»: у витринной
+            // карусели над ним ещё поле секции и поле шапки.
+            .padding(.top, Layout.resultsHeaderTop - ServiceCarouselLayout.sectionPad - EntitySectionLayout.headerTop)
+            // Как у обзора: лента уходит под поле и клавиатуру, низ выкручивается из-под них.
+            .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + Layout.barGap)
+        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.never)
+        .onScrollPhaseChange { _, phase in dismissKeyboardOnScroll(phase) }
+    }
+
+    @ViewBuilder
+    private var discoveryMovies: some View {
+        if !cinema.isLoaded {
+            CinemaRowSkeleton(title: SearchDiscovery.moviesTitle)
+        } else if let row = SearchDiscovery.movies(cinema) {
+            CinemaPosterRow(row: row, showsChevron: false, onOpen: open)
+                // Как у каруселей выдачи: скролл ленты уводит клавиатуру.
+                .onScrollPhaseChange { _, phase in dismissKeyboardOnScroll(phase) }
+        }
+    }
+
+    private var discoveryArtists: some View {
+        let width = MusicCarouselFit.medium.cardWidth
+        return ServiceCarousel(
+            title: SearchDiscovery.artistsTitle,
+            cardHeight: MusicCardLayout.height(.medium, width: width),
+            showsChevron: false
+        ) {
+            if music.isLoaded {
+                ForEach(SearchDiscovery.artists(music)) { item in
+                    Button {
+                        if let route = item.route { open(route) }
+                    } label: {
+                        MusicCard(
+                            size: .medium,
+                            width: width,
+                            shape: .circle,
+                            cover: item.cover,
+                            title: item.title,
+                            zoomRoute: item.route
+                        )
+                    }
+                    .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+                }
+            } else {
+                ForEach(0..<MusicCarouselFit.medium.whole + 1, id: \.self) { _ in
+                    MusicCardSkeleton(size: .medium, width: width, shape: .circle)
+                }
+            }
+        }
+        .onScrollPhaseChange { _, phase in dismissKeyboardOnScroll(phase) }
+    }
+
+    @ViewBuilder
+    private var discoveryBooks: some View {
+        if !books.isLoaded {
+            BooksRowSkeleton(title: SearchDiscovery.booksTitle)
+        } else if let row = SearchDiscovery.books(books) {
+            BooksRow(row: row, showsChevron: false, onOpen: open)
+                .onScrollPhaseChange { _, phase in dismissKeyboardOnScroll(phase) }
         }
     }
 
@@ -362,6 +458,7 @@ struct SearchResultsView: View {
     private var carouselZeroState: some View {
         ZStack {
             recentsSection
+                .opacity(recentsOpacity)
                 // Историю удалили целиком — ленты нет вовсе, заголовок вёл бы в пустоту.
                 .opacity(search.recents.isEmpty ? 0 : 1)
                 .opacity(search.isHistoryShown ? 0 : 1)
@@ -379,18 +476,31 @@ struct SearchResultsView: View {
     }
 
     /// Нулевое состояние поиска — одна карусель вперемешку, сразу под статус-баром,
-    /// как первая секция выдачи. Видна всегда: за найденным стоит стартовый набор.
+    /// как первая секция выдачи. Только при непустой истории — иначе пустое состояние.
     /// Заголовок с шевроном — переход в полный список истории (правка пользователя
     /// 2026-10-03), лента — не больше 12 карточек.
     private var recentsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: openHistory) {
-                header(Self.recentsTitle)
-                    .contentShape(.rect)
+            HStack(alignment: .top, spacing: 0) {
+                Button(action: openHistory) {
+                    header(Self.recentsTitle)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Self.recentsTitle)
+                .accessibilityHint("Вся история")
+
+                Spacer(minLength: 0)
+
+                // Крестик удаления истории — как у сетки (`SearchRecentsMosaicView`),
+                // на строке заголовка.
+                SearchHistoryClearButton {
+                    clearSearchHistoryFading($recentsOpacity, search: search)
+                }
+                .frame(height: Layout.headerLine)
+                .padding(.top, Layout.headerTop)
+                .padding(.trailing, Layout.side)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Self.recentsTitle)
-            .accessibilityHint("Вся история")
 
             let recents = search.recents
             // Под полным списком лента остаётся в дереве — источники зума у неё
@@ -674,6 +784,7 @@ struct SearchResultsView: View {
                 }
             }
             .clipShape(shape)
+            .coverArtworkMissing(hit.artwork == nil)
             .coverBorder(shape)
     }
 
@@ -742,18 +853,18 @@ struct SearchResultsView: View {
         switch kind {
         case .artist: 0
         case .track, .album, .playlist: Layout.labelTrailing
-        case .movie, .book, .director, .writer: Layout.size.posterLabelTrailing
+        case .movie, .book, .director, .writer, .actor: Layout.size.posterLabelTrailing
         }
     }
 
     /// Квадрат у музыки, постер 2:3 у кино и книг. Режиссёр — постером, как соседи
-    /// по карусели; писатель — во всю высоту книги с блоком страниц, чтобы верх и низ
-    /// фото стояли вровень с книгами (макет пользователя 2026-10-03).
+    /// по карусели; писатель — во всю высоту книги, чтобы верх и низ фото стояли
+    /// вровень с книгами (макет пользователя 2026-10-03).
     private func coverHeight(_ kind: SearchHit.Kind) -> CGFloat {
         switch kind {
         case .track, .album, .artist, .playlist: Layout.card
-        case .movie, .book, .director: Layout.card / Layout.posterAspect
-        case .writer: Layout.bookCoverHeight + Layout.bookPagesTop
+        case .movie, .book, .director, .actor: Layout.card / Layout.posterAspect
+        case .writer: Layout.bookCoverHeight
         }
     }
 
@@ -772,8 +883,8 @@ struct SearchResultsView: View {
         }
     }
 
-    /// Скелетон — того же габарита, что карточка: обложка той же высоты, подпись
-    /// той же фиксированной высоты, тот же хайрлайн по кромке обложки. У книг —
+    /// Скелетон — того же габарита, что карточка: обложка той же высоты, без кромки
+    /// (у скелетонов её нет нигде), подпись той же фиксированной высоты. У книг —
     /// та же книга в проекции, только без обложки.
     @ViewBuilder
     private func skeletonCard(_ kind: SearchState.Section.Kind) -> some View {
@@ -790,7 +901,6 @@ struct SearchResultsView: View {
             VStack(alignment: .leading, spacing: Layout.coverGap) {
                 shape
                     .fill(PlusSkeleton.fill)
-                    .coverBorder(shape)
                     .frame(width: Layout.card)
                     .frame(height: kind == .movies ? Layout.card / Layout.posterAspect : Layout.card)
                 skeletonLabel
@@ -814,23 +924,21 @@ struct SearchResultsView: View {
 
 // MARK: - Пустая выдача
 
-/// Пустая выдача — макет `2448:30715`: «Ничего такого / не нашлось», Headline S,
-/// белый 35 %, по центру. По вертикали — ровно посередине между статус-баром и верхом
-/// бара поиска (задача пользователя 2026-10-03): с клавиатурой бар над ней, в просмотре
-/// выдачи — внизу, и текст переезжает вместе с ним — кривой клавиатуры, потому что
-/// отступ считается от её состояния.
+/// Пустая выдача — макет `19211:18594` (2026-10-31): «Ничего такого / не нашлось»,
+/// Text L 18/24 Semibold, Fill/Seven, по центру. По вертикали — ровно посередине между
+/// статус-баром и верхом клавиатуры (правка пользователя 2026-10-31; без клавиатуры —
+/// до верха бара поиска внизу). Шапка выдачи (табы и чипсы) в расчёт не входит: текст
+/// стоит в одной точке и в пустом табе, и в пустой выдаче целиком. Отступ считается
+/// от состояния клавиатуры — текст едет вместе с ней, её кривой.
 struct SearchEmptyState: View {
     /// Показан ли текст. Вью всегда в дереве: появляется и гаснет она сама — скейлом
     /// от центра текста вместе с прозрачностью (правка пользователя 2026-10-05: «через
     /// opacity + scale 0.6»). Вставкой с переходом скейл шёл бы от центра всего кадра,
-    /// а текст стоит выше него на половину отступа бара — он съезжал бы к центру.
+    /// а текст стоит выше него на половину нижнего отступа — он съезжал бы к центру.
     let isShown: Bool
 
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Белый 35 % макета — разовый цвет, токена нет.
-    private static let color = Color.white.opacity(0.35)
 
     private enum Motion {
         /// Из чего встаёт текст — по правке пользователя; не ноль, текст не «из ниоткуда».
@@ -840,31 +948,39 @@ struct SearchEmptyState: View {
     }
 
     var body: some View {
+        // Место в раскладке — пустая рамка без минимального размера, текст — оверлеем.
+        // Отступ снизу входил в минимальную высоту слоя выдачи: с поднятой клавиатурой
+        // он не помещался, слой вырастал и уезжал вверх вместе с табами (жалоба
+        // пользователя 2026-10-31; замер — кадр выдачи 778 → 794, верх 62 → 46).
+        Color.clear
+            .overlay { text }
+            .allowsHitTesting(false)
+    }
+
+    private var text: some View {
         Text("Ничего такого\nне нашлось")
-            .plusHeadline(.s)
+            .plusText(.textL, .semibold)
             .multilineTextAlignment(.center)
-            .foregroundStyle(Self.color)
+            .foregroundStyle(Color.fillSeven)
             // С «уменьшением движения» — одна прозрачность.
             .scaleEffect(isShown || reduceMotion ? 1 : Motion.hiddenScale)
             .opacity(isShown ? 1 : 0)
             .animation(Motion.change, value: isShown)
             .accessibilityHidden(!isShown)
             // Кадр слоя — безопасная зона: сверху статус-бар уже учтён, снизу
-            // поджимаем до верха бара.
+            // поджимаем до верха клавиатуры.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.bottom, barInset)
-            .allowsHitTesting(false)
+            .padding(.bottom, bottomInset)
     }
 
-    /// Сколько бар поиска занимает над нижней безопасной зоной.
-    private var barInset: CGFloat {
+    /// Сколько снизу над нижней безопасной зоной занято: клавиатурой, а без неё — баром
+    /// поиска, опущенным на место таббара.
+    private var bottomInset: CGFloat {
         let safeBottom = PlusChromeMetrics.bottomSafeArea
-        let barTopFromScreenBottom = keyboard.isUp
-            // Бар над клавиатурой: её высота, зазор 12 и сам бар.
-            ? keyboard.overlap + PlusChromeMetrics.focusKeyboardGap + PlusMetrics.actionBarHeight
-            // Просмотр выдачи: бар опущен на место таббара — низом туда, где низы табов.
+        let occupied = keyboard.isUp
+            ? keyboard.overlap
             : PlusChromeMetrics.chromeBottom + PlusMetrics.actionBarHeight
-        return max(0, barTopFromScreenBottom - safeBottom)
+        return max(0, occupied - safeBottom)
     }
 }
 

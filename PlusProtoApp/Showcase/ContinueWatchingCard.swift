@@ -104,6 +104,8 @@ struct ContinueWatchingCard: View {
                     y: WatchingGeometry.logoOrigin.y * ShowcaseLayout.scale
                 )
                 .allowsHitTesting(false)
+                // Логотип лежит на кадре — уходит вместе с ним, пока открыт экран тайтла.
+                .showcaseCaption()
 
             PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Скрыть", haptic: .inAction, action: dismiss)
                 .offset(

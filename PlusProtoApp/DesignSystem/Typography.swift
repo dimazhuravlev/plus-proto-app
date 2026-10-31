@@ -122,6 +122,27 @@ extension View {
             tracking: 0
         ))
     }
+
+    /// Текст по ДС с волной появления (`HeadlineWave`) — та же раскладка, что у `plusText`;
+    /// `progress` анимирует вызывающий — линейно, за `wave.total(glyphs:)`.
+    func plusText(
+        _ size: PlusTextSize,
+        _ weight: PlusTextWeight,
+        wave: HeadlineWave,
+        progress: Double,
+        reduceMotion: Bool
+    ) -> some View {
+        plusText(size, weight)
+            .textRenderer(TextWaveRenderer(wave: wave, progress: progress, reduceMotion: reduceMotion))
+    }
+
+    /// Поле ввода стилем ДС — кегль и начертание `plusText`, высота строки натуральная:
+    /// `TextField` — UIKit-поле, и интерлиньяж макета ему не задать. Базовая линия та же,
+    /// что у плейсхолдера на `plusText`: обе строки центрируются в поле, а добавка
+    /// `plusText` до интерлиньяжа макета симметрична.
+    func plusTextField(_ size: PlusTextSize, _ weight: PlusTextWeight) -> some View {
+        font(.custom(size.family(weight), size: size.size))
+    }
 }
 
 // MARK: - ДС: акцидентные стили YS Display
@@ -370,36 +391,68 @@ private struct HeadlineWaveRenderer: TextRenderer, Animatable {
     }
 
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
-        let count = layout.reduce(0) { lines, line in
-            lines + line.reduce(0) { runs, run in runs + run.count }
-        }
-        let time = progress * wave.total(glyphs: count)
         let target = style.figmaBaseline
-        var index = 0
-        for line in layout {
+        drawWave(layout, in: &context, wave: wave, progress: progress, reduceMotion: reduceMotion) { line in
+            // Строку — на базовую линию Фигмы, как `HeadlineInkRenderer`.
             let bounds = line.typographicBounds
-            let baseline = bounds.origin.y - bounds.rect.minY
-            var lineContext = context
-            lineContext.translateBy(x: 0, y: target - baseline)
-            for run in line {
-                for slice in run {
-                    let start = wave.start(index)
-                    let raw: Double
-                    if reduceMotion {
-                        raw = progress
-                    } else if wave.glyph <= 0 {
-                        // Шаг: глиф есть, как только до него дошла волна.
-                        raw = progress > 0 && time >= start ? 1 : 0
-                    } else {
-                        raw = min(max((time - start) / wave.glyph, 0), 1)
-                    }
-                    index += 1
-                    guard raw > 0 else { continue }
-                    let eased = 1 - pow(1 - raw, 4)
-                    var glyph = lineContext
-                    glyph.opacity = eased
-                    glyph.draw(slice)
+            return target - (bounds.origin.y - bounds.rect.minY)
+        }
+    }
+}
+
+/// Волна появления для YS Text (`plusText`): строки стоят, где их положил iOS, — интерлиньяж
+/// у этих стилей не меньше натурального, глифы в рамку влезают.
+private struct TextWaveRenderer: TextRenderer, Animatable {
+    let wave: HeadlineWave
+    var progress: Double
+    let reduceMotion: Bool
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        drawWave(layout, in: &context, wave: wave, progress: progress, reduceMotion: reduceMotion) { _ in 0 }
+    }
+}
+
+/// Глифы строки по шкале волны: у каждого свой отрезок общей шкалы `progress`.
+/// `lineShift` — сдвиг строки по вертикали (у заголовков — на базовую линию Фигмы).
+private func drawWave(
+    _ layout: Text.Layout,
+    in context: inout GraphicsContext,
+    wave: HeadlineWave,
+    progress: Double,
+    reduceMotion: Bool,
+    lineShift: (Text.Layout.Line) -> CGFloat
+) {
+    let count = layout.reduce(0) { lines, line in
+        lines + line.reduce(0) { runs, run in runs + run.count }
+    }
+    let time = progress * wave.total(glyphs: count)
+    var index = 0
+    for line in layout {
+        var lineContext = context
+        lineContext.translateBy(x: 0, y: lineShift(line))
+        for run in line {
+            for slice in run {
+                let start = wave.start(index)
+                let raw: Double
+                if reduceMotion {
+                    raw = progress
+                } else if wave.glyph <= 0 {
+                    // Шаг: глиф есть, как только до него дошла волна.
+                    raw = progress > 0 && time >= start ? 1 : 0
+                } else {
+                    raw = min(max((time - start) / wave.glyph, 0), 1)
                 }
+                index += 1
+                guard raw > 0 else { continue }
+                let eased = 1 - pow(1 - raw, 4)
+                var glyph = lineContext
+                glyph.opacity = eased
+                glyph.draw(slice)
             }
         }
     }
@@ -423,17 +476,6 @@ extension View {
                 progress: progress,
                 reduceMotion: reduceMotion
             ))
-    }
-
-    /// Поле ввода по шкале UI kit — тот же кегль и начертание, что у `plusHeadline`,
-    /// но с натуральной высотой строки. `TextField` — UIKit-поле: рендерер с запасом
-    /// за рамкой (`HeadlineInkRenderer`) до него не доходит, и точная строка 100 %
-    /// срезала хвосты букв снизу («у» в «Преступление», жалоба пользователя 2026-10-03).
-    /// Базовая линия при этом та же, что у плейсхолдера на `plusHeadline`: обе строки
-    /// центрируются в поле, а смещение базовой линии от центра у них совпадает.
-    func plusHeadlineField(_ style: PlusHeadline) -> some View {
-        font(.custom(PlusFont.display, size: style.size))
-            .tracking(style.tracking)
     }
 
     /// Заголовок по шкале UI kit — Headline XXXL…S.

@@ -90,7 +90,7 @@ struct HomeShelves: View {
                 HStack(alignment: .top, spacing: 8) {
                     ForEach(items) { item in
                         Button { navigation.open(item.route) } label: {
-                            poster(item, width: width, rounded: rounded)
+                            poster(item, width: width, rounded: rounded, isBook: tab == .books)
                         }
                         .buttonStyle(.plain)
                     }
@@ -102,11 +102,9 @@ struct HomeShelves: View {
         .padding(.vertical, sectionPadding)
     }
 
-    private func poster(_ item: HomeShelfItem, width: CGFloat, rounded: Bool = false) -> some View {
+    private func poster(_ item: HomeShelfItem, width: CGFloat, rounded: Bool = false, isBook: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Color.clear.frame(width: width, height: width * 1.5)
-                .overlay { ArtworkImage(source: item.artwork).scaledToFill() }
-                .clipShape(RoundedRectangle(cornerRadius: rounded ? 12 : 0))
+            cover(item, width: width, rounded: rounded, isBook: isBook)
                 .overlay(alignment: .topLeading) {
                     if let rating = item.rating {
                         Text(rating).plusText(.textS, .semibold)
@@ -122,6 +120,21 @@ struct HomeShelves: View {
         .frame(width: width, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.title)
+    }
+
+    /// Книга — общая карточка книги (`card / book`) в кадре постера полки; остальное —
+    /// постер.
+    @ViewBuilder
+    private func cover(_ item: HomeShelfItem, width: CGFloat, rounded: Bool, isBook: Bool) -> some View {
+        if isBook {
+            BookFigure(geometry: BookFigureGeometry(coverHeight: width * 1.5), coverWidth: width) {
+                ArtworkImage(source: item.artwork).scaledToFill()
+            }
+        } else {
+            Color.clear.frame(width: width, height: width * 1.5)
+                .overlay { ArtworkImage(source: item.artwork).scaledToFill() }
+                .clipShape(RoundedRectangle(cornerRadius: rounded ? 12 : 0))
+        }
     }
 
     private var favorites: some View {

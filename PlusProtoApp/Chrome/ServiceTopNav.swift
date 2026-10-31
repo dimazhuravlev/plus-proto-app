@@ -126,23 +126,39 @@ struct ServiceTopNav: View {
     /// у остальных экранов её нет и раскладка прежняя.
     var trailingAccessory: AnyView? = nil
 
-    @Namespace private var pill
-
     var body: some View {
         HStack(spacing: 0) {
-            tabs
+            TopNavTabStrip(titles: filters, selection: $selection)
             if let trailingAccessory {
                 trailingAccessory
                     .padding(.leading, ServiceTopNavLayout.accessoryLeading)
                     .padding(.trailing, ServiceTopNavLayout.accessoryTrailing)
+                    // Над аватаром: подсказка под кнопкой «Моего» заходит на низ его кадра.
+                    .zIndex(1)
             }
             ProfileAvatarButton(avatar: avatar)
                 .padding(.trailing, ServiceTopNavLayout.side)
         }
         .modifier(TopNavRow(scrollOffset: scrollOffset, showsTopShade: showsTopShade, holdsBackdrop: holdsBackdrop))
     }
+}
 
-    // MARK: Табы
+// MARK: - Лента табов
+
+/// Табы-фильтры навигации — текстом Headline S, выбранный в стеклянной пилюле, которая
+/// переезжает с таба на таб. Общая у навигации витрин (`ServiceTopNav`) и табов первого
+/// уровня выдачи поиска (`SearchMosaicView`, макеты 2026-10-31).
+struct TopNavTabStrip: View {
+    let titles: [String]
+    @Binding var selection: Int
+    /// Затухание ленты справа: перед аватаром витрин — 32, без аватара (поиск) — поле экрана.
+    var trailingFade: CGFloat = ServiceTopNavLayout.avatarFade
+
+    @Namespace private var pill
+
+    var body: some View {
+        tabs
+    }
 
     /// Табы — лента до самого аватара: не влезли — листаются пальцем и уходят под маску
     /// перед ним (правка пользователя 2026-10-04: у Музыки четыре таба). Слева, когда
@@ -159,7 +175,7 @@ struct ServiceTopNav: View {
             .frame(maxWidth: .infinity)
             .overlay(alignment: .leading) {
                 HStack(spacing: 0) {
-                    ForEach(filters.indices, id: \.self) { index in
+                    ForEach(titles.indices, id: \.self) { index in
                         tab(index)
                             .onGeometryChange(for: CGRect.self) { proxy in
                                 proxy.frame(in: .named(Self.stripSpace))
@@ -170,7 +186,7 @@ struct ServiceTopNav: View {
                 }
                 .fixedSize()
                 .padding(.leading, ServiceTopNavLayout.side)
-                .padding(.trailing, ServiceTopNavLayout.avatarFade)
+                .padding(.trailing, trailingFade)
                 .coordinateSpace(name: Self.stripSpace)
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
                 .offset(x: stripOffset)
@@ -182,13 +198,15 @@ struct ServiceTopNav: View {
                         .frame(width: ServiceTopNavLayout.side)
                     Color.black
                     LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: ServiceTopNavLayout.avatarFade)
+                        .frame(width: trailingFade)
                 }
             }
             .contentShape(.rect)
             // Одновременно с кнопками табов: обычный жест на родителе кнопки перебивали —
             // палец, попавший на таб, ленту не тянул (жалоба пользователя 2026-10-04).
-            .simultaneousGesture(stripDrag)
+            // Влезли целиком — жеста нет: в ленте выдачи поиска он забирал бы палец
+            // у вертикального скролла.
+            .simultaneousGesture(stripDrag, including: minOffset < 0 ? .all : .subviews)
             .onChange(of: selection) { _, index in
                 reveal(index)
             }
@@ -243,8 +261,8 @@ struct ServiceTopNav: View {
         let left = frame.minX + stripOffset
         let right = frame.maxX + stripOffset
         var target = stripOffset
-        if right > visibleWidth - ServiceTopNavLayout.avatarFade {
-            target -= right - (visibleWidth - ServiceTopNavLayout.avatarFade)
+        if right > visibleWidth - trailingFade {
+            target -= right - (visibleWidth - trailingFade)
         } else if left < ServiceTopNavLayout.side {
             target += ServiceTopNavLayout.side - left
         }
@@ -263,11 +281,11 @@ struct ServiceTopNav: View {
             ZStack {
                 // Два слоя текста, а не смена заливки: градиент и белый друг в друга
                 // не анимируются, а прозрачность — да.
-                Text(filters[index])
+                Text(titles[index])
                     .plusHeadline(.s)
                     .foregroundStyle(Color.fillOne)
                     .opacity(isActive ? 0 : 1)
-                Text(filters[index])
+                Text(titles[index])
                     .plusHeadline(.s)
                     .foregroundStyle(ServiceTopNavLayout.activeText)
                     .opacity(isActive ? 1 : 0)
@@ -442,8 +460,12 @@ struct HomeTopNav: View {
     }
 }
 
-/// Стеклянная пилюля активного таба.
-private struct ActiveTabPill: View {
+/// Стеклянная пилюля активного таба. Она же — активный чипс второго уровня
+/// (`FilterChip`, макет `19151:18648`, правка пользователя 2026-10-31), но без светлой
+/// кромки сверху: в чипсах её нет.
+struct ActiveTabPill: View {
+    var showsHighlight = true
+
     var body: some View {
         let shape = Capsule(style: .continuous)
         Color.clear
@@ -470,11 +492,13 @@ private struct ActiveTabPill: View {
             )
             // Внутренняя светлая кромка сверху — `inset 0 1 2 white 20%`.
             .overlay {
-                shape
-                    .stroke(ServiceTopNavLayout.pillHighlight, lineWidth: 2)
-                    .offset(y: 1)
-                    .blur(radius: 1)
-                    .mask(shape)
+                if showsHighlight {
+                    shape
+                        .stroke(ServiceTopNavLayout.pillHighlight, lineWidth: 2)
+                        .offset(y: 1)
+                        .blur(radius: 1)
+                        .mask(shape)
+                }
             }
             .clipShape(shape)
     }

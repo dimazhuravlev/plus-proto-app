@@ -87,6 +87,8 @@ struct AlbumCard: View {
         .lineLimit(2)
         .frame(width: AlbumCardLayout.titlesWidth * ShowcaseLayout.scale, alignment: .leading)
         .showcaseSwappable()
+        // Уходят вместе с обложкой, пока открыт экран альбома.
+        .showcaseCaption()
         .offset(x: AlbumCardLayout.titlesOrigin.x * ShowcaseLayout.scale, y: AlbumCardLayout.titlesOrigin.y * ShowcaseLayout.scale)
     }
 

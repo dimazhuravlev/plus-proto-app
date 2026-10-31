@@ -115,7 +115,7 @@ enum ActionBarGeometry {
     static let miniPlayerCoverGap: CGFloat = 8
     static let miniPlayerActionsGap: CGFloat = 18
     /// Чип книги `2001:111014`: стекло со скруглением 8 и полями 4 вокруг обложки высотой 52;
-    /// обложка — книжной формы (скругление 4 только справа, `bookCoverShape`). Ширина — от
+    /// обложка — карточка книги (`BookFigure`, скругление 4 только справа). Ширина — от
     /// пропорций обложки, как у всех книг приложения (правка пользователя 2026-10-16):
     /// пока их нет — макетные 36.
     static let bookChipRadius: CGFloat = 8
@@ -152,6 +152,10 @@ enum ActionBarGeometry {
     /// Кнопка «Назад» в поиске — круг 60 слева от поля, зазор 8 (`2385:34087`).
     static let backButtonSize: CGFloat = 60
     static let backButtonGap: CGFloat = 8
+    /// Каретка поля 2 и строка за ней через 2 (`8414:4822`): «Поиск по всему» стоит
+    /// на 4 правее начала поля — после каретки, а набранный текст — с начала, каретка за ним.
+    static let caretWidth: CGFloat = 2
+    static let caretGap: CGFloat = 2
     /// На сколько плеер уезжает вправо, скрываясь за кромкой экрана
     static let trailingEscape: CGFloat = 120
 
@@ -914,12 +918,12 @@ private struct SearchPill: View {
             // Видимую подсказку рисует `focusedPlaceholder`, а VoiceOver читает её здесь.
             .accessibilityLabel("Поиск по всему")
             .textFieldStyle(.plain)
-            // Каретка — наш фиолетовый, тот же, что у активного чипса (правка
-            // пользователя 2026-10-05; была белой).
-            .tint(Color.accentPrimary)
+            // Каретка — Plus/Solid One, как в макете поля (`8414:4822`; правкой
+            // пользователя 2026-10-05 была фиолетовой, до того — белой).
+            .tint(Color.plusSolidOne)
             .foregroundStyle(Color.fillOne)
-            // Не `plusHeadline`: у поля точная строка срезала хвосты букв снизу.
-            .plusHeadlineField(.s)
+            // Text L・18/Semibold, как в макете (`8454:85`; до 2026-10-30 — Headline S).
+            .plusTextField(.textL, .semibold)
             .submitLabel(.search)
             // «Найти» — тем же мягким уходом клавиатуры, что скролл выдачи: системный
             // уход перегружен в начало, и бар, едущий своей кривой, за ним отставал
@@ -1018,23 +1022,25 @@ private struct SearchPill: View {
     /// с раскладкой бара, поэтому геометрию её анимация не перехватывает.
     private var focusedPlaceholder: some View {
         Text(Self.focusedPlaceholderText)
-            .plusHeadline(
-                .s,
+            .plusText(
+                .textL,
+                .semibold,
                 wave: SearchPlaceholderMotion.focusedWave,
                 progress: focusedPlaceholderWave,
                 reduceMotion: reduceMotion
             )
-            .foregroundStyle(Self.focusedPlaceholderColor)
+            // Fill/Seven, как бегущие фразы, — макет поля `8414:4822` (цвета поправлены
+            // пользователем 2026-10-31; прежде Fill/Eight).
+            .foregroundStyle(Color.fillSeven)
             .frame(height: SearchPlaceholderMotion.lineHeight, alignment: .leading)
+            // Строка стоит за кареткой, а не под ней.
+            .padding(.leading, ActionBarGeometry.caretWidth + ActionBarGeometry.caretGap)
             .frame(maxWidth: .infinity, alignment: .leading)
             .allowsHitTesting(false)
             // Для VoiceOver подсказка — у самого поля, вторая копия была бы шумом.
             .accessibilityHidden(true)
     }
 
-    /// Бледнее бегущих фраз (`fillSeven`, белый 30 %): те зовут в сервисы,
-    /// а эта только подписывает пустое поле (правка пользователя 2026-10-03).
-    private static let focusedPlaceholderColor = Color.white.opacity(0.2)
     fileprivate static let focusedPlaceholderText = "Поиск по всему"
 
     private var placeholderStack: some View {
@@ -1083,8 +1089,8 @@ private enum SearchPlaceholderMotion {
     /// Пауза между уходом и приходом. Глаз должен увидеть пустое поле — тогда смена
     /// читается как «одна фраза сменила другую», а не как проявление сквозь неё.
     static let swapGap: Duration = .milliseconds(100)
-    /// Высота строки плейсхолдера — тот же стиль, что у фраз (`plusHeadline(.s)`).
-    static var lineHeight: CGFloat { PlusHeadline.s.lineHeight }
+    /// Высота строки плейсхолдера — тот же стиль, что у фраз (Text L・18/Semibold).
+    static var lineHeight: CGFloat { PlusTextSize.textL.lineHeight }
     /// Волна «Поиск по всему» — на месте, когда бар уже стоит: к этому времени бегущая
     /// фраза погасла вместе с подъёмом, и нахлёста нет. Символы встают резко, без
     /// проявления прозрачностью и без сдвига — как печать (правки пользователя
@@ -1127,12 +1133,13 @@ private struct SearchPlaceholderTicker: View {
     /// изменился, и остаётся.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// По глаголу на сервис — и только они (правка пользователя 2026-10-03: «Найти»
-    /// и «Создать» убраны).
+    /// По фразе на сервис и «Найти» — текст пользователя 2026-10-31 (прежде «Хочу …»
+    /// макета `8414:4804`). Троеточие дописывает `phrase`.
     static let phrases = [
         "Послушать",
         "Посмотреть",
         "Почитать",
+        "Найти",
     ]
 
     /// С Люменом в поле — разговор с ним (правка пользователя 2026-10-16).
@@ -1181,7 +1188,8 @@ private struct SearchPlaceholderTicker: View {
     /// будто поле думает, — хотя ничего не происходит.
     private func phrase(_ text: String) -> some View {
         Text(text + "...")
-            .plusHeadline(.s)
+            // Text L・18/Semibold, Fill/Seven — макет поля (`8414:4804`).
+            .plusText(.textL, .semibold)
             .foregroundStyle(Color.fillSeven)
             // Длинная фраза в узком поле (чип справа) не переносится на вторую строку.
             .lineLimit(1)
@@ -1237,7 +1245,8 @@ private struct SearchBackButton: View {
             action()
         } label: {
             // Тот же глиф, что у шевронов, — без отзеркаливания он и есть «назад».
-            // Белый 100 % (правка пользователя 2026-10-05).
+            // Белый 100 %, как крест, — действие; приглушена только лупа (макет поля
+            // `8414:4822`, цвета поправлены пользователем 2026-10-31).
             Image("iconDropleft")
                 .renderingMode(.template)
                 .resizable()
@@ -1739,11 +1748,13 @@ private struct BookChip: View {
     var body: some View {
         let coverSize = ActionBarGeometry.bookCoverSize(aspect: aspect)
         let chipSize = ActionBarGeometry.bookChipSize(aspect: aspect)
-        // Кадр задаёт распорка, картинка его заполняет.
-        Color.clear
-            .frame(width: coverSize.width, height: coverSize.height)
-            .overlay { ArtworkImage(source: cover).scaledToFill() }
-            .bookCoverShape(radius: ActionBarGeometry.bookCoverRadius)
+        // Карточка книги (`card / book`) со скруглением чипа из его макета.
+        BookFigure(
+            geometry: BookFigureGeometry(coverHeight: coverSize.height).cornerRadius(ActionBarGeometry.bookCoverRadius),
+            coverWidth: coverSize.width
+        ) {
+            ArtworkImage(source: cover).scaledToFill()
+        }
             .frame(width: chipSize.width, height: chipSize.height)
             .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
             .rotationEffect(.degrees(ActionBarGeometry.chipRotation))

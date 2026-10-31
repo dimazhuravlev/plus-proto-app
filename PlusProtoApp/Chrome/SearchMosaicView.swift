@@ -50,10 +50,11 @@ enum MosaicLayout {
     ]
 }
 
-/// Движение сетки.
+/// Движение сетки и табов выдачи.
 enum MosaicMotion {
-    /// Смена фильтра — последовательно, как у полных списков (правки пользователя
-    /// 2026-10-03/04): старая сетка гаснет за 300 мс, затем новая проявляется за 300 мс.
+    /// Смена таба, чипса и выдачи — последовательно, как у полных списков (правки
+    /// пользователя 2026-10-03/04, 2026-10-31): старое гаснет за 300 мс, затем новое
+    /// проявляется за 300 мс.
     /// Одновременный кроссфейд положил бы две сетки друг на друга, а перелёт карточек
     /// на новые места пользователь у списков уже отклонил.
     static let fadeOutDuration: Duration = .milliseconds(300)
@@ -85,10 +86,17 @@ enum MosaicMotion {
 /// высота — по контенту: постер, квадрат, круг исполнителя, книга своих пропорций
 /// и подпись своей высоты (строк — как в каруселях: две на название, одна на подпись).
 ///
-/// Сверху закреплены чипсы — Всё, Музыка, Кино, Книги; переходов в полные списки
-/// разделов здесь нет. Лента идёт порциями (`MosaicLayout.chunk`): следующая
+/// Сверху закреплены табы первого уровня — Всё, Музыка, Кино, Книги (макеты
+/// `19151:18648`, `19184:22008`, `19191:22495`, задача пользователя 2026-10-31): «Всё» —
+/// сетка, таб раздела — его полная выдача строками (`SearchTabRows`) и над ней чипсы
+/// второго уровня. Лента «Всего» идёт порциями (`MosaicLayout.chunk`): следующая
 /// дописывается на подходе к низу, а когда карточки выдачи кончаются, сетка просит
 /// добор (`SearchState.extendMosaic`) и держит внизу скелетоны, пока он в пути.
+///
+/// Любая смена содержимого — таб, чипс, новый запрос — последовательно, как везде:
+/// старое гаснет, в паузе подменяется (с начала ленты), новое проявляется. Табы
+/// и чипсы подсвечиваются сразу по нажатию, содержимое догоняет. Первая выдача встаёт
+/// на место скелетона без смены.
 struct SearchMosaicView: View {
     /// Уход в сущность — тот же, что из каруселей: отметка ухода, клавиатура вниз.
     let open: (EntityRoute) -> Void
@@ -98,105 +106,148 @@ struct SearchMosaicView: View {
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(ActionBarState.self) private var actionBar
 
-    /// Выдача на экране — снимок `search.mosaicHits`. Новый запрос сменяет его не сразу,
-    /// а последовательно, как фильтр: старая сетка гаснет, новая проявляется (правка
-    /// пользователя 2026-10-05: «при обновлении выдачи плавнее» — прежде карточки
-    /// перепрыгивали на новые места в один кадр). Добор того же запроса дописывается
-    /// в снимок сразу — карточки встают в конец; первая выдача сменяет скелетон на месте.
+    /// Сетка на экране — снимок `search.mosaicHits`. Новый запрос сменяет его не сразу,
+    /// а последовательно (правка пользователя 2026-10-05: «при обновлении выдачи плавнее» —
+    /// прежде карточки перепрыгивали на новые места в один кадр). Добор того же запроса
+    /// дописывается в снимок сразу — карточки встают в конец; первая выдача сменяет
+    /// скелетон на месте.
     @State private var displayedHits: [SearchHit] = []
     /// Текст показанной выдачи; `nil` — первой ещё нет, на экране скелетон.
     @State private var displayedText: String?
-    @State private var resultsSwap: Task<Void, Never>?
-    /// Подменённая выдача — с начала ленты; счётчик, а не флаг: каждая подмена своя.
+    /// Таб показанного содержимого — догоняет выбранный (`search.tab`), когда старое погасло.
+    @State private var shownTab: SearchTab = .all
+    /// Выдача раздела на экране; `nil` — первая ещё собирается, на экране скелетон строк.
+    @State private var displayedSection: SearchState.TabResults?
+    /// Чипс второго уровня показанного списка — догоняет выбранный (`search.subfilter`).
+    @State private var shownSubfilter: SearchSubfilter = .all
+    @State private var contentOpacity: Double = 1
+    /// Ряд чипсов второго уровня гаснет вместе со списком, когда меняется сам: смена
+    /// таба, новая выдача раздела с другими чипсами. На смене чипса он стоит.
+    @State private var chipsOpacity: Double = 1
+    /// Смена в пути и куда она ведёт — до подмены. Повторный запрос той же смены
+    /// её не перезапускает: подмена возьмёт то, что успело приехать.
+    @State private var swap: Task<Void, Never>?
+    @State private var swapTarget: ContentSwap?
+    /// Подменённое содержимое — с начала ленты; счётчик, а не флаг: каждая подмена своя.
     @State private var scrollResets = 0
-
-    /// Выбранный фильтр — им подсвечен чипс, сразу по нажатию.
-    @State private var filter: MosaicFilter = .all
-    /// Фильтр показанной сетки — догоняет выбранный, когда старая сетка погасла.
-    @State private var shownFilter: MosaicFilter = .all
-    @State private var gridOpacity: Double = 1
-    @State private var filterSwap: Task<Void, Never>?
-    /// Сколько карточек показано: растёт порциями.
+    /// Сколько карточек сетки показано: растёт порциями.
     @State private var revealed = MosaicLayout.chunk
     /// До низа ленты меньше `prefetchDistance`.
     @State private var isNearEnd = false
-    /// Сколько проскроллено — от него проявляется подложка чипсов.
+    /// Сколько проскроллено — от него проявляется подложка шапки.
     @State private var scrolled: CGFloat = 0
 
     private static let topAnchor = "mosaic-top"
 
+    private static var instant: Transaction {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        return transaction
+    }
+
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                // Стопка без зазоров: якорь и лента в стопке скролла по умолчанию
-                // разделены 8 pt — над чипсами стояла лишняя полоса, и на старте
-                // скролла ряд сперва съезжал на неё, а потом закреплялся (правка
-                // пользователя 2026-10-05).
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: 0).id(Self.topAnchor)
-                    // Чипсы закреплены заголовком секции — как у полной выдачи музыки.
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        Section {
-                            grid
-                                .opacity(gridOpacity)
-                                .padding(.horizontal, MosaicLayout.side)
-                                .padding(.top, MosaicLayout.gridTop)
-                        } header: {
-                            chips
+        ZStack {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    // Стопка без зазоров: якорь и лента в стопке скролла по умолчанию
+                    // разделены 8 pt — над шапкой стояла лишняя полоса, и на старте
+                    // скролла ряд сперва съезжал на неё, а потом закреплялся (правка
+                    // пользователя 2026-10-05).
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: 0).id(Self.topAnchor)
+                        // Табы и чипсы закреплены заголовком секции — как у полной выдачи.
+                        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                            Section {
+                                content
+                                    .opacity(contentOpacity)
+                            } header: {
+                                header
+                            }
                         }
                     }
+                    // Как у каруселей: лента уходит под поле и клавиатуру, последний ряд
+                    // выкручивается из-под них.
+                    .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + MosaicLayout.barGap)
                 }
-                // Как у каруселей: сетка уходит под поле и клавиатуру, последний ряд
-                // выкручивается из-под них.
-                .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + MosaicLayout.barGap)
+                .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.never)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top
+                } action: { _, offset in
+                    scrolled = offset
+                }
+
+                .onScrollGeometryChange(for: MosaicTail.self) { geometry in
+                    MosaicTail(
+                        contentHeight: geometry.contentSize.height.rounded(),
+                        isNear: geometry.contentSize.height - geometry.visibleRect.maxY < MosaicLayout.prefetchDistance
+                    )
+                } action: { _, tail in
+                    isNearEnd = tail.isNear
+                    requestMore()
+                }
+                .modifier(DismissKeyboardOnScroll())
+                .onChange(of: contentKey, initial: true) { old, new in
+                    // Первый вызов — на появлении (старое значение равно новому).
+                    reconcile(isAppearing: old == new)
+                }
+                // Содержимое погашено сменой — к началу: новое начинается сверху. Скролл —
+                // до подмены (`scrollToTopBeforeSwap`), а не после.
+                .onChange(of: scrollResets) {
+                    proxy.scrollTo(Self.topAnchor, anchor: .top)
+                }
+                // Добор приехал, пока низ на виду, — сразу следующая порция.
+                .onChange(of: items.count) { requestMore() }
+                #if DEBUG
+                // `-debugSearchTab music|movies|books` — таб раздела, когда выдача пришла;
+                // `-debugSearchFilter <n>` — n-й чипс второго уровня (0 — «Всё»), когда
+                // пришла выдача раздела: тапнуть из шелла нечем.
+                .task(id: search.shownText) {
+                    guard let raw = UserDefaults.standard.string(forKey: "debugSearchTab"),
+                          search.shownText != nil else { return }
+                    let tab: SearchTab? = switch raw {
+                    case "music": .music
+                    case "movies": .movies
+                    case "books": .books
+                    default: nil
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled, let tab else { return }
+                    search.selectTab(tab)
+                }
+                .task(id: search.tabResults?.text) {
+                    let index = UserDefaults.standard.integer(forKey: "debugSearchFilter")
+                    guard index > 0, let options = search.tabResults?.options else { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled, options.indices.contains(index) else { return }
+                    search.subfilter = options[index]
+                }
+                #endif
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.never)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top
-            } action: { _, offset in
-                scrolled = offset
-            }
-            .onScrollGeometryChange(for: MosaicTail.self) { geometry in
-                MosaicTail(
-                    contentHeight: geometry.contentSize.height.rounded(),
-                    isNear: geometry.contentSize.height - geometry.visibleRect.maxY < MosaicLayout.prefetchDistance
-                )
-            } action: { _, tail in
-                isNearEnd = tail.isNear
-                requestMore()
-            }
-            .modifier(DismissKeyboardOnScroll())
-            .onChange(of: MosaicResultsKey(text: search.shownText, count: search.mosaicHits.count), initial: true) { old, new in
-                // Первый вызов — на появлении (старое значение равно новому).
-                syncResults(isAppearing: old == new)
-            }
-            // Сетка погашена сменой — к началу: новая начинается сверху. Скролл — до
-            // подмены карточек (`scrollToTopBeforeSwap`), а не после.
-            .onChange(of: scrollResets) {
-                proxy.scrollTo(Self.topAnchor, anchor: .top)
-            }
-            .onChange(of: filter) { _, selected in swapGrid(to: selected) }
-            // Добор приехал, пока низ на виду, — сразу следующая порция.
-            .onChange(of: items.count) { requestMore() }
-            #if DEBUG
-            // `-debugSearchFilter <n>` — n-й чипс сетки (0 — «Всё»), когда выдача пришла:
-            // тапнуть по чипсу из шелла нечем. Тот же флаг, что у полной выдачи музыки.
-            .task(id: search.shownText) {
-                let index = UserDefaults.standard.integer(forKey: "debugSearchFilter")
-                guard index > 0, search.shownText != nil else { return }
-                try? await Task.sleep(for: .milliseconds(500))
-                let options = chipOptions
-                guard !Task.isCancelled, options.indices.contains(index) else { return }
-                filter = options[index]
-            }
-            #endif
+            // В табе или под чипсом ничего — тот же текст и в той же точке, что у пустой
+            // выдачи целиком (макеты `19151:18721`, `19211:18594`).
+            SearchEmptyState(isShown: isSectionEmpty)
+                // Текст — часть содержимого таба: гаснет и проявляется с ним на сменах.
+                .opacity(contentOpacity)
         }
     }
 
-    /// Карточки под показанным фильтром — в порядке смешанной выдачи.
+    // MARK: Содержимое
+
+    @ViewBuilder
+    private var content: some View {
+        if let kind = shownTab.kind {
+            SearchTabRows(kind: kind, results: displayedSection, filter: shownSubfilter, open: open, zoom: zoom)
+        } else {
+            grid
+                .padding(.horizontal, MosaicLayout.side)
+                .padding(.top, MosaicLayout.gridTop)
+        }
+    }
+
+    /// Карточки сетки — в порядке смешанной выдачи.
     private var items: [SearchHit] {
-        displayedHits.filter(shownFilter.matches)
+        displayedHits
     }
 
     private var grid: some View {
@@ -227,7 +278,7 @@ struct SearchMosaicView: View {
                         play: { track in
                             // Включённый трек — тот же выбор из выдачи, что переход.
                             search.remember(track)
-                            playMosaicTrack(track, queue: items, actionBar: actionBar)
+                            playSearchTrack(track, queue: items, actionBar: actionBar)
                         }
                     )
                     .transition(.opacity)
@@ -242,46 +293,267 @@ struct SearchMosaicView: View {
         }
     }
 
-    /// Чипсы — общий ряд (`FilterChipsRow`): хаптик таббара, капсула меняется на месте.
-    /// Подложка — прогрессивный блюр, проявляется, когда сетка уходит под ряд.
-    private var chips: some View {
-        FilterChipsRow(options: chipOptions, selection: $filter, title: \.title)
-            .modifier(DismissKeyboardOnScroll())
-            // Пустая выдача — только текст «ничего не нашлось», чипсов без карточек нет.
-            .opacity(isShowingEmpty ? 0 : 1)
-            .allowsHitTesting(!isShowingEmpty)
-            .background(alignment: .top) {
-                PinnedChipsBackdrop()
-                    .opacity(NavBarRamp.progress(scrolled, start: 0, length: MosaicLayout.backdropRamp))
+    // MARK: Шапка
+
+    /// Табы первого уровня и, у раздела, чипсы второго. Подложка — прогрессивный блюр
+    /// на оба ряда, проявляется, когда лента уходит под них.
+    private var header: some View {
+        VStack(spacing: 0) {
+            tabsRow
+            if showsChips {
+                subfilterChips
+                    .opacity(chipsOpacity)
             }
-            // Оттяг — как у навигации витрин: ряд едет за лентой вчетверо медленнее.
-            // Заголовок секции при оттяге едет вместе с лентой — сдвиг возвращает разницу.
-            .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
+        }
+        // Пустая выдача всех табов — только текст «ничего не нашлось», табов нет
+        // (макет `19192:42623`). Шапка гаснет вместе со старым содержимым, пока на его
+        // месте встаёт текст пустой выдачи.
+        .opacity(isSearchEmpty ? 0 : 1)
+        .animation(MosaicMotion.fadeOut, value: isSearchEmpty)
+        .allowsHitTesting(!isSearchEmpty)
+        .background(alignment: .top) {
+            PinnedChipsBackdrop(rows: headerHeight)
+                .opacity(NavBarRamp.progress(scrolled, start: 0, length: MosaicLayout.backdropRamp))
+        }
+        // Оттяг — как у навигации витрин: шапка едет за лентой вчетверо медленнее.
+        // Заголовок секции при оттяге едет вместе с лентой — сдвиг возвращает разницу.
+        .offset(y: ServiceTopNavMotion.pullShift(for: scrolled) - max(0, -scrolled))
     }
 
-    /// На экране пустая выдача — по снимку, а не по поиску: пока старая сетка гаснет,
-    /// её чипсы ещё стоят.
-    private var isShowingEmpty: Bool {
-        displayedText != nil && displayedHits.isEmpty
+    private var headerHeight: CGFloat {
+        ServiceTopNavLayout.rowHeight + (showsChips ? FilterChipsLayout.rowHeight : 0)
     }
 
-    /// Чипсы — только разделы, в которых что-то нашлось: пустой фильтр показал бы пустую
-    /// сетку. Пока первая выдача в пути — все четыре: пустые разделы ещё неизвестны.
-    private var chipOptions: [MosaicFilter] {
-        guard displayedText != nil else { return MosaicFilter.allCases }
-        return MosaicFilter.allCases.filter { $0 == .all || displayedHits.contains(where: $0.matches) }
+    /// Чипсы второго уровня — у раздела, в котором хоть что-то нашлось (правило
+    /// пользователя 2026-10-31); пока выдача раздела собирается — тоже: пустые разделы
+    /// публикуются сразу, без сборки (`SearchState.startTab`).
+    private var showsChips: Bool {
+        shownTab != .all && displayedSection?.isEmpty != true
     }
 
-    /// Лента у низа: следующая порция, а когда показано всё — добор. Пока выдача
-    /// сменяется, не трогаем: снимок ещё прежний, а добор просился бы для нового текста.
+    /// Табы — лента навигации витрин (`TopNavTabStrip`): Headline S, пилюля переезжает
+    /// на выбранный сразу, содержимое догоняет. Аватара нет — лента до поля экрана.
+    /// Все четыре всегда, и пустые: в пустом табе — «Ничего такого не нашлось» (правило
+    /// пользователя 2026-10-31).
+    private var tabsRow: some View {
+        let tabs = SearchTab.allCases
+        // Выбранный читается здесь, а не в замыкании привязки: ручной `Binding`
+        // зависимость не регистрирует.
+        let selected = tabs.firstIndex(of: search.tab) ?? 0
+        return TopNavTabStrip(
+            titles: tabs.map(\.title),
+            selection: Binding(
+                get: { selected },
+                set: { index in
+                    guard tabs.indices.contains(index) else { return }
+                    search.selectTab(tabs[index])
+                }
+            ),
+            trailingFade: ServiceTopNavLayout.side
+        )
+        .frame(height: ServiceTopNavLayout.rowHeight)
+    }
+
+    /// Чипсы второго уровня — общий ряд (`FilterChipsRow`): все чипсы раздела, и пустые.
+    private var subfilterChips: some View {
+        let options = subfilterOptions
+        let selected = search.subfilter
+        return FilterChipsRow(
+            options: options,
+            selection: Binding(get: { selected }, set: { search.subfilter = $0 }),
+            title: \.title
+        )
+        .modifier(DismissKeyboardOnScroll())
+        // Другой таб — другой ряд: лента чипсов с начала.
+        .id(shownTab)
+    }
+
+    private var subfilterOptions: [SearchSubfilter] {
+        guard let kind = shownTab.kind else { return [] }
+        return displayedSection?.options ?? SearchSubfilter.options(for: kind)
+    }
+
+    /// Выдача пуста целиком — по поиску, а не по снимку: текст пустой выдачи
+    /// (`SearchResultsView`) встаёт сразу, и шапка уходит вместе с ним.
+    private var isSearchEmpty: Bool {
+        search.isMosaicEmpty
+    }
+
+    /// Выдача раздела пришла, а под показанным чипсом в ней ничего. Пустая выдача целиком —
+    /// не здесь: её текст стоит выше, по центру всего экрана (`SearchResultsView`).
+    private var isSectionEmpty: Bool {
+        guard shownTab != .all, !isSearchEmpty, let section = displayedSection else { return false }
+        if shownSubfilter == .all, section.wizard != nil { return false }
+        return section.rows(shownSubfilter).isEmpty
+    }
+
+    // MARK: Смены
+
+    /// Что сверять экрану с поиском: таб, текст и размер сетки (добор), выдача раздела, чипс.
+    private var contentKey: MosaicContentKey {
+        MosaicContentKey(
+            tab: search.tab,
+            text: search.shownText,
+            count: search.mosaicHits.count,
+            section: search.tabResults.map { "\($0.kind)|\($0.text)" },
+            subfilter: search.subfilter
+        )
+    }
+
+    /// Какая смена нужна, чтобы экран догнал поиск; `nil` — хватит правки на месте.
+    private var desiredSwap: ContentSwap? {
+        if search.tab != shownTab { return .tab(search.tab) }
+        if shownTab == .all {
+            if let text = search.shownText, let shown = displayedText, text != shown { return .text(text) }
+            return nil
+        }
+        if let results = search.tabResults, let shown = displayedSection, results.text != shown.text {
+            return .section(results.text)
+        }
+        if search.subfilter != shownSubfilter { return .subfilter(search.subfilter) }
+        return nil
+    }
+
+    /// Свести экран с поиском. Смена — по фазам: старое гаснет, в паузе подменяется
+    /// с начала ленты, новое проявляется; быстрые нажатия и набор прерывают незаконченную —
+    /// встанет последнее. Правки на месте — сразу: добор сетки, первая выдача на месте
+    /// скелетона (правка пользователя 2026-10-05: скелетон гас, и выдача проявлялась
+    /// следом), сетка под табом раздела (её не видно).
+    private func reconcile(isAppearing: Bool) {
+        guard let target = desiredSwap else {
+            // Вернулись к тому, что на экране, пока старое гасло, — проявить обратно.
+            if swapTarget != nil {
+                swap?.cancel()
+                swapTarget = nil
+                withAnimation(MosaicMotion.fadeIn) {
+                    contentOpacity = 1
+                    chipsOpacity = 1
+                }
+            }
+            applyInPlace()
+            return
+        }
+        guard target != swapTarget else { return }
+        swap?.cancel()
+        if isAppearing {
+            withTransaction(Self.instant) {
+                commit(target)
+                contentOpacity = 1
+                chipsOpacity = 1
+            }
+            swapTarget = nil
+            return
+        }
+        swapTarget = target
+        let fadesChips = fadesChips(for: target)
+        swap = Task { @MainActor in
+            withAnimation(MosaicMotion.fadeOut) {
+                contentOpacity = 0
+                if fadesChips { chipsOpacity = 0 }
+            }
+            try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
+            guard !Task.isCancelled else { return }
+            await scrollToTopBeforeSwap()
+            guard !Task.isCancelled else { return }
+            // Подмена — пока содержимого не видно, без анимации: карточки не перелетают
+            // и не проявляются по одной под прозрачностью.
+            withTransaction(Self.instant) { commit(target) }
+            swapTarget = nil
+            // Пауза — пара кадров: в одном апдейте с проявлением подмена уезжала под его
+            // анимацию (`MosaicMotion.swapCommit`).
+            try? await Task.sleep(for: MosaicMotion.swapCommit)
+            guard !Task.isCancelled else { return }
+            withAnimation(MosaicMotion.fadeIn) {
+                contentOpacity = 1
+                chipsOpacity = 1
+            }
+        }
+    }
+
+    /// Подменить невидимое содержимое на то, что сейчас в поиске. Подмена берёт и то,
+    /// что успело приехать, пока старое гасло.
+    private func commit(_ target: ContentSwap) {
+        switch target {
+        case .tab:
+            shownTab = search.tab
+            if shownTab == .all {
+                setGrid()
+            } else {
+                displayedSection = search.tabResults
+            }
+        case .text:
+            setGrid()
+        case .section:
+            // Новый запрос — список с «Всего» (`SearchState.subfilter`).
+            displayedSection = search.tabResults
+            search.subfilter = .all
+        case .subfilter:
+            break
+        }
+        guard shownTab != .all else { return }
+        if displayedSection == nil { displayedSection = search.tabResults }
+        shownSubfilter = validSubfilter()
+        // Сетка под табом раздела не видна — держим её свежей, чтобы «Всё» встало сразу.
+        if displayedText != search.shownText { setGrid() }
+    }
+
+    /// Правки на месте, без смены по фазам.
+    private func applyInPlace() {
+        if let text = search.shownText {
+            if text == displayedText {
+                // Добор того же запроса — карточки встают в конец сразу.
+                displayedHits = search.mosaicHits
+            } else {
+                // Первая выдача — на месте скелетона; или новый запрос под табом раздела,
+                // когда сетки не видно.
+                withTransaction(Self.instant) { setGrid() }
+            }
+        }
+        // Выдача раздела пришла на скелетон — строки встают на его место.
+        if shownTab != .all, displayedSection == nil, let results = search.tabResults {
+            withTransaction(Self.instant) {
+                displayedSection = results
+                shownSubfilter = validSubfilter()
+            }
+        }
+    }
+
+    private func setGrid() {
+        displayedText = search.shownText
+        displayedHits = search.mosaicHits
+        revealed = MosaicLayout.chunk
+    }
+
+    /// Выбранный чипс, если он есть в показанной выдаче раздела; нет (выбран над скелетоном,
+    /// а в выдаче пусто) — «Всё».
+    private func validSubfilter() -> SearchSubfilter {
+        let selected = search.subfilter
+        guard selected != .all, let section = displayedSection, !section.options.contains(selected) else { return selected }
+        search.subfilter = .all
+        return .all
+    }
+
+    /// Гаснет ли ряд чипсов со списком: на смене таба — всегда (ряд появляется, уходит
+    /// или становится другим), на новой выдаче раздела — если ряд появляется или уходит
+    /// или выбран не «Всё», на смене чипса — нет.
+    private func fadesChips(for target: ContentSwap) -> Bool {
+        switch target {
+        case .tab: true
+        case .text, .subfilter: false
+        case .section: shownSubfilter != .all || search.tabResults?.isEmpty != displayedSection?.isEmpty
+        }
+    }
+
+    /// Лента у низа: следующая порция, а когда показано всё — добор. Только у сетки и не
+    /// во время смены: снимок ещё прежний, а добор просился бы для нового текста.
     private func requestMore() {
-        guard isNearEnd, let text = displayedText, text == search.shownText else { return }
+        guard shownTab == .all, isNearEnd, let text = displayedText, text == search.shownText else { return }
         let total = items.count
         if revealed < total {
-            // Пока сетка погашена сменой (фильтр, новый запрос), порция встаёт без анимации:
-            // иначе её транзакция подхватила бы и перестановку только что подменённых
-            // карточек — они перелетали бы на свои места.
-            withAnimation(gridOpacity < 1 ? nil : MosaicMotion.reveal) {
+            // Пока сетка погашена сменой, порция встаёт без анимации: иначе её транзакция
+            // подхватила бы и перестановку только что подменённых карточек — они
+            // перелетали бы на свои места.
+            withAnimation(contentOpacity < 1 ? nil : MosaicMotion.reveal) {
                 revealed = min(total, revealed + MosaicLayout.chunk)
             }
         } else if search.canExtendMosaic {
@@ -289,104 +561,35 @@ struct SearchMosaicView: View {
         }
     }
 
-    /// Свести снимок с выдачей. Тот же текст — добор: дописать в конец сразу. Новый текст
-    /// на месте прежней выдачи — смена по фазам, как у фильтра: старая сетка гаснет,
-    /// в паузе подменяется — с начала, на «Всё», первой порцией, — новая проявляется.
-    /// Быстрый набор прерывает незаконченную смену: встанет последняя.
-    ///
-    /// Первая выдача — на месте скелетона или сетки, появившейся с готовой выдачей
-    /// (запрос из кэша), — встаёт сразу, без кроссфейда сетки (правка пользователя
-    /// 2026-10-05: скелетон гас, и выдача проявлялась следом). Заливки обложек того же
-    /// цвета, что скелетон, — проявляются только постеры и подписи (`contentAppear`).
-    private func syncResults(isAppearing: Bool) {
-        let text = search.shownText
-        guard let text else { return }
-        if text == displayedText {
-            displayedHits = search.mosaicHits
-            return
-        }
-        if isAppearing || displayedText == nil {
-            resultsSwap?.cancel()
-            filterSwap?.cancel()
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) {
-                displayedText = text
-                displayedHits = search.mosaicHits
-                filter = .all
-                shownFilter = .all
-                revealed = MosaicLayout.chunk
-            }
-            // Скелетон гас под сменой фильтра — сетку возвращаем, а не ставим щелчком.
-            if gridOpacity < 1 {
-                withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
-            }
-            return
-        }
-        resultsSwap?.cancel()
-        filterSwap?.cancel()
-        resultsSwap = Task { @MainActor in
-            withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
-            try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
-            guard !Task.isCancelled else { return }
-            await scrollToTopBeforeSwap()
-            guard !Task.isCancelled else { return }
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) {
-                displayedText = search.shownText
-                displayedHits = search.mosaicHits
-                filter = .all
-                shownFilter = .all
-                revealed = MosaicLayout.chunk
-            }
-            try? await Task.sleep(for: MosaicMotion.swapCommit)
-            guard !Task.isCancelled else { return }
-            withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
-        }
-    }
-
-    /// Старая сетка гаснет, в паузе подменяется, новая проявляется. Быстрые нажатия
-    /// подряд прерывают незаконченную смену — показан всегда последний выбранный.
-    private func swapGrid(to selected: MosaicFilter) {
-        filterSwap?.cancel()
-        guard selected != shownFilter else {
-            withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
-            return
-        }
-        filterSwap = Task { @MainActor in
-            withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
-            try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
-            guard !Task.isCancelled else { return }
-            await scrollToTopBeforeSwap()
-            guard !Task.isCancelled else { return }
-            // Подмена — пока сетки не видно, без анимации: карточки не перелетают
-            // и не проявляются по одной под прозрачностью.
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) {
-                shownFilter = selected
-                revealed = MosaicLayout.chunk
-            }
-            try? await Task.sleep(for: MosaicMotion.swapCommit)
-            guard !Task.isCancelled else { return }
-            withAnimation(MosaicMotion.fadeIn) { gridOpacity = 1 }
-        }
-    }
-
-    /// К началу ленты — до подмены, пока лента прежней длины. Лента, долистанная до конца
-    /// (полный раздел кончается, «Всё» — дописывается), держит скролл за низ: короткая
-    /// подмена вставала прижатой к низу экрана, и следом чипсы с сеткой прыгали наверх
-    /// через весь экран (правка пользователя 2026-10-05). Сетка в этот момент погашена,
-    /// а закреплённые чипсы в начале ленты стоят там же, где на глубине, — глазу нечего
-    /// заметить.
+    /// К началу ленты — до подмены, пока лента прежней длины. Лента, долистанная до конца,
+    /// держит скролл за низ: короткая подмена вставала прижатой к низу экрана, и следом
+    /// шапка с содержимым прыгали наверх через весь экран (правка пользователя
+    /// 2026-10-05). Содержимое в этот момент погашено, а закреплённая шапка в начале
+    /// ленты стоит там же, где на глубине, — глазу нечего заметить.
     private func scrollToTopBeforeSwap() async {
         guard scrolled > 0 else { return }
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) { scrollResets += 1 }
+        withTransaction(Self.instant) { scrollResets += 1 }
         try? await Task.sleep(for: MosaicMotion.swapCommit)
     }
+}
+
+/// Смена содержимого выдачи сеткой — куда она ведёт.
+private enum ContentSwap: Equatable {
+    case tab(SearchTab)
+    /// Новый запрос на «Всём»
+    case text(String)
+    /// Новая выдача раздела на его табе
+    case section(String)
+    case subfilter(SearchSubfilter)
+}
+
+/// Что сверять экрану выдачи сеткой с поиском (`SearchMosaicView.contentKey`).
+private struct MosaicContentKey: Equatable {
+    let tab: SearchTab
+    let text: String?
+    let count: Int
+    let section: String?
+    let subfilter: SearchSubfilter
 }
 
 // MARK: - Искали недавно
@@ -405,17 +608,14 @@ struct SearchRecentsMosaicView: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(SearchState.self) private var search
     @Environment(KeyboardObserver.self) private var keyboard
-    @State private var isConfirmingClear = false
     @State private var gridOpacity: Double = 1
 
     private enum Layout {
-        /// Заголовок — строка 28, 12 снизу, как у ленты каруселей; сверху 8, а не 16
-        /// (правка пользователя 2026-10-05). Шеврона нет, переходить некуда.
+        /// Заголовок — строка 28; сверху 8, а не 16 (правка пользователя 2026-10-05),
+        /// снизу 20 — на 8 больше, чем у ленты каруселей (правка пользователя 2026-10-31).
         static let headerTop: CGFloat = 8
         static var headerLine: CGFloat { EntitySectionLayout.headerLine }
-        static let headerBottom: CGFloat = 12
-        /// Кнопка — на 24 ниже сетки, как под полным списком истории.
-        static let buttonTop: CGFloat = 24
+        static let headerBottom: CGFloat = 20
     }
 
     var body: some View {
@@ -424,15 +624,23 @@ struct SearchRecentsMosaicView: View {
         let zoomSources = items.filter { $0.kind != .track }.firstPerRouteIDs
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Искали недавно")
-                    .plusHeadline(.s)
-                    .foregroundStyle(Color.fillOne)
-                    // Строку держит рамка, текст — по её центру: так же, как у заголовка
-                    // карусели, на той же базовой линии, что в Фигме.
-                    .frame(height: Layout.headerLine)
-                    .padding(.top, Layout.headerTop)
-                    .padding(.bottom, Layout.headerBottom)
-                    .padding(.horizontal, MosaicLayout.side)
+                // Справа — крестик удаления истории (правка пользователя 2026-10-30:
+                // вместо кнопки «Удалить историю поиска» под сеткой).
+                HStack(spacing: 0) {
+                    Text("Искали недавно")
+                        .plusHeadline(.s)
+                        .foregroundStyle(Color.fillOne)
+                    Spacer(minLength: 0)
+                    SearchHistoryClearButton {
+                        clearSearchHistoryFading($gridOpacity, search: search)
+                    }
+                }
+                // Строку держит рамка, текст — по её центру: так же, как у заголовка
+                // карусели, на той же базовой линии, что в Фигме.
+                .frame(height: Layout.headerLine)
+                .padding(.top, Layout.headerTop)
+                .padding(.bottom, Layout.headerBottom)
+                .padding(.horizontal, MosaicLayout.side)
 
                 MosaicGrid(
                     columns: MosaicLayout.columns,
@@ -445,20 +653,15 @@ struct SearchRecentsMosaicView: View {
                             hit: hit,
                             zoom: zoomSources.contains(hit.id) ? zoom : nil,
                             open: open,
-                            play: { track in playMosaicTrack(track, queue: items, actionBar: actionBar) }
+                            play: { track in playSearchTrack(track, queue: items, actionBar: actionBar) }
                         )
                     }
                 }
                 .padding(.horizontal, MosaicLayout.side)
-
-                if search.hasHistory {
-                    clearButton
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, Layout.buttonTop)
-                }
             }
             .opacity(gridOpacity)
-            // Историю удалили целиком — показывать нечего: ни заголовка, ни кнопки.
+            // Историю удалили целиком — показывать нечего, на месте ленты пустое
+            // нулевое состояние (`SearchDiscovery`).
             .opacity(items.isEmpty ? 0 : 1)
             // Как у выдачи: сетка уходит под поле и клавиатуру, низ выкручивается из-под них.
             .padding(.bottom, keyboard.overlap + PlusMetrics.actionBarHeight + MosaicLayout.barGap)
@@ -466,50 +669,63 @@ struct SearchRecentsMosaicView: View {
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.never)
         .modifier(DismissKeyboardOnScroll())
-        .alert("Точно удалить историю?", isPresented: $isConfirmingClear) {
-            Button("Да, удалить", role: .destructive) { clearHistory() }
+    }
+}
+
+/// Крестик в шапке «Искали недавно» — удалить историю целиком, с системным
+/// подтверждением (правка пользователя 2026-10-30: вместо кнопки «Удалить историю
+/// поиска» под лентой; работает так же). Plain M — глиф 20, как шеврон заголовка;
+/// круг 40 — под отрицательным отступом, раскладка шапки держит глиф.
+struct SearchHistoryClearButton: View {
+    /// Подтвердили — вызывающий гасит свою ленту и стирает историю
+    /// (`clearSearchHistoryFading`).
+    let onConfirm: () -> Void
+    @State private var isConfirming = false
+
+    var body: some View {
+        PlusButton(type: .plain, size: .m, accessibilityTitle: "Удалить историю поиска", haptic: .inAction) {
+            // Хаптика ✕ — medium.
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            isConfirming = true
+        } icon: {
+            // Fill/Five — тише заголовка (правка пользователя 2026-10-30).
+            Image("iconCross")
+                .renderingMode(.template)
+                .resizable()
+                .foregroundStyle(Color.fillFive)
+        }
+        .padding(-(PlusButtonSize.m.height - PlusButtonSize.m.iconBox) / 2)
+        .alert("Точно удалить историю?", isPresented: $isConfirming) {
+            Button("Да, удалить", role: .destructive, action: onConfirm)
             Button("Назад", role: .cancel) {}
         }
     }
-
-    /// Secondary, как «Удалить историю» под полным списком: удаление — побочное действие,
-    /// акцентная кнопка в проекте за главным.
-    private var clearButton: some View {
-        // Капсула по тексту (правка пользователя 2026-10-05: «сжимается по контенту»).
-        PlusButton("Удалить историю поиска", type: .secondary, size: .l) {
-            isConfirmingClear = true
-        }
-    }
-
-    /// История гаснет целиком — заголовок, сетка, кнопка — той же кривой, что сетка
-    /// на смене фильтра, и стирается, когда её уже не видно. Возвращать прозрачность
-    /// можно сразу: пустая история скрыта сама (`items.isEmpty`), а новое найденное
-    /// встанет уже видимым.
-    private func clearHistory() {
-        Task { @MainActor in
-            withAnimation(MosaicMotion.fadeOut) { gridOpacity = 0 }
-            try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
-            var instant = Transaction()
-            instant.disablesAnimations = true
-            withTransaction(instant) {
-                search.clearHistory()
-                gridOpacity = 1
-            }
-        }
-    }
 }
 
-/// Что сверять снимку сетки с выдачей: текст (новый запрос) и число карточек (добор).
-private struct MosaicResultsKey: Equatable {
-    let text: String?
-    let count: Int
-}
-
-/// Трек сетки — сразу в плеер бара, без перехода в альбом (правка пользователя
-/// 2026-10-05, макет `2479:25744`). Уже стоящий в плеере — на паузу и обратно,
-/// как кнопка мини-плеера; иначе запуск, как у строки полной выдачи (`startTrack`).
+/// История гаснет целиком — шапка и лента — той же кривой, что сетка на смене фильтра,
+/// и стирается, когда её уже не видно; на её месте проявляется пустое нулевое состояние
+/// (`SearchDiscovery`). Прозрачность возвращается сразу: пустая история скрыта сама,
+/// а новое найденное встанет уже видимым.
 @MainActor
-private func playMosaicTrack(_ track: SearchHit, queue: [SearchHit], actionBar: ActionBarState) {
+func clearSearchHistoryFading(_ opacity: Binding<Double>, search: SearchState) {
+    Task { @MainActor in
+        withAnimation(MosaicMotion.fadeOut) { opacity.wrappedValue = 0 }
+        try? await Task.sleep(for: MosaicMotion.fadeOutDuration)
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            search.clearHistory()
+            opacity.wrappedValue = 1
+        }
+    }
+}
+
+/// Трек выдачи — сразу в плеер бара, без перехода в альбом (правка пользователя
+/// 2026-10-05, макет `2479:25744`; строки таба «Музыка» — так же, тапом по всей строке,
+/// 2026-10-31). Уже стоящий в плеере — на паузу и обратно, как кнопка мини-плеера;
+/// иначе запуск, как у строки полной выдачи (`startTrack`).
+@MainActor
+func playSearchTrack(_ track: SearchHit, queue: [SearchHit], actionBar: ActionBarState) {
     if actionBar.isMiniPlayerVisible, actionBar.music?.id == track.id {
         PlayerHaptics.tap()
         actionBar.toggleMusicPlayback()
@@ -524,32 +740,6 @@ private func playMosaicTrack(_ track: SearchHit, queue: [SearchHit], actionBar: 
 private struct MosaicTail: Equatable {
     let contentHeight: CGFloat
     let isNear: Bool
-}
-
-// MARK: - Фильтры
-
-/// Фильтры сетки — `chips-row` макета `2479:24822`: всё вперемешку или один раздел.
-/// Фильтр отбирает карточки раздела из смешанной ленты, их порядок не меняется.
-enum MosaicFilter: Hashable, CaseIterable {
-    case all, music, movies, books
-
-    var title: String {
-        switch self {
-        case .all: "Всё"
-        case .music: "Музыка"
-        case .movies: "Кино"
-        case .books: "Книги"
-        }
-    }
-
-    func matches(_ hit: SearchHit) -> Bool {
-        switch self {
-        case .all: true
-        case .music: hit.kind.domain == .music
-        case .movies: hit.kind.domain == .movies
-        case .books: hit.kind.domain == .books
-        }
-    }
 }
 
 // MARK: - Раскладка
@@ -631,7 +821,7 @@ private struct MosaicCard: View {
     /// ведут в один экран, и источник у него один.
     let zoom: Namespace.ID?
     let open: (EntityRoute) -> Void
-    /// Тап по треку — сразу в плеер, без перехода в альбом (`playMosaicTrack`).
+    /// Тап по треку — сразу в плеер, без перехода в альбом (`playSearchTrack`).
     let play: (SearchHit) -> Void
 
     @Environment(ActionBarState.self) private var actionBar
@@ -645,7 +835,7 @@ private struct MosaicCard: View {
     /// сразу отличает человека от фильма и книги).
     private var isPerson: Bool {
         switch hit.kind {
-        case .artist, .director, .writer: true
+        case .artist, .director, .writer, .actor: true
         case .track, .album, .playlist, .movie, .book: false
         }
     }
@@ -657,6 +847,7 @@ private struct MosaicCard: View {
         return switch hit.kind {
         case .director: "Режиссёр"
         case .writer: "Писатель"
+        case .actor: "Актёр"
         case .track, .album, .artist, .playlist, .movie, .book: ""
         }
     }
@@ -715,6 +906,7 @@ private struct MosaicCard: View {
             PlusSkeleton.fill
                 .frame(width: MosaicLayout.card, height: coverHeight)
                 .overlay { artwork }
+                .coverArtworkMissing(hit.artwork == nil)
                 .clipShape(shape)
                 .coverBorder(shape)
                 .overlay(alignment: .bottomLeading) {
@@ -744,7 +936,7 @@ private struct MosaicCard: View {
     /// Квадрат у музыки и людей, постер 2:3 у кино.
     private var coverHeight: CGFloat {
         switch hit.kind {
-        case .track, .album, .artist, .playlist, .director, .writer: MosaicLayout.card
+        case .track, .album, .artist, .playlist, .director, .writer, .actor: MosaicLayout.card
         case .movie, .book: MosaicLayout.card / MosaicLayout.posterAspect
         }
     }
@@ -772,17 +964,19 @@ private struct MosaicCard: View {
 }
 
 /// Кнопка play на обложке трека — `button` макета `2479:25744`: вид `PlusButton`
-/// secondary M, слева снизу (`MosaicLayout.play…`). Сама не нажимается: нажимается вся карточка, кнопка — знак,
-/// что это трек. Играет этот трек — на ней пауза, сменой как в плеере.
-private struct MosaicPlayBadge: View {
+/// secondary, слева снизу (в сетке M с отступом 6, в строке таба «Музыка» S с отступом 4).
+/// Сама не нажимается: нажимается вся карточка, кнопка — знак, что это трек. Играет
+/// этот трек — на ней пауза, сменой как в плеере.
+struct MosaicPlayBadge: View {
     let isPlaying: Bool
+    var size: PlusButtonSize = MosaicLayout.playButton
 
     var body: some View {
-        PlusButtonLabel(type: .secondary, size: MosaicLayout.playButton) {
-            PlayPauseGlyph(isPlaying: isPlaying, box: MosaicLayout.playButton.iconBox)
+        PlusButtonLabel(type: .secondary, size: size) {
+            PlayPauseGlyph(isPlaying: isPlaying, box: size.iconBox)
         }
         .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        .accessibilityHidden(true)
     }
 }
 
@@ -793,8 +987,8 @@ enum MosaicSkeletonShape {
     case poster, square, round, book
 }
 
-/// Скелетон — того же габарита, что карточка своего вида: обложка той же формы
-/// и полоски на месте строк подписи.
+/// Скелетон — того же габарита, что карточка своего вида: обложка той же формы, без
+/// кромки (у скелетонов её нет нигде), и полоски на месте строк подписи.
 private struct MosaicSkeletonCard: View {
     let shape: MosaicSkeletonShape
 
@@ -818,13 +1012,11 @@ private struct MosaicSkeletonCard: View {
         case .round:
             Circle()
                 .fill(PlusSkeleton.fill)
-                .coverBorder(Circle())
                 .frame(width: MosaicLayout.card, height: MosaicLayout.card)
         case .poster, .square:
             let rect = RoundedRectangle(cornerRadius: MosaicLayout.coverRadius, style: .continuous)
             rect
                 .fill(PlusSkeleton.fill)
-                .coverBorder(rect)
                 .frame(
                     width: MosaicLayout.card,
                     height: shape == .poster ? MosaicLayout.card / MosaicLayout.posterAspect : MosaicLayout.card

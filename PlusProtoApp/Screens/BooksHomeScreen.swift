@@ -384,13 +384,18 @@ private struct BooksPromoSkeleton: View {
 
 // MARK: - Карусели тем
 
-private struct BooksRow: View {
+/// Карусель темы. Общая с пустым нулевым состоянием поиска (`SearchResultsView`):
+/// там без шеврона и со своим переходом.
+struct BooksRow: View {
     let row: BooksHomeCatalog.Row
+    var showsChevron = true
+    /// Свой переход вместо `navigation.open` — у поиска он сперва запоминает выдачу.
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     var body: some View {
-        ServiceCarousel(title: row.title, cardHeight: BooksCardLayout.cardHeight) {
+        ServiceCarousel(title: row.title, cardHeight: BooksCardLayout.cardHeight, showsChevron: showsChevron) {
             ForEach(row.books) { book in
-                BooksCard(book: book)
+                BooksCard(book: book, onOpen: onOpen)
             }
         }
     }
@@ -399,6 +404,7 @@ private struct BooksRow: View {
 /// Книга в проекции, под ней название (до двух строк) и автор.
 private struct BooksCard: View {
     let book: BooksHomeCatalog.Book
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
@@ -410,7 +416,9 @@ private struct BooksCard: View {
         let figure = BookFigure(geometry: geometry, coverWidth: coverWidth) {
             SkeletonArtwork(source: book.cover)
         }
-        Button { navigation.open(book.route) } label: {
+        Button {
+            if let onOpen { onOpen(book.route) } else { navigation.open(book.route) }
+        } label: {
             VStack(alignment: .leading, spacing: BooksCardLayout.captionGap) {
                 if let zoom {
                     figure.matchedTransitionSource(id: book.route, in: zoom)
@@ -429,6 +437,7 @@ private struct BooksCard: View {
                         .lineLimit(1)
                 }
                 .padding(.trailing, CinemaLayout.captionTrailing)
+                .zoomSourceCaption(zoom != nil ? book.route : nil)
             }
             .frame(width: width, alignment: .leading)
             .contentShape(.rect)
@@ -439,12 +448,20 @@ private struct BooksCard: View {
 
 /// Скелетон карусели темы — шапка-полоса и книги с полосами названия и автора.
 /// Ряд — оверлеем на распорке: своей ширины ленте он не предлагает.
-private struct BooksRowSkeleton: View {
+struct BooksRowSkeleton: View {
+    /// Название уже известно (пустое состояние поиска) — заголовок настоящий, без шеврона;
+    /// `nil` — полоса.
+    var title: String? = nil
+
     var body: some View {
         let geometry = BooksCardLayout.geometry
         let width = geometry.coverWidth(aspect: nil)
         VStack(spacing: 0) {
-            EntitySectionHeaderSkeleton(lineHeight: ServiceCarouselLayout.headerLine)
+            if let title {
+                EntitySectionHeader(title: title, showsChevron: false, lineHeight: ServiceCarouselLayout.headerLine)
+            } else {
+                EntitySectionHeaderSkeleton(lineHeight: ServiceCarouselLayout.headerLine)
+            }
             Color.clear
                 .frame(height: BooksCardLayout.cardHeight)
                 .overlay(alignment: .topLeading) {

@@ -17,7 +17,9 @@ final class MovieAvailability {
     private(set) var known: [Int: Bool] = [:]
 
     @ObservationIgnored private let fileURL: URL
-    @ObservationIgnored private var inFlight: Set<Int> = []
+    /// Запросы в пути — по id тайтла: второй заход за тем же тайтлом ждёт первый,
+    /// а не отвечает «не знаем» (табы выдачи поиска ждут ответа перед показом списка).
+    @ObservationIgnored private var inFlight: [Int: Task<Void, Never>] = [:]
 
     private static let platform = "Kinopoisk HD"
 
@@ -36,14 +38,33 @@ final class MovieAvailability {
         known[id] ?? false
     }
 
-    /// Узнать про тайтлы, которых ещё не знаем, — одним запросом.
+    /// Фильм точно нельзя смотреть: Кинопоиск ответил, и Kinopoisk HD среди площадок нет.
+    /// Не знаем (ключей нет, квота кончилась, не спрашивали) — можно: кнопки «Смотреть»
+    /// в демо не пропадают из-за квоты (решение пользователя 2026-10-31). Сериалы
+    /// смотреть можно всегда — ограничение только у фильмов (там же), это решает вызывающий.
+    func isKnownUnavailable(_ id: Int) -> Bool {
+        known[id] == false
+    }
+
+    /// Узнать про тайтлы, которых ещё не знаем, — одним запросом; те, о которых уже
+    /// спрашивают, — дождаться.
     func load(_ ids: [Int]) async {
-        let missing = Array(Set(ids).subtracting(known.keys).subtracting(inFlight))
-        guard !missing.isEmpty, APIKeysCheck.isKinopoiskConfigured else { return }
-        inFlight.formUnion(missing)
-        defer { inFlight.subtract(missing) }
-        guard let platforms = try? await KinopoiskService.shared.watchability(ids: missing) else { return }
-        for id in missing {
+        let unknown = Set(ids).subtracting(known.keys)
+        var waiting = Set(unknown.compactMap { inFlight[$0] })
+        let missing = unknown.filter { inFlight[$0] == nil }
+        if !missing.isEmpty, APIKeysCheck.isKinopoiskConfigured {
+            let ids = Array(missing)
+            let request = Task { await self.fetch(ids) }
+            for id in ids { inFlight[id] = request }
+            waiting.insert(request)
+        }
+        for request in waiting { await request.value }
+    }
+
+    private func fetch(_ ids: [Int]) async {
+        defer { for id in ids { inFlight[id] = nil } }
+        guard let platforms = try? await KinopoiskService.shared.watchability(ids: ids) else { return }
+        for id in ids {
             known[id] = platforms[id]?.contains(Self.platform) ?? false
         }
         save()

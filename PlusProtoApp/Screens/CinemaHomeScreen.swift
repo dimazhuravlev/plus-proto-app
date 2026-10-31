@@ -167,9 +167,13 @@ private struct CinemaHistoryRow: View {
     }
 }
 
-/// Подборка — постеры с названием.
-private struct CinemaPosterRow: View {
+/// Подборка — постеры с названием. Общая с пустым нулевым состоянием поиска
+/// (`SearchResultsView`): там без шеврона и со своим переходом.
+struct CinemaPosterRow: View {
     let row: CinemaCatalog.Row
+    var showsChevron = true
+    /// Свой переход вместо `navigation.open` — у поиска он сперва запоминает выдачу.
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     var body: some View {
         // Высота подписи — по всей подборке, а не по карточке: `LazyHStack` меряет ряд
@@ -181,10 +185,11 @@ private struct CinemaPosterRow: View {
         let captionHeight = CGFloat(lines) * CinemaLayout.captionLine
         ServiceCarousel(
             title: row.title,
-            cardHeight: CinemaLayout.posterHeight + CinemaLayout.captionGap + captionHeight
+            cardHeight: CinemaLayout.posterHeight + CinemaLayout.captionGap + captionHeight,
+            showsChevron: showsChevron
         ) {
             ForEach(row.titles) { title in
-                CinemaPosterCard(title: title, captionHeight: captionHeight)
+                CinemaPosterCard(title: title, captionHeight: captionHeight, onOpen: onOpen)
             }
         }
     }
@@ -196,12 +201,15 @@ private struct CinemaPosterRow: View {
 private struct CinemaPosterCard: View {
     let title: CinemaCatalog.Title
     let captionHeight: CGFloat
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
 
     var body: some View {
-        Button { navigation.open(title.route) } label: {
+        Button {
+            if let onOpen { onOpen(title.route) } else { navigation.open(title.route) }
+        } label: {
             VStack(alignment: .leading, spacing: CinemaLayout.captionGap) {
                 posterSource
 
@@ -212,6 +220,7 @@ private struct CinemaPosterCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(height: captionHeight, alignment: .top)
                     .padding(.trailing, CinemaLayout.captionTrailing)
+                    .zoomSourceCaption(zoom != nil ? title.route : nil)
             }
             .frame(width: CinemaLayout.posterWidth, alignment: .leading)
             .contentShape(.rect)
@@ -238,15 +247,24 @@ private struct CinemaPosterCard: View {
             }
             .frame(width: CinemaLayout.posterWidth, height: CinemaLayout.posterHeight)
             .clipShape(shape)
+            .coverArtworkMissing(title.poster == nil)
             .coverBorder(shape)
     }
 }
 
 /// Скелетон подборки — того же габарита: шапка-полоса и постеры с двумя строками.
-private struct CinemaRowSkeleton: View {
+struct CinemaRowSkeleton: View {
+    /// Название уже известно (пустое состояние поиска) — заголовок настоящий, без шеврона;
+    /// `nil` — полоса.
+    var title: String? = nil
+
     var body: some View {
         VStack(spacing: 0) {
-            EntitySectionHeaderSkeleton(lineHeight: CinemaLayout.headerLine)
+            if let title {
+                EntitySectionHeader(title: title, showsChevron: false, lineHeight: CinemaLayout.headerLine)
+            } else {
+                EntitySectionHeaderSkeleton(lineHeight: CinemaLayout.headerLine)
+            }
 
             // Ряд постеров шире экрана (3 × 148 + поля = 492), и раскладкой он ленту
             // раздувал: скелетон промо тянулся на всю эту ширину, мета уезжала вправо,

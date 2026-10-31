@@ -243,6 +243,9 @@ private struct CinemaPromoSlide: View {
             meta
                 .padding(.horizontal, CinemaPromoLayout.metaSide)
                 .padding(.bottom, CinemaPromoLayout.metaBottom)
+                // Логотип, описание и кнопки уходят вместе с обложкой, пока открыт
+                // экран тайтла, — только у текущей копии: источник зума — она.
+                .zoomSourceCaption(zoom != nil && isCurrent ? promo.route : nil)
         }
         .frame(height: CinemaPromoLayout.height)
         .contentShape(.rect)

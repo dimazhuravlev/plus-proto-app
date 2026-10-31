@@ -226,7 +226,7 @@ struct CollectionTracksScreen: View {
     private var trackList: some View {
         LazyVStack(spacing: 0) {
             ForEach(items) { item in
-                CollectionTrackRow(item: item, queue: queue, isFirst: false, isLast: false)
+                CollectionTrackRow(item: item, queue: queue, isFirst: false, isLast: false, shelf: shelf)
             }
         }
         // Строки съезжают плавно, когда отметку сняли в этом же списке.

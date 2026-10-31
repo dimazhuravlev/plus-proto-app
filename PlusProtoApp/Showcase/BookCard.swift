@@ -62,6 +62,8 @@ struct BookCard: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: BookCardLayout.captionWidth * ShowcaseLayout.scale, alignment: .trailing)
                     .showcaseSwappable()
+                    // Уходит вместе с книгой, пока открыт её экран.
+                    .showcaseCaption()
 
                 ShowcaseFeedbackPair()
             }

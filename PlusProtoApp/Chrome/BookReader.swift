@@ -517,15 +517,16 @@ struct BookReaderView: View {
         .contentShape(Rectangle())
     }
 
-    /// Кадр задаёт распорка, картинка его заполняет — идиома проекта: наоборот
-    /// `scaledToFill` отдал бы наверх размер картинки, а не обложки.
-    /// Форма — общая книжная (`bookCoverShape`): скруглены только правые углы, бордер
-    /// с трёх сторон (правка пользователя 2026-10-16).
+    /// Карточка книги (`card / book`) со скруглением навбара из его макета: правые углы,
+    /// корешок, бордер по контуру.
     private var cover: some View {
-        Color.clear
-            .frame(width: BookReaderLayout.coverSize.width, height: BookReaderLayout.coverSize.height)
-            .overlay { ArtworkImage(source: book.cover).scaledToFill() }
-            .bookCoverShape(radius: BookReaderLayout.coverCorner)
+        BookFigure(
+            geometry: BookFigureGeometry(coverHeight: BookReaderLayout.coverSize.height)
+                .cornerRadius(BookReaderLayout.coverCorner),
+            coverWidth: BookReaderLayout.coverSize.width
+        ) {
+            ArtworkImage(source: book.cover).scaledToFill()
+        }
     }
 
     /// Подписи прижаты к верху бокса обложки, а не центрированы по ней: автор может
