@@ -62,6 +62,8 @@ struct DeezerAlbumBrief: Decodable, Identifiable {
     let artist: DeezerArtistBrief?
     let recordType: String?
     let nbTracks: Int?
+    /// Жанр; у аудиокниг −1 (`AudiobookMatch`).
+    let genreId: Int?
     /// `/artist/{id}/albums` отдаёт дату и флаг explicit — экрану альбома нужны
     /// год в подписи карточки и бейдж. В `/search/album` этих полей нет, поля опциональны.
     let releaseDate: String?

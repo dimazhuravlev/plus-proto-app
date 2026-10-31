@@ -139,6 +139,7 @@ struct ShowcaseFeedView: View {
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
             ShowcaseTapDebug.fires += 1
+            NavTrace.log("debug showcase tap #\(ShowcaseTapDebug.fires)")
             let block = feed.blocks[tapIndex - 1]
             // Ровно то же, что делает настоящий тап (`open`), а не своя копия его
             // логики: копия разошлась с оригиналом, когда переход перестал запускать

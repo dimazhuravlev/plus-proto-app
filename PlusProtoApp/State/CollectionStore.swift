@@ -122,8 +122,8 @@ extension CollectionItem {
     }
 
     /// Аудиокнига выдачи поиска — своя запись, отдельно от книги (решение пользователя
-    /// 2026-10-31): вид «Книги», обложка — квадратный мок; своего экрана нет, поэтому
-    /// и маршрута нет.
+    /// 2026-10-31): вид «Книги», обложка квадратная, маршрут — экран альбома Deezer
+    /// с главами (у прежних моков маршрута нет).
     static func audiobook(_ hit: SearchHit) -> CollectionItem {
         CollectionItem(
             id: "book:\(hit.id)",
@@ -131,9 +131,14 @@ extension CollectionItem {
             title: hit.title,
             subtitle: hit.subtitle,
             artwork: hit.artwork,
-            route: nil,
+            route: hit.route,
             aspect: hit.artworkAspect
         )
+    }
+
+    /// Аудиокнига (`audiobook(_:)`): в каруселях книг — квадрат, а не книга (`AudiobookFigure`).
+    var isAudiobook: Bool {
+        kind == .book && id.hasPrefix("book:" + SearchHit.audiobookPrefix)
     }
 
     static func album(_ ref: EntityRef, isExplicit: Bool? = nil) -> CollectionItem {

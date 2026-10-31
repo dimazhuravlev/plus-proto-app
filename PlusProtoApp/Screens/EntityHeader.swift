@@ -33,6 +33,13 @@ enum EntityCoverLayout {
     /// Поля контента — 16, как у всего контента экранов сущностей.
     static let side: CGFloat = 16
 
+    /// Скролл, после которого обложка целиком ушла за верх экрана (зона кавера начинается
+    /// от физического верха): голографию обложки дальше не считаем (`CoverHolo`).
+    @MainActor
+    static func coverHiddenScroll(coverHeight: CGFloat) -> CGFloat {
+        coverTop + coverHeight
+    }
+
     /// Сколько шапка занимает в потоке: от верха экрана до названия.
     @MainActor
     static func zoneHeight(coverHeight: CGFloat) -> CGFloat {

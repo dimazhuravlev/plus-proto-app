@@ -39,6 +39,40 @@ enum LayerProbe {
         print("LAYER-END")
     }
 
+    /// `-debugGestureProbe <сек>` — через столько секунд после появления экрана сущности
+    /// печатает все распознаватели жестов окна (класс, на какой вью, включён ли, чей делегат)
+    /// и цепочку контроллеров с их `preferredTransition`: так видно, какой системный жест
+    /// закрывает экран зумом и выключен ли он, пока на экране поиск.
+    static func dumpGesturesIfRequested() {
+        let delay = UserDefaults.standard.double(forKey: "debugGestureProbe")
+        guard delay > 0 else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let window = keyWindow else { return }
+            print("GEST-START")
+            walkGestures(window, depth: 0)
+            if let root = window.rootViewController { walkControllers(root, depth: 0) }
+            print("GEST-END")
+        }
+    }
+
+    private static func walkGestures(_ view: UIView, depth: Int) {
+        for recognizer in view.gestureRecognizers ?? [] {
+            let delegate = recognizer.delegate.map { String(describing: type(of: $0)) } ?? "nil"
+            print("GEST \(depth) \(type(of: recognizer)) on \(type(of: view)) enabled=\(recognizer.isEnabled) delegate=\(delegate)")
+        }
+        for subview in view.subviews { walkGestures(subview, depth: depth + 1) }
+    }
+
+    private static func walkControllers(_ controller: UIViewController, depth: Int) {
+        let transition = controller.preferredTransition.map { String(describing: $0) } ?? "nil"
+        print("GESTVC \(String(repeating: "·", count: depth))\(type(of: controller)) transition=\(transition)")
+        for child in controller.children { walkControllers(child, depth: depth + 1) }
+        if let presented = controller.presentedViewController, presented.presentingViewController === controller {
+            walkControllers(presented, depth: depth + 1)
+        }
+    }
+
     private static var keyWindow: UIWindow? {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -66,3 +100,42 @@ enum LayerProbe {
     }
 }
 #endif
+
+#if DEBUG
+/// `-debugNavTrace 1` — печатает смены таба, слоя и появление экранов слоя: на смене таба
+/// из слоя видно, кто что снял и кто что показал (проверка независимых стеков 2026-10-31).
+/// Читать: `xcrun simctl launch --console-pty booted com.dima.PlusProtoApp … -debugNavTrace 1`.
+enum NavTrace {
+    static let isOn = UserDefaults.standard.bool(forKey: "debugNavTrace")
+
+    static func log(_ message: @autoclosure () -> String) {
+        guard isOn else { return }
+        print("NAV \(String(format: "%.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))) \(message())")
+    }
+}
+#endif
+
+#if DEBUG
+/// `-debugFrameGaps 1` — печатает в консоль `[gap] …` каждый кадр главного потока, пришедший
+/// позже 30 мс: так видно, что бар отстаёт от клавиатуры не из-за кривой, а потому что
+/// главный поток занят (разбор подъёма бара над клавиатурой 2026-10-31).
+final class FrameGapTrace: NSObject {
+    private static var shared: FrameGapTrace?
+    private var last: CFTimeInterval = 0
+
+    static func startIfRequested() {
+        guard shared == nil, UserDefaults.standard.bool(forKey: "debugFrameGaps") else { return }
+        let trace = FrameGapTrace()
+        CADisplayLink(target: trace, selector: #selector(tick(_:))).add(to: .main, forMode: .common)
+        shared = trace
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        defer { last = link.timestamp }
+        guard last > 0 else { return }
+        let gap = (link.timestamp - last) * 1000
+        if gap > 30 { NSLog("[gap] %.0f ms", gap) }
+    }
+}
+#endif
+

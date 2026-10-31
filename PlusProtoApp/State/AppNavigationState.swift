@@ -9,14 +9,45 @@ import SwiftUI
 /// семисотстрочного вью и оттуда недостижимо.
 @Observable
 final class AppNavigationState {
-    var activeTab: AppTab = .plus
+    var activeTab: AppTab = .plus {
+        didSet {
+            guard activeTab != oldValue else { return }
+            #if DEBUG
+            NavTrace.log("tab \(oldValue) → \(activeTab) layers=\(layerRoutes.mapValues(\.id)) paths=\(layerPaths.mapValues { $0.map(\.id) })")
+            #endif
+            onTabChange?(oldValue, activeTab)
+        }
+    }
 
+    /// Что сделать на смене таба в том же апдейте — ставит корень (`AppRootView`, `onAppear`):
+    /// поиск уходящего таба паркуется, поиск пришедшего возвращается. Синхронно, а не
+    /// `onChange` корня: из слоя фильма таб меняют, пока корень снят с окна, и его
+    /// `onChange` в это время не приходят.
+    @ObservationIgnored var onTabChange: ((AppTab, AppTab) -> Void)?
+
+    /// Таб открывают с корня (`showRoot`) — ставит корень: поиск этого таба забывается.
+    @ObservationIgnored var onShowRoot: ((AppTab) -> Void)?
+
+    /// Слой поверх хрома — **у каждого таба свой**, как и стек (решение пользователя
+    /// 2026-10-31: «внутри каждого таба свой независимый навигационный стек»). Ушли на другой
+    /// таб — слой остаётся за своим табом и встаёт на место, когда таб выбирают снова.
+    /// Прежде слой был один на приложение и снимался сменой таба, а показывал его корень
+    /// стека таба: тот размонтировался посреди показа, и фильм оставался висеть поверх
+    /// чужого таба (поиск → фильм → режиссёр → другой таб).
+    private var layerRoutes: [AppTab: EntityRoute] = [:]
+    private var layerPaths: [AppTab: [EntityRoute]] = [:]
 
     /// Экран сущности, показанный **слоем поверх хрома** вместо пуша (см.
-    /// `EntityRoute.coversChrome`). Живёт отдельно от путей: он не элемент стека,
-    /// а отдельная презентация, и переживать переключение таба ему не нужно.
+    /// `EntityRoute.coversChrome`), — у активного таба. Живёт отдельно от путей: он не
+    /// элемент стека, а отдельная презентация (её показывает корень, `AppRootView`).
     var coveredRoute: EntityRoute? {
-        didSet {
+        get { layerRoutes[activeTab] }
+        set {
+            let old = layerRoutes[activeTab]
+            #if DEBUG
+            NavTrace.log("layer[\(activeTab)] \(old?.id ?? "nil") → \(newValue?.id ?? "nil")")
+            #endif
+            layerRoutes[activeTab] = newValue
             // Новый слой — чистый стек: путь прошлого слоя не должен доставаться
             // следующему, в том числе при подмене корня.
             //
@@ -25,15 +56,49 @@ final class AppNavigationState {
             // свой экран сам — два `dismiss` разом, и второму UIKit отказывал
             // («dismiss is in progress», таб из слоя, 2026-10-04). Остаток пути без слоя
             // ничего не значит: все, кто его читает, сперва смотрят на `coveredRoute`.
-            if coveredRoute != oldValue, coveredRoute != nil { coveredPath.removeAll() }
+            if newValue != old, newValue != nil { layerPaths[activeTab] = [] }
         }
     }
 
-    /// Стопка **внутри** слоя: «Похожее» открывает следующий фильм поверх текущего,
-    /// не закрывая его (решение пользователя 2026-08-25). Элемент глубины `i` —
+    /// Стопка **внутри** слоя активного таба: «Похожее» открывает следующий фильм поверх
+    /// текущего, не закрывая его (решение пользователя 2026-08-25). Элемент глубины `i` —
     /// вложенный `fullScreenCover` экрана глубины `i` (см. `CoveredEntityScreen`);
     /// сам массив живёт здесь, чтобы `open`/`close` оставались одной точкой входа.
-    var coveredPath: [EntityRoute] = []
+    var coveredPath: [EntityRoute] {
+        get { layerPaths[activeTab] ?? [] }
+        set { layerPaths[activeTab] = newValue }
+    }
+
+    /// Стопка слоя конкретного таба — для экранов слоя: на смене таба их стопка не должна
+    /// подменяться стопкой нового таба, иначе вложенные экраны снимали бы себя сами
+    /// вдобавок к снятию всего слоя («dismiss is in progress»).
+    func layerPath(of tab: AppTab) -> [EntityRoute] {
+        layerPaths[tab] ?? []
+    }
+
+    func setLayerPath(_ path: [EntityRoute], of tab: AppTab) {
+        layerPaths[tab] = path
+    }
+
+    /// Сколько вложенных экранов слоя таба уже вернулось на экран после возврата на таб.
+    /// Стопку UIKit показывает по одной презентации: вложенный экран встаёт, когда показан
+    /// тот, что под ним. Без счётчика он вставал своим зумом из карточки — на возврате
+    /// режиссёр «открывался» заново (запись 2026-10-31). Со счётчиком каждый следующий
+    /// встаёт мгновенно, в той же транзакции без анимаций. `nil` — стопка не восстанавливается.
+    private var revealedLayerDepth: [AppTab: Int] = [:]
+
+    /// Глубина, до которой стопку слоя таба уже можно показывать.
+    func layerRevealLimit(of tab: AppTab) -> Int {
+        revealedLayerDepth[tab] ?? .max
+    }
+
+    /// Экран слоя глубины `depth` встал на возврате — следующий может вставать следом.
+    func layerScreenAppeared(depth: Int, of tab: AppTab) {
+        guard let revealed = revealedLayerDepth[tab], revealed == depth else { return }
+        Self.withoutLayerZoom {
+            revealedLayerDepth[tab] = depth + 1 >= layerPath(of: tab).count ? nil : depth + 1
+        }
+    }
 
     private var paths: [AppTab: NavigationPath] = [:]
 
@@ -95,42 +160,54 @@ final class AppNavigationState {
 
     /// Тап по уже активному табу возвращает его стек на корень — привычное поведение
     /// системных таббаров, заодно единственный выход из пуша без свайпа. Стек уже
-    /// на корне — корневой экран уезжает к началу (`scrollToTopRequests`). Тап из слоя
-    /// фильма (таббар его экранов) снимает слой.
+    /// на корне — корневой экран уезжает к началу (`scrollToTopRequests`). Тап по своему
+    /// табу из слоя фильма (таббар его экранов) снимает слой.
+    ///
+    /// Другой таб — просто другой таб: у каждого свой стек и свой слой (решение пользователя
+    /// 2026-10-31). Слой уходящего таба остаётся за ним, слой пришедшего встаёт на место.
     func select(_ tab: AppTab) {
-        // Таббар слоя — у экранов, открытых из фильма дальше (2026-10-04): таб ведёт
-        // к своему контенту, слой снимается целиком. Свой таб — ещё и стек на корень,
-        // как повторный тап с пуша. Слой переключение таба не переживает и так:
-        // он не элемент стека (см. `coveredRoute`).
-        if coveredRoute != nil {
-            Self.withoutLayerZoom {
-                coveredRoute = nil
-                if tab == activeTab {
-                    paths[tab] = NavigationPath()
-                } else {
-                    activeTab = tab
-                }
-            }
-            return
-        }
         guard tab != activeTab else {
-            if !(paths[tab]?.isEmpty ?? true) {
+            if coveredRoute != nil {
+                // Таббар слоя — у экранов, открытых из фильма дальше (2026-10-04): свой таб —
+                // домой, к его контенту: слой снимается целиком, стек на корень.
+                Self.withoutLayerZoom {
+                    coveredRoute = nil
+                    paths[tab] = NavigationPath()
+                }
+            } else if !(paths[tab]?.isEmpty ?? true) {
                 paths[tab] = NavigationPath()
             } else {
                 scrollToTopRequests[tab, default: 0] += 1
             }
             return
         }
-        activeTab = tab
+        // Слой уходит или приходит вместе с табом — мгновенно, без зума: его миниатюра-
+        // источник живёт в ленте таба, которая в этом же апдейте размонтируется или только
+        // монтируется (`withoutLayerZoom`).
+        if coveredRoute != nil || layerRoutes[tab] != nil {
+            Self.withoutLayerZoom {
+                // Стопка слоя пришедшего таба встаёт по экрану, без зумов (`revealedLayerDepth`).
+                if layerRoutes[tab] != nil, !layerPath(of: tab).isEmpty {
+                    revealedLayerDepth[tab] = 0
+                }
+                activeTab = tab
+            }
+        } else {
+            activeTab = tab
+        }
     }
 
-    /// Показать корень таба откуда угодно: профиль и слой фильма сняты, стек таба на корне,
-    /// таб активен. Для тапа по тосту — он живёт в окне поверх всего, и «закрыть всё и открыть
-    /// таб» делается одним синхронным вызовом, без анимаций. Профиль и слой с вложенными
-    /// экранами UIKit снимает целой стопкой — по одной презентации (см. `coveredRoute`).
+    /// Показать корень таба откуда угодно: профиль и слой фильма этого таба сняты, стек
+    /// на корне, таб активен. Для тапа по тосту — он живёт в окне поверх всего, и «закрыть
+    /// всё и открыть таб» делается одним синхронным вызовом, без анимаций. Слой таба, с
+    /// которого ушли, остаётся за ним — как при обычной смене таба; со своими вложенными
+    /// экранами его UIKit снимает целой стопкой — по одной презентации (см. `coveredRoute`).
     func showRoot(of tab: AppTab) {
+        // «С корня» — и без припаркованного поиска этого таба: иначе он встал бы поверх
+        // сброшенного стека («Мне нравится» в «Для вас» → «Моё», ревью 2026-10-31).
+        onShowRoot?(tab)
         Self.withoutLayerZoom {
-            coveredRoute = nil
+            layerRoutes[tab] = nil
             paths[tab] = NavigationPath()
             activeTab = tab
         }
