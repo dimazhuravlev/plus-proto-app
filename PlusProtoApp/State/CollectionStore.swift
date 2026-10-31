@@ -121,6 +121,21 @@ extension CollectionItem {
         )
     }
 
+    /// Аудиокнига выдачи поиска — своя запись, отдельно от книги (решение пользователя
+    /// 2026-10-31): вид «Книги», обложка — квадратный мок; своего экрана нет, поэтому
+    /// и маршрута нет.
+    static func audiobook(_ hit: SearchHit) -> CollectionItem {
+        CollectionItem(
+            id: "book:\(hit.id)",
+            kind: .book,
+            title: hit.title,
+            subtitle: hit.subtitle,
+            artwork: hit.artwork,
+            route: nil,
+            aspect: hit.artworkAspect
+        )
+    }
+
     static func album(_ ref: EntityRef, isExplicit: Bool? = nil) -> CollectionItem {
         CollectionItem(
             id: "album:\(ref.id)",
@@ -240,6 +255,10 @@ extension CollectionItem {
             guard case .movie(let ref)? = hit.route else { return nil }
             self = .movie(ref, poster: hit.artwork, year: hit.subtitle)
         case .book:
+            if hit.isAudiobook == true {
+                self = .audiobook(hit)
+                return
+            }
             guard case .book(let ref)? = hit.route else { return nil }
             self = .book(ref, aspect: hit.artworkAspect)
         case .album:
@@ -252,7 +271,7 @@ extension CollectionItem {
             self = .track(MusicNowPlaying(hit: hit), album: hit.route)
         case .playlist:
             self = .playlist(id: hit.id, title: hit.title, owner: hit.subtitle, cover: hit.artwork)
-        case .director, .writer:
+        case .director, .writer, .actor:
             return nil
         }
     }
@@ -536,7 +555,8 @@ final class CollectionStore {
             if let artwork = record.artwork {
                 switch record.kind {
                 case .artist: if !artwork.isEmptyAsset { graphic = .avatar(artwork) }
-                case .movie, .book: graphic = .poster(artwork)
+                case .movie: graphic = .poster(artwork)
+                case .book: graphic = .book(artwork)
                 case .track, .album, .playlist: graphic = .cover(artwork)
                 }
             }

@@ -47,9 +47,11 @@ enum MusicCardLayout {
 
     /// Высота подписи — у карусели высота явная (`ServiceCarousel`), и считается она отсюда:
     /// у Text S — две строки (название в две или название + описание), у Text M — название
-    /// и описание с наездом −2, у Large с аватаром — по аватару.
-    static func captionHeight(_ size: MusicCardSize, showsAvatar: Bool = false) -> CGFloat {
+    /// и описание с наездом −2, у Large с аватаром — по аватару. У круга — имя до двух
+    /// строк без наезда.
+    static func captionHeight(_ size: MusicCardSize, shape: MusicCardShape = .square, showsAvatar: Bool = false) -> CGFloat {
         let line = size.text.lineHeight
+        if shape == .circle { return 2 * line }
         switch size {
         case .xsmall, .small:
             return 2 * line
@@ -61,8 +63,8 @@ enum MusicCardLayout {
     }
 
     /// Карточка целиком — обложка, зазор и подпись.
-    static func height(_ size: MusicCardSize, width: CGFloat, showsAvatar: Bool = false) -> CGFloat {
-        width + textGap + captionHeight(size, showsAvatar: showsAvatar)
+    static func height(_ size: MusicCardSize, width: CGFloat, shape: MusicCardShape = .square, showsAvatar: Bool = false) -> CGFloat {
+        width + textGap + captionHeight(size, shape: shape, showsAvatar: showsAvatar)
     }
 }
 
@@ -116,7 +118,9 @@ struct MusicCard: View {
     var body: some View {
         VStack(alignment: shape == .circle ? .center : .leading, spacing: MusicCardLayout.textGap) {
             zoomSource(coverView)
+            // Подпись уходит вместе с обложкой, пока открыт экран карточки.
             caption
+                .zoomSourceCaption(zoom != nil ? zoomRoute : nil)
         }
         .frame(width: width, alignment: shape == .circle ? .center : .leading)
         .contentShape(.rect)
@@ -135,6 +139,7 @@ struct MusicCard: View {
                 }
             }
             .clipShape(clip)
+            .coverArtworkMissing(cover == nil)
             .coverBorder(clip)
     }
 

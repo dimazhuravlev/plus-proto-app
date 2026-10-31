@@ -228,24 +228,13 @@ struct CollectionServiceScreen: View {
                 items: later,
                 openAll: { openList(.shelf(.movie, .favorites), title: "Буду смотреть") }
             ) { item in
-                CollectionPosterCard(item: item, progress: moviesProgress(item))
+                CollectionPosterCard(item: item, progress: moviesProgress(item), shelf: .favorites)
             }
         }
 
-        // «Мои оценки» — третьей, над «Покупками» (задача пользователя 2026-10-20).
-        let rated = MovieRatings.shared.entries
-        if !rated.isEmpty {
-            CollectionCarousel(
-                title: "Мои оценки",
-                height: posterRowHeight(rated.map(\.item)),
-                items: rated,
-                openAll: { openList(.ratings, title: "Мои оценки") },
-                allowsOverflow: true
-            ) { entry in
-                CollectionPosterCard(item: entry.item, rating: entry.rating, progress: moviesProgress(entry.item))
-            }
-        }
-
+        // «Моих оценок» в коллекции нет — макет экрана «Кино» `18113:10064`: «Смотрю»,
+        // «Буду смотреть», «Покупки» (решение пользователя 2026-10-28). Оценки живут
+        // в блоке экрана тайтла (`MovieRatings`).
         let purchases = CollectionSeeds.purchases
         CollectionCarousel(
             title: "Покупки",
@@ -299,7 +288,8 @@ struct CollectionServiceScreen: View {
             CollectionBookCard(
                 item: entry.item,
                 readBook: entry.readBook,
-                progress: CollectionProgress.book(entry, reading: actionBar.readingHistory)
+                progress: CollectionProgress.book(entry, reading: actionBar.readingHistory),
+                shelf: source.shelf
             )
         }
     }

@@ -85,7 +85,7 @@ struct AmbilightArtwork<Overlay: View>: View {
             // это голый `Color`: он тянется по предложению родителя и рисуется прямым
             // прямоугольником, поэтому до прилёта картинки обложка была и не того
             // размера, и без скруглений, а потом прыгала в кадр.
-            cover { Color.buttonsPrimary.frame(width: size.width, height: size.height) }
+            cover { Color.buttonsPrimary.frame(width: size.width, height: size.height).coverArtworkMissing(true) }
         }
         // Кадр компонента — стороны обложки, как их знает макет. Наклон и ореол
         // выходят за него, но карточки миниатюру не клипают, а позиции в слотах

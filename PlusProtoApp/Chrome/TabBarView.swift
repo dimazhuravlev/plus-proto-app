@@ -393,14 +393,15 @@ private struct CollectionPeekThumbnail: View {
         case .movie:
             cover(RoundedRectangle(cornerRadius: radius, style: .continuous), size: TabBarGeometry.peekPosterSize)
         case .book:
-            cover(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 0, bottomLeadingRadius: 0,
-                    bottomTrailingRadius: radius, topTrailingRadius: radius,
-                    style: .continuous
-                ),
-                size: TabBarGeometry.peekPosterSize
-            )
+            // Карточка книги (`card / book`) в кадре `Collection-book` со скруглением 3.
+            BookFigure(
+                geometry: BookFigureGeometry(coverHeight: TabBarGeometry.peekPosterSize.height).cornerRadius(radius),
+                coverWidth: TabBarGeometry.peekPosterSize.width
+            ) {
+                if let artwork = item.artwork {
+                    ArtworkImage(source: artwork).scaledToFill()
+                }
+            }
         case .album, .track, .playlist:
             cover(
                 RoundedRectangle(cornerRadius: radius, style: .continuous),

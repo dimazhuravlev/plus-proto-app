@@ -38,12 +38,10 @@ enum CollectionLayout {
     @MainActor static var posterHeight: CGFloat { cardWidth * 3 / 2 }
     /// Радиус — токен карточки, от ширины не зависит
     static let cardRadius: CGFloat = 8
-    /// Книга — та же проекция, что карточка выдачи (`book card small`): кадр книги —
-    /// обложка и выступ страниц — ровно в высоту постера (114 на 375); ширина — от
-    /// пропорций обложки, поэтому у книг край пятой не постоянный.
+    /// Книга — карточка книги (`card / book`) высотой постера (114 на 375, ступень
+    /// xsmall ДС); ширина — от пропорций обложки, поэтому у книг край пятой не постоянный.
     @MainActor static var book: BookFigureGeometry {
-        let reference = BookFigureGeometry.referenceHeight
-        return BookFigureGeometry(coverHeight: posterHeight * reference / (reference + 2))
+        BookFigureGeometry(coverHeight: posterHeight)
     }
 
     /// Название карточки — до двух строк, деталь (год, автор, исполнитель) — в одну
@@ -126,6 +124,9 @@ struct CollectionScreen: View {
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
     @Environment(\.scenePhase) private var scenePhase
+    /// Заставка ушла и хром на месте — тот же признак, что у вступления промо «Главной»:
+    /// подсказка порядка под заставкой отыграла бы появление невидимой.
+    @Environment(\.promoIntroReady) private var introReady
 
     /// Выбранная полка — ею подсвечена пилюля, сразу по тапу.
     @State private var shelfIndex = 0
@@ -202,7 +203,7 @@ struct CollectionScreen: View {
                 holdsBackdrop: reorder.heldKind != nil,
                 trailingAccessory: AnyView(
                     CollectionReorderButton(
-                        isEnabled: reorder.isReordering || visibleKinds(shownShelf).count > 1,
+                        isEnabled: reorder.isReordering || canReorder,
                         action: toggleReordering
                     )
                 )
@@ -244,7 +245,25 @@ struct CollectionScreen: View {
         }
         // Уход с экрана (другой таб, пуш) и фон приложения выключают режим и сохраняют
         // порядок: перестановка уже сделана на глазах, терять её молча — хуже.
-        .onDisappear { finishReordering() }
+        // Подсказка порядка уходит вместе с экраном: показ уже засчитан.
+        .onDisappear {
+            finishReordering()
+            CollectionReorderHint.shared.dismissInstantly()
+        }
+        // Подсказка порядка — при первом входе, когда переставлять есть что и заставка
+        // ушла (запуск сразу на «Моё»); блоков стало меньше двух — кнопка приглушена,
+        // и подсказка уходит.
+        .task(id: [canReorder, introReady]) {
+            let hint = CollectionReorderHint.shared
+            guard canReorder else {
+                hint.dismiss()
+                return
+            }
+            guard introReady, hint.isDue else { return }
+            try? await Task.sleep(for: CollectionReorderHintMotion.delay)
+            guard !Task.isCancelled, !reorder.isReordering else { return }
+            hint.present()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { finishReordering() }
         }
@@ -273,6 +292,22 @@ struct CollectionScreen: View {
                 CollectionSectionNavigation.openMyPlaylists(on: shownShelf, navigation: navigation)
             }
         }
+        // `-debugCollectionSheet <вид>` — через 1.5 с шторка записи тем же кодом, что
+        // долгое нажатие: первая запись вида в «Любимом» (`movie` — в «Скачанном»).
+        // Тапнуть из шелла нечем. Один раз за процесс.
+        .task {
+            guard !Self.didDebugSheet,
+                  let raw = UserDefaults.standard.string(forKey: "debugCollectionSheet"),
+                  let kind = CollectionItem.Kind(rawValue: raw) else { return }
+            Self.didDebugSheet = true
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            let shelf: CollectionStore.Shelf = kind == .movie ? .downloads : .favorites
+            guard let item = collection.items(kind, on: shelf).first else { return }
+            ActionSheetState.shared.present(CollectionItemSheet.content(
+                for: item, shelf: shelf, collection: collection, navigation: navigation, actionBar: actionBar
+            ))
+        }
         // `-debugCollectionReorder 1` — через 2 с войти в режим порядка (как кнопка
         // в навбаре), через 4 с поставить первый блок на второе место (тот же свап, что
         // у драга), через 6 с — «Готово». Один раз за процесс.
@@ -288,6 +323,36 @@ struct CollectionScreen: View {
             reorder.swapBlocks(0, 1)
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
+            toggleReordering()
+        }
+        // `-debugCollectionOpen <вид>` — через 2 с после ухода заставки открыть экран первой
+        // записи вида в «Любимом» тем же путём, что тап по карточке (`navigation.open`):
+        // с её обложки идёт зум. Пара к `-debugCloseEntity` — проверка возврата подписи.
+        // Один раз за процесс.
+        .task(id: introReady) {
+            guard introReady, !Self.didDebugOpen,
+                  let raw = UserDefaults.standard.string(forKey: "debugCollectionOpen"),
+                  let kind = CollectionItem.Kind(rawValue: raw) else { return }
+            Self.didDebugOpen = true
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled,
+                  let route = collection.items(kind, on: .favorites).first?.route else { return }
+            navigation.open(route)
+        }
+        // `-debugReorderHintTap 1` — через 2 с после появления подсказки порядка тап по ней
+        // тем же кодом, что настоящий (вход в режим порядка): проверка ухода. Показ —
+        // вместе с `-collectionReorderHintEverySession YES`. Один раз за процесс.
+        .task {
+            guard !Self.didDebugHintTap,
+                  UserDefaults.standard.bool(forKey: "debugReorderHintTap") else { return }
+            Self.didDebugHintTap = true
+            // Подсказка ждёт ухода заставки — ждём и мы, до 20 с.
+            for _ in 0..<200 where CollectionReorderHint.shared.phase != .shown {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled else { return }
+            }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, CollectionReorderHint.shared.phase == .shown else { return }
             toggleReordering()
         }
         // `-debugCollectionShelf <pt>` — через 1.5 с прокрутить «Любимое» на <pt>, через
@@ -316,7 +381,10 @@ struct CollectionScreen: View {
     #if DEBUG
     private static var didDebugOpenList = false
     private static var didDebugReorder = false
+    private static var didDebugSheet = false
     private static var didDebugShelf = false
+    private static var didDebugHintTap = false
+    private static var didDebugOpen = false
     /// `-debugCollectionShelf <pt>` включает и строки `[shelf] …` в лог.
     private static let tracesShelf = UserDefaults.standard.object(forKey: "debugCollectionShelf") != nil
     #endif
@@ -369,9 +437,16 @@ struct CollectionScreen: View {
 
     // MARK: Режим порядка
 
-    /// Кнопка навбара: вход в режим и «Готово» — один тап, одна хаптика.
+    /// Есть что переставлять — на полке два блока и больше.
+    private var canReorder: Bool {
+        visibleKinds(shownShelf).count > 1
+    }
+
+    /// Кнопка навбара (и подсказка под ней): вход в режим и «Готово» — один тап,
+    /// одна хаптика. Подсказка после любого из них уходит.
     private func toggleReordering() {
         PlayerHaptics.tap()
+        CollectionReorderHint.shared.dismiss()
         if reorder.isReordering {
             finishReordering()
         } else {
@@ -396,19 +471,16 @@ struct CollectionScreen: View {
     private func shelfContent(_ shelf: CollectionStore.Shelf) -> some View {
         let kinds = visibleKinds(shelf)
         if kinds.isEmpty {
-            // Подсказка — по центру видимой части ленты.
-            CollectionEmptyState(shelf: shelf)
-                .containerRelativeFrame(.vertical) { length, _ in length - CollectionLayout.contentTop }
+            // Подсказка — по центру видимой части ленты под баннером: у пустого
+            // «Скачанного» баннер тот же, что у полного (макет `18102:17240`).
+            VStack(spacing: 0) {
+                smartDownloadsBanner(on: shelf)
+                CollectionEmptyState(shelf: shelf)
+            }
+            .containerRelativeFrame(.vertical) { length, _ in length - CollectionLayout.contentTop }
         } else {
             VStack(spacing: CollectionLayout.sectionGap) {
-                // Умная загрузка — первым блоком «Скачанного» (задача пользователя 2026-10-21):
-                // закрыли — гаснет, место схлопывается, блоки поднимаются.
-                if shelf == .downloads, !SmartDownloads.shared.isBannerDismissed {
-                    SmartDownloadsBanner()
-                        .padding(.horizontal, CollectionLayout.side)
-                        .padding(.vertical, CollectionLayout.sectionPad)
-                        .transition(.opacity)
-                }
+                smartDownloadsBanner(on: shelf)
                 ForEach(kinds, id: \.self) { kind in
                     CollectionReorderBlock(kind: kind) {
                         section(kind, on: shelf)
@@ -421,6 +493,20 @@ struct CollectionScreen: View {
             // Анимируется состав видов; перестановку анимирует сам свап (`swapBlocks`),
             // поэтому значение — множество: порядок его не меняет.
             .animation(CollectionMotion.itemsChange, value: Set(kinds))
+        }
+    }
+
+    /// Умная загрузка — первым блоком «Скачанного», и полного, и пустого (задача
+    /// пользователя 2026-10-21, макеты `18292:52150`, `18102:17240`): 8 сверху, первая
+    /// секция — сразу под ним, её шапка несёт своё поле 8. Закрыли — гаснет, место
+    /// схлопывается, блоки поднимаются.
+    @ViewBuilder
+    private func smartDownloadsBanner(on shelf: CollectionStore.Shelf) -> some View {
+        if shelf == .downloads, !SmartDownloads.shared.isBannerDismissed {
+            SmartDownloadsBanner()
+                .padding(.horizontal, CollectionLayout.side)
+                .padding(.top, CollectionLayout.sectionPad)
+                .transition(.opacity)
         }
     }
 
@@ -450,7 +536,7 @@ struct CollectionScreen: View {
                 items: entries,
                 openAll: openAll
             ) { entry in
-                CollectionPosterCard(item: entry.item, resume: entry.resume, progress: CollectionProgress.movie(entry, history: actionBar.watchHistory))
+                CollectionPosterCard(item: entry.item, resume: entry.resume, progress: CollectionProgress.movie(entry, history: actionBar.watchHistory), shelf: shelf)
             }
         case .book:
             let progress = entries.map { CollectionProgress.book($0, reading: actionBar.readingHistory) }
@@ -460,15 +546,15 @@ struct CollectionScreen: View {
                 items: entries,
                 openAll: openAll
             ) { entry in
-                CollectionBookCard(item: entry.item, progress: CollectionProgress.book(entry, reading: actionBar.readingHistory))
+                CollectionBookCard(item: entry.item, progress: CollectionProgress.book(entry, reading: actionBar.readingHistory), shelf: shelf)
             }
         case .artist:
             CollectionCarousel(title: kind.title, height: CollectionLayout.titleOnlyRowHeight, items: items, openAll: openAll) { item in
-                CollectionArtistCard(item: item)
+                CollectionArtistCard(item: item, shelf: shelf)
             }
         case .album:
             CollectionCarousel(title: kind.title, height: CollectionLayout.titleOnlyRowHeight, items: items, openAll: openAll) { item in
-                CollectionSquareCard(item: item, showsTitle: true)
+                CollectionSquareCard(item: item, showsTitle: true, shelf: shelf)
             }
         case .playlist:
             // Первой — «Мои плейлисты» (`card / playlist`, `2844:37412`): превью до четырёх
@@ -485,7 +571,7 @@ struct CollectionScreen: View {
                         CollectionSectionNavigation.openMyPlaylists(on: shelf, navigation: navigation)
                     }
                 case .playlist(let item):
-                    CollectionSquareCard(item: item, showsTitle: false)
+                    CollectionSquareCard(item: item, showsTitle: false, shelf: shelf)
                 }
             }
         }
@@ -504,8 +590,6 @@ struct CollectionCarousel<Item: Identifiable, Card: View>: View {
     let height: CGFloat
     let items: [Item]
     var openAll: (() -> Void)?
-    /// Не обрезать то, что выступает над карточками (оценка на постере «Моих оценок»).
-    var allowsOverflow = false
     @ViewBuilder var card: (Item) -> Card
 
     @Environment(CollectionReorderState.self) private var reorder: CollectionReorderState?
@@ -554,7 +638,6 @@ struct CollectionCarousel<Item: Identifiable, Card: View>: View {
             .scrollDisabled(isReordering)
             .scrollTargetBehavior(.viewAligned)
             .contentMargins(.horizontal, CollectionLayout.side, for: .scrollContent)
-            .scrollClipDisabled(allowsOverflow)
             .frame(height: height)
         }
         .padding(.vertical, CollectionLayout.sectionPad)
@@ -569,11 +652,11 @@ struct CollectionCarousel<Item: Identifiable, Card: View>: View {
 struct CollectionPosterCard: View {
     let item: CollectionItem
     var resume: MovieInProgress? = nil
-    /// Оценка пользователя — эмодзи над углом постера («Мои оценки»).
-    var rating: MovieRating? = nil
     /// Начатый фильм — полоса прогресса под постером (`CardProgressBar`). Ленте —
     /// место под неё (`CollectionLayout.rowHeight`).
     var progress: Double? = nil
+    /// Полка, где показан постер, — для действий записи (`nil` — «Покупки»).
+    var shelf: CollectionStore.Shelf? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
@@ -589,20 +672,22 @@ struct CollectionPosterCard: View {
                     shape: RoundedRectangle(cornerRadius: CollectionLayout.cardRadius, style: .continuous)
                 )
                 .collectionZoomSource(item.route, in: zoom)
-                .overlay(alignment: .topLeading) {
-                    if let rating { MovieRatingBadge(rating: rating) }
+                if let progress {
+                    CardProgressBar(progress: progress)
+                        .zoomSourceCaption(item.route)
                 }
-                if let progress { CardProgressBar(progress: progress) }
             }
             .frame(width: CollectionLayout.cardWidth, alignment: .top)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .accessibilityLabel(item.title)
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: shelf)
     }
 
     private func open() {
+        // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+        guard !ActionSheetState.shared.isPresented else { return }
         if let route = item.route {
             navigation.open(route)
         } else if let resume {
@@ -621,6 +706,8 @@ struct CollectionBookCard: View {
     var readBook: BookInProgress? = nil
     /// Прочитанная доля — полоса под книгой (`CardProgressBar`).
     var progress: Double? = nil
+    /// Полка, где показана книга, — чьё «Удалить» в шторке (`nil` — «Читаю», «Прочитано»).
+    var shelf: CollectionStore.Shelf? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
@@ -638,17 +725,22 @@ struct CollectionBookCard: View {
                     }
                 }
                 .collectionZoomSource(item.route, in: zoom)
-                if let progress { CardProgressBar(progress: progress) }
+                if let progress {
+                    CardProgressBar(progress: progress)
+                        .zoomSourceCaption(item.route)
+                }
             }
             .frame(width: width, alignment: .top)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .accessibilityLabel(item.title)
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: shelf)
     }
 
     private func open() {
+        // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+        guard !ActionSheetState.shared.isPresented else { return }
         if let readBook {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
@@ -665,6 +757,7 @@ struct CollectionBookCard: View {
 private struct CollectionSquareCard: View {
     let item: CollectionItem
     let showsTitle: Bool
+    var shelf: CollectionStore.Shelf? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(ActionBarState.self) private var actionBar
@@ -684,16 +777,19 @@ private struct CollectionSquareCard: View {
                 if showsTitle {
                     CollectionCaption(title: item.title)
                         .padding(.trailing, CollectionLayout.albumCaptionTrailing)
+                        .zoomSourceCaption(item.route)
                 }
             }
             .frame(width: CollectionLayout.cardWidth, alignment: .leading)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: shelf)
     }
 
     private func open() {
+        // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+        guard !ActionSheetState.shared.isPresented else { return }
         if let route = item.route {
             navigation.open(route)
         } else if let playable = item.playable {
@@ -776,6 +872,7 @@ private struct CollectionMyPlaylistsCard: View {
 /// Исполнитель — круг 86, под ним имя по центру.
 private struct CollectionArtistCard: View {
     let item: CollectionItem
+    var shelf: CollectionStore.Shelf? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
@@ -792,15 +889,18 @@ private struct CollectionArtistCard: View {
                 .collectionZoomSource(item.route, in: zoom)
 
                 CollectionCaption(title: item.title, isCentered: true)
+                    .zoomSourceCaption(item.route)
             }
             .frame(width: CollectionLayout.cardWidth)
             .contentShape(.rect)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: shelf)
     }
 
     private func open() {
+        // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+        guard !ActionSheetState.shared.isPresented else { return }
         guard let route = item.route else { return }
         navigation.open(route)
     }
@@ -823,6 +923,7 @@ struct CollectionArtwork<S: InsettableShape>: View {
             }
             .frame(width: width, height: height)
             .clipShape(shape)
+            .coverArtworkMissing(source == nil)
             .coverBorder(shape)
     }
 }
@@ -906,7 +1007,8 @@ private struct CollectionTracksBlock: View {
                                     item: column[row],
                                     queue: queue,
                                     isFirst: row == 0,
-                                    isLast: row == column.count - 1
+                                    isLast: row == column.count - 1,
+                                    shelf: shelf
                                 )
                             }
                         }
@@ -1008,6 +1110,8 @@ struct CollectionTrackRow: View {
     let queue: [MusicNowPlaying]
     let isFirst: Bool
     let isLast: Bool
+    /// Полка, где стоит строка, — для действий записи.
+    var shelf: CollectionStore.Shelf? = nil
 
     @Environment(CollectionStore.self) private var collection
     @Environment(ActionBarState.self) private var actionBar
@@ -1048,18 +1152,7 @@ struct CollectionTrackRow: View {
                             .foregroundStyle(Color.accentPrimary)
                             .accessibilityLabel("Скачано")
                     }
-                    Menu {
-                        CollectionItemMenu(item: item)
-                    } label: {
-                        // Вид `PlusButton` plain M; круг 40 — под отрицательным отступом.
-                        // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
-                        TrackMoreLabel()
-                            .pressScale(PressMotion.buttonScale)
-                    }
-                    // Хаптика — как у кнопок ДС: меню открывается системой, тап ловим рядом.
-                    .simultaneousGesture(TapGesture().onEnded { PlayerHaptics.tap() })
-                    .padding(-TrackMoreLabel.hitInset)
-                    .accessibilityLabel("Ещё")
+                    CollectionItemMoreButton(item: item, shelf: shelf)
                 }
             }
             .padding(.leading, CollectionLayout.trackTextGap)
@@ -1077,10 +1170,12 @@ struct CollectionTrackRow: View {
             }
         }
         .onTapGesture(perform: play)
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: shelf)
     }
 
     private func play() {
+        // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+        guard !ActionSheetState.shared.isPresented else { return }
         guard let playable = item.playable else { return }
         PlayerHaptics.tap()
         actionBar.open(.music(playable), queue: queue)
@@ -1692,6 +1787,13 @@ private struct CollectionReorderButton: View {
         }
         // Круг 40 — в раскладке целиком, как в макете навбара (`17778:34241`), а не
         // голой иконкой под отрицательным отступом.
+        // Онбординг — под кнопкой, по её центру: едет вместе с навбаром, лента под ним
+        // скроллится, а подсказка стоит. Тап по ней — то же действие, что у кнопки.
+        .overlay(alignment: .top) {
+            CollectionReorderHintBubble(phase: CollectionReorderHint.shared.phase, action: action)
+                .fixedSize()
+                .alignmentGuide(.top) { _ in -(Self.size.height + CollectionReorderHintLayout.gap) }
+        }
     }
 
     /// «Изменить порядок» — приглушённый белый, «Готово» — фиолетовый акцент приложения;
@@ -1701,42 +1803,6 @@ private struct CollectionReorderButton: View {
             .renderingMode(.template)
             .resizable()
             .foregroundStyle(color)
-    }
-}
-
-// MARK: - Меню записи
-
-/// Действия с записью — по долгому нажатию на карточку и из «ещё» строки трека:
-/// отметки коллекции и переход к альбому трека.
-struct CollectionItemMenu: View {
-    let item: CollectionItem
-
-    @Environment(CollectionStore.self) private var collection
-    @Environment(AppNavigationState.self) private var navigation
-
-    var body: some View {
-        let isFavorite = collection.isFavorite(item.id)
-        Button {
-            collection.toggleFavorite(item)
-        } label: {
-            Label(isFavorite ? "Убрать из любимого" : "В любимое", systemImage: isFavorite ? "heart.slash" : "heart")
-        }
-        // Исполнителя скачать нельзя — у него нет своего контента в прототипе.
-        if item.kind != .artist {
-            let isDownloaded = collection.isDownloaded(item.id)
-            Button {
-                collection.toggleDownload(item)
-            } label: {
-                Label(isDownloaded ? "Удалить из скачанного" : "Скачать", systemImage: isDownloaded ? "trash" : "arrow.down.circle")
-            }
-        }
-        if item.kind == .track, let route = item.route {
-            Button {
-                navigation.open(route)
-            } label: {
-                Label("Перейти к альбому", systemImage: "square.stack")
-            }
-        }
     }
 }
 

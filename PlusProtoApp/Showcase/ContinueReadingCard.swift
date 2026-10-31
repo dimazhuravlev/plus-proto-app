@@ -118,12 +118,15 @@ struct ContinueReadingCard: View {
                 .modifier(ReadingZoomSource(context: thumbnail))
                 .showcasePlaced(at: ShowcaseLayout.scaled(ReadingCardLayout.blockOrigin))
 
+            // Прогресс и мини-книга уходят вместе с блоком, пока открыт экран книги.
             timeline
                 .offset(x: ReadingCardLayout.timelineOrigin.x * ShowcaseLayout.scale, y: ReadingCardLayout.timelineOrigin.y * ShowcaseLayout.scale)
+                .showcaseCaption()
 
             // Книга — сосед блока, а не его потомок: внутри её срезал бы клип.
             miniBook
                 .offset(x: ReadingCardLayout.miniBookOrigin.x * ShowcaseLayout.scale, y: ReadingCardLayout.miniBookOrigin.y * ShowcaseLayout.scale)
+                .showcaseCaption()
         }
         .frame(
             width: PlusMetrics.screenWidth,
@@ -260,15 +263,12 @@ struct ContinueReadingCard: View {
             .rotationEffect(ReadingCardLayout.miniBookRotation)
     }
 
+    /// Мини-книга — общая карточка книги (`card / book`) в кадре макета.
     private var miniBookCover: some View {
-        ArtworkImage(source: block.cover)
-            .aspectRatio(contentMode: .fill)
-            .frame(
-                width: ReadingCardLayout.miniBookSize.width * ShowcaseLayout.scale,
-                height: ReadingCardLayout.miniBookSize.height * ShowcaseLayout.scale
-            )
-            .clipped()
-            .coverBorder(Rectangle())
+        let size = ShowcaseLayout.scaled(ReadingCardLayout.miniBookSize)
+        return BookFigure(geometry: BookFigureGeometry(coverHeight: size.height), coverWidth: size.width) {
+            ArtworkImage(source: block.cover).scaledToFill()
+        }
     }
 
     /// Тот же приём, что в `AmbilightArtwork`: ореол запекается в один растр, иначе блюр

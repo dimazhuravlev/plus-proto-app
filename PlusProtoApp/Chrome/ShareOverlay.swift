@@ -398,6 +398,7 @@ struct ShareOverlay: View {
                 }
             }
             .clipShape(shape)
+            .coverArtworkMissing(entity.cover == nil)
             .coverBorder(shape)
             .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 2)
     }

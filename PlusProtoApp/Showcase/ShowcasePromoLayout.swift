@@ -71,8 +71,8 @@ enum ShowcasePromoLayout {
     static var albumRadius: CGFloat { posterRadius }
     @MainActor
     static var bookWidth: CGFloat { CGFloat(HomePresentationSettings.shared.width(for: .book)) * scale }
-    /// Книга ряда. Скругления меньше общих (правка пользователя 2026-10-09): обложка —
-    /// как постер и альбом ряда, серая подложка — на ту же величину (19.2 → 16.4, 24.1 → 21.2).
+    /// Книга ряда — карточка книги (`card / book`) шириной слота. Скругление правых углов —
+    /// как у постера и альбома ряда (правка пользователя 2026-10-09).
     @MainActor
     static var book: (geometry: BookFigureGeometry, coverWidth: CGFloat) {
         var figure = BookFigureGeometry.fitting(width: bookWidth, aspect: nil)

@@ -117,8 +117,6 @@ final class PausingLoopPlayback {
 /// 2026-10-16, капля «Моей волны» в ПП).
 @MainActor
 final class SharedLoopingVideo {
-    /// Капля «Моей волны» в ряду ПП «Главной».
-    static let vibeDrop = SharedLoopingVideo(bundled: "my-vibe-shader", extension: "mp4")
     /// Микрошейдер над ▶ блоков «Похоже на» витрины «Для вас» (видео пользователя
     /// `micro-shader.webm`, HEVC с альфой, 2026-10-17).
     static let musicMicroShader = SharedLoopingVideo(bundled: "musicMicroShader", extension: "mov")

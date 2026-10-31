@@ -27,6 +27,28 @@ final class MovieDetailsStore {
         for movie in movies { known[movie.id] = movie }
     }
 
+    /// Детали без сети — из кэша, подборки, ответа поиска или запаса; кадры — только те,
+    /// что уже лежат в запасе. Для «Смотреть» строки выдачи поиска: плеер открывается
+    /// сразу, а не после запроса из квоты. `nil` — тайтла нигде нет.
+    static func offlineDetails(_ entity: EntityRef) async -> MovieDetails? {
+        guard let id = entity.kinopoiskID else { return nil }
+        if let hit = cache[id] { return hit }
+        let movie: KinopoiskMovie?
+        if let known = known[id] {
+            movie = known
+        } else {
+            movie = await MoviePool.shared.details(id: id)
+        }
+        guard let movie else { return nil }
+        return MovieDetails(movie: movie, stills: await MoviePool.shared.stills(for: id))
+    }
+
+    /// Сериал ли тайтл — по тому, что уже известно без сети; `nil` — не знаем.
+    static func knownIsSeries(_ id: Int) -> Bool? {
+        if let details = cache[id] { return details.isSeries }
+        return known[id]?.isSeries
+    }
+
     /// Один заход на тайтл за жизнь экрана.
     func load(_ entity: EntityRef) async {
         guard let id = Self.debugID ?? entity.kinopoiskID, requested != id else { return }

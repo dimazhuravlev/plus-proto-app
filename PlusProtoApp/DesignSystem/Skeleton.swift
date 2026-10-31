@@ -29,40 +29,64 @@ struct SkeletonBar: View {
 }
 
 extension Shape {
-    /// Скелетон этой формы: бледная заливка с той же кромкой, что у обложки
-    /// (`coverBorder`), — карточка встаёт на его место без смены рисунка.
+    /// Скелетон этой формы — бледная заливка без кромки: у скелетонов бордера нет нигде
+    /// (правка пользователя 2026-10-31). Кромка обложки встаёт вместе с картинкой
+    /// (`coverBorder`).
     func plusSkeleton() -> some View {
         fill(PlusSkeleton.fill)
-            .coverBorder(self)
     }
 }
 
 /// Бордер обложки — один у всех карточек-айтемов, всех видов: белый 8 % толщиной
 /// 0.67 внутрь кадра (правка пользователя 2026-10-05; прежде было то 0.66, то 1,
 /// то обводка по центру кромки, а у части обложек бордера не было вовсе).
-/// Кромка видна и у пустого скелетона, и у загруженной картинки.
+/// Только у показанной картинки: у скелетона и у обложки, чья картинка ещё едет или
+/// которой нет, кромки нет — она проявляется вместе с картинкой (правка пользователя
+/// 2026-10-31: «не должно быть бордера в каверах скелетона нигде»).
 enum CoverBorder {
     static let color = Color.fillNine
     static let width: CGFloat = 0.67
 }
 
+/// Показана ли картинка под бордером обложки: `ResolvedArtwork` сообщает, на месте ли
+/// картинка, `coverArtworkMissing` — что её нет вовсе. Ничего не сообщено (обложка
+/// не картинкой — градиент, иконка) — бордер стоит.
+struct CoverArtworkShownKey: PreferenceKey {
+    static let defaultValue: Bool? = nil
+
+    static func reduce(value: inout Bool?, nextValue: () -> Bool?) {
+        guard let next = nextValue() else { return }
+        value = (value ?? false) || next
+    }
+}
+
 extension View {
-    /// Бордер обложки по её форме — внутрь кадра, как у стекла.
+    /// Бордер обложки по её форме — внутрь кадра, как у стекла. Проявляется вместе
+    /// с картинкой обложки (`CoverArtworkShownKey`).
     func coverBorder<S: InsettableShape>(_ shape: S) -> some View {
-        overlay {
+        overlayPreferenceValue(CoverArtworkShownKey.self) { shown in
             shape
                 .strokeBorder(CoverBorder.color, lineWidth: CoverBorder.width)
+                .opacity(shown == false ? 0 : 1)
+                .animation(PlusSkeleton.appear, value: shown)
                 .allowsHitTesting(false)
         }
+    }
+
+    /// Картинки у обложки нет вовсе — источник пуст: на месте обложки скелетон, и бордера нет.
+    func coverArtworkMissing(_ isMissing: Bool) -> some View {
+        preference(key: CoverArtworkShownKey.self, value: isMissing ? false : nil)
     }
 
     /// То же для формы без вставки (`AnyShape`, свой контур): обводка вдвое толще
     /// по центру кромки, обрезанная самой формой, — та же полоса внутрь кадра.
     func coverBorder<S: Shape>(_ shape: S) -> some View {
-        overlay {
+        overlayPreferenceValue(CoverArtworkShownKey.self) { shown in
             shape
                 .stroke(CoverBorder.color, lineWidth: 2 * CoverBorder.width)
                 .clipShape(shape)
+                .opacity(shown == false ? 0 : 1)
+                .animation(PlusSkeleton.appear, value: shown)
                 .allowsHitTesting(false)
         }
     }
@@ -88,6 +112,9 @@ struct SkeletonArtwork: View {
             } placeholder: {
                 Color.clear
             }
+        } else {
+            // Рисовать нечего — для бордера обложки это скелетон.
+            Color.clear.coverArtworkMissing(true)
         }
     }
 

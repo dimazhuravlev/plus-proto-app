@@ -292,8 +292,9 @@ extension MusicNowPlaying {
 
 /// Полный список «Искали недавно» — переход по заголовку ленты нулевого состояния
 /// (задача пользователя 2026-10-03). Строки — те же, что в полных списках выдачи,
-/// только вперемешку: трек, альбом, исполнитель, фильм, книга, персона. Внизу —
-/// «Удалить историю» с системным подтверждением.
+/// только вперемешку: трек, альбом, исполнитель, фильм, книга, персона. Удаляет
+/// историю крестик в шапке ленты (`SearchHistoryClearButton`); кнопки под списком
+/// больше нет (правка пользователя 2026-10-30).
 ///
 /// Тапы отсюда историю не переставляют, как и из ленты: список сдвинулся бы под
 /// зумом открытой карточки. Трек играет сразу — как в полном списке музыки.
@@ -307,15 +308,11 @@ struct SearchHistoryView: View {
     @Environment(CollectionStore.self) private var collection
     /// Сердца строк, которых коллекция не хранит (персоны), — на время экрана.
     @State private var liked: Set<String> = []
-    @State private var isConfirmingClear = false
 
     private enum Layout {
         /// Как у полных списков кино и книг — на 8 ниже безопасной зоны.
         static let listTop: CGFloat = 8
         static let barGap: CGFloat = 12
-        static let side: CGFloat = 16
-        /// Кнопка — на 24 ниже последней строки, во всю ширину между полями.
-        static let buttonTop: CGFloat = 24
     }
 
     var body: some View {
@@ -328,9 +325,6 @@ struct SearchHistoryView: View {
                 ForEach(rows) { hit in
                     row(hit, isFirst: hit.id == rows.first?.id, zooms: zoomSources.contains(hit.id))
                 }
-                clearButton
-                    .padding(.top, Layout.buttonTop)
-                    .padding(.horizontal, Layout.side)
             }
             .padding(.top, Layout.listTop)
             // Как у полных списков: список уходит под поле и клавиатуру, низ
@@ -340,10 +334,6 @@ struct SearchHistoryView: View {
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.never)
         .modifier(DismissKeyboardOnScroll())
-        .alert("Точно удалить историю?", isPresented: $isConfirmingClear) {
-            Button("Да, удалить", role: .destructive) { search.clearHistory() }
-            Button("Назад", role: .cancel) {}
-        }
     }
 
     @ViewBuilder
@@ -368,14 +358,6 @@ struct SearchHistoryView: View {
         }
     }
 
-    /// Secondary, как «Позже» на экране фильма: акцентная в проекте одна на экран
-    /// и за главное действие, а удаление истории — побочное.
-    private var clearButton: some View {
-        PlusButton("Удалить историю", type: .secondary, size: .l, fillsWidth: true) {
-            isConfirmingClear = true
-        }
-    }
-
     /// Сердце строки — отметка коллекции «Моё» (2026-10-04); персоны, которых коллекция
     /// не хранит, — на время экрана, как было.
     private func isLiked(_ hit: SearchHit) -> Bool {
@@ -393,19 +375,21 @@ struct SearchHistoryView: View {
 /// градиент навбара сущностей здесь убран по правке пользователя 2026-10-03 — как
 /// прежде у навбара витрины. Общая с сеткой выдачи (`SearchMosaicView`).
 struct PinnedChipsBackdrop: View {
-    /// Насколько подложка уходит выше чипсов — под статус-бар с запасом.
+    /// Высота закреплённых рядов: блюр сходит на нет ровно по нижней кромке последнего —
+    /// лента начинает мылиться, когда заходит под фильтры. Прежде он тянулся на 24 ниже,
+    /// и под чипсами размывалась ещё полоса сетки (правка пользователя 2026-10-05).
+    /// У выдачи с табами — табы и чипсы второго уровня.
+    var rows: CGFloat = FilterChipsLayout.rowHeight
+
+    /// Насколько подложка уходит выше рядов — под статус-бар с запасом.
     private static let above: CGFloat = 80
-    /// Блюр сходит на нет ровно по нижней кромке ряда чипсов: лента начинает мылиться,
-    /// когда заходит под фильтры. Прежде он тянулся на 24 ниже, и под чипсами
-    /// размывалась ещё полоса сетки (правка пользователя 2026-10-05).
-    private static let chipsRow: CGFloat = FilterChipsLayout.rowHeight
 
     var body: some View {
         VariableBlurView(
             maxBlurRadius: EntityNavBarGeometry.backdropBlurRadius,
             direction: .blurredTopClearBottom
         )
-        .frame(height: Self.above + Self.chipsRow)
+        .frame(height: Self.above + rows)
         .offset(y: -Self.above)
         .allowsHitTesting(false)
     }
@@ -553,6 +537,7 @@ struct SearchListRow: View {
         case .book: "Книга"
         case .director: "Режиссёр"
         case .writer: "Писатель"
+        case .actor: hit.subtitle.isEmpty ? "Актёр" : hit.subtitle
         }
     }
 
@@ -580,14 +565,32 @@ private struct SearchRowThumbnail: View {
 
     static func isPoster(_ kind: SearchHit.Kind) -> Bool {
         switch kind {
-        case .movie, .book, .director, .writer: true
+        case .movie, .book, .director, .writer, .actor: true
         default: false
         }
     }
 
+    @ViewBuilder
     var body: some View {
+        if hit.kind == .book {
+            // Книга — общая карточка книги (`card / book`) в кадре постера строки.
+            BookFigure(geometry: BookFigureGeometry(coverHeight: Self.height(hit.kind)), coverWidth: Self.width) {
+                if let source = hit.artwork {
+                    ResolvedArtwork(source: source, appear: PlusSkeleton.appear) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.clear
+                    }
+                }
+            }
+        } else {
+            poster
+        }
+    }
+
+    private var poster: some View {
         let shape = self.shape
-        PlusSkeleton.fill
+        return PlusSkeleton.fill
             .frame(width: Self.width, height: Self.height(hit.kind))
             .overlay {
                 if let source = hit.artwork {
@@ -601,6 +604,7 @@ private struct SearchRowThumbnail: View {
             .clipShape(shape)
             // Бордер — у всех обложек, и у круга исполнителя тоже: в макете его там нет,
             // но правка пользователя 2026-10-05 — один бордер на все карточки-айтемы.
+            .coverArtworkMissing(hit.artwork == nil)
             .coverBorder(shape)
     }
 
@@ -639,11 +643,12 @@ struct SearchListSkeletonRow: View {
 
 // MARK: - Колдунщик
 
-/// Колдунщик музыки — `search widget` макета (`2440:29310`): самый подходящий запросу
-/// исполнитель. Строка 48: фото кругом, имя и «Исполнитель», сердце и play; ниже —
-/// карусель его альбомов (95, обложка со скруглением 12). Фон — размытая фотография
-/// исполнителя на 20 % поверх тонкой подложки.
-private struct MusicWizardCard: View {
+/// Колдунщик музыки — `search widget` макета (`2440:29310`, обновлён в `19151:18648`
+/// 2026-10-31): самый подходящий запросу исполнитель. Строка 80: фото кругом, имя
+/// и «Исполнитель», сердце и play; ниже — карусель его альбомов (`MusicCard` xSmall 95).
+/// Скругление карточки 24. Фон — размытая фотография исполнителя на 20 % поверх тонкой
+/// подложки.
+struct MusicWizardCard: View {
     let wizard: SearchState.MusicWizard
     /// Лайк — общий со строкой того же исполнителя в списке.
     let isLiked: Bool
@@ -656,10 +661,9 @@ private struct MusicWizardCard: View {
     @Environment(ActionBarState.self) private var actionBar
 
     private enum Layout {
-        static let radius: CGFloat = 16
+        static let radius: CGFloat = 24
         static let inner: CGFloat = 12
-        static let avatar: CGFloat = 48
-        static let albumRadius: CGFloat = 12
+        static let avatar: CGFloat = 80
         static let albumGap: CGFloat = 8
         /// Поля экрана вокруг карточки колдунщика
         static let side: CGFloat = 16
@@ -703,7 +707,9 @@ private struct MusicWizardCard: View {
                     PlusSkeleton.fill
                         .frame(width: Layout.avatar, height: Layout.avatar)
                         .overlay { artwork(wizard.artist.artwork) }
+                        .coverArtworkMissing(wizard.artist.artwork == nil)
                         .clipShape(Circle())
+                        .coverBorder(Circle())
 
                     VStack(alignment: .leading, spacing: -2) {
                         Text(wizard.artist.title)
@@ -753,21 +759,8 @@ private struct MusicWizardCard: View {
 
     @ViewBuilder
     private func albumCard(_ album: SearchHit) -> some View {
-        let card = VStack(alignment: .leading, spacing: 6) {
-            PlusSkeleton.fill
-                .frame(width: Layout.albumWidth, height: Layout.albumWidth)
-                .overlay { artwork(album.artwork) }
-                .clipShape(RoundedRectangle(cornerRadius: Layout.albumRadius, style: .continuous))
-                .coverBorder(RoundedRectangle(cornerRadius: Layout.albumRadius, style: .continuous))
-            Text(album.title)
-                .plusText(.textS, .medium)
-                .foregroundStyle(Color.fillOne)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.trailing, 8)
-        }
-        .frame(width: Layout.albumWidth, alignment: .leading)
-        .contentShape(.rect)
+        // Общая карточка музыки (`MusicCard`), ступень xSmall: обложка r12, Text S.
+        let card = MusicCard(size: .xsmall, width: Layout.albumWidth, cover: album.artwork, title: album.title)
 
         if let route = album.route {
             Button {

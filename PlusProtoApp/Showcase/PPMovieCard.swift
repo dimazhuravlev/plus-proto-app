@@ -7,18 +7,16 @@ import VariableBlur
 /// - `large` — «Смотреть дальше» витрины Кинопоиска и серии «Сезонов и Эпизодов» экрана
 ///   тайтла (`2052:10621`): одна целая и половина следующей (`CinemaLayout.historyFit`);
 /// - `medium` — «Смотреть дальше» и «Скачанное кино» коллекции (`2859:75998`): две
-///   целые и край 24 (`CollectionLayout.historyFit`), скругление 8;
-/// - `small` — плитка ряда ПП «Главной» (`2713:26839`).
+///   целые и край 24 (`CollectionLayout.historyFit`), скругление 8.
 ///
-/// У `large` и `medium` низ кадра один (`PPMovieStripFooter`): полоса блюра, время
-/// серым и тонкий таймлайн внутри кадра — витрина переведена на него с прежнего
-/// затемнения и полосы во всю ширину (правка пользователя 2026-10-20). Под кадром —
-/// название и серым вторая строка: у сериала сезон и серия («2 сезон, 4 серия»),
-/// в «Скачанном» — размер; год с жанром не пишем. `small` — без подписи и времени,
-/// полоса внутри кадра: ряд ПП без подписей. Только вид: нажатие — у вызывающего.
+/// Низ кадра один (`PPMovieStripFooter`): полоса блюра, время серым и тонкий таймлайн
+/// внутри кадра — витрина переведена на него с прежнего затемнения и полосы во всю
+/// ширину (правка пользователя 2026-10-20). Под кадром — название и серым вторая
+/// строка: у сериала сезон и серия («2 сезон, 4 серия»), в «Скачанном» — размер; год
+/// с жанром не пишем. Только вид: нажатие — у вызывающего.
 struct PPMovieCard: View {
     enum Size {
-        case large, medium, small
+        case large, medium
     }
 
     let still: ArtworkSource?
@@ -53,10 +51,7 @@ struct PPMovieCard: View {
     }
 
     var body: some View {
-        switch size {
-        case .large, .medium: captioned
-        case .small: tile
-        }
+        captioned
     }
 
     // MARK: Ширины и высоты
@@ -67,7 +62,6 @@ struct PPMovieCard: View {
         switch size {
         case .large: CinemaLayout.historyWidth
         case .medium: CollectionLayout.historyFit.cardWidth
-        case .small: RecentlyLayout.Movie.size.width * RecentlyLayout.tileScale
         }
     }
 
@@ -145,6 +139,7 @@ struct PPMovieCard: View {
             }
             .frame(width: width, height: Self.stillHeight(width: width))
             .clipShape(shape)
+            .coverArtworkMissing(still == nil)
             .coverBorder(shape)
     }
 
@@ -159,44 +154,6 @@ struct PPMovieCard: View {
         return "\(hours) ч \(rest) мин"
     }
 
-    // MARK: Мелкая — плитка ряда ПП
-
-    /// Кадр во всю плитку, полоса — у низа кадра, по 4 от кромок. Рисуется в числах
-    /// макета ряда (высота 80) — ужимает её ряд целиком (`ppTile`).
-    private var tile: some View {
-        typealias L = RecentlyLayout.Movie
-        let shape = RoundedRectangle(cornerRadius: RecentlyLayout.radius, style: .continuous)
-        return PlusSkeleton.fill
-            .overlay { if let still { SkeletonArtwork(source: still) } }
-            .overlay(alignment: .bottomLeading) {
-                if let progress {
-                    tileTrack(progress)
-                }
-            }
-            .frame(width: L.frame.width, height: L.frame.height)
-            .clipShape(shape)
-            .ppBorder(shape)
-            .frame(width: L.size.width, height: L.size.height)
-    }
-
-    /// Таймлайн плитки: подложка белый 10 % на блюре, заливка — акцент Плюса.
-    private func tileTrack(_ progress: Double) -> some View {
-        typealias L = RecentlyLayout.Movie
-        return Capsule()
-            .fill(Color.buttonsPrimary)
-            .background {
-                BackdropBlurView(radius: L.trackBlur)
-                    .clipShape(Capsule())
-            }
-            .overlay(alignment: .leading) {
-                Capsule()
-                    .fill(Color.plusSolidOne)
-                    .frame(width: L.trackWidth * min(max(progress, 0), 1))
-            }
-            .frame(width: L.trackWidth, height: L.trackHeight)
-            .padding(L.trackInset)
-            .allowsHitTesting(false)
-    }
 }
 
 /// Карточка ПП кнопкой — «Смотреть дальше»: тап **сразу открывает киноплеер** с места,

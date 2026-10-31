@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Умная загрузка — включена ли и закрыт ли её баннер (задача пользователя 2026-10-21).
 /// Одна на приложение: баннер стоит первым в «Скачанном» «Моего» и в шапке «Скачанных
-/// треков», и закрывают его, и переключают — разом в обоих местах. Лежит на диске.
-/// Саму загрузку прототип не делает — это состояние баннера.
+/// треков», и закрывают его, и переключают — разом в обоих местах. Включённость лежит
+/// на диске, закрытие — только до конца процесса. Саму загрузку прототип не делает —
+/// это состояние баннера.
 @MainActor
 @Observable
 final class SmartDownloads {
@@ -13,24 +14,24 @@ final class SmartDownloads {
         didSet { UserDefaults.standard.set(isOn, forKey: Self.onKey) }
     }
 
-    private(set) var isBannerDismissed: Bool {
-        didSet { UserDefaults.standard.set(isBannerDismissed, forKey: Self.dismissedKey) }
-    }
+    /// Закрытый ✕ баннер возвращается в каждом новом запуске (правка пользователя
+    /// 2026-10-28): на диск не пишется.
+    private(set) var isBannerDismissed = false
 
     private static let onKey = "smartDownloadsOn"
-    private static let dismissedKey = "smartDownloadsBannerDismissed"
+    /// Прежний ключ закрытия «насовсем» — стирается на запуске, чтобы не висел в настройках.
+    private static let legacyDismissedKey = "smartDownloadsBannerDismissed"
 
     private init() {
         #if DEBUG
-        // `-debugResetCollection 1` — баннер снова на месте и включён, как на первом запуске.
+        // `-debugResetCollection 1` — баннер включён, как на первом запуске.
         if UserDefaults.standard.bool(forKey: "debugResetCollection") {
             UserDefaults.standard.removeObject(forKey: Self.onKey)
-            UserDefaults.standard.removeObject(forKey: Self.dismissedKey)
         }
         #endif
+        UserDefaults.standard.removeObject(forKey: Self.legacyDismissedKey)
         // По умолчанию — включена: первое состояние макета (`19836:173541`).
         isOn = UserDefaults.standard.object(forKey: Self.onKey) as? Bool ?? true
-        isBannerDismissed = UserDefaults.standard.bool(forKey: Self.dismissedKey)
     }
 
     func toggle() {
@@ -54,7 +55,7 @@ enum SmartDownloadsMotion {
 /// `19836:173542` — выключена) в наших стилях: Headline M и Text M ДС, токены палитры,
 /// белая `PlusButton` M, ✕ — plain S. Подложка Fill/Nine с бордером внутрь, r 18, поля 24;
 /// у включённой за иконкой фиолетовое свечение. Кнопка переключает состояния, ✕ закрывает
-/// баннер насовсем (`SmartDownloads`).
+/// баннер до следующего запуска (`SmartDownloads`).
 struct SmartDownloadsBanner: View {
     /// ✕ — только в «Скачанном» «Моего»; на экране «Скачанных треков» баннер постоянный,
     /// скрыть его оттуда нельзя (правка пользователя 2026-10-22).

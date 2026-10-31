@@ -6,6 +6,17 @@ struct EntityScreen: View {
     let route: EntityRoute
 
     var body: some View {
+        screen
+            // Пока экран на месте, подпись карточки, из которой он развернулся, спрятана
+            // вместе с её обложкой (`ZoomPresence`).
+            .background {
+                ZoomPresenceTracker(route: route)
+                    .frame(width: 0, height: 0)
+            }
+    }
+
+    @ViewBuilder
+    private var screen: some View {
         switch route {
         case .movie(let ref): MovieScreen(entity: ref)
         case .book(let ref): BookScreen(entity: ref)

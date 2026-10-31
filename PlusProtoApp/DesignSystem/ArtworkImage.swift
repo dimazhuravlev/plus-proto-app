@@ -31,9 +31,9 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
     /// анимации в любом случае — она есть уже на первом кадре.
     let appear: Animation?
     @ViewBuilder let content: (Image) -> Content
-    /// Обложка книги — сгиб у корешка поверх картинки (`BookFigure`): вместе с ней
-    /// он и проявляется, а пока её нет — его нет.
-    @Environment(\.bookHingeWidth) private var hingeWidth
+    /// Обложка книги — бордер, тон и корешок поверх картинки (`BookFigure`): вместе
+    /// с ней они и проявляются, а пока её нет — их нет.
+    @Environment(\.bookCoverDecor) private var bookDecor
     /// Что показать, если картинки нет вовсе: у источника нет бандленного фолбэка,
     /// а живая не загрузилась. Нужен там, где вместо картинки уместен текст —
     /// логотип проекта заменяется его названием.
@@ -66,16 +66,26 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
     var body: some View {
         Group {
             if let image = loaded ?? fallback {
-                if let hingeWidth {
-                    // Сгиб — по кадру обложки, а не по картинке: `scaledToFill` у обложки,
+                if let bookDecor {
+                    // Корешок — по кадру обложки, а не по картинке: `scaledToFill` у обложки,
                     // чьи пропорции шире кадра, вылезает за него по бокам, и прикреплённый
-                    // к картинке сгиб уезжал за левую кромку — у книг его почти не было
+                    // к картинке корешок уезжал за левую кромку — у книг его почти не было
                     // видно (жалоба пользователя 2026-10-19). Распорка берёт ровно кадр.
                     Color.clear
                         .overlay { content(image) }
+                        .overlay {
+                            Color.white.opacity(BookSpine.toneOpacity)
+                                .blendMode(.difference)
+                                .allowsHitTesting(false)
+                        }
                         .overlay(alignment: .leading) {
-                            BookHingeShade.gradient
-                                .frame(width: hingeWidth)
+                            BookSpine.gradient
+                                .frame(width: bookDecor.spineWidth)
+                                .allowsHitTesting(false)
+                        }
+                        .overlay {
+                            BookCoverShape(radius: bookDecor.radius)
+                                .strokeBorder(CoverBorder.color, lineWidth: bookDecor.borderWidth)
                                 .allowsHitTesting(false)
                         }
                 } else {
@@ -85,6 +95,8 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
                 placeholder()
             }
         }
+        // Бордер обложки над картинкой — только когда она на месте (`coverBorder`).
+        .preference(key: CoverArtworkShownKey.self, value: (loaded ?? fallback) != nil)
         .task(id: source.remoteURL) {
             guard let url = source.remoteURL else {
                 loaded = nil

@@ -197,6 +197,7 @@ struct EntityTrackRow: View {
                     }
                 }
                 .clipShape(shape)
+                .coverArtworkMissing(cover == nil)
                 .coverBorder(shape)
 
             VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
@@ -209,10 +210,13 @@ struct EntityTrackRow: View {
                         EntityExplicitBadge()
                     }
                 }
-                Text(artist)
-                    .plusText(.textM, .medium)
-                    .foregroundStyle(Color.fillSubtitle)
-                    .lineLimit(1)
+                // Нет исполнителя — нет строки: название встаёт по центру обложки.
+                if !artist.isEmpty {
+                    Text(artist)
+                        .plusText(.textM, .medium)
+                        .foregroundStyle(Color.fillSubtitle)
+                        .lineLimit(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

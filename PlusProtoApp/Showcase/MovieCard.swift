@@ -73,6 +73,8 @@ struct MovieCard: View {
             .plusText(.textM, .medium)
             .frame(width: MovieCardLayout.captionWidth * ShowcaseLayout.scale, alignment: .leading)
             .showcaseSwappable()
+            // Уходит вместе с постером, пока открыт экран тайтла.
+            .showcaseCaption()
             .offset(x: MovieCardLayout.captionOrigin.x * ShowcaseLayout.scale, y: MovieCardLayout.captionOrigin.y * ShowcaseLayout.scale)
     }
 

@@ -11,8 +11,6 @@ struct CollectionListRoute: Hashable {
         case playlists(CollectionListFilter)
         /// «Покупки» — стартовый набор (`CollectionSeeds.purchases`)
         case purchases
-        /// «Мои оценки» — оценённые фильмы (`MovieRatings`)
-        case ratings
         /// «Читаю» — начатые книги (`ReadingHistory`)
         case reading
         /// «Прочитано» — стартовый набор (`CollectionSeeds.read`)
@@ -24,9 +22,21 @@ struct CollectionListRoute: Hashable {
     let title: String
 }
 
+extension CollectionListRoute.Source {
+    /// Полка, чьи отметки показывает список, — её снимает «Удалить» в шторке записи.
+    /// «Покупки», «Читаю», «Прочитано» и свои плейлисты — без отметок.
+    var shelf: CollectionStore.Shelf? {
+        switch self {
+        case .shelf(_, let shelf): shelf
+        case .playlists(let filter): filter == .liked ? .favorites : nil
+        case .purchases, .reading, .read: nil
+        }
+    }
+}
+
 /// Чипсы полных списков: плейлисты «Любимого» и «Буду смотреть».
 enum CollectionListFilter: Hashable {
-    /// Свои плейлисты — первой строкой «Создать новый плейлист» (создание не делаем,
+    /// Свои плейлисты — первой строкой «Новый плейлист» (создание не делаем,
     /// решение пользователя 2026-10-20), дальше стартовый набор `MyPlaylists`.
     case mine
     /// Отмеченные «нравится» — плейлисты полки
@@ -66,13 +76,10 @@ enum CollectionListLayout {
     /// своя (правка пользователя 2026-10-04): постер 2:3 — 80 × 120, строка выше
     static let posterHeight: CGFloat = cover * 3 / 2
 
-    /// Книга — наша проекция шириной 80 вместе с выступом страниц справа; высота
-    /// обложки — от её пропорций, поэтому строки книг разной высоты.
+    /// Книга — карточка книги (`card / book`) шириной 80, как обложка альбома; высота —
+    /// от пропорций обложки, поэтому строки книг разной высоты.
     static func book(aspect: CGFloat?) -> BookFigureGeometry {
-        let range = BookFigureGeometry.aspectRange
-        let clamped = min(max(aspect ?? BookFigureGeometry.defaultAspect, range.lowerBound), range.upperBound)
-        // Кадр книги — обложка и выступ страниц: 2 на каждые 128 высоты.
-        return BookFigureGeometry(coverHeight: cover / (clamped + 2 / BookFigureGeometry.referenceHeight))
+        BookFigureGeometry.fitting(width: cover, aspect: aspect).geometry
     }
     static let side: CGFloat = 16
     static let rowPadding: CGFloat = 8
@@ -81,7 +88,7 @@ enum CollectionListLayout {
     static let titleLines = 2
     /// Список — на 8 ниже навбара (`stack` макета)
     static let listTop: CGFloat = 8
-    /// «+» в квадрате строки «Создать новый плейлист» (`2871:77052`)
+    /// «+» в квадрате строки «Новый плейлист» (`18122:11880`)
     static let addIcon: CGFloat = 24
 }
 
@@ -126,20 +133,23 @@ struct CollectionListScreen: View {
         case .shelf(let kind, let shelf):
             // «Можно посмотреть» — только то, что есть в Кинопоиске.
             shownFilter == .watchable
-                ? collection.items(kind, on: shelf).filter { $0.kinopoiskID.map(MovieAvailability.shared.isAvailable) ?? false }
+                ? collection.items(kind, on: shelf).filter {
+                    // Сериалы смотреть можно всегда — ограничение только у фильмов (решение
+                    // пользователя 2026-10-31).
+                    $0.isSeries == true || ($0.kinopoiskID.map(MovieAvailability.shared.isAvailable) ?? false)
+                }
                 : collection.items(kind, on: shelf)
         case .playlists:
             // «Мои» — стартовый набор своих плейлистов (`MyPlaylists`), «Любимые» — полка.
             shownFilter == .liked ? collection.items(.playlist, on: .favorites) : MyPlaylists.items
         case .purchases: CollectionSeeds.purchases
-        case .ratings: MovieRatings.shared.entries.map(\.item)
         case .reading: CollectionMix.readingItems(actionBar.readingHistory)
         case .read: CollectionSeeds.read
         }
     }
 
-    /// Строка-действие первой в списке: «Создать новый плейлист» у «Моих плейлистов»
-    /// (`2871:77052`), «Добавить исполнителей» у любимых исполнителей (`2877:77621`).
+    /// Строка-действие первой в списке: «Новый плейлист» у «Моих плейлистов»
+    /// (`18122:11880`), «Кого ещё слушаете?» у любимых исполнителей (`18122:12950`).
     private var leadingAction: CollectionListAction? {
         if shownFilter == .mine { return .createPlaylist }
         if case .shelf(.artist, .favorites) = route.source { return .addArtists }
@@ -217,9 +227,9 @@ struct CollectionListScreen: View {
                         item: item,
                         queue: queue,
                         isFirst: isFirst,
+                        shelf: route.source.shelf,
                         // «Читаю» — сразу читалка (правка пользователя 2026-10-20).
-                        readBook: route.source == .reading ? CollectionMix.readBook(item.id, in: actionBar.readingHistory) : nil,
-                        rating: route.source == .ratings ? MovieRatings.shared.rating(for: item.id) : nil
+                        readBook: route.source == .reading ? CollectionMix.readBook(item.id, in: actionBar.readingHistory) : nil
                     )
                 }
             }
@@ -281,25 +291,27 @@ enum CollectionListMotion {
 
 // MARK: - Строка-действие
 
-/// Строка-действие в начале полного списка.
+/// Строка-действие в начале полного списка — тексты макета «Общей коллекции»
+/// (решение пользователя 2026-10-28).
 enum CollectionListAction {
-    /// «Создать новый плейлист» — `2871:77052`
+    /// «Новый плейлист» — «Плейлисты · Мои», `18122:11480`
     case createPlaylist
-    /// «Добавить исполнителей» — `2877:77621`
+    /// «Кого ещё слушаете?» — переход в визард любимых исполнителей, «Исполнители»,
+    /// `18122:12585`
     case addArtists
 
     var title: String {
         switch self {
-        case .createPlaylist: "Создать новый плейлист"
-        case .addArtists: "Добавить исполнителей"
+        case .createPlaylist: "Новый плейлист"
+        case .addArtists: "Кого ещё слушаете?"
         }
     }
 
-    /// Вторая строка серым — Text S, перенос — как в макете.
+    /// Вторая строка серым — Text M, перенос — как в макете.
     var subtitle: String? {
         switch self {
         case .createPlaylist: nil
-        case .addArtists: "Чем их больше, тем лучше\nрекомендации"
+        case .addArtists: "Добавьте любимых —\nрекомендации станут точнее"
         }
     }
 
@@ -307,17 +319,12 @@ enum CollectionListAction {
     var isCircle: Bool { self == .addArtists }
 }
 
-/// Строка-действие — `list-item / music` (`2871:77052`, `2877:77621`): квадрат 80 r12
-/// (у исполнителей — круг) с заливкой Fill/Nine и «+» 24 по центру, название Text M
-/// и серым Text S, справа шеврон. Действий пока нет (решения пользователя 2026-10-20) —
-/// строка только откликается нажатием и хаптикой.
+/// Строка-действие — `list-item / music` (`18122:11880`, `18122:12950`): квадрат 80 r12
+/// (у исполнителей — круг) с заливкой и бордером Fill/Nine и «+» 24 по центру, название
+/// Text M и вплотную под ним серым Text M, справа шеврон. Действий пока нет (решения
+/// пользователя 2026-10-20) — строка только откликается нажатием и хаптикой.
 private struct CollectionActionRow: View {
     let action: CollectionListAction
-
-    private enum Layout {
-        /// Название — описание (`gap-[2px]` text-label)
-        static let titleToSubtitle: CGFloat = 2
-    }
 
     var body: some View {
         HStack(spacing: CollectionListLayout.textGap) {
@@ -331,14 +338,14 @@ private struct CollectionActionRow: View {
                         .foregroundStyle(Color.fillFive)
                 }
 
-            VStack(alignment: .leading, spacing: Layout.titleToSubtitle) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(action.title)
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(1)
                 if let subtitle = action.subtitle {
                     Text(subtitle)
-                        .plusText(.textS, .medium)
+                        .plusText(.textM, .medium)
                         .foregroundStyle(Color.fillSubtitle)
                 }
             }
@@ -363,13 +370,14 @@ private struct CollectionActionRow: View {
         .accessibilityAddTraits(.isButton)
     }
 
+    /// Подложка обложки — Fill/Nine и бордер обложек внутрь (`. / card / image-music`).
     @ViewBuilder
     private var cover: some View {
         if action.isCircle {
-            Circle().fill(Color.fillNine)
+            Circle().fill(Color.fillNine).coverBorder(Circle())
         } else {
-            RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
-                .fill(Color.fillNine)
+            let shape = RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
+            shape.fill(Color.fillNine).coverBorder(shape)
         }
     }
 
@@ -381,6 +389,104 @@ private struct CollectionActionRow: View {
 
 // MARK: - Строка
 
+/// Строка полного списка — `list-item / music`: обложка 80 (у книги — карточка книги
+/// шириной 80), название Text M в две строки с бейджем 18+, деталь серым; справа — свои
+/// контролы места. Разделители 0.5, проседает строка, а не черты. Общая у полных списков
+/// «Моего» и книг писателя (задача пользователя 2026-10-30: «как в коллекции, но со своими
+/// props»): что справа и что по тапу — у вызывающего.
+struct CollectionListItem<Thumbnail: View, Trailing: View>: View {
+    let title: String
+    var subtitle: String = ""
+    /// Подпись частями через точку — вместо `subtitle` («Альбом · Blur», таб «Музыка»
+    /// выдачи поиска, макет `19151:18648`).
+    var caption: [CaptionPart] = []
+    var isExplicit = false
+    let isFirst: Bool
+    /// Строка внутри кнопки — проседает под пальцем; без перехода — стоит.
+    var isPressable = true
+    @ViewBuilder var thumbnail: Thumbnail
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: CollectionListLayout.textGap) {
+            thumbnail
+
+            VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .plusText(.textM, .medium)
+                        .foregroundStyle(Color.fillOne)
+                        .lineLimit(CollectionListLayout.titleLines)
+                    if isExplicit {
+                        EntityExplicitBadge()
+                    }
+                }
+                if !caption.isEmpty {
+                    DotCaptionLine(parts: caption)
+                } else if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .plusText(.textM, .medium)
+                        .foregroundStyle(Color.fillSubtitle)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            trailing
+        }
+        .padding(.horizontal, CollectionListLayout.side)
+        .padding(.vertical, CollectionListLayout.rowPadding)
+        .frame(minHeight: CollectionListLayout.cover + 2 * CollectionListLayout.rowPadding)
+        .contentShape(.rect)
+        // Проседает строка, а черты стоят: просевшая черта короче соседних и съезжает.
+        .pressScale(PressMotion.rowScale, isEnabled: isPressable)
+        .overlay(alignment: .bottom) { divider }
+        .overlay(alignment: .top) { if isFirst { divider } }
+    }
+
+    private var divider: some View {
+        ListDivider()
+            .padding(.horizontal, CollectionListLayout.side)
+    }
+}
+
+/// Обложка книги в строке списка — карточка книги (`card / book`) шириной 80, высота —
+/// от пропорций обложки. `nil` — скелетон.
+struct CollectionListBookCover: View {
+    let artwork: ArtworkSource?
+    let aspect: CGFloat?
+
+    var body: some View {
+        let book = BookFigureGeometry.fitting(width: CollectionListLayout.cover, aspect: aspect)
+        BookFigure(geometry: book.geometry, coverWidth: book.coverWidth) {
+            if let artwork {
+                SkeletonArtwork(source: artwork)
+            }
+        }
+    }
+}
+
+/// Скелетон строки с книгой — того же габарита, пока список собирается.
+struct CollectionListBookSkeletonRow: View {
+    let isFirst: Bool
+
+    var body: some View {
+        CollectionListItem(title: "", isFirst: isFirst, isPressable: false) {
+            CollectionListBookCover(artwork: nil, aspect: nil)
+        } trailing: {
+            EmptyView()
+        }
+        .overlay(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 8) {
+                SkeletonBar(width: 160)
+                SkeletonBar(width: 100)
+            }
+            .padding(.leading, CollectionListLayout.side + CollectionListLayout.cover + CollectionListLayout.textGap)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// Строка полного списка — `list-item / music`: обложка 80 (квадрат r12, у исполнителя
 /// круг, у фильма постер 2:3, у книги наша проекция), название Text M в две строки
 /// с бейджем 18+, деталь серым; справа отметка «скачано» и «ещё». Разделители 0.5.
@@ -389,10 +495,10 @@ private struct CollectionListRow: View {
     /// Треки показанного списка — очередь, если строка сама трек.
     let queue: [MusicNowPlaying]
     let isFirst: Bool
+    /// Полка списка — для действий записи (`nil` — список без отметок).
+    let shelf: CollectionStore.Shelf?
     /// Начатая книга «Читаю»: тап — читалка, а не экран книги.
     var readBook: BookInProgress? = nil
-    /// «Мои оценки» — эмодзи оценки над углом постера, как у карточки карусели.
-    var rating: MovieRating? = nil
 
     @Environment(CollectionStore.self) private var collection
     @Environment(AppNavigationState.self) private var navigation
@@ -400,28 +506,14 @@ private struct CollectionListRow: View {
     @Environment(\.stackZoomNamespace) private var zoom
 
     var body: some View {
-        HStack(spacing: CollectionListLayout.textGap) {
+        CollectionListItem(
+            title: item.title,
+            subtitle: item.subtitle,
+            isExplicit: item.isExplicit == true,
+            isFirst: isFirst
+        ) {
             thumbnail
-
-            VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {
-                HStack(spacing: 6) {
-                    Text(item.title)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillOne)
-                        .lineLimit(CollectionListLayout.titleLines)
-                    if item.isExplicit == true {
-                        EntityExplicitBadge()
-                    }
-                }
-                if !item.subtitle.isEmpty {
-                    Text(item.subtitle)
-                        .plusText(.textM, .medium)
-                        .foregroundStyle(Color.fillSubtitle)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+        } trailing: {
             HStack(spacing: CollectionListLayout.controlsGap) {
                 if collection.isDownloaded(item.id) {
                     Image("iconDownload")
@@ -431,30 +523,11 @@ private struct CollectionListRow: View {
                         .foregroundStyle(Color.accentPrimary)
                         .accessibilityLabel("Скачано")
                 }
-                Menu {
-                    CollectionItemMenu(item: item)
-                } label: {
-                    // Вид `PlusButton` plain M; круг 40 — под отрицательным отступом.
-                    // Своё нажатие у «ещё» — и палец на нём не просаживает строку.
-                    TrackMoreLabel()
-                        .pressScale(PressMotion.buttonScale)
-                }
-                // Хаптика — как у кнопок ДС: меню открывается системой, тап ловим рядом.
-                .simultaneousGesture(TapGesture().onEnded { PlayerHaptics.tap() })
-                .padding(-TrackMoreLabel.hitInset)
-                .accessibilityLabel("Ещё")
+                CollectionItemMoreButton(item: item, shelf: shelf)
             }
         }
-        .padding(.horizontal, CollectionListLayout.side)
-        .padding(.vertical, CollectionListLayout.rowPadding)
-        .frame(minHeight: CollectionListLayout.cover + 2 * CollectionListLayout.rowPadding)
-        .contentShape(.rect)
-        // Проседает строка, а черты стоят: просевшая черта короче соседних и съезжает.
-        .pressScale(PressMotion.rowScale)
-        .overlay(alignment: .bottom) { divider }
-        .overlay(alignment: .top) { if isFirst { divider } }
         .onTapGesture(perform: open)
-        .contextMenu { CollectionItemMenu(item: item) }
+        .collectionItemActions(item, shelf: shelf)
     }
 
     @ViewBuilder
@@ -467,9 +540,6 @@ private struct CollectionListRow: View {
                 height: CollectionListLayout.posterHeight,
                 shape: RoundedRectangle(cornerRadius: CollectionListLayout.coverRadius, style: .continuous)
             ))
-            .overlay(alignment: .topLeading) {
-                if let rating { MovieRatingBadge(rating: rating) }
-            }
         case .book:
             source(bookFigure)
         case .artist:
@@ -490,12 +560,7 @@ private struct CollectionListRow: View {
     }
 
     private var bookFigure: some View {
-        let geometry = CollectionListLayout.book(aspect: item.aspect)
-        return BookFigure(geometry: geometry, coverWidth: geometry.coverWidth(aspect: item.aspect)) {
-            if let artwork = item.artwork {
-                SkeletonArtwork(source: artwork)
-            }
-        }
+        CollectionListBookCover(artwork: item.artwork, aspect: item.aspect)
     }
 
     /// Обложка — источник зума в экран сущности, как карточки коллекции.
@@ -508,13 +573,11 @@ private struct CollectionListRow: View {
         }
     }
 
-    private var divider: some View {
-        ListDivider()
-            .padding(.horizontal, CollectionListLayout.side)
-    }
 
     /// Трек и плейлист играют сразу, остальные открывают свой экран.
     private func open() {
+        // Отпускание после долгого нажатия, открывшего шторку, — не тап.
+        guard !ActionSheetState.shared.isPresented else { return }
         if let readBook {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
