@@ -13,6 +13,9 @@ struct DebugGeneralControls: View {
     @AppStorage(TabStyleDebug.whiteActiveKey) private var whiteActiveTab = false
     /// Голова Люмена в поле поиска вместо навигации «Главной» — ключ `lumenInSearch` (`LumenDebug`).
     @AppStorage(LumenDebug.inSearchKey) private var lumenInSearch = false
+    /// Подсказка порядка блоков «Моего» в каждой сессии, а не один раз — ключ
+    /// `collectionReorderHintEverySession` (`CollectionReorderHint`).
+    @AppStorage(CollectionReorderHint.everySessionKey) private var reorderHintEverySession = false
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
@@ -71,6 +74,14 @@ struct DebugGeneralControls: View {
                 isOn: $lumenInSearch,
                 accessibility: "Люмен в поле поиска"
             )
+
+            title("Моё", top: Layout.sectionGap)
+            toggleIsland(
+                "Подсказка порядка в каждой сессии",
+                isOn: $reorderHintEverySession,
+                accessibility: "Подсказка порядка блоков «Моего» в каждой сессии"
+            )
+            note("Включено — подсказка у кнопки порядка после каждого перезапуска приложения; выключено — один раз, факт показа хранится на устройстве")
         }
     }
 

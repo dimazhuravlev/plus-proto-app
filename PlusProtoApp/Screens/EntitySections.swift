@@ -197,6 +197,7 @@ struct EntityTrackRow: View {
                     }
                 }
                 .clipShape(shape)
+                .coverArtworkMissing(cover == nil)
                 .coverBorder(shape)
 
             VStack(alignment: .leading, spacing: EntitySectionLayout.textStackGap) {

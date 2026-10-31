@@ -220,21 +220,17 @@ struct MovieScreen: View {
     private func startWatching() {
         UIImpactFeedbackGenerator(style: .medium)
             .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-        // Сериал — с серии, на которой остановились, иначе с первой.
-        if let current = currentEpisode {
-            actionBar.open(.movie(.playing(current.episode, of: entity, details: details, still: current.still)))
-            return
-        }
-        actionBar.open(.movie(MovieInProgress(
-            id: entity.id,
-            still: details.backdrop.map { ArtworkSource.remote($0) } ?? entity.artwork,
-            title: details.title,
-            subtitle: details.playerSubtitle,
-            runtime: details.runtime,
-            // Постер — карточке «Продолжить» промо «Главной» (задача 69): крупный, как
-            // у обложки экрана, — карточка 210 pt, малый постер на ней мылится.
-            poster: (details.coverPoster ?? details.poster).map { ArtworkSource.remote($0) }
-        )))
+        actionBar.open(.movie(MovieWatch.item(entity, details: details, history: actionBar.watchHistory)))
+    }
+
+    /// Фильм, который нельзя смотреть, — энциклопедический тайтл (задача пользователя
+    /// 2026-10-31): в Kinopoisk HD его нет (`MovieAvailability`). Сериалы смотреть можно
+    /// всегда. Пока детали едут, «сериал ли» — из того, что уже известно (ответ поиска,
+    /// подборка): панель не должна перескакивать на глазах.
+    private var isWatchable: Bool {
+        guard let id = entity.kinopoiskID, MovieAvailability.shared.isKnownUnavailable(id) else { return true }
+        let isSeries = store.details?.isSeries ?? MovieDetailsStore.knownIsSeries(id) ?? false
+        return isSeries
     }
 
     /// Тайтл в коллекции «Моё»: «Позже» кладёт его в «Любимое», «Скачать» — в «Скачанное»
@@ -252,29 +248,13 @@ struct MovieScreen: View {
         return SeriesCatalog.shared.info(details.id)
     }
 
-    /// Серия с кадром той же раздачи, что в карусели «Сезонов и Эпизодов».
-    private func withStill(_ episode: SeriesEpisode) -> EpisodeWithStill {
-        let episodes = seriesInfo?.episodes ?? [episode]
-        let stills = SeriesStills.assign(episodes, titleStills: details.stills, seed: details.id)
-        return EpisodeWithStill(episode: episode, still: stills[episode.id].map { ArtworkSource.remote($0) })
-    }
-
-    /// «Смотреть» сериала — серия, на которой остановились, иначе первая.
-    private var currentEpisode: EpisodeWithStill? {
-        guard details.isSeries else { return nil }
-        let watched = actionBar.watchHistory.entries.first { $0.id == entity.id }?.movie
-        let season = watched?.season ?? 1
-        let number = watched?.episode ?? 1
-        let episode = seriesInfo?.episode(season, number)
-            ?? (season == 1 && number == 1 ? seriesInfo?.episodes.first : nil)
-            ?? SeriesEpisode(season: season, number: number, runtime: details.episodeLength)
-        return withStill(episode)
-    }
-
     /// «Скачать» сериала качает первую серию, а не тайтл (решение пользователя 2026-10-20).
     private var downloadEpisode: EpisodeWithStill? {
         guard details.isSeries else { return nil }
-        return withStill(seriesInfo?.episodes.first ?? SeriesEpisode(season: 1, number: 1, runtime: details.episodeLength))
+        return MovieWatch.withStill(
+            seriesInfo?.episodes.first ?? SeriesEpisode(season: 1, number: 1, runtime: details.episodeLength),
+            details: details
+        )
     }
 
     /// Текст лида — всегда сам аргумент, короткое редакционное описание.
@@ -386,7 +366,12 @@ struct MovieScreen: View {
         }
         .background(Color.surfaceOne.ignoresSafeArea())
         .overlay(alignment: .bottom) {
-            MovieMainButtons(onPlay: startWatching, collectionItem: collectionItem, episode: downloadEpisode)
+            MovieMainButtons(
+                onPlay: startWatching,
+                collectionItem: collectionItem,
+                episode: downloadEpisode,
+                isWatchable: isWatchable
+            )
         }
         #if DEBUG
         // `-debugTapPlay` — нажать «Смотреть»: тапнуть по симулятору из шелла нечем,
@@ -762,6 +747,9 @@ private struct MovieMainButtons: View {
     let collectionItem: CollectionItem?
     /// Сериал — «Скачать» качает эту серию, а не тайтл целиком.
     var episode: EpisodeWithStill?
+    /// Нельзя смотреть — вместо трёх кнопок одна «Сохранить» на всю ширину (решение
+    /// пользователя 2026-10-31): та же закладка «Любимого», что «Позже».
+    var isWatchable = true
 
     @Environment(CollectionStore.self) private var collection
 
@@ -777,9 +765,13 @@ private struct MovieMainButtons: View {
 
     var body: some View {
         HStack(spacing: MovieLayout.panelGap) {
-            playButton
-            watchLaterButton
-            downloadButton
+            if isWatchable {
+                playButton
+                watchLaterButton
+                downloadButton
+            } else {
+                saveButton
+            }
         }
         .frame(height: MovieLayout.buttonHeight)
         .padding(.horizontal, MovieLayout.panelSide)
@@ -840,6 +832,21 @@ private struct MovieMainButtons: View {
             ToastCenter.shared.activate()
         }
         #endif
+    }
+
+    /// «Сохранить» энциклопедического тайтла — «Позже» на всю ширину, другим словом.
+    private var saveButton: some View {
+        PlusButton(
+            "Сохранить",
+            type: .secondary,
+            size: MovieLayout.buttonSize,
+            fillsWidth: true,
+            accessibilityTitle: isSaved ? "Убрать из сохранённого" : "Сохранить",
+            haptic: .inAction,
+            action: toggleLater
+        ) {
+            BookmarkGlyph(isSaved: isSaved, box: MovieLayout.buttonSize.iconBox)
+        }
     }
 
     private func toggleLater() {

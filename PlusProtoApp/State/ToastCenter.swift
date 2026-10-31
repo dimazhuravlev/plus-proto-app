@@ -6,8 +6,10 @@ enum ToastGraphic: Equatable {
     case none
     /// `graphic=cover`: квадратная обложка 32 с наклоном.
     case cover(ArtworkSource)
-    /// `graphic=cover` с прямоугольной обложкой 32×44 (фильм, книга), тот же наклон 6°.
+    /// `graphic=cover` с прямоугольной обложкой 32×44 (фильм), тот же наклон 6°.
     case poster(ArtworkSource)
+    /// То же для книги: в кадре постера — карточка книги (`card / book`).
+    case book(ArtworkSource)
     /// Круглая аватарка 40 внутри пилюли (у артиста — фото). В макете `graphic=image` — квадрат
     /// вплотную к торцу, у фото артиста он выходил полукругом с прямым краем (правка 2026-10-12).
     case avatar(ArtworkSource)

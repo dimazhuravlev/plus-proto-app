@@ -170,15 +170,19 @@ private struct CinemaHistoryRow: View {
     }
 }
 
-/// Подборка постерами — общая карусель Кино: главная Кинопоиска и «Главная». С `isRanked` —
+/// Подборка постерами — общая карусель Кино: главная Кинопоиска, «Главная» и пустое нулевое
+/// состояние поиска (`SearchResultsView`: без шеврона и со своим переходом). С `isRanked` —
 /// «Топ-10» (`card / poster / top-10`): первые десять, перед постером цифра места, название
 /// в одну строку.
 struct CinemaPosterCarousel: View {
     let title: String
     let titles: [CinemaCatalog.Title]
     var isRanked = false
+    var showsChevron = true
     /// Тап по шапке — на «Главной» ведёт в таб Кинопоиска.
     var headerAction: (() -> Void)? = nil
+    /// Свой переход вместо `navigation.open` — у поиска он сперва запоминает выдачу.
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     var body: some View {
         let items = isRanked ? Array(titles.prefix(ServiceCarouselRank.limit)) : titles
@@ -192,11 +196,12 @@ struct CinemaPosterCarousel: View {
         ServiceCarousel(
             title: title,
             cardHeight: CinemaLayout.posterHeight + CinemaLayout.captionGap + captionHeight,
+            showsChevron: showsChevron,
             isRanked: isRanked,
             headerAction: headerAction
         ) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, title in
-                CinemaPosterCard(title: title, captionHeight: captionHeight, place: isRanked ? index + 1 : nil)
+                CinemaPosterCard(title: title, captionHeight: captionHeight, place: isRanked ? index + 1 : nil, onOpen: onOpen)
                     .zIndex(isRanked ? ServiceCarouselRank.zIndex(place: index + 1) : 0)
             }
         }
@@ -210,13 +215,16 @@ private struct CinemaPosterCard: View {
     let title: CinemaCatalog.Title
     let captionHeight: CGFloat
     var place: Int? = nil
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
 
     var body: some View {
         let scale = CinemaLayout.posterFit.scale
-        Button { navigation.open(title.route) } label: {
+        Button {
+            if let onOpen { onOpen(title.route) } else { navigation.open(title.route) }
+        } label: {
             VStack(alignment: .leading, spacing: CinemaLayout.captionGap) {
                 posterSource
                     .overlay(alignment: .topLeading) {
@@ -232,6 +240,7 @@ private struct CinemaPosterCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(height: captionHeight, alignment: .top)
                     .padding(.trailing, CinemaLayout.captionTrailing)
+                    .zoomSourceCaption(zoom != nil ? title.route : nil)
             }
             .frame(width: CinemaLayout.posterWidth, alignment: .leading)
             .padding(.leading, place == nil ? 0 : ServiceCarouselRank.lead * scale)
@@ -259,15 +268,24 @@ private struct CinemaPosterCard: View {
             }
             .frame(width: CinemaLayout.posterWidth, height: CinemaLayout.posterHeight)
             .clipShape(shape)
+            .coverArtworkMissing(title.poster == nil)
             .coverBorder(shape)
     }
 }
 
 /// Скелетон подборки — того же габарита: шапка-полоса и постеры с двумя строками.
-private struct CinemaRowSkeleton: View {
+struct CinemaRowSkeleton: View {
+    /// Название уже известно (пустое состояние поиска) — заголовок настоящий, без шеврона;
+    /// `nil` — полоса.
+    var title: String? = nil
+
     var body: some View {
         VStack(spacing: 0) {
-            EntitySectionHeaderSkeleton(lineHeight: CinemaLayout.headerLine)
+            if let title {
+                EntitySectionHeader(title: title, showsChevron: false, lineHeight: CinemaLayout.headerLine)
+            } else {
+                EntitySectionHeaderSkeleton(lineHeight: CinemaLayout.headerLine)
+            }
 
             // Ряд постеров шире экрана (3 × 148 + поля = 492), и раскладкой он ленту
             // раздувал: скелетон промо тянулся на всю эту ширину, мета уезжала вправо,

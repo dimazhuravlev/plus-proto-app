@@ -118,7 +118,9 @@ struct MusicCard: View {
     var body: some View {
         VStack(alignment: shape == .circle ? .center : .leading, spacing: MusicCardLayout.textGap) {
             zoomSource(coverView)
+            // Подпись уходит вместе с обложкой, пока открыт экран карточки.
             caption
+                .zoomSourceCaption(zoom != nil ? zoomRoute : nil)
         }
         .frame(width: width, alignment: shape == .circle ? .center : .leading)
         .contentShape(.rect)
@@ -137,6 +139,7 @@ struct MusicCard: View {
                 }
             }
             .clipShape(clip)
+            .coverArtworkMissing(cover == nil)
             .coverBorder(clip)
     }
 

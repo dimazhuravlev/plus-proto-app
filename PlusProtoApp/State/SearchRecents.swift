@@ -8,11 +8,10 @@ import Foundation
 /// списка, — тоже, это тот же выбор из выдачи. Что выдача просто показала, сюда
 /// не попадает. Свежее — первым, повтор поднимается в начало.
 ///
-/// За найденным стоит стартовый набор из шести реальных айтемов — с первого запуска
-/// лента не пустая. Пустеет она, только когда историю удалили целиком: кнопка стирает
-/// и набор (правка пользователя 2026-10-05). Найденное хранится локально
-/// (`UserDefaults`), стартовый набор — в коде: поменяется набор — у пользователя
-/// поменяется и хвост.
+/// Стартового набора больше нет (задача пользователя 2026-10-30): пока не найдено ничего —
+/// и с первого запуска, и после «Удалить историю» — на месте ленты пустое нулевое
+/// состояние, три карусели рекомендаций (`SearchDiscovery`). Найденное хранится
+/// локально (`UserDefaults`).
 enum SearchRecents {
     /// Сколько найденного храним — весь полный список истории.
     static let limit = 20
@@ -21,25 +20,23 @@ enum SearchRecents {
     static let carouselLimit = 12
 
     private static let storageKey = "searchRecents.v1"
-    private static let starterClearedKey = "searchRecents.starterCleared"
-
-    /// Стартовый набор стёрт кнопкой «Удалить историю поиска»: она удаляет историю
-    /// целиком (правка пользователя 2026-10-05), и набор больше не подмешивается —
-    /// «Искали недавно» пустеет до первого найденного.
-    static var isStarterCleared: Bool {
-        get { UserDefaults.standard.bool(forKey: starterClearedKey) }
-        set { UserDefaults.standard.set(newValue, forKey: starterClearedKey) }
-    }
 
     /// Найденное с диска, свежее первым. Битые данные — пустая история, а не падение.
     static func load() -> [SearchHit] {
         #if DEBUG
-        // `-debugResetSearchRecents 1` — начать с пустой истории: один стартовый набор
-        // (и стёртый кнопкой набор возвращается).
+        // `-debugResetSearchRecents 1` — начать с пустой истории: на экране поиска —
+        // пустое нулевое состояние (`SearchDiscovery`).
         if UserDefaults.standard.bool(forKey: "debugResetSearchRecents") {
             UserDefaults.standard.removeObject(forKey: storageKey)
-            UserDefaults.standard.removeObject(forKey: starterClearedKey)
             return []
+        }
+        // `-debugRestoreSearchRecents <hex>` — вернуть историю, снятую до прогона с
+        // `-debugResetSearchRecents` (байты ключа `searchRecents.v1` в hex). Только изнутри
+        // приложения: запись в его plist снаружи (`defaults write <путь>`) сервис настроек
+        // не видит и перезаписывает файл своей копией (2026-10-30).
+        if let hex = UserDefaults.standard.string(forKey: "debugRestoreSearchRecents"),
+           let restored = Data(hex: hex) {
+            UserDefaults.standard.set(restored, forKey: storageKey)
         }
         #endif
         guard let data = UserDefaults.standard.data(forKey: storageKey) else { return [] }
@@ -75,134 +72,23 @@ enum SearchRecents {
         guard let data = try? JSONEncoder().encode(hits) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
+}
 
-    /// История целиком: найденное, за ним стартовый набор без повторов — пока его
-    /// не стёрли (`isStarterCleared`).
-    static func merged(_ found: [SearchHit], includesStarter: Bool) -> [SearchHit] {
-        guard includesStarter else { return found }
-        let foundIDs = Set(found.map(\.id))
-        return found + starter.filter { !foundIDs.contains($0.id) }
-    }
-
-    /// Стартовый набор — вперемешку, как в макете: альбом, фильмы, исполнитель,
-    /// книга, режиссёр. Айтемы настоящие — те же id и картинки, что отдала бы выдача
-    /// (Deezer, Кинопоиск, Google Books, Википедия; сняты 2026-10-03), поэтому все
-    /// открывают свои экраны — исполнитель и режиссёр тоже (экран персоны, 2026-10-04).
-    static let starter: [SearchHit] = [
-        album(
-            id: 10709540,
-            title: "Currents",
-            artist: "Tame Impala",
-            cover: "https://cdn-images.dzcdn.net/images/cover/de5b9b704cd4ec36f8bf49beb3e17ba2/1000x1000-000000-80-0-0.jpg"
-        ),
-        movie(
-            id: 5283168,
-            title: "Идеальные дни",
-            year: 2023,
-            poster: "https://avatars.mds.yandex.net/get-kinopoisk-image/10809116/53656129-a885-4731-968b-bf7aa4a9c3e8/300x450"
-        ),
-        SearchHit(
-            id: "artist-4050205",
-            kind: .artist,
-            title: "The Weeknd",
-            subtitle: "",
-            artwork: remote(weekndPhoto),
-            route: .artist(EntityRef(
-                id: "dz-4050205",
-                title: "The Weeknd",
-                subtitle: "",
-                artwork: remote(weekndPhoto) ?? .asset("")
-            ))
-        ),
-        book(
-            id: "wuiaEAAAQBAJ",
-            title: "Мастер и Маргарита",
-            author: "Михаил Булгаков",
-            // Пропорции скана обложки 575 × 860: карточка книги — по ширине обложки.
-            aspect: 575.0 / 860.0
-        ),
-        SearchHit(
-            id: "person-1087",
-            kind: .director,
-            title: "Альфред Хичкок",
-            subtitle: "",
-            artwork: remote(hitchcockPhoto),
-            // Персона Кинопоиска известна — экран режиссёра не ищет её по имени.
-            route: .director(EntityRef(
-                id: "kp-156444",
-                title: "Альфред Хичкок",
-                subtitle: "",
-                artwork: remote(hitchcockPhoto) ?? .asset("")
-            ))
-        ),
-        movie(
-            id: 656,
-            title: "Любовное настроение",
-            year: 2000,
-            poster: "https://avatars.mds.yandex.net/get-kinopoisk-image/9784475/d31f4594-4215-434d-ac47-d4166059fbee/300x450"
-        ),
-    ]
-
-    private static let weekndPhoto = "https://cdn-images.dzcdn.net/images/artist/581693b4724a7fcfa754455101e13a44/1000x1000-000000-80-0-0.jpg"
-    /// Ссылка — как её отдаёт API Википедии: размеры превью у Wikimedia теперь
-    /// фиксированные, произвольный (400px) отвечает 400.
-    private static let hitchcockPhoto = "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/94/Hitchcock%2C_Alfred_02.jpg/500px-Hitchcock%2C_Alfred_02.jpg"
-
-    // MARK: - Сборка айтемов — в форме мапперов выдачи (`SearchState`)
-
-    private static func remote(_ string: String) -> ArtworkSource? {
-        URL(string: string).map { .remote($0) }
-    }
-
-    private static func album(id: Int, title: String, artist: String, cover: String) -> SearchHit {
-        let artwork = remote(cover)
-        return SearchHit(
-            id: "album-\(id)",
-            kind: .album,
-            title: title,
-            subtitle: artist,
-            artwork: artwork,
-            route: .album(EntityRef(
-                id: "dz-\(id)",
-                title: title,
-                subtitle: artist,
-                artwork: artwork ?? .asset("mockAlbumCover")
-            ))
-        )
-    }
-
-    private static func movie(id: Int, title: String, year: Int, poster: String) -> SearchHit {
-        let artwork = remote(poster)
-        return SearchHit(
-            id: "movie-\(id)",
-            kind: .movie,
-            title: title,
-            subtitle: "\(year)",
-            artwork: artwork,
-            route: .movie(EntityRef(
-                id: "kp-\(id)",
-                title: title,
-                subtitle: "",
-                artwork: artwork ?? .asset("mockMoviePoster")
-            ))
-        )
-    }
-
-    private static func book(id: String, title: String, author: String, aspect: CGFloat) -> SearchHit {
-        let artwork = remote("https://books.google.com/books/content?id=\(id)&printsec=frontcover&img=1&zoom=3&source=gbs_api")
-        return SearchHit(
-            id: "book-\(id)",
-            kind: .book,
-            title: title,
-            subtitle: author,
-            artwork: artwork,
-            route: .book(EntityRef(
-                id: "gb-\(id)",
-                title: title,
-                subtitle: author,
-                artwork: artwork ?? .asset("mockChipBookCover")
-            )),
-            artworkAspect: aspect
-        )
+#if DEBUG
+private extension Data {
+    /// Байты из hex-строки (`-debugRestoreSearchRecents`); нечётная длина или не hex — `nil`.
+    init?(hex: String) {
+        let chars = Array(hex.utf8)
+        guard chars.count.isMultiple(of: 2) else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(chars.count / 2)
+        var index = 0
+        while index < chars.count {
+            guard let byte = UInt8(String(decoding: chars[index..<index + 2], as: UTF8.self), radix: 16) else { return nil }
+            bytes.append(byte)
+            index += 2
+        }
+        self.init(bytes)
     }
 }
+#endif

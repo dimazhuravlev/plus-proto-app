@@ -95,25 +95,57 @@ struct LikeGlassButton: View {
 struct BookmarkGlyph: View {
     let isSaved: Bool
     let box: CGFloat
+    /// Контур — тише в строках выдачи поиска (Fill/Five, макет `19184:22008`).
+    var offColor: Color = .fillOne
+    /// Контур с плюсом — у «Позже»; в строках выдачи поиска — простой (`iconBookmarkPlain`).
+    var offIcon = "iconBookmark"
 
     var body: some View {
         ZStack {
-            glyph("iconBookmark")
+            glyph(offIcon, color: offColor)
                 .opacity(isSaved ? 0 : 1)
                 .scaleEffect(isSaved ? ActionBarMotion.iconSwapScale : 1)
-            glyph("iconBookmarkFilled")
+            glyph("iconBookmarkFilled", color: .fillOne)
                 .opacity(isSaved ? 1 : 0)
                 .scaleEffect(isSaved ? 1 : ActionBarMotion.iconSwapScale)
         }
         .animation(ActionBarMotion.iconSwap, value: isSaved)
     }
 
-    private func glyph(_ name: String) -> some View {
+    private func glyph(_ name: String, color: Color) -> some View {
         Image(name)
             .renderingMode(.template)
             .resizable()
             .frame(width: box, height: box)
-            .foregroundStyle(Color.fillOne)
+            .foregroundStyle(color)
+    }
+}
+
+/// «+» книги в выдаче поиска — в «Буду читать» коллекции; добавленная — галочка, тем же
+/// кросс-попом, что закладка (решение пользователя 2026-10-31, макет `19191:22495`).
+struct AddGlyph: View {
+    let isAdded: Bool
+    let box: CGFloat
+    var offColor: Color = .fillOne
+
+    var body: some View {
+        ZStack {
+            glyph("iconAdd", color: offColor)
+                .opacity(isAdded ? 0 : 1)
+                .scaleEffect(isAdded ? ActionBarMotion.iconSwapScale : 1)
+            glyph("iconDone", color: .fillOne)
+                .opacity(isAdded ? 1 : 0)
+                .scaleEffect(isAdded ? 1 : ActionBarMotion.iconSwapScale)
+        }
+        .animation(ActionBarMotion.iconSwap, value: isAdded)
+    }
+
+    private func glyph(_ name: String, color: Color) -> some View {
+        Image(name)
+            .renderingMode(.template)
+            .resizable()
+            .frame(width: box, height: box)
+            .foregroundStyle(color)
     }
 }
 

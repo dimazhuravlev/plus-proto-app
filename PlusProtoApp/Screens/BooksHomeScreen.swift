@@ -387,26 +387,31 @@ private struct BooksPromoSkeleton: View {
 
 // MARK: - Карусели тем
 
-/// Карусель книг — общая у главной Книг и «Главной». С `isRanked` — «Топ-10»: первые
+/// Карусель книг — общая у главной Книг, «Главной» и пустого нулевого состояния поиска
+/// (`SearchResultsView`: без шеврона и со своим переходом). С `isRanked` — «Топ-10»: первые
 /// десять, перед книгой цифра места (как `card / poster / top-10` у Кино, той же геометрией
 /// от обложки).
 struct BooksCarousel: View {
     let title: String
     let books: [BooksHomeCatalog.Book]
     var isRanked = false
+    var showsChevron = true
     /// Тап по шапке — на «Главной» ведёт в таб Книг.
     var headerAction: (() -> Void)? = nil
+    /// Свой переход вместо `navigation.open` — у поиска он сперва запоминает выдачу.
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     var body: some View {
         let items = isRanked ? Array(books.prefix(ServiceCarouselRank.limit)) : books
         ServiceCarousel(
             title: title,
             cardHeight: BooksCardLayout.cardHeight,
+            showsChevron: showsChevron,
             isRanked: isRanked,
             headerAction: headerAction
         ) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, book in
-                BooksCard(book: book, place: isRanked ? index + 1 : nil)
+                BooksCard(book: book, place: isRanked ? index + 1 : nil, onOpen: onOpen)
                     .zIndex(isRanked ? ServiceCarouselRank.zIndex(place: index + 1) : 0)
             }
         }
@@ -417,6 +422,7 @@ struct BooksCarousel: View {
 private struct BooksCard: View {
     let book: BooksHomeCatalog.Book
     var place: Int? = nil
+    var onOpen: ((EntityRoute) -> Void)? = nil
 
     @Environment(AppNavigationState.self) private var navigation
     @Environment(\.stackZoomNamespace) private var zoom
@@ -429,7 +435,9 @@ private struct BooksCard: View {
         let figure = BookFigure(geometry: geometry, coverWidth: coverWidth) {
             SkeletonArtwork(source: book.cover)
         }
-        Button { navigation.open(book.route) } label: {
+        Button {
+            if let onOpen { onOpen(book.route) } else { navigation.open(book.route) }
+        } label: {
             VStack(alignment: .leading, spacing: BooksCardLayout.captionGap) {
                 Group {
                     if let zoom {
@@ -438,14 +446,10 @@ private struct BooksCard: View {
                         figure
                     }
                 }
-                // Обложка — под выступом страниц: её центр ниже середины кадра книги.
                 .overlay(alignment: .topLeading) {
                     if let place {
-                        ServiceCarouselRankNumber(
-                            place: place,
-                            coverCenter: geometry.pagesTop + geometry.coverHeight / 2,
-                            scale: scale
-                        )
+                        // Кадр книги — ровно обложка (`BookFigureGeometry.frameSize`).
+                        ServiceCarouselRankNumber(place: place, coverCenter: geometry.coverHeight / 2, scale: scale)
                     }
                 }
 
@@ -460,6 +464,7 @@ private struct BooksCard: View {
                         .lineLimit(1)
                 }
                 .padding(.trailing, CinemaLayout.captionTrailing)
+                .zoomSourceCaption(zoom != nil ? book.route : nil)
             }
             .frame(width: width, alignment: .leading)
             .padding(.leading, place == nil ? 0 : ServiceCarouselRank.lead * scale)
@@ -471,12 +476,20 @@ private struct BooksCard: View {
 
 /// Скелетон карусели темы — шапка-полоса и книги с полосами названия и автора.
 /// Ряд — оверлеем на распорке: своей ширины ленте он не предлагает.
-private struct BooksRowSkeleton: View {
+struct BooksRowSkeleton: View {
+    /// Название уже известно (пустое состояние поиска) — заголовок настоящий, без шеврона;
+    /// `nil` — полоса.
+    var title: String? = nil
+
     var body: some View {
         let geometry = BooksCardLayout.geometry
         let width = geometry.coverWidth(aspect: nil)
         VStack(spacing: 0) {
-            EntitySectionHeaderSkeleton(lineHeight: ServiceCarouselLayout.headerLine)
+            if let title {
+                EntitySectionHeader(title: title, showsChevron: false, lineHeight: ServiceCarouselLayout.headerLine)
+            } else {
+                EntitySectionHeaderSkeleton(lineHeight: ServiceCarouselLayout.headerLine)
+            }
             Color.clear
                 .frame(height: BooksCardLayout.cardHeight)
                 .overlay(alignment: .topLeading) {

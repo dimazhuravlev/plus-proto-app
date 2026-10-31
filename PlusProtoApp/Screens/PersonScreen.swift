@@ -385,14 +385,49 @@ struct PersonScreen: View {
 
     // MARK: Режиссёр и писатель
 
-    /// Все фильмы режиссёра или книги писателя — плоским списком, ячейками полной
-    /// выдачи поиска, сразу под именем, без заголовка (правка пользователя 2026-10-04).
+    @ViewBuilder
+    private func workRow(_ hit: SearchHit) -> some View {
+        let isFirst = hit.id == store.works.first?.id
+        if role == .writer {
+            CollectionListItem(title: hit.title, subtitle: hit.subtitle, isFirst: isFirst) {
+                CollectionListBookCover(artwork: hit.artwork, aspect: hit.artworkAspect)
+            } trailing: {
+                PlusButton(
+                    type: .plain,
+                    size: .m,
+                    accessibilityTitle: isLiked(hit) ? "Убрать из избранного" : "В избранное"
+                ) {
+                    toggleLike(hit)
+                } icon: {
+                    LikeGlyph(isLiked: isLiked(hit), box: PlusButtonSize.m.iconBox, offColor: .fillFive)
+                }
+                // Круг 40 под отрицательным отступом: в раскладке — глиф, как «ещё» строк «Моего».
+                .padding(-TrackMoreLabel.hitInset)
+            }
+        } else {
+            SearchListRow(
+                hit: hit,
+                isFirst: isFirst,
+                isLiked: isLiked(hit),
+                onLike: { toggleLike(hit) }
+            )
+        }
+    }
+
+    /// Все фильмы режиссёра или книги писателя — плоским списком сразу под именем, без
+    /// заголовка (правка пользователя 2026-10-04). Фильмы — ячейками полной выдачи поиска,
+    /// книги — строкой полного списка «Моего» (`CollectionListItem`, задача пользователя
+    /// 2026-10-30): справа сердце, подписью — год издания.
     private func worksSection(empty: String) -> some View {
         ZStack(alignment: .top) {
             if !store.isLoaded {
                 VStack(spacing: 0) {
-                    ForEach(0..<PersonLayout.skeletonRows, id: \.self) { _ in
-                        SearchListSkeletonRow(isPoster: true)
+                    ForEach(0..<PersonLayout.skeletonRows, id: \.self) { index in
+                        if role == .writer {
+                            CollectionListBookSkeletonRow(isFirst: index == 0)
+                        } else {
+                            SearchListSkeletonRow(isPoster: true)
+                        }
                     }
                 }
                 .transition(.opacity)
@@ -408,12 +443,7 @@ struct PersonScreen: View {
                 VStack(spacing: 0) {
                     ForEach(store.works) { hit in
                         Button { open(hit.route) } label: {
-                            SearchListRow(
-                                hit: hit,
-                                isFirst: hit.id == store.works.first?.id,
-                                isLiked: isLiked(hit),
-                                onLike: { toggleLike(hit) }
-                            )
+                            workRow(hit)
                         }
                         .buttonStyle(BareButtonStyle())
                     }
