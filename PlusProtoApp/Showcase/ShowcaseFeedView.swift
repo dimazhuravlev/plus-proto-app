@@ -74,10 +74,10 @@ struct ShowcaseFeedView: View {
                 .padding(.top, ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + HomeQuickAccessLayout.top)
 
                 if HomePresentationSettings.shared.shelvesEnabled {
+                    // Блока «Что думаешь?» под полками нет (правка пользователя 2026-10-22):
+                    // `RateBlock` остался только в карточке «Продолжить смотреть» ленты без полок.
                     HomeShelves(feed: feed)
                         .padding(.top, ShowcaseLayout.promoToFirstBlock - CGFloat(HomePresentationSettings.shared.shelfLift.rawValue))
-                    RateBlock()
-                        .padding(.top, 24)
                 } else {
                     LegacyShowcaseFeed(feed: feed, zoom: zoom, prepareReplacement: prepareReplacement)
                 }
