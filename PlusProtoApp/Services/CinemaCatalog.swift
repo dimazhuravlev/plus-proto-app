@@ -263,7 +263,7 @@ final class CinemaCatalog {
 
     /// Постер — через тот же прокси tmdb, что в выдаче поиска: часть постеров
     /// Кинопоиск отдаёт ссылкой на заблокированный хост.
-    private static func title(_ movie: KinopoiskMovie) -> Title {
+    static func title(_ movie: KinopoiskMovie) -> Title {
         let raw = movie.poster?.url(size: .medium)
         let poster = (raw.flatMap { TMDBImageProxy.rewrite($0, width: 600) } ?? raw).map { ArtworkSource.remote($0) }
         return Title(

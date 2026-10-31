@@ -29,6 +29,8 @@ struct SearchResultsView: View {
     @Environment(BooksHomeCatalog.self) private var books
     /// Вид выдачи — карусели или сетка; переключается в дебаг-меню профиля.
     @AppStorage(SearchResultsStyle.storageKey) private var resultsStyle: SearchResultsStyle = SearchResultsStyle.defaultStyle
+    /// Таскалка на месте пустого нулевого состояния — тумблер дебаг-меню (`TaskalkaDebug`).
+    @AppStorage(TaskalkaDebug.enabledKey) private var isTaskalkaEnabled = false
 
     /// Что в слое — выдача или «Искали недавно». Следует за запросом, пока поиск
     /// открыт; на закрытии замирает: «Назад» стирает запрос тем же движением, что
@@ -354,7 +356,11 @@ struct SearchResultsView: View {
     /// появляется, пока на экране выдача.
     private var zeroState: some View {
         ZStack {
-            if showsDiscovery {
+            // Экспериментальная Таскалка — вместо истории и рекомендаций (флаг дебаг-меню,
+            // задача пользователя 2026-10-31). Ветвление статическое: флаг меняют вне поиска.
+            if isTaskalkaEnabled {
+                TaskalkaView(open: open)
+            } else if showsDiscovery {
                 discoveryList
                     .transition(RecentsMotion.swap)
             } else {

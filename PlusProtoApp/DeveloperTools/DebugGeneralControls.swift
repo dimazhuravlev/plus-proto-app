@@ -16,6 +16,8 @@ struct DebugGeneralControls: View {
     /// Подсказка порядка блоков «Моего» в каждой сессии, а не один раз — ключ
     /// `collectionReorderHintEverySession` (`CollectionReorderHint`).
     @AppStorage(CollectionReorderHint.everySessionKey) private var reorderHintEverySession = false
+    /// Таскалка в пустом поиске вместо истории и рекомендаций — ключ `taskalkaInSearch` (`TaskalkaDebug`).
+    @AppStorage(TaskalkaDebug.enabledKey) private var taskalkaInSearch = false
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
@@ -47,6 +49,14 @@ struct DebugGeneralControls: View {
             title("Вид поисковой выдачи", top: Layout.sectionGap)
 
             optionsIsland
+
+            title("Пустой поиск", top: Layout.sectionGap)
+            toggleIsland(
+                "Таскалка",
+                isOn: $taskalkaInSearch,
+                accessibility: "Таскалка в пустом поиске"
+            )
+            note("Экспериментальный UI: вместо истории и рекомендаций — поле настроения. Ведите пальцем, отпустите — подборка музыки, кино и книг")
 
             title("Громкость музыки", top: Layout.sectionGap)
             volumeIsland

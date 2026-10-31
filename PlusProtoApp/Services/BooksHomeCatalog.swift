@@ -146,7 +146,7 @@ final class BooksHomeCatalog {
         }
     }
 
-    private static func book(_ volume: GoogleBook, _ aspects: [String: CGFloat]) -> Book {
+    static func book(_ volume: GoogleBook, _ aspects: [String: CGFloat]) -> Book {
         Book(
             id: "gb-\(volume.id)",
             title: volume.title,
@@ -199,7 +199,7 @@ final class BooksHomeCatalog {
     /// Пропорции обложек — по самим картинкам, с потолком ожидания (приём
     /// `AuthorBooksStore`). Заодно они уже в кэше загрузчика, и лента встаёт
     /// с обложками, а не с пустыми книгами.
-    private static func aspects(of volumes: [GoogleBook]) async -> [String: CGFloat] {
+    static func aspects(of volumes: [GoogleBook]) async -> [String: CGFloat] {
         let urls = volumes.compactMap { volume in volume.coverURL.map { (volume.id, $0) } }
         guard !urls.isEmpty else { return [:] }
         return await withTaskGroup(of: (String, CGFloat?).self) { group in
