@@ -40,10 +40,16 @@ enum TaskalkaLayout {
     static let backScale: CGFloat = 0.96
 }
 
-/// Сетка точек поля. Столбцов — постоянное число, шаг — от ширины поля; строк — сколько
-/// влезет тем же шагом, остаток делится поровну. Ячейка — для тиков хаптики.
+/// Сетка точек поля. Столбцов — постоянное число, крайние стоят ровно по кромкам поля —
+/// по полям 16, на одной линии с фразой и баром (правка пользователя 2026-11-01: полшага
+/// отступа по бокам читались лишним полем); шаг — от ширины поля. Строк — сколько влезет
+/// тем же шагом, остаток делится поровну. Ячейка — для тиков хаптики.
 enum TaskalkaGrid {
-    static let columns = 11
+    /// Двенадцать: шаг тот же, что был у одиннадцати с полушагом по краям (~34 pt).
+    static let columns = 12
+    /// Крайние столбцы отступают на радиус точки в покое: по полям 16 встаёт внешняя кромка
+    /// точки, а не её центр (правка пользователя 2026-11-01: «отступ меньше 16»).
+    static var edgeInset: CGFloat { TaskalkaDotsStyle.restRadius }
 
     struct Cell: Equatable {
         var column: Int
@@ -57,7 +63,7 @@ enum TaskalkaGrid {
     }
 
     static func metrics(for size: CGSize) -> Metrics {
-        let pitchX = size.width / CGFloat(columns)
+        let pitchX = (size.width - 2 * edgeInset) / CGFloat(columns - 1)
         let rows = max(3, Int((size.height / max(pitchX, 1)).rounded(.down)))
         return Metrics(pitchX: pitchX, pitchY: size.height / CGFloat(rows), rows: rows)
     }
@@ -66,7 +72,7 @@ enum TaskalkaGrid {
     static func cell(at location: CGPoint, in size: CGSize) -> Cell {
         let grid = metrics(for: size)
         return Cell(
-            column: min(columns - 1, max(0, Int(location.x / grid.pitchX))),
+            column: min(columns - 1, max(0, Int(((location.x - edgeInset) / grid.pitchX).rounded()))),
             row: min(grid.rows - 1, max(0, Int(location.y / grid.pitchY)))
         )
     }
@@ -81,20 +87,30 @@ private enum TaskalkaDotsStyle {
     static let peakRadius: CGFloat = 13
     /// Дальность влияния пальца, pt (сигма гауссианы)
     static let reach: CGFloat = 62
-    /// Точки под пальцем стягиваются к нему — линза, а не просто рост. Слабее прежнего:
-    /// крупные точки при сильной линзе наезжали бы на соседей
-    static let pull: CGFloat = 0.12
+    /// Точки под пальцем чуть расступаются от него — палец раздвигает «водоросли»,
+    /// а не стягивает их к себе (`TaskalkaFlow`). Слабо: крупные точки наезжали бы на соседей
+    static let push: CGFloat = 0.08
+    /// Холст шире поля на столько с каждой стороны: крайние столбцы стоят по кромке,
+    /// и набухшая и качнувшаяся точка не должна срезаться кадром холста (радиус 13,
+    /// размытый край +⅓, вытянута в полтора раза, отклонена до 13)
+    static let bleed: CGFloat = 48
     /// Точки в покое — белый 30 % (`fillSeven`), под пальцем — цвет настроения, осветлённый,
     /// чтобы на тёмном светился, а не тонул
     static let lighten: Double = 0.3
     /// Свечение под пальцем: радиус — доля ширины поля, прозрачность в центре
-    static let glowReach: CGFloat = 0.85
+    static let glowReach: CGFloat = 0.7
     static let glowOpacity: Double = 0.5
+    /// Спад ореола — колокол e^(−k·r²), а не ломаная: у ломаной на внешнем крае излом,
+    /// и глаз видел границу круга (правка пользователя 2026-11-01). Было 0.85 ширины.
+    static let glowFalloff: Double = 4.5
+    static let glowStops = 8
     /// Вступительная волна по точкам — раз за процесс
     static let rippleDelay: Double = 0.35
     static let rippleDuration: Double = 1.5
     static let rippleWidth: CGFloat = 28
-    static let rippleRadius: CGFloat = 2.2
+    /// Насколько волна раздувает точку на гребне: заметно, но не до набухания под пальцем
+    /// (правка пользователя 2026-11-01: «чуть заметнее»; было 2.2)
+    static let rippleRadius: CGFloat = 3.6
 }
 
 // MARK: - Фраза и поле
@@ -105,6 +121,9 @@ struct TaskalkaCard: View {
     @Environment(ActionBarState.self) private var actionBar
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Течение идёт: палец на поле или колебания ещё не улеглись (`TaskalkaFlow.window`).
+    /// Меняется дважды за жест, не на кадре; общее у точек и подписей осей.
+    @State private var isFlowing = false
 
     private var session: TaskalkaSession { .shared }
 
@@ -120,8 +139,8 @@ struct TaskalkaCard: View {
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
                     TaskalkaLight(panel: panel)
-                    TaskalkaGlow(panel: panel)
-                    TaskalkaAxisLabels(panel: panel)
+                    TaskalkaGlow(panel: panel, isFlowing: isFlowing && !reduceMotion)
+                    TaskalkaAxisLabels(panel: panel, isFlowing: isFlowing && !reduceMotion)
                 }
                 .opacity(session.isSheetShown ? session.sheetPull : 1)
 
@@ -132,6 +151,15 @@ struct TaskalkaCard: View {
             }
         }
         .scaleEffect(session.isSheetShown && !reduceMotion ? TaskalkaLayout.backScale : 1, anchor: .top)
+        .task(id: session.phase) {
+            if session.phase == .picking {
+                isFlowing = true
+                return
+            }
+            try? await Task.sleep(for: .seconds(TaskalkaFlow.window))
+            guard !Task.isCancelled else { return }
+            isFlowing = false
+        }
     }
 }
 
@@ -153,7 +181,7 @@ private struct TaskalkaHeader: View {
             ZStack(alignment: .leading) {
                 Text(mood?.word ?? TaskalkaCopy.idleWord)
                     .plusHeadline(.m)
-                    .foregroundStyle(mood?.rimColor ?? Color.fillSeven)
+                    .foregroundStyle(mood.map { AnyShapeStyle($0.wordGradient) } ?? AnyShapeStyle(Color.fillSeven))
                     .id(mood?.id)
                     .transition(.blurReplace)
             }
@@ -177,17 +205,56 @@ private struct TaskalkaHeader: View {
 /// вырезаны (`knockouts`), подпись встаёт в ряд вместо них.
 private struct TaskalkaAxisLabels: View {
     let panel: CGRect
+    /// Течение идёт — подписи качаются вместе с точками (правка пользователя 2026-11-01:
+    /// «тот же офсет и для подписей»): то же отклонение от пальца и то же покачивание.
+    let isFlowing: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var session: TaskalkaSession { .shared }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(Self.placements(in: panel), id: \.text) { placement in
-                label(placement.text)
-                    .rotationEffect(.degrees(placement.rotation))
-                    .position(placement.center)
+        let energy: CGFloat = switch session.phase {
+        case .idle: 0
+        case .picking: 1
+        case .chosen: 0.5
+        }
+        let finger = CGPoint(x: panel.minX + session.point.x * panel.width, y: panel.minY + session.point.y * panel.height)
+        TimelineView(.animation(minimumInterval: nil, paused: !isFlowing)) { context in
+            let now = context.date.timeIntervalSinceReferenceDate
+            let impulses = isFlowing ? session.flow.resolved(in: panel, now: now) : []
+            ZStack(alignment: .topLeading) {
+                ForEach(Self.placements(in: panel), id: \.text) { placement in
+                    label(placement.text)
+                        .rotationEffect(.degrees(placement.rotation))
+                        .position(placement.center)
+                        .offset(offset(of: placement.center, finger: finger, energy: energy, impulses: impulses, now: now))
+                }
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// Сдвиг подписи — тот же, что у точки на её месте (`TaskalkaDots`): «расступиться»
+    /// от пальца и покачивание течением.
+    private func offset(
+        of center: CGPoint,
+        finger: CGPoint,
+        energy: CGFloat,
+        impulses: [TaskalkaFlow.Resolved],
+        now: TimeInterval
+    ) -> CGSize {
+        guard !reduceMotion else { return .zero }
+        let dx = center.x - finger.x, dy = center.y - finger.y
+        let touch = exp(-(dx * dx + dy * dy) / (TaskalkaDotsStyle.reach * TaskalkaDotsStyle.reach)) * energy
+        let sway = impulses.isEmpty
+            ? TaskalkaFlow.Sway()
+            : TaskalkaFlow.sway(at: Double(center.x), Double(center.y), impulses: impulses, now: now)
+        return CGSize(
+            width: dx * TaskalkaDotsStyle.push * touch + CGFloat(sway.dx),
+            height: dy * TaskalkaDotsStyle.push * touch + CGFloat(sway.dy)
+        )
     }
 
     struct Placement {
@@ -201,10 +268,22 @@ private struct TaskalkaAxisLabels: View {
         return [
             Placement(text: TaskalkaCopy.axisUp, center: CGPoint(x: panel.midX, y: panel.minY + grid.pitchY / 2), rotation: 0),
             Placement(text: TaskalkaCopy.axisDown, center: CGPoint(x: panel.midX, y: panel.maxY - grid.pitchY / 2), rotation: 0),
-            Placement(text: TaskalkaCopy.axisLeft, center: CGPoint(x: panel.minX + grid.pitchX / 2, y: panel.midY), rotation: -90),
-            Placement(text: TaskalkaCopy.axisRight, center: CGPoint(x: panel.maxX - grid.pitchX / 2, y: panel.midY), rotation: 90),
+            // Боковые подписи — верхом заглавных по кромке поля, как и точки: по центру столбца
+            // половина текста вылезала за поля 16, а по рамке строки буквы отступали на ~3.
+            Placement(text: TaskalkaCopy.axisLeft, center: CGPoint(x: panel.minX + sideLabelCenter, y: panel.midY), rotation: -90),
+            Placement(text: TaskalkaCopy.axisRight, center: CGPoint(x: panel.maxX - sideLabelCenter, y: panel.midY), rotation: 90),
         ]
     }
+
+    /// От кромки поля до середины строки повёрнутой подписи: половина строки минус зазор
+    /// от её верха до верха заглавных — его дают поле строки стиля (`FigmaTextStyle`)
+    /// и выносной элемент шрифта над заглавными. Замер — шрифтом стиля.
+    private static let sideLabelCenter: CGFloat = {
+        let font = PlusTextSize.textS.uiFont(.medium)
+        let lineHeight = PlusTextSize.textS.lineHeight
+        let capGap = (lineHeight - font.lineHeight) / 2 + (font.ascender - font.capHeight)
+        return lineHeight / 2 - capGap
+    }()
 
     /// Где точки не рисуются: рамка каждой подписи с запасом. Ширина текста — замером
     /// шрифтом стиля (`uiFont`), один раз за процесс.
@@ -246,6 +325,7 @@ private struct TaskalkaGlow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Старт вступительной волны; `nil` — её нет, таймлайн стоит.
     @State private var rippleStart: Date?
+    let isFlowing: Bool
 
     private var session: TaskalkaSession { .shared }
 
@@ -255,7 +335,15 @@ private struct TaskalkaGlow: View {
         case .picking: 1
         case .chosen: 0.5
         }
-        TaskalkaDots(point: session.point, energy: energy, panel: panel, rippleStart: rippleStart)
+        TaskalkaDots(
+            point: session.point,
+            energy: energy,
+            panel: panel,
+            rippleStart: rippleStart,
+            flow: session.flow,
+            isFlowing: isFlowing,
+            pushesApart: !reduceMotion
+        )
             .allowsHitTesting(false)
             .task {
                 guard !session.didIntro, !reduceMotion else { return }
@@ -285,15 +373,11 @@ private struct TaskalkaLight: View {
         case .chosen: 0.5
         }
         let point = session.point
-        let tone = TaskalkaPalette.color(TaskalkaMap.color(at: point, aspect: panel.width / max(panel.height, 1)))
+        let tone = TaskalkaPalette.color(TaskalkaMap.color(at: point))
         let radius = panel.width * Style.glowReach
         Circle()
             .fill(RadialGradient(
-                stops: [
-                    .init(color: tone.opacity(Style.glowOpacity), location: 0),
-                    .init(color: tone.opacity(Style.glowOpacity * 0.35), location: 0.45),
-                    .init(color: tone.opacity(0), location: 1),
-                ],
+                stops: Self.stops(tone),
                 center: .center,
                 startRadius: 0,
                 endRadius: radius
@@ -303,6 +387,15 @@ private struct TaskalkaLight: View {
             .opacity(energy)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+
+    /// Колокол прозрачности по радиусу; на самом крае — ровно ноль.
+    private static func stops(_ tone: Color) -> [Gradient.Stop] {
+        (0...Style.glowStops).map { index in
+            let r = Double(index) / Double(Style.glowStops)
+            let alpha = index == Style.glowStops ? 0 : Style.glowOpacity * exp(-Style.glowFalloff * r * r)
+            return Gradient.Stop(color: tone.opacity(alpha), location: r)
+        }
     }
 }
 
@@ -315,6 +408,10 @@ private struct TaskalkaDots: View, Animatable {
     var energy: CGFloat
     let panel: CGRect
     let rippleStart: Date?
+    let flow: TaskalkaFlow
+    let isFlowing: Bool
+    /// С «уменьшением движения» точки не расступаются и не качаются — только набухают.
+    let pushesApart: Bool
 
     var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat> {
         get { AnimatablePair(AnimatablePair(point.x, point.y), energy) }
@@ -327,11 +424,14 @@ private struct TaskalkaDots: View, Animatable {
     private typealias Style = TaskalkaDotsStyle
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: nil, paused: rippleStart == nil)) { context in
+        TimelineView(.animation(minimumInterval: nil, paused: rippleStart == nil && !isFlowing)) { context in
             let ripple = rippleProgress(at: context.date)
+            let now = context.date.timeIntervalSinceReferenceDate
             Canvas { canvas, size in
-                draw(in: &canvas, size: size, ripple: ripple)
+                draw(in: &canvas, size: size, ripple: ripple, now: now)
             }
+            // Шире поля: крайние точки по кромке набухают и качаются за неё.
+            .padding(-Style.bleed)
         }
     }
 
@@ -342,9 +442,13 @@ private struct TaskalkaDots: View, Animatable {
         return CGFloat(raw)
     }
 
-    private func draw(in canvas: inout GraphicsContext, size: CGSize, ripple: CGFloat?) {
+    private func draw(in canvas: inout GraphicsContext, size: CGSize, ripple: CGFloat?, now: TimeInterval) {
+        // Холст сдвинут на `bleed` влево-вверх — поле в его координатах.
+        let panel = self.panel.offsetBy(dx: Style.bleed, dy: Style.bleed)
         let finger = CGPoint(x: panel.minX + point.x * panel.width, y: panel.minY + point.y * panel.height)
-        let aspect = panel.width / max(panel.height, 1)
+        // Течение: толчки последних `window` секунд; в покое их нет и считать нечего.
+        let impulses = isFlowing ? flow.resolved(in: panel, now: now) : []
+        let push = pushesApart ? Style.push : 0
 
         // Точки. Спокойные — одним путём, одной заливкой; задетые пальцем или волной —
         // по одной, своим цветом. Под подписями осей точек нет.
@@ -356,7 +460,7 @@ private struct TaskalkaDots: View, Animatable {
         for row in 0..<grid.rows {
             for column in 0..<TaskalkaGrid.columns {
                 let dot = CGPoint(
-                    x: panel.minX + (CGFloat(column) + 0.5) * grid.pitchX,
+                    x: panel.minX + TaskalkaGrid.edgeInset + CGFloat(column) * grid.pitchX,
                     y: panel.minY + (CGFloat(row) + 0.5) * grid.pitchY
                 )
                 let dx = dot.x - finger.x, dy = dot.y - finger.y
@@ -367,28 +471,87 @@ private struct TaskalkaDots: View, Animatable {
                     wave = exp(-(distance * distance) / (Style.rippleWidth * Style.rippleWidth)) * (1 - ripple)
                 }
                 guard !knockouts.contains(where: { $0.contains(dot) }) else { continue }
+                let sway = impulses.isEmpty
+                    ? TaskalkaFlow.Sway()
+                    : TaskalkaFlow.sway(at: Double(dot.x), Double(dot.y), impulses: impulses, now: now)
+                // Своё место + «расступиться» от пальца + покачивание течением.
+                let placed = CGPoint(
+                    x: dot.x + dx * push * touch + CGFloat(sway.dx),
+                    y: dot.y + dy * push * touch + CGFloat(sway.dy)
+                )
                 guard touch > 0.02 || wave > 0.02 else {
                     rest.addEllipse(in: CGRect(
-                        x: dot.x - Style.restRadius, y: dot.y - Style.restRadius,
+                        x: placed.x - Style.restRadius, y: placed.y - Style.restRadius,
                         width: 2 * Style.restRadius, height: 2 * Style.restRadius
                     ))
                     continue
                 }
-                let pulled = CGPoint(x: dot.x - dx * Style.pull * touch, y: dot.y - dy * Style.pull * touch)
                 let radius = Style.restRadius + (Style.peakRadius - Style.restRadius) * touch + Style.rippleRadius * wave
                 let own = CGPoint(x: (dot.x - panel.minX) / panel.width, y: (dot.y - panel.minY) / panel.height)
-                let lit = TaskalkaMap.color(at: own, aspect: aspect) * (1 - Style.lighten) + SIMD3(repeating: Style.lighten)
+                let lit = TaskalkaMap.color(at: own) * (1 - Style.lighten) + SIMD3(repeating: Style.lighten)
                 let share = Double(min(1, touch * 1.6))
                 // От белого 30 % покоя — к цвету настроения; волна только чуть подсвечивает.
                 let rgb = SIMD3<Double>(repeating: 1) * (1 - share) + lit * share
                 let opacity = 0.3 + 0.7 * share + 0.35 * Double(wave)
-                canvas.fill(
-                    Path(ellipseIn: CGRect(x: pulled.x - radius, y: pulled.y - radius, width: 2 * radius, height: 2 * radius)),
-                    with: .color(TaskalkaPalette.color(rgb, opacity: min(1, opacity)))
+                Self.drawBlob(
+                    in: &canvas,
+                    at: placed,
+                    radius: radius,
+                    sway: sway,
+                    color: TaskalkaPalette.color(rgb, opacity: min(1, opacity))
                 )
             }
         }
         canvas.fill(rest, with: .color(Color.fillSeven))
+    }
+
+    /// Точка в движении вытягивается вдоль своей скорости и сужается поперёк — площадь та же;
+    /// в покое снова круг. Так качание читается как упругий лист, а не как сдвиг кружка.
+    ///
+    /// И размывается по скорости (просьба пользователя 2026-11-01): плотное ядро сужается,
+    /// мягкий край растёт, а ядро сдвинуто вперёд по ходу — передний край чётче, хвост
+    /// мягче, как прогрессивный блюр. Градиентом, а не фильтром `blur`: фильтр — отдельный
+    /// проход по всему холсту на каждую точку, десятки проходов на кадре.
+    private static func drawBlob(
+        in canvas: inout GraphicsContext,
+        at center: CGPoint,
+        radius: CGFloat,
+        sway: TaskalkaFlow.Sway,
+        color: Color
+    ) {
+        typealias Flow = TaskalkaFlowStyle
+        let speed = (sway.vx * sway.vx + sway.vy * sway.vy).squareRoot()
+        let stretch = CGFloat(1 + min(Flow.maxStretch, speed / Flow.stretchSpeed))
+        let blur = CGFloat(min(Flow.maxBlur, speed / Flow.blurSpeed))
+        guard stretch > 1.02 || blur > 0.03 else {
+            canvas.fill(
+                Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius)),
+                with: .color(color)
+            )
+            return
+        }
+        // Ось x — вдоль движения: растяжение и сдвиг ядра идут по ней.
+        var blob = canvas
+        blob.translateBy(x: center.x, y: center.y)
+        blob.rotate(by: .radians(atan2(sway.vy, sway.vx)))
+        blob.scaleBy(x: stretch, y: 1 / stretch.squareRoot())
+        // Мягкий край наращивает круг — видимая масса точки та же.
+        let outer = radius * (1 + Flow.blurGrowth * blur)
+        let core = max(0, 1 - Flow.blurCore * blur)
+        let lead = outer * Flow.blurLead * blur
+        blob.fill(
+            Path(ellipseIn: CGRect(x: -outer, y: -outer, width: 2 * outer, height: 2 * outer)),
+            with: .radialGradient(
+                Gradient(stops: [
+                    .init(color: color, location: 0),
+                    .init(color: color, location: core),
+                    .init(color: color.opacity(0), location: 1),
+                ]),
+                center: CGPoint(x: lead, y: 0),
+                startRadius: 0,
+                endRadius: outer + lead
+            )
+        )
     }
 }
 

@@ -43,6 +43,9 @@ final class TaskalkaSession {
     var didIntro = false
 
     let haptics = TaskalkaHaptics()
+    /// Течение под пальцем — толчки для покачивания точек (`TaskalkaFlow`). Пишется
+    /// по событиям касания, не наблюдается: читает его только кадр поля.
+    let flow = TaskalkaFlow()
 
     private init() {}
 
@@ -50,6 +53,7 @@ final class TaskalkaSession {
     /// уезжает — выбор начинается заново.
     func touchDown(at point: CGPoint, cell: TaskalkaGrid.Cell, aspect: CGFloat) {
         haptics.touchDown()
+        flow.begin(at: point)
         let next = TaskalkaMap.mood(at: point, current: nil, aspect: aspect)
         // С «уменьшением движения» набухание не перетекает к пальцу — встаёт под ним сразу.
         if UIAccessibility.isReduceMotionEnabled {
@@ -77,6 +81,7 @@ final class TaskalkaSession {
     /// Палец ведёт. Точка — с короткой интерактивной пружиной: точки и свечение
     /// следуют за пальцем без рывков от неровных событий касания.
     func drag(to point: CGPoint, cell: TaskalkaGrid.Cell, overshoot: Bool, aspect: CGFloat) {
+        flow.record(point)
         withAnimation(TaskalkaMotion.follow) { self.point = point }
         haptics.edge(overshoot)
         let next = TaskalkaMap.mood(at: point, current: mood, aspect: aspect)
@@ -92,6 +97,7 @@ final class TaskalkaSession {
 
     /// Палец отпущен — выбор сделан, подборка выезжает.
     func release() {
+        flow.end()
         guard phase == .picking, let mood else { return }
         haptics.release()
         TaskalkaCatalog.shared.prepare(mood)
