@@ -87,18 +87,46 @@ final class TaskalkaCatalog {
         selections[mood.id]?.movies = picked
     }
 
-    /// Жанровый вес фильма для настроения; `nil` — фильм ему не подходит.
-    private static func genreScore(_ movie: KinopoiskMovie, _ mood: TaskalkaMood) -> Double? {
+    /// Вес фильма для настроения; `nil` — фильм ему не подходит.
+    ///
+    /// Жанр с запретами — у всех. Темы (`keywords`, «про котиков»), страна («по-французски»)
+    /// и год («старого доброго») — обязательные условия: жанром их не выразить, и фильм
+    /// без кота в описании под «про котиков» был бы враньём. Вес жанра у таких только
+    /// поднимает фильм выше.
+    private static func score(_ movie: KinopoiskMovie, _ mood: TaskalkaMood) -> Double? {
         let genres = Set((movie.genres ?? []).map { $0.name.lowercased() })
         guard genres.isDisjoint(with: mood.vetoGenres) else { return nil }
         let score = genres.reduce(0) { $0 + (mood.genres[$1] ?? 0) }
-        // Настроение страны («по-французски»): фильм обязан быть оттуда, жанр — любой
-        // не запрещённый, его вес только поднимает фильм выше.
-        guard mood.countries.isEmpty else {
-            let countries = Set((movie.countries ?? []).map(\.name))
-            return countries.isDisjoint(with: mood.countries) ? nil : 1 + score
+        var isConditional = false
+        if let maxYear = mood.maxYear {
+            guard let year = movie.year, year <= maxYear else { return nil }
+            isConditional = true
         }
+        if !mood.countries.isEmpty {
+            let countries = Set((movie.countries ?? []).map(\.name))
+            guard !countries.isDisjoint(with: mood.countries) else { return nil }
+            isConditional = true
+        }
+        if let pattern = pattern(for: mood) {
+            let text = [movie.name, movie.alternativeName, movie.shortDescription, movie.description]
+                .compactMap { $0 }
+                .joined(separator: " ")
+            guard pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil else { return nil }
+            isConditional = true
+        }
+        if isConditional { return 1 + score }
         return score > 0 ? score : nil
+    }
+
+    /// Регулярки тем — один разбор на процесс.
+    private static var patterns: [TaskalkaMood.ID: NSRegularExpression] = [:]
+
+    private static func pattern(for mood: TaskalkaMood) -> NSRegularExpression? {
+        guard let keywords = mood.keywords else { return nil }
+        if let cached = patterns[mood.id] { return cached }
+        let compiled = try? NSRegularExpression(pattern: keywords, options: [.caseInsensitive])
+        patterns[mood.id] = compiled
+        return compiled
     }
 
     private static func pickMovies(_ movies: [KinopoiskMovie], for mood: TaskalkaMood) -> [CinemaCatalog.Title] {
@@ -116,7 +144,7 @@ final class TaskalkaCatalog {
         } else {
             // Жанр важнее рейтинга: вес жанра — целые, рейтинг — десятые.
             picked = movies
-                .compactMap { movie in genreScore(movie, mood).map { (movie, $0 * 10 + rating(movie)) } }
+                .compactMap { movie in score(movie, mood).map { (movie, $0 * 10 + rating(movie)) } }
                 .sorted { $0.1 > $1.1 }
                 .prefix(Limits.moviePool)
                 .map(\.0)
