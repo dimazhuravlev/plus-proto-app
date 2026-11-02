@@ -41,7 +41,28 @@ enum SearchRecents {
         #endif
         guard let data = UserDefaults.standard.data(forKey: storageKey) else { return [] }
         let saved = (try? JSONDecoder().decode([SearchHit].self, from: data)) ?? []
-        return saved.map(repairingPlaylist)
+        return saved.map(repairingPlaylist).map(repairingTrack)
+    }
+
+    /// Трек, найденный до прокрутки альбома к треку (PRD общего поиска 2026-11-02), —
+    /// с ней: тап по треку из истории открывает альбом там же, где и из выдачи.
+    private static func repairingTrack(_ hit: SearchHit) -> SearchHit {
+        guard hit.kind == .track, case .album(var ref)? = hit.route, ref.focusTrackID == nil,
+              hit.id.hasPrefix("track-"), let id = Int(hit.id.dropFirst("track-".count))
+        else { return hit }
+        ref.focusTrackID = id
+        var repaired = SearchHit(
+            id: hit.id,
+            kind: hit.kind,
+            title: hit.title,
+            subtitle: hit.subtitle,
+            artwork: hit.artwork,
+            route: .album(ref),
+            authority: hit.authority
+        )
+        repaired.artworkAspect = hit.artworkAspect
+        repaired.altTitle = hit.altTitle
+        return repaired
     }
 
     /// Плейлист, найденный до экрана плейлиста (2026-10-05), — с переходом на него:

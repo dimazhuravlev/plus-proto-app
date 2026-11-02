@@ -10,7 +10,7 @@ import SwiftUI
 /// Слой живёт **между затемнением и action bar**: расфокусивающий тап по затемнению
 /// остаётся рабочим вокруг выдачи, а бар с полем ввода рисуется поверх и не перекрыт.
 ///
-/// Пока запрос короче двух символов, на месте выдачи — нулевое состояние: карусель
+/// Пока запрос пуст, на месте выдачи — нулевое состояние: карусель
 /// «Искали недавно» (`SearchRecents`, макет `2118:17378`), а пока истории нет —
 /// три карусели рекомендаций (`SearchDiscovery`).
 struct SearchResultsView: View {
@@ -63,7 +63,7 @@ struct SearchResultsView: View {
         static let overviewShift: CGFloat = 80
     }
 
-    /// Смена «Искали недавно» ↔ выдача на втором символе запроса и обратно (крестом,
+    /// Смена «Искали недавно» ↔ выдача на первом символе запроса и обратно (крестом,
     /// стиранием) — почти последовательно: уходящее гаснет за 300 мс, приходящее
     /// проявляется за 300 мс, стартуя к концу ухода. Обе стоят в одном месте под
     /// статус-баром, и полным кроссфейдом две ленты лежали бы друг на друге. Было
@@ -345,6 +345,11 @@ struct SearchResultsView: View {
             case .masonry: SearchMosaicView(open: open, zoom: zoom)
             }
             SearchEmptyState(isShown: resultsStyle == .masonry ? search.isMosaicEmpty : search.isEmptyResult)
+            // У сетки ошибка — своя, по табам (`SearchMosaicView`); у каруселей — на месте
+            // обзора целиком.
+            if resultsStyle == .carousels {
+                SearchErrorState(failure: search.overviewFailure, isRetrying: search.isReloading, retry: search.retry)
+            }
         }
     }
 
@@ -946,13 +951,6 @@ struct SearchEmptyState: View {
     @Environment(KeyboardObserver.self) private var keyboard
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private enum Motion {
-        /// Из чего встаёт текст — по правке пользователя; не ноль, текст не «из ниоткуда».
-        static let hiddenScale: CGFloat = 0.6
-        /// Сильный ease-out: текст отвечает сразу и мягко встаёт.
-        static let change: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
-    }
-
     var body: some View {
         // Место в раскладке — пустая рамка без минимального размера, текст — оверлеем.
         // Отступ снизу входил в минимальную высоту слоя выдачи: с поднятой клавиатурой
@@ -969,24 +967,120 @@ struct SearchEmptyState: View {
             .multilineTextAlignment(.center)
             .foregroundStyle(Color.fillSeven)
             // С «уменьшением движения» — одна прозрачность.
-            .scaleEffect(isShown || reduceMotion ? 1 : Motion.hiddenScale)
+            .scaleEffect(isShown || reduceMotion ? 1 : SearchStateMotion.hiddenScale)
             .opacity(isShown ? 1 : 0)
-            .animation(Motion.change, value: isShown)
+            .animation(SearchStateMotion.change, value: isShown)
             .accessibilityHidden(!isShown)
             // Кадр слоя — безопасная зона: сверху статус-бар уже учтён, снизу
             // поджимаем до верха клавиатуры.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.bottom, bottomInset)
+            .padding(.bottom, SearchStateMotion.bottomInset(keyboard))
     }
+}
+
+/// Появление и место текста на месте выдачи — общие у пустой выдачи и ошибки: они
+/// встают в одной точке и одним движением.
+@MainActor
+enum SearchStateMotion {
+    /// Из чего встаёт текст — по правке пользователя; не ноль, текст не «из ниоткуда».
+    static let hiddenScale: CGFloat = 0.6
+    /// Сильный ease-out: текст отвечает сразу и мягко встаёт.
+    static let change: Animation = .timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
 
     /// Сколько снизу над нижней безопасной зоной занято: клавиатурой, а без неё — баром
     /// поиска, опущенным на место таббара.
-    private var bottomInset: CGFloat {
+    static func bottomInset(_ keyboard: KeyboardObserver) -> CGFloat {
         let safeBottom = PlusChromeMetrics.bottomSafeArea
         let occupied = keyboard.isUp
             ? keyboard.overlap
             : PlusChromeMetrics.chromeBottom + PlusMetrics.actionBarHeight
         return max(0, occupied - safeBottom)
+    }
+}
+
+// MARK: - Ошибка
+
+/// Ошибка на месте выдачи — компонент `error` страницы «🚨 Ошибки» (`17064:124181`;
+/// в поиске — `19298:102270` «Ошибка сетевая» и `19298:101768` «Ошибка ответа поиска»):
+/// заголовок Text L Semibold Fill/One, подпись Text M Medium Fill/Subtitle, под ними accent L
+/// «Обновить». Поля 32, текст — 20 сверху и снизу, строки через 8. Стоит там же, где
+/// «Ничего такого не нашлось» (`SearchEmptyState`), — по центру между статус-баром и верхом
+/// клавиатуры, без неё — до бара.
+///
+/// Появляется и гаснет тем же движением, что этот текст, — прозрачностью и скейлом от 0.6
+/// (`SearchStateMotion`; правка пользователя 2026-11-02: «ошибку нужно показать плавно»).
+/// Движение — своей транзакцией: ошибка встаёт на место скелетона в подмене без анимации
+/// (`SearchMosaicView`), и та гасила её переход — блок выскакивал рывком. Вью всегда
+/// в дереве: текст ушедшей ошибки держится, пока она гаснет.
+struct SearchErrorState: View {
+    /// `nil` — ошибки нет, блок погашен
+    let failure: SearchFailure?
+    /// Выдача собирается заново — на «Обновить» спиннер
+    let isRetrying: Bool
+    let retry: () -> Void
+
+    @Environment(KeyboardObserver.self) private var keyboard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shownFailure: SearchFailure = .failed
+    /// Блок на виду — догоняет `failure` своим движением.
+    @State private var isShown = false
+
+    private enum Layout {
+        static let side: CGFloat = 32
+        static let textVertical: CGFloat = 20
+        static let lineGap: CGFloat = 8
+    }
+
+    var body: some View {
+        Color.clear
+            .overlay { block }
+            .onChange(of: failure, initial: true) { _, failure in
+                if let failure { shownFailure = failure }
+                let shows = failure != nil
+                guard shows != isShown else { return }
+                // Новой транзакцией: смена приходит и с выключенными анимациями.
+                withTransaction(Transaction(animation: SearchStateMotion.change)) { isShown = shows }
+            }
+    }
+
+    private var block: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: Layout.lineGap) {
+                Text(title)
+                    .plusText(.textL, .semibold)
+                    .foregroundStyle(Color.fillOne)
+                Text(subtitle)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillSubtitle)
+            }
+            .multilineTextAlignment(.center)
+            .padding(.vertical, Layout.textVertical)
+
+            PlusButton("Обновить", type: .accent, size: .l, state: isRetrying ? .loading : .normal, action: retry)
+        }
+        .padding(.horizontal, Layout.side)
+        // С «уменьшением движения» — одна прозрачность.
+        .scaleEffect(isShown || reduceMotion ? 1 : SearchStateMotion.hiddenScale)
+        .opacity(isShown ? 1 : 0)
+        .allowsHitTesting(isShown)
+        .accessibilityHidden(!isShown)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.bottom, SearchStateMotion.bottomInset(keyboard))
+    }
+
+    /// Тексты — из макетов поиска; «соединиение» макета — опечатка, здесь «соединение».
+    private var title: String {
+        switch shownFailure {
+        case .offline: "Что-то с интернетом"
+        case .failed: "Что-то пошло не так"
+        }
+    }
+
+    private var subtitle: String {
+        switch shownFailure {
+        case .offline: "Проверьте соединение\nи попробуйте обновить"
+        case .failed: "Попробуйте обновить"
+        }
     }
 }
 

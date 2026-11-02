@@ -10,6 +10,11 @@ import SwiftUI
 /// медленный (Deezer 150–300мс, Google Books 200–400 и его обложки, Кинопоиск
 /// полсекунды), а не их сумму.
 ///
+/// **Ждём не дольше таймаута** (`serviceTimeout`, PRD общего поиска): опоздавший сервис
+/// в «Всё» не попадает, упавший — тоже; оба запрашиваются заново на своём табе, а в ряду
+/// табов считаются непустыми. Пуст сразу только сервис, ответивший пустой выдачей. Нет
+/// сети — стандартная ошибка вместо выдачи (`SearchFailure`).
+///
 /// **Ввод дебаунсится**, а не шлёт запрос на каждую букву: у Кинопоиска 200 запросов
 /// в сутки на ключ. По той же причине кино сперва ищется в дисковом запасе
 /// (`MoviePool.search`) и уходит в сеть, только если там нашлось мало.
@@ -20,10 +25,10 @@ final class SearchState {
     var query: String = "" {
         didSet {
             guard query != oldValue else { return }
-            // Набор уводит из полного списка истории. Пока запрос короче двух символов —
-            // сразу, переходом подэкрана к ленте. С двух (вставка, подсказка клавиатуры)
-            // слой сам сменит нулевое состояние на выдачу, и список снимается уже после
-            // этого (`dismissHistory`): иначе на смене мелькала лента (ревью 2026-10-03).
+            // Набор уводит из полного списка истории. Пока запрос короче порога поиска
+            // (`minimumQueryLength`) — сразу, переходом подэкрана к ленте. С порога слой сам
+            // сменит нулевое состояние на выдачу, и список снимается уже после этого
+            // (`dismissHistory`): иначе на смене мелькала лента (ревью 2026-10-03).
             if !normalized.isEmpty, !isActive { isHistoryShown = false }
             scheduleSearch()
         }
@@ -44,14 +49,27 @@ final class SearchState {
     /// Меняется только целиком — одним присваиванием, когда новая выдача собрана.
     /// `nil` — показывать ещё нечего: на первом запросе на её месте скелетон.
     private var shown: Results?
-    /// Запрос в пути. Прежняя выдача всё это время стоит как есть: сброс в скелетон
-    /// на каждой букве моргал карточками (жалоба пользователя 2026-10-03), а подмена
-    /// по доменам переставляла блоки с данными.
+    /// Запрос в пути. Прежняя выдача стоит как есть, пока новая не задержалась дольше
+    /// `skeletonDelay`: сброс в скелетон на каждой букве моргал карточками (жалоба
+    /// пользователя 2026-10-03), а подмена по доменам переставляла блоки с данными.
     private var isLoading = false
+
+    /// Новая выдача обзора задержалась дольше `skeletonDelay` — на месте прежней скелетон
+    /// (правка пользователя 2026-11-02: «иначе очень долго ничего не происходит и выглядит
+    /// как будто зависло»). Держится до новой выдачи: новый ввод его не сбрасывает.
+    private(set) var isOverviewStalled = false
+    /// То же у таба раздела: его новая выдача — и обзор, за которым она идёт, — в пути
+    /// дольше `skeletonDelay`. Пока флаг стоит, `tabResults` пуст — на табе скелетон строк.
+    private(set) var isTabStalled = false
+    /// Отсчёт `skeletonDelay` с отправки запроса.
+    private var stallTask: Task<Void, Never>?
 
     /// Собранная выдача одного запроса.
     private struct Results {
         let text: String
+        /// Номер сборки: та же строка, собранная заново («Обновить» после ошибки), —
+        /// другая выдача, и экран сменяет её так же, как новый запрос.
+        let revision: Int
         let order: [Section.Kind]
         let music: [SearchHit]
         let movies: [SearchHit]
@@ -59,6 +77,11 @@ final class SearchState {
         /// Все разделы одной лентой — порядок сетки (`mixed`), посчитанный вместе
         /// с порядком секций: сетка встаёт сразу на свои места, как и карусели.
         let mixed: [SearchHit]
+        /// Как ответил каждый сервис. Опоздавший и упавший в выдачу не попали — их табы
+        /// запрашиваются заново (`startTab`).
+        let status: [Section.Kind: ServiceStatus]
+        /// Сети нет — вместо выдачи стандартная ошибка.
+        var isOffline = false
 
         func hits(_ kind: Section.Kind) -> [SearchHit] {
             switch kind {
@@ -69,6 +92,43 @@ final class SearchState {
         }
 
         var isEmpty: Bool { music.isEmpty && movies.isEmpty && books.isEmpty }
+
+        /// Ответили все три сервиса, и сеть была: пустота такой выдачи — правда.
+        var isComplete: Bool {
+            !isOffline && Section.Kind.allCases.allSatisfy { status[$0] == .answered }
+        }
+
+        /// Сети нет — выдачи нет, ни один сервис не спрашивали.
+        static func offline(_ text: String, revision: Int) -> Results {
+            Results(
+                text: text,
+                revision: revision,
+                order: Section.Kind.allCases,
+                music: [],
+                movies: [],
+                books: [],
+                mixed: [],
+                status: Dictionary(uniqueKeysWithValues: Section.Kind.allCases.map { ($0, .failed) }),
+                isOffline: true
+            )
+        }
+    }
+
+    /// Как сервис ответил на запрос обзора.
+    enum ServiceStatus {
+        case answered
+        /// Ответил ошибкой
+        case failed
+        /// Не ответил за `serviceTimeout`
+        case late
+    }
+
+    /// Номера сборок выдачи — `Results.revision`, `TabResults.revision`.
+    private var revisions = 0
+
+    private func nextRevision() -> Int {
+        revisions += 1
+        return revisions
     }
 
     /// Состояние одного домена выдачи — так секцию видит экран.
@@ -77,12 +137,20 @@ final class SearchState {
         var hits: [SearchHit] = []
     }
 
-    /// Ищем с двух символов: на одной букве выдача — случайный шум, а запросы
-    /// уходят настоящие.
-    private static let minimumQueryLength = 2
+    /// Ищем с одного символа (PRD общего поиска; прежде — с двух). Квоту Кинопоиска
+    /// бережёт дебаунс и запас фильмов на диске: на одну букву в запасе находится
+    /// достаточно, и в сеть кино не идёт.
+    private static let minimumQueryLength = 1
     /// Пауза после последнего нажатия. 400мс — набор успевает закончиться,
     /// а ожидание ещё не читается задержкой.
     private static let debounce: Duration = .milliseconds(400)
+    /// Дольше обзор сервис не ждёт (решение пользователя 2026-11-02): опоздавший в «Всё»
+    /// не попадает и запрашивается заново на своём табе.
+    private static let serviceTimeout: Duration = .seconds(5)
+    /// Сколько прежняя выдача ждёт новую, прежде чем смениться скелетоном (правка
+    /// пользователя 2026-11-02): быстрый ответ меняет выдачу целиком без скелетона, долгий
+    /// не выглядит зависанием.
+    private static let skeletonDelay: Duration = .milliseconds(600)
     /// Сколько карточек держит секция. Потолок вырос со списочных трёх: выдача
     /// стала каруселью (`SearchResultsView`, макет `2118:17378`), лишние карточки
     /// уезжают за правый край, а не давят на соседние секции.
@@ -185,7 +253,36 @@ final class SearchState {
 
     /// Ни один домен ничего не нашёл, и все уже ответили.
     var isEmptyResult: Bool {
-        shown?.isEmpty ?? false
+        shown.map { $0.isEmpty && $0.isComplete } ?? false
+    }
+
+    /// Ошибка на месте выдачи обзора: сети нет — или в сетке пусто, а кто-то из сервисов
+    /// не ответил, и сказать «ничего не нашлось» нельзя. `nil` — выдача как выдача: сетка
+    /// собрана из ответивших (PRD общего поиска).
+    var overviewFailure: SearchFailure? {
+        guard let shown else { return nil }
+        if shown.isOffline { return .offline }
+        if shown.mixed.isEmpty, !shown.isComplete { return .failed }
+        return nil
+    }
+
+    /// Собирается новая выдача, а на экране стоит прежняя: «Обновить» ошибки — со спиннером.
+    var isReloading: Bool { isLoading && shown != nil }
+
+    /// «Обновить» на ошибке: обзор с нуля — без дебаунса и мимо кэша, и выдача таба, если
+    /// он открыт и его выдача не пришла. Прежняя выдача стоит, пока не готова новая.
+    func retry() {
+        guard let text = shown?.text else { return }
+        if shown?.isComplete == false {
+            searchTask?.cancel()
+            cache[text] = nil
+            isLoading = true
+            searchTask = Task { [weak self] in await self?.run(text) }
+        }
+        if let kind = tab.kind, tabResults?.failure != nil {
+            tabCache[TabKey(kind: kind, text: text)] = nil
+            startTab(kind, text)
+        }
     }
 
     /// Секция выдачи: домен, его заголовок и результаты.
@@ -373,27 +470,28 @@ final class SearchState {
 
     private func scheduleSearch() {
         // Новый ввод отменяет прошлый заход целиком: и паузу дебаунса, и уже
-        // идущие запросы — их выдача всё равно относится к старому тексту.
+        // идущие запросы — их выдача всё равно относится к старому тексту. Отсчёт до
+        // скелетона — тоже: он с отправки запроса, а показанный скелетон стоит.
         searchTask?.cancel()
+        stallTask?.cancel()
 
         let text = normalized
         guard text.count >= Self.minimumQueryLength else {
             reset()
             return
         }
+        // Монитор сети — с первым вводом: до конца дебаунса он узнает путь.
+        _ = NetworkStatus.shared
         // Новый запрос — уходящая выдача больше не нужна.
         leaving = nil
 
         if let cached = cache[text] {
-            isLoading = false
-            shown = cached
-            if let expanded { startFull(expanded, text) }
-            followTab(cached)
+            publish(cached)
             return
         }
 
-        // Скелетон — только когда показывать ещё нечего, то есть на первом запросе;
-        // уточнение запроса держит прежнюю выдачу до готовности новой.
+        // Скелетон — сразу, только когда показывать ещё нечего, то есть на первом запросе;
+        // уточнение запроса держит прежнюю выдачу, пока новая не задержалась (`armStall`).
         isLoading = true
 
         searchTask = Task { [weak self] in
@@ -404,18 +502,49 @@ final class SearchState {
     }
 
     private func run(_ text: String) async {
-        // Запросы параллельны, показ — общий: ждём все три ответа и персону.
-        async let music = fetchMusic(text)
-        async let movies = fetchMovies(text)
-        async let books = fetchBooks(text)
-        async let person = WikipediaPeople.shared.person(matching: text)
+        let revision = nextRevision()
+        armStall()
+        // Сети нет — ни одного запроса: на месте выдачи стандартная ошибка.
+        if Self.isOffline {
+            publish(.offline(text, revision: revision))
+            return
+        }
+        // Запросы параллельны, показ — общий: ждём все три ответа и персону, но не дольше
+        // таймаута — опоздавший в выдачу не попадёт.
+        let deadline = ContinuousClock.now + Self.serviceTimeout
+        async let music = Self.answer(.music, by: deadline) { try await self.fetchMusic(text) }
+        async let movies = Self.answer(.movies, by: deadline) { try await self.fetchMovies(text) }
+        async let books = Self.answer(.books, by: deadline) { try await self.fetchBooks(text) }
+        async let person = Self.answer(nil, by: deadline) { await WikipediaPeople.shared.person(matching: text) }
         // Плейлисты — только сетке: в карусели музыки их нет, а свой запрос к Deezer
         // бесплатен и идёт параллельно остальным (правка пользователя 2026-10-05).
-        async let playlists = try? DeezerService.shared.searchPlaylists(query: text, limit: Self.perKind)
-        let (fetchedMusic, fetchedMovies, fetchedBooks, found, foundPlaylists) =
+        async let playlists = Self.answer(nil, by: deadline) {
+            try await DeezerService.shared.searchPlaylists(query: text, limit: Self.perKind)
+        }
+        let (musicAnswer, moviesAnswer, booksAnswer, personAnswer, playlistsAnswer) =
             await (music, movies, books, person, playlists)
 
         guard !Task.isCancelled else { return }
+        // Не ответил никто, и сети нет (или всё упало из-за связи) — это нет сети, а не
+        // сбой сервисов. Кто-то ответил — показываем его, даже если сеть уже пропала.
+        let failures = [musicAnswer.failure, moviesAnswer.failure, booksAnswer.failure]
+        let nobodyAnswered = [musicAnswer.value == nil, moviesAnswer.value == nil, booksAnswer.value == nil]
+            .allSatisfy { $0 }
+        if nobodyAnswered, Self.isOffline || failures.allSatisfy({ $0.map(Self.isConnectivity) == true }) {
+            publish(.offline(text, revision: revision))
+            return
+        }
+        let status: [Section.Kind: ServiceStatus] = [
+            .music: musicAnswer.status,
+            .movies: moviesAnswer.status,
+            .books: booksAnswer.status,
+        ]
+        let fetchedMusic = musicAnswer.value ?? []
+        let fetchedMovies = moviesAnswer.value ?? []
+        let fetchedBooks = booksAnswer.value ?? (hits: [], writers: [])
+        let found = personAnswer.value ?? nil
+        let foundPlaylists = playlistsAnswer.value
+
         // Внутри карусели — самое точное совпадение первым (`ranked`).
         let musicHits = Self.ranked(fetchedMusic, for: text)
         var movieHits = Self.ranked(fetchedMovies, for: text)
@@ -433,7 +562,7 @@ final class SearchState {
         }
         // За ней — режиссёры и актёры из составов найденных фильмов, чьё имя назвал
         // запрос (задача пользователя 2026-10-31).
-        let cast = await castPersons(in: movieHits, text: text, excluding: named)
+        let cast = await castPersons(in: movieHits, text: text, excluding: named, deadline: deadline)
         guard !Task.isCancelled else { return }
         if !cast.isEmpty {
             let leading = Self.namedPersons(in: movieHits)
@@ -455,6 +584,7 @@ final class SearchState {
         ]
         let results = Results(
             text: text,
+            revision: revision,
             order: order,
             music: musicHits,
             movies: movieHits,
@@ -464,24 +594,144 @@ final class SearchState {
                 for: text,
                 leadsWithHeads: true,
                 inherited: movieCreators.merging(bookCreators) { left, _ in left }
-            )
+            ),
+            status: status
         )
-        cache[text] = results
-        // Одно присваивание — один кадр: все блоки появляются разом и сразу
-        // в окончательном порядке.
+        // Выдачу без опоздавшего или упавшего сервиса не кэшируем: повторный ввод того же
+        // запроса спросит его снова.
+        if results.isComplete { cache[text] = results }
+        publish(results)
+    }
+
+    /// Показать собранную выдачу. Одно присваивание — один кадр: все блоки появляются
+    /// разом и сразу в окончательном порядке.
+    private func publish(_ results: Results) {
         shown = results
         isLoading = false
+        isOverviewStalled = false
         // Раскрытый раздел следует за запросом: поле в баре на экране полной выдачи
         // живое, набранное меняет и её. Персона раздела берётся из только что
         // собранного обзора, поэтому полная выдача — после него.
-        if let expanded { startFull(expanded, text) }
+        if let expanded { startFull(expanded, results.text) }
         followTab(results)
+    }
+
+    // MARK: - Скелетон на долгом ответе
+
+    /// Запрос ушёл — через `skeletonDelay` проверить, пришла ли выдача на экран: обзор
+    /// и, если открыт таб раздела, его выдача под текущий запрос. Не пришла — скелетон.
+    /// Отсчёт уже идёт (таб запросился следом за обзором) — не перезапускается.
+    private func armStall(restart: Bool = true) {
+        guard restart || stallTask == nil else { return }
+        stallTask?.cancel()
+        stallTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.skeletonDelay)
+            guard !Task.isCancelled, let self else { return }
+            self.stallTask = nil
+            if self.isLoading {
+                self.isOverviewStalled = true
+                if self.tab.kind != nil { self.isTabStalled = true }
+            } else if self.isTabPending {
+                self.isTabStalled = true
+            }
+        }
+    }
+
+    /// Открыт таб раздела, а его выдачи под показанный запрос ещё нет.
+    private var isTabPending: Bool {
+        guard let kind = tab.kind, let text = shown?.text else { return false }
+        guard let tabFull, tabFull.kind == kind, tabFull.text == text else { return true }
+        return tabTasks[TabKey(kind: kind, text: text)] != nil
+    }
+
+    // MARK: - Ответы сервисов
+
+    /// Нет сети: системный монитор пути (`NetworkStatus`); `-debugSearchOffline 1` —
+    /// то же без отключения сети на маке.
+    private static var isOffline: Bool {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "debugSearchOffline") { return true }
+        #endif
+        return NetworkStatus.shared.isOffline
+    }
+
+    /// Ошибка связи, а не сервиса: при ней молчат все сервисы разом.
+    private static func isConnectivity(_ error: Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        switch error.code {
+        case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Ответ сервиса к сроку `deadline`: значение, ошибка или «не успел». Не успевший
+    /// не отменяется — его ответ ляжет в кэши сервиса (у Кинопоиска — `kinopoiskRaw`)
+    /// и пригодится табу; отменяет его только новый запрос, отменяя весь заход.
+    ///
+    /// `kind` — сервис для отладочных флагов: `-debugSearchFail <music|movies|books>` —
+    /// сервис отвечает ошибкой (и на табе тоже), `-debugSearchLate <…>` — не успевает
+    /// в обзор, а таб получает его выдачу.
+    private static func answer<T>(
+        _ kind: Section.Kind?,
+        by deadline: ContinuousClock.Instant,
+        _ work: @escaping @MainActor () async throws -> T
+    ) async -> ServiceAnswer<T> {
+        #if DEBUG
+        if let kind, debugService(kind, flag: "debugSearchFail") { return .failed(URLError(.badServerResponse)) }
+        if let kind, debugService(kind, flag: "debugSearchLate") {
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            return .late
+        }
+        #endif
+        let task = Task { @MainActor in try await work() }
+        return await withTaskCancellationHandler {
+            let box = AnswerBox<T>()
+            let waiter = Task { @MainActor in
+                do {
+                    box.answer = .answered(try await task.value)
+                } catch {
+                    box.answer = .failed(error)
+                }
+            }
+            await wait(for: waiter, atMost: max(.zero, deadline - .now))
+            return box.answer ?? .late
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    #if DEBUG
+    /// Отладочный флаг называет этот сервис: `music`, `movies` или `books`.
+    static func debugService(_ kind: Section.Kind, flag: String) -> Bool {
+        guard let raw = UserDefaults.standard.string(forKey: flag) else { return false }
+        return switch kind {
+        case .music: raw == "music"
+        case .movies: raw == "movies"
+        case .books: raw == "books"
+        }
+    }
+    #endif
+
+    /// Сервис упал, только если не ответила ни одна его ручка: у Музыки их три,
+    /// и выдача из двух — всё ещё выдача.
+    private static func attempt<T>(_ work: () async throws -> T) async -> Result<T, Error> {
+        do {
+            return .success(try await work())
+        } catch {
+            return .failure(error)
+        }
     }
 
     private func reset() {
         leaving = shown ?? leaving
         shown = nil
         isLoading = false
+        stallTask?.cancel()
+        stallTask = nil
+        isOverviewStalled = false
+        isTabStalled = false
         // Запрос стёрт — раскрытому разделу показывать нечего.
         expanded = nil
         fullTask?.cancel()
@@ -514,6 +764,12 @@ final class SearchState {
         let hits: [SearchHit]
         /// Колдунщик — только у музыки.
         let wizard: MusicWizard?
+        /// Сервис не ответил или сети нет — выдачи нет, на табе ошибка.
+        var failure: SearchFailure? = nil
+
+        static func failed(_ kind: Section.Kind, _ text: String, _ failure: SearchFailure) -> FullResults {
+            FullResults(kind: kind, text: text, hits: [], wizard: nil, failure: failure)
+        }
     }
 
     /// Колдунщик музыки — самый подходящий запросу исполнитель (макет `2440:29310`):
@@ -564,7 +820,7 @@ final class SearchState {
     var isSubscreenShown: Bool { expanded != nil || (isHistoryShown && !isActive) }
 
     /// Полная выдача раскрытого раздела; `nil` — первая ещё собирается. Уточнение
-    /// запроса держит прежнюю выдачу раздела до готовности новой — как и обзор
+    /// запроса держит прежнюю выдачу раздела до готовности новой (вид каруселями) — как и обзор
     /// (правка пользователя 2026-10-03): скелетон на каждой букве сбрасывал список
     /// и фильтр.
     var fullResults: FullResults? {
@@ -593,21 +849,31 @@ final class SearchState {
     /// Полная выдача ранжируется так же, как карусель обзора (`ranked`): раскрытый
     /// раздел продолжает карусель, а не переставляет её.
     private func loadFull(_ kind: Section.Kind, _ text: String) async -> FullResults {
-        switch kind {
-        case .music:
-            let (hits, wizard) = await fetchFullMusic(text)
-            return FullResults(kind: kind, text: text, hits: Self.ranked(hits, for: text), wizard: wizard)
-        case .movies:
-            let hits = Self.ranked(await fetchFullMovies(text), for: text)
-            // Персоны, которых назвал запрос, — первыми, как в обзоре; к ним — найденные
-            // в составах фильмов полной выдачи.
-            let named = Self.namedPersons(in: cache[text]?.movies ?? [])
-            let cast = await castPersons(in: hits, text: text, excluding: Set(named.map(\.title.folded)))
-            return FullResults(kind: kind, text: text, hits: named + cast + hits, wizard: nil)
-        case .books:
-            let found = (try? await BooksService.shared.search(text, limit: FullLimits.books)) ?? []
-            let hits = Self.ranked(found.map(SearchHit.init(book:)), for: text)
-            return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: cache[text]?.books, hits), wizard: nil)
+        if Self.isOffline { return .failed(kind, text, .offline) }
+        #if DEBUG
+        if Self.debugService(kind, flag: "debugSearchFail") { return .failed(kind, text, .failed) }
+        #endif
+        do {
+            switch kind {
+            case .music:
+                let (hits, wizard) = try await fetchFullMusic(text)
+                return FullResults(kind: kind, text: text, hits: Self.ranked(hits, for: text), wizard: wizard)
+            case .movies:
+                let hits = Self.ranked(try await fetchFullMovies(text), for: text)
+                // Персоны, которых назвал запрос, — первыми, как в обзоре; к ним — найденные
+                // в составах фильмов полной выдачи.
+                let named = Self.namedPersons(in: shown?.text == text ? shown?.movies ?? [] : cache[text]?.movies ?? [])
+                let cast = await castPersons(in: hits, text: text, excluding: Set(named.map(\.title.folded)))
+                return FullResults(kind: kind, text: text, hits: named + cast + hits, wizard: nil)
+            case .books:
+                let found = try await BooksService.shared.search(text, limit: FullLimits.books)
+                let hits = Self.ranked(found.map(SearchHit.init(book:)), for: text)
+                let overview = shown?.text == text ? shown?.books : cache[text]?.books
+                return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: overview, hits), wizard: nil)
+            }
+        } catch {
+            guard !Task.isCancelled else { return .failed(kind, text, .failed) }
+            return .failed(kind, text, Self.isOffline || Self.isConnectivity(error) ? .offline : .failed)
         }
     }
 
@@ -617,13 +883,20 @@ final class SearchState {
         return [person] + hits
     }
 
-    private func fetchFullMusic(_ text: String) async -> ([SearchHit], MusicWizard?) {
-        async let tracks = try? DeezerService.shared.searchTracks(query: text, limit: FullLimits.tracks)
-        async let albums = try? DeezerService.shared.searchAlbums(query: text, limit: FullLimits.albums)
-        async let artists = try? DeezerService.shared.searchArtists(query: text, limit: FullLimits.artists)
-        async let playlists = try? DeezerService.shared.searchPlaylists(query: text, limit: FullLimits.playlists)
-        let (foundTracks, foundAlbums, allArtists, foundPlaylists) = await (
-            tracks ?? [], albums ?? [], artists ?? [], playlists ?? []
+    /// Ошибка — только если не ответила ни одна из четырёх ручек.
+    private func fetchFullMusic(_ text: String) async throws -> ([SearchHit], MusicWizard?) {
+        async let tracks = Self.attempt { try await DeezerService.shared.searchTracks(query: text, limit: FullLimits.tracks) }
+        async let albums = Self.attempt { try await DeezerService.shared.searchAlbums(query: text, limit: FullLimits.albums) }
+        async let artists = Self.attempt { try await DeezerService.shared.searchArtists(query: text, limit: FullLimits.artists) }
+        async let playlists = Self.attempt { try await DeezerService.shared.searchPlaylists(query: text, limit: FullLimits.playlists) }
+        let answers = await (tracks, albums, artists, playlists)
+        if case .failure(let error) = answers.0,
+           case .failure = answers.1, case .failure = answers.2, case .failure = answers.3 {
+            throw error
+        }
+        let (foundTracks, foundAlbums, allArtists, foundPlaylists) = (
+            (try? answers.0.get()) ?? [], (try? answers.1.get()) ?? [],
+            (try? answers.2.get()) ?? [], (try? answers.3.get()) ?? []
         )
         // Исполнители без фото — вне выдачи (правка пользователя 2026-10-03).
         let foundArtists = allArtists.filter(\.hasPhoto)
@@ -670,10 +943,21 @@ final class SearchState {
     /// берут одну выдачу на текст (лимит полной, обзору — начало): иначе раскрытый
     /// раздел тратил второй запрос из 200 в сутки на тот же текст (проверка 2026-10-03).
     private var kinopoiskRaw: [String: [KinopoiskMovie]] = [:]
+    /// Запросы в пути: таб опоздавшего кино ждёт тот же ответ, а не тратит второй запрос
+    /// из квоты на тот же текст.
+    private var kinopoiskInFlight: [String: Task<[KinopoiskMovie], Error>] = [:]
 
-    private func kinopoiskMovies(_ text: String) async -> [KinopoiskMovie] {
+    /// Ошибка Кинопоиска — наружу: по ней таб «Кино» показывает ошибку, а не пустоту.
+    /// Без ключей — не ошибка: витрина живёт на моках, и сеть мы не трогаем.
+    private func kinopoiskMovies(_ text: String) async throws -> [KinopoiskMovie] {
         if let cached = kinopoiskRaw[text] { return cached }
-        let found = (try? await KinopoiskService.shared.searchMovies(query: text, limit: FullLimits.networkMovies)) ?? []
+        guard APIKeysCheck.isKinopoiskConfigured else { return [] }
+        let request = kinopoiskInFlight[text] ?? Task {
+            try await KinopoiskService.shared.searchMovies(query: text, limit: FullLimits.networkMovies)
+        }
+        kinopoiskInFlight[text] = request
+        defer { kinopoiskInFlight[text] = nil }
+        let found = try await request.value
         // Пустой — не кэшируем: за ним бывает сбой.
         if !found.isEmpty { kinopoiskRaw[text] = found }
         // Поля те же, что у подборок (`movieFields`): карточка фильма из выдачи и
@@ -690,12 +974,20 @@ final class SearchState {
             || name.split(separator: " ").contains { $0 == needle }
     }
 
-    private func fetchFullMovies(_ text: String) async -> [SearchHit] {
+    /// Ошибка — когда сеть понадобилась и не ответила, а в запасе ничего: найденное
+    /// в запасе — уже выдача.
+    private func fetchFullMovies(_ text: String) async throws -> [SearchHit] {
         let pooled = await MoviePool.shared.search(text, limit: FullLimits.movies)
             .filter(Self.isShowableMovie)
         var hits = pooled.map(SearchHit.init(movie:))
         guard pooled.count < FullLimits.poolEnough, !Task.isCancelled else { return hits }
-        let found = await kinopoiskMovies(text)
+        let found: [KinopoiskMovie]
+        do {
+            found = try await kinopoiskMovies(text)
+        } catch {
+            if hits.isEmpty { throw error }
+            return hits
+        }
         let known = Set(pooled.map(\.id))
         hits += found
             .filter { !known.contains($0.id) && Self.isShowableMovie($0) }
@@ -730,6 +1022,8 @@ final class SearchState {
     struct TabResults {
         let kind: Section.Kind
         let text: String
+        /// Номер сборки: выдача того же текста, собранная заново («Обновить»), — другая.
+        let revision: Int
         let hits: [SearchHit]
         /// Колдунщик — только у музыки
         let wizard: MusicWizard?
@@ -738,6 +1032,8 @@ final class SearchState {
         let unwatchable: Set<String>
         /// Сколько работ персоны нашлось в этой же выдаче — по id строки персоны
         let personCounts: [String: Int]
+        /// Сервис не ответил или сети нет — на табе ошибка, а не «Ничего такого не нашлось».
+        var failure: SearchFailure? = nil
 
         func matches(_ filter: SearchSubfilter, _ hit: SearchHit) -> Bool {
             switch filter {
@@ -769,8 +1065,8 @@ final class SearchState {
             isEmpty ? [] : SearchSubfilter.options(for: kind)
         }
 
-        static func empty(_ kind: Section.Kind, _ text: String) -> TabResults {
-            TabResults(kind: kind, text: text, hits: [], wizard: nil, unwatchable: [], personCounts: [:])
+        static func empty(_ kind: Section.Kind, _ text: String, revision: Int, failure: SearchFailure? = nil) -> TabResults {
+            TabResults(kind: kind, text: text, revision: revision, hits: [], wizard: nil, unwatchable: [], personCounts: [:], failure: failure)
         }
 
         /// Кнопка «Смотреть» у строки: фильм — если не знаем, что нельзя; сериал — всегда.
@@ -779,10 +1075,11 @@ final class SearchState {
         }
     }
 
-    /// Выдача раздела выбранного таба; `nil` — у «Всё» её нет, или первая ещё собирается.
-    /// Уточнение запроса держит прежнюю выдачу раздела до готовности новой.
+    /// Выдача раздела выбранного таба; `nil` — у «Всё» её нет, первая ещё собирается или
+    /// новая задержалась (`isTabStalled`, на табе скелетон). Уточнение запроса держит
+    /// прежнюю выдачу раздела, пока новая не задержалась дольше `skeletonDelay`.
     var tabResults: TabResults? {
-        guard let kind = tab.kind, let tabFull, tabFull.kind == kind else { return nil }
+        guard let kind = tab.kind, !isTabStalled, let tabFull, tabFull.kind == kind else { return nil }
         return tabFull
     }
 
@@ -790,6 +1087,9 @@ final class SearchState {
         guard newTab != tab else { return }
         tab = newTab
         subfilter = .all
+        // Обзор под новый запрос задержался — и новый таб на скелетоне, пока не придёт его
+        // выдача под этот запрос: прежней он не показывает.
+        isTabStalled = newTab.kind != nil && isOverviewStalled
         guard let kind = newTab.kind, let text = shown?.text else { return }
         startTab(kind, text)
     }
@@ -799,7 +1099,11 @@ final class SearchState {
     /// в разделе ничего — на табе «Ничего такого не нашлось» (макет `19151:18721`).
     private func followTab(_ results: Results) {
         guard let kind = tab.kind else { return }
-        if let tabFull, tabFull.kind == kind, tabFull.text == results.text { return }
+        if let tabFull, tabFull.kind == kind, tabFull.text == results.text {
+            // Выдача таба под этот текст уже на руках — скелетон долгого ответа не нужен.
+            if tabTasks[TabKey(kind: kind, text: results.text)] == nil { isTabStalled = false }
+            return
+        }
         startTab(kind, results.text)
     }
 
@@ -811,27 +1115,47 @@ final class SearchState {
             tabTasks[stale] = nil
         }
         if let cached = tabCache[key] {
-            tabFull = cached
+            showTab(cached)
             return
         }
-        // В обзоре раздела нет — не будет и в полной выдаче: таб пуст сразу, без запросов.
-        if let shown, shown.text == text, !shown.mixed.contains(where: { $0.kind.domain == kind }) {
-            tabFull = .empty(kind, text)
+        // Сервис ответил обзору пустой выдачей — не будет её и в полной: таб пуст сразу,
+        // без запросов. Опоздавший и упавший — запрашиваются заново (PRD общего поиска).
+        if let shown, shown.text == text, shown.status[kind] == .answered,
+           !shown.mixed.contains(where: { $0.kind.domain == kind }) {
+            let empty = TabResults.empty(kind, text, revision: nextRevision())
+            tabCache[key] = empty
+            showTab(empty)
             return
         }
         // Та же выдача уже собирается (вернулись на таб, повторная публикация того же
         // текста) — дождаться её, не начинать заново.
         guard tabTasks[key] == nil else { return }
+        // Запрос таба ушёл — отсчёт до скелетона, если обзор не завёл его раньше.
+        armStall(restart: false)
         tabTasks[key] = Task { [weak self] in
             guard let self else { return }
             let result = await self.loadTab(kind, text)
             guard !Task.isCancelled else { return }
             self.tabTasks[key] = nil
-            // Пустой ответ не кэшируем: за ним бывает сбой сети.
-            if !result.hits.isEmpty { self.tabCache[key] = result }
+            // Пустой ответ и ошибку не кэшируем: за пустым бывает сбой сети, а ошибку
+            // повторный заход на таб обязан спросить заново.
+            if !result.hits.isEmpty, result.failure == nil { self.tabCache[key] = result }
             // На экран — если таб и текст всё те же.
-            if self.tab.kind == kind, self.shown?.text == text { self.tabFull = result }
+            if self.tab.kind == kind, self.shown?.text == text { self.showTab(result) }
         }
+    }
+
+    /// Выдача таба — на экран. Скелетон долгого ответа снимается, если запрос, под который
+    /// она собрана, — последний: пока обзор нового запроса задерживается, таб ждёт его.
+    private func showTab(_ results: TabResults) {
+        tabFull = results
+        if !isOverviewStalled { isTabStalled = false }
+    }
+
+    /// Выдача таба в пути, а на экране стоит прежняя (ошибка): «Обновить» — со спиннером.
+    var isTabReloading: Bool {
+        guard let kind = tab.kind, let text = shown?.text else { return false }
+        return tabTasks[TabKey(kind: kind, text: text)] != nil
     }
 
     /// Сколько ждём ответа о доступности фильмов, прежде чем показать список: он
@@ -856,15 +1180,19 @@ final class SearchState {
             base = await loadFull(kind, text)
             if !base.hits.isEmpty { fullCache[key] = base }
         }
+        let revision = nextRevision()
+        if let failure = base.failure {
+            return .empty(kind, text, revision: revision, failure: failure)
+        }
         switch kind {
         case .music:
             let hits = await Self.withAlbumYears(base.hits)
-            return TabResults(kind: kind, text: text, hits: hits, wizard: base.wizard, unwatchable: [], personCounts: [:])
+            return TabResults(kind: kind, text: text, revision: revision, hits: hits, wizard: base.wizard, unwatchable: [], personCounts: [:])
         case .movies:
             let directors = await directors(for: base.hits, text: text)
             let hits = Self.withCreators(directors, in: base.hits, for: text).hits
             let (unwatchable, counts) = await movieFacts(hits, text: text)
-            return TabResults(kind: kind, text: text, hits: hits, wizard: nil, unwatchable: unwatchable, personCounts: counts)
+            return TabResults(kind: kind, text: text, revision: revision, hits: hits, wizard: nil, unwatchable: unwatchable, personCounts: counts)
         case .books:
             var books = base.hits
             let aspects = await Self.coverAspects(of: books.filter { $0.kind == .book && $0.artworkAspect == nil })
@@ -873,7 +1201,7 @@ final class SearchState {
             }
             let writers = await Self.writers(for: books)
             let hits = await Self.withAudiobooks(Self.withCreators(writers, in: books, for: text).hits)
-            return TabResults(kind: kind, text: text, hits: hits, wizard: nil, unwatchable: [], personCounts: Self.writerCounts(hits))
+            return TabResults(kind: kind, text: text, revision: revision, hits: hits, wizard: nil, unwatchable: [], personCounts: Self.writerCounts(hits))
         }
     }
 
@@ -1033,8 +1361,11 @@ final class SearchState {
     /// Текст, чей добор сейчас в пути.
     private var mosaicLoading: String?
 
-    /// Текст показанной выдачи: по нему сетка узнаёт, что пришёл новый запрос.
+    /// Текст показанной выдачи.
     var shownText: String? { shown?.text }
+    /// Номер показанной выдачи: по нему сетка узнаёт, что пришла новая — новый запрос
+    /// или та же строка, собранная заново («Обновить»).
+    var shownRevision: Int? { shown?.revision }
 
     /// Карточки сетки — смешанная выдача обзора и добор за ней. Дописывается только
     /// в конец: стоящие карточки не переставляются.
@@ -1043,10 +1374,13 @@ final class SearchState {
         return shown.mixed + (mosaicExtra[shown.text] ?? [])
     }
 
-    /// Сетке нечего показать: смешанная выдача пуста — и плейлистов с создателями тоже нет.
-    /// Своя мера, а не `isEmptyResult`: тот смотрит только на три раздела каруселей.
+    /// Сетке нечего показать: смешанная выдача пуста — и плейлистов с создателями тоже нет,
+    /// а ответили все сервисы. Опоздавший и упавший считаются непустыми: табы остаются,
+    /// на «Всём» — ошибка (`overviewFailure`). Своя мера, а не `isEmptyResult`: тот смотрит
+    /// только на три раздела каруселей.
     var isMosaicEmpty: Bool {
-        shown.map { $0.mixed.isEmpty } ?? false
+        guard !isOverviewStalled else { return false }
+        return shown.map { $0.mixed.isEmpty && $0.isComplete } ?? false
     }
 
     /// Добор ещё впереди. У пустой выдачи его не бывает: обзор не нашёл ничего, и полные
@@ -1069,12 +1403,15 @@ final class SearchState {
         guard let base = shown, canExtendMosaic else { return }
         let text = base.text
         mosaicLoading = text
+        // Добирают только ответившие обзору: опоздавший и упавший в «Всё» не попадают
+        // и в доборе — они в своих табах (PRD общего поиска).
+        let answered = Set(base.order.filter { base.status[$0] == .answered })
         Task { [weak self] in
             guard let self else { return }
-            async let music = self.loadFull(.music, text)
-            async let movies = self.loadFull(.movies, text)
-            async let books = self.loadFull(.books, text)
-            let full = await [music, movies, books]
+            async let music = answered.contains(.music) ? self.loadFull(.music, text) : nil
+            async let movies = answered.contains(.movies) ? self.loadFull(.movies, text) : nil
+            async let books = answered.contains(.books) ? self.loadFull(.books, text) : nil
+            let full = await [music, movies, books].compactMap { $0 }
             // Те же полные выдачи откроются и заголовком карусели — без новых запросов.
             for result in full where !result.hits.isEmpty {
                 self.fullCache["\(result.kind)|\(text)"] = result
@@ -1111,9 +1448,10 @@ final class SearchState {
     /// поэтому вес карточки — тот же, что у порядка секций: ступень совпадения
     /// с названием × (1 + доля × вес внутри домена).
     ///
-    /// 1. **Первый ряд** — лучшее от каждого раздела, чьё название отвечает запросу
-    ///    хотя бы вхождением, по убыванию веса: наверху сетки — самое релевантное
-    ///    из разных API, а не пачка одного.
+    /// 1. **Первый ряд** — лучшее от каждого раздела по силе совпадения, по убыванию
+    ///    веса: наверху сетки — самое релевантное из разных API, а не пачка одного.
+    ///    Порога нет (PRD общего поиска): прежде раздел без вхождения запроса в название
+    ///    в первый ряд не попадал.
     /// 2. **Дальше** — слияние трёх очередей: на каждом шаге берётся голова с бо́льшим
     ///    весом, но каждая следующая подряд карточка того же раздела теряет 15 %
     ///    (`MixScore.repeatPenalty`). Сильный раздел идёт несколько карточек подряд,
@@ -1122,8 +1460,6 @@ final class SearchState {
     /// Порядок внутри раздела не трогается — это его `ranked`: точное совпадение
     /// первым, исполнитель выше своих треков, чередование видов музыки.
     private enum MixScore {
-        /// Порог первого ряда — вхождение запроса в название
-        static let headThreshold = MatchScore.substring
         /// Во сколько раз легчает каждая следующая подряд карточка того же раздела
         static let repeatPenalty = 0.85
         /// Прибавка к весу: у карточек без совпадения он ноль, и без неё штраф
@@ -1169,9 +1505,7 @@ final class SearchState {
         if leadsWithHeads {
             // Ничья — по порядку секций: он уже отражает, о чём запрос.
             let heads = queues.indices
-                .filter { index in
-                    queues[index].hits.first.map { match($0, needle) >= MixScore.headThreshold } ?? false
-                }
+                .filter { !queues[$0].hits.isEmpty }
                 .sorted { left, right in
                     let l = weight(queues[left].hits.first!), r = weight(queues[right].hits.first!)
                     return l != r ? l > r : left < right
@@ -1420,19 +1754,25 @@ final class SearchState {
     ///
     /// Музыка — три ручки Deezer разом: у него нет объединённого поиска, а треки,
     /// альбомы и исполнителей выдача показывает отдельными строками.
-    private func fetchMusic(_ text: String) async -> [SearchHit] {
-        async let tracks = try? DeezerService.shared.searchTracks(query: text, limit: Self.perKind)
-        async let albums = try? DeezerService.shared.searchAlbums(query: text, limit: Self.perKind)
-        async let artists = try? DeezerService.shared.searchArtists(query: text, limit: Self.perKind)
+    ///
+    /// Ошибка — только если не ответила ни одна из трёх ручек.
+    private func fetchMusic(_ text: String) async throws -> [SearchHit] {
+        async let tracks = Self.attempt { try await DeezerService.shared.searchTracks(query: text, limit: Self.perKind) }
+        async let albums = Self.attempt { try await DeezerService.shared.searchAlbums(query: text, limit: Self.perKind) }
+        async let artists = Self.attempt { try await DeezerService.shared.searchArtists(query: text, limit: Self.perKind) }
+        let answers = await (tracks, albums, artists)
+        if case .failure(let error) = answers.0, case .failure = answers.1, case .failure = answers.2 {
+            throw error
+        }
 
         // Вперемешку по одному от каждого вида, а не подряд: при простой склейке
         // потолок секции съедали бы одни треки, и альбом с исполнителем не попадали
         // в выдачу вовсе.
-        let byKind = await [
-            (tracks ?? []).map(SearchHit.init(track:)),
-            (albums ?? []).map(SearchHit.init(album:)),
+        let byKind = [
+            ((try? answers.0.get()) ?? []).map(SearchHit.init(track:)),
+            ((try? answers.1.get()) ?? []).map(SearchHit.init(album:)),
             // Исполнители без фото — вне выдачи (правка пользователя 2026-10-03).
-            (artists ?? []).filter(\.hasPhoto).map(SearchHit.init(artist:)),
+            ((try? answers.2.get()) ?? []).filter(\.hasPhoto).map(SearchHit.init(artist:)),
         ]
         var hits: [SearchHit] = []
         // Дубли по паре «название + исполнитель»: у саундтреков трек и альбом
@@ -1452,7 +1792,9 @@ final class SearchState {
 
     /// Кино — сперва запас на диске, сеть только в добор. Если в запасе уже есть
     /// сколько нужно, поиск по кино не стоит ни одного запроса из квоты.
-    private func fetchMovies(_ text: String) async -> [SearchHit] {
+    ///
+    /// Ошибка — когда сеть понадобилась и не ответила, а в запасе ничего.
+    private func fetchMovies(_ text: String) async throws -> [SearchHit] {
         let pooled = await MoviePool.shared.search(text, limit: Self.perKind)
             .filter(Self.isShowableMovie)
         let local = pooled.map(SearchHit.init(movie:))
@@ -1460,7 +1802,14 @@ final class SearchState {
             return Array(local.prefix(Self.perSection))
         }
 
-        let found = Array(await kinopoiskMovies(text).prefix(Self.perKind))
+        let raw: [KinopoiskMovie]
+        do {
+            raw = try await kinopoiskMovies(text)
+        } catch {
+            if local.isEmpty { throw error }
+            return local
+        }
+        let found = Array(raw.prefix(Self.perKind))
         // Сетевые дополняют локальные, дубликаты по id отбрасываем.
         let known = Set(pooled.map(\.id))
         let network = found
@@ -1478,8 +1827,8 @@ final class SearchState {
     }
 
     /// Книги и писатели лучших из них (для сетки, `writers`).
-    private func fetchBooks(_ text: String) async -> (hits: [SearchHit], writers: [Creator]) {
-        let found = (try? await BooksService.shared.search(text, limit: Self.perKind)) ?? []
+    private func fetchBooks(_ text: String) async throws -> (hits: [SearchHit], writers: [Creator]) {
+        let found = try await BooksService.shared.search(text, limit: Self.perKind)
         guard !Task.isCancelled else { return ([], []) }
         var hits = Array(found.prefix(Self.perSection).map(SearchHit.init(book:)))
         // Карточка книги — по пропорциям обложки (макет `2311:25096`), поэтому книги
@@ -1516,8 +1865,8 @@ final class SearchState {
 
     /// Режиссёры лучших фильмов — из состава, который уже на руках: у запаса на диске
     /// съёмочная группа лежит в деталях (`MoviePool.details`), у сетевой выдачи — весь
-    /// состав. Ни одного нового запроса к Кинопоиску. Без фото режиссёра в сетке нет —
-    /// как исполнителей без фото в выдаче.
+    /// состав. Ни одного нового запроса к Кинопоиску. Без фото — с плейсхолдером обложки
+    /// (PRD общего поиска; прежде такого режиссёра в сетке не было).
     private func directors(for movies: [SearchHit], text: String) async -> [Creator] {
         var seen: Set<String> = []
         var result: [Creator] = []
@@ -1530,10 +1879,9 @@ final class SearchState {
                   let director = full.persons?.first(where: { $0.enProfession == "director" }),
                   let personID = director.id,
                   let name = director.displayName, !name.isEmpty,
-                  let photo = director.photoURL,
                   seen.insert(name.folded).inserted
             else { continue }
-            result.append((SearchHit(director: personID, name: name, photo: photo), movie.id))
+            result.append((SearchHit(director: personID, name: name, photo: director.photoURL), movie.id))
         }
         return result
     }
@@ -1553,11 +1901,17 @@ final class SearchState {
 
     /// Режиссёры и актёры из составов найденных фильмов, чьё имя отвечает запросу
     /// (`PersonNameMatch`; задача пользователя 2026-10-31). Состав уже на руках — в ответе
-    /// поиска Кинопоиска или в запасе: ни одного нового запроса к нему. Только с фото;
-    /// кого уже назвала Википедия — второй раз не ставим.
-    private func castPersons(in movies: [SearchHit], text: String, excluding names: Set<String>) async -> [SearchHit] {
+    /// поиска Кинопоиска или в запасе: ни одного нового запроса к нему. Без фото — с
+    /// плейсхолдером обложки (PRD); кого уже назвала Википедия — второй раз не ставим.
+    /// `deadline` — срок обзора: подпись «Актриса» ждёт Википедию не дольше него.
+    private func castPersons(
+        in movies: [SearchHit],
+        text: String,
+        excluding names: Set<String>,
+        deadline: ContinuousClock.Instant? = nil
+    ) async -> [SearchHit] {
         var seen = names
-        var found: [(person: KinopoiskPerson, name: String, photo: URL)] = []
+        var found: [(person: KinopoiskPerson, name: String, photo: URL?)] = []
         for movie in movies.filter({ $0.kind == .movie }).prefix(CastLimits.movies) {
             guard found.count < CastLimits.perQuery,
                   let id = Int(movie.id.replacingOccurrences(of: "movie-", with: ""))
@@ -1569,16 +1923,16 @@ final class SearchState {
                 guard found.count < CastLimits.perQuery,
                       isDirector ? person.id != nil : person.enProfession == "actor",
                       let name = person.displayName, !name.isEmpty,
-                      let photo = person.photoURL,
                       PersonNameMatch.matches(name, query: text)
                         || person.enName.map({ PersonNameMatch.matches($0, query: text) }) == true,
                       seen.insert(name.folded).inserted
                 else { continue }
-                found.append((person, name, photo))
+                found.append((person, name, person.photoURL))
             }
         }
         guard !found.isEmpty else { return [] }
-        let actresses = await Self.actresses(found.filter { $0.person.enProfession == "actor" }.map(\.name))
+        let genderWait = deadline.map { min(CastLimits.genderWait, max(.zero, $0 - .now)) } ?? CastLimits.genderWait
+        let actresses = await Self.actresses(found.filter { $0.person.enProfession == "actor" }.map(\.name), wait: genderWait)
         return found.map { item in
             if item.person.enProfession == "director", let personID = item.person.id {
                 return SearchHit(director: personID, name: item.name, photo: item.photo)
@@ -1589,7 +1943,7 @@ final class SearchState {
 
     /// Кто из актёров — актриса: у Кинопоиска в составе пола нет, у Википедии в описании
     /// «актриса» (бесплатно, параллельно). Не дождались — «Актёр».
-    private static func actresses(_ names: [String]) async -> Set<String> {
+    private static func actresses(_ names: [String], wait limit: Duration) async -> Set<String> {
         guard !names.isEmpty else { return [] }
         let found = FoundNames()
         let load = Task { @MainActor in
@@ -1602,18 +1956,20 @@ final class SearchState {
                 }
             }
         }
-        await wait(for: load, atMost: CastLimits.genderWait)
+        await wait(for: load, atMost: limit)
         return found.values
     }
 
-    /// Писатели лучших книг — портреты из Википедии, параллельно. Без портрета писателя
-    /// в сетке нет.
+    /// Писатели лучших книг — портреты из Википедии, параллельно. Без портрета — с
+    /// плейсхолдером обложки (PRD общего поиска; прежде такого писателя в сетке не было).
+    /// Один автор — одна карточка: по фамилии, у изданий одной книги имя пишут
+    /// по-разному («Лев Толстой», «Лев Николаевич Толстой»).
     private static func writers(for books: [SearchHit]) async -> [Creator] {
         var seen: Set<String> = []
         let candidates = books
-            .filter { $0.kind == .book && !$0.subtitle.isEmpty }
+            .filter { $0.kind == .book && $0.isAudiobook != true && !$0.subtitle.isEmpty }
             .prefix(CreatorLimits.sources)
-            .filter { seen.insert($0.subtitle.folded).inserted }
+            .filter { seen.insert(surname($0.subtitle)).inserted }
         let names = candidates.map(\.subtitle)
         let portraits = await withTaskGroup(of: (Int, URL?).self) { group in
             for (index, name) in names.enumerated() {
@@ -1625,9 +1981,14 @@ final class SearchState {
             }
             return found
         }
-        return Array(candidates.enumerated().compactMap { index, book -> Creator? in
-            portraits[index].map { (SearchHit(writer: book.subtitle, photo: $0), book.id) }
+        return Array(candidates.enumerated().map { index, book -> Creator in
+            (SearchHit(writer: book.subtitle, photo: portraits[index]), book.id)
         }.prefix(CreatorLimits.perDomain))
+    }
+
+    /// Фамилия — последнее слово имени, без регистра и диакритики.
+    private static func surname(_ name: String) -> String {
+        name.folded.split(separator: " ").last.map(String.init) ?? name.folded
     }
 
     /// Вставить создателей сразу за их работами и дать им вес: доля веса работы
@@ -1640,10 +2001,15 @@ final class SearchState {
         for text: String
     ) -> (hits: [SearchHit], inherited: [String: Double]) {
         let needle = text.folded
-        var present = Set(hits.filter { $0.kind == .director || $0.kind == .writer || $0.kind == .actor }.map { $0.title.folded })
+        // Писатель — по фамилии: имя автора у изданий пишут по-разному, а Википедия зовёт
+        // его коротко («Лев Толстой» и «Лев Николаевич Толстой» — один человек).
+        func key(_ person: SearchHit) -> String {
+            person.kind == .writer ? surname(person.title) : person.title.folded
+        }
+        var present = Set(hits.filter { $0.kind == .director || $0.kind == .writer || $0.kind == .actor }.map(key))
         var result = hits
         var inherited: [String: Double] = [:]
-        for creator in creators where present.insert(creator.person.title.folded).inserted {
+        for creator in creators where present.insert(key(creator.person)).inserted {
             guard let index = result.firstIndex(where: { $0.id == creator.source }) else { continue }
             result.insert(creator.person, at: index + 1)
             inherited[creator.person.id] = weight(result[index], needle) * CreatorLimits.inheritedShare
@@ -1716,13 +2082,15 @@ private extension SearchHit {
             subtitle: track.artist?.name ?? "",
             artwork: track.album.flatMap { $0.coverBig?.deezerUpscaled }.map { .remote($0) },
             // `rank` Deezer — 0…1 000 000; у заметного трека он за полмиллиона.
-            // Экрана трека нет — ведём на альбом, к которому он принадлежит.
+            // Экрана трека нет — ведём на альбом, к которому он принадлежит, и треклист
+            // доезжает до него (PRD общего поиска). Альбома нет — тап включает трек.
             route: track.album.map { album in
                 .album(EntityRef(
                     id: "dz-\(album.id)",
                     title: album.title,
                     subtitle: track.artist?.name ?? "",
-                    artwork: album.coverBig?.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("mockAlbumCover")
+                    artwork: album.coverBig?.deezerUpscaled.map { ArtworkSource.remote($0) } ?? .asset("mockAlbumCover"),
+                    focusTrackID: track.id
                 ))
             },
             authority: min(1, Double(track.rank ?? 0) / 800_000)
@@ -1845,6 +2213,7 @@ private extension SearchHit {
         )
     }
 
+    /// Фото персоны нет — `nil`: на месте обложки плейсхолдер (PRD общего поиска).
     init(person: WikipediaPeople.Person) {
         let kind: SearchHit.Kind = switch person.role {
         case .director: .director
@@ -1857,54 +2226,61 @@ private extension SearchHit {
             title: person.name,
             // Роль у персон — подписью карточки; «Актриса» — только из описания.
             subtitle: person.role == .actor && person.isFemale ? "Актриса" : "",
-            artwork: .remote(person.photo),
+            artwork: person.photo.map { .remote($0) },
             route: Self.personRoute(person),
             authority: 0.8
         )
     }
 
-    /// Актёр из состава фильма — экрана нет (решение пользователя 2026-10-31), карточка
-    /// не нажимается.
-    init(actor id: Int?, name: String, photo: URL, isFemale: Bool) {
+    /// Актёр или актриса из состава фильма — экран персоны Кинопоиска по id, фильмы,
+    /// где играл (PRD общего поиска; прежде экрана не было). Без id — не нажимается.
+    init(actor id: Int?, name: String, photo: URL?, isFemale: Bool) {
         self.init(
             id: id.map { "person-kp-\($0)" } ?? "person-name-\(name)",
             kind: .actor,
             title: name,
             subtitle: isFemale ? "Актриса" : "",
-            artwork: .remote(photo),
-            route: nil,
+            artwork: photo.map { .remote($0) },
+            route: id.map { .actor(EntityRef(id: "kp-\($0)", title: name, subtitle: "", artwork: Self.personArtwork(photo))) },
             authority: 0.8
         )
     }
 
     /// Режиссёр из состава фильма — для сетки. Экран — тот же, что из «Съёмочной группы»
     /// карточки тайтла: персона Кинопоиска по id.
-    init(director id: Int, name: String, photo: URL) {
+    init(director id: Int, name: String, photo: URL?) {
         self.init(
             id: "person-kp-\(id)",
             kind: .director,
             title: name,
             subtitle: "",
-            artwork: .remote(photo),
-            route: .director(EntityRef(id: "kp-\(id)", title: name, subtitle: "", artwork: .remote(photo)))
+            artwork: photo.map { .remote($0) },
+            route: .director(EntityRef(id: "kp-\(id)", title: name, subtitle: "", artwork: Self.personArtwork(photo)))
         )
     }
 
     /// Писатель — автор книги из выдачи. Экран ищет его по имени — как с экрана книги.
-    init(writer name: String, photo: URL) {
+    init(writer name: String, photo: URL?) {
         self.init(
             id: "person-name-\(name)",
             kind: .writer,
             title: name,
             subtitle: "",
-            artwork: .remote(photo),
-            route: .writer(EntityRef(id: "name-\(name)", title: name, subtitle: "", artwork: .remote(photo)))
+            artwork: photo.map { .remote($0) },
+            route: .writer(EntityRef(id: "name-\(name)", title: name, subtitle: "", artwork: Self.personArtwork(photo)))
         )
     }
 
-    /// Экран персоны; у актёра его нет.
+    /// Фото в маршруте экрана персоны. Нет своего — пустой ассет: экран возьмёт фото
+    /// из API, когда приедет (`PersonScreen.photo`).
+    private static func personArtwork(_ photo: URL?) -> ArtworkSource {
+        photo.map { .remote($0) } ?? .asset("")
+    }
+
+    /// Экран персоны. У актёра из Википедии id Кинопоиска нет — экрана нет, карточка
+    /// не нажимается (решение пользователя 2026-11-02).
     private static func personRoute(_ person: WikipediaPeople.Person) -> EntityRoute? {
-        let ref = EntityRef(id: "wp-\(person.pageID)", title: person.name, subtitle: "", artwork: .remote(person.photo))
+        let ref = EntityRef(id: "wp-\(person.pageID)", title: person.name, subtitle: "", artwork: personArtwork(person.photo))
         switch person.role {
         case .director: return .director(ref)
         case .writer: return .writer(ref)
@@ -1982,6 +2358,45 @@ enum SearchSubfilter: Hashable {
         case .authors: "Авторы"
         }
     }
+}
+
+/// Почему вместо выдачи ошибка — компонент `error` страницы «🚨 Ошибки» (`SearchErrorState`).
+enum SearchFailure: Equatable {
+    /// Сети нет — «Что-то с интернетом»
+    case offline
+    /// Сервис не ответил или ответил ошибкой — «Что-то пошло не так»
+    case failed
+}
+
+/// Ответ сервиса к сроку (`SearchState.answer`).
+enum ServiceAnswer<T> {
+    case answered(T)
+    case failed(Error)
+    case late
+
+    var value: T? {
+        if case .answered(let value) = self { return value }
+        return nil
+    }
+
+    var failure: Error? {
+        if case .failed(let error) = self { return error }
+        return nil
+    }
+
+    var status: SearchState.ServiceStatus {
+        switch self {
+        case .answered: .answered
+        case .failed: .failed
+        case .late: .late
+        }
+    }
+}
+
+/// Ответ, успевший к сроку (`SearchState.answer`).
+@MainActor
+private final class AnswerBox<T> {
+    var answer: ServiceAnswer<T>?
 }
 
 /// Продолжение, которое продолжают один раз — кто первый (`SearchState.wait`).

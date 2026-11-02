@@ -14,6 +14,15 @@ enum BooksError: Error, LocalizedError {
         case .http(let code): "HTTP-ошибка \(code)"
         }
     }
+
+    /// Сбой, который проходит повтором: лимит и 5xx.
+    var isTransient: Bool {
+        switch self {
+        case .rateLimited: true
+        case .http(let code): (500...599).contains(code)
+        case .invalidResponse: false
+        }
+    }
 }
 
 // MARK: - Service
@@ -70,7 +79,29 @@ actor BooksService {
 
     // MARK: - Private
 
+    /// Google Books через раз отвечает 503 `backendFailed` — сбой на их стороне, не лимит:
+    /// замер 2026-11-02 — 4 из 10 последовательных запросов с паузой, повтор того же
+    /// запроса обычно проходит. Без повтора таб «Книги» поиска показывал ошибку, а прежде
+    /// молча пустую выдачу. Три повтора оставляют отказ ~2–3 %.
+    private enum Retry {
+        static let attempts = 3
+        /// Пауза перед повтором растёт с номером попытки; повтор идёт и через `throttle`.
+        static let backoff: Duration = .milliseconds(300)
+    }
+
     private func fetch<T: Decodable>(path: String, query: [URLQueryItem] = []) async throws -> T {
+        var retry = 0
+        while true {
+            do {
+                return try await fetchOnce(path: path, query: query)
+            } catch let error as BooksError where error.isTransient && retry < Retry.attempts {
+                retry += 1
+                try await Task.sleep(for: Retry.backoff * retry)
+            }
+        }
+    }
+
+    private func fetchOnce<T: Decodable>(path: String, query: [URLQueryItem]) async throws -> T {
         await throttle()
 
         guard var components = URLComponents(string: baseURL + path) else {

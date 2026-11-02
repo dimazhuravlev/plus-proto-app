@@ -13,7 +13,8 @@ import Foundation
 ///   «антрополог»… → книги; из нескольких — та, что названа раньше («актёр
 ///   и режиссёр» — актёр). Так отсеиваются однофамильцы: «Аня Фёдорова» находит
 ///   модель Оксану Фёдорову, а у неё в описании ни то ни другое;
-/// - есть фото — карточка без него не собирается (у Пелевина в Википедии фото нет);
+/// - фото — если есть; нет (у Пелевина в Википедии его нет) — на карточке плейсхолдер
+///   обложки (PRD общего поиска 2026-11-02; прежде без фото персоны не было);
 /// - со второй страницы — имя отвечает запросу (`PersonNameMatch`): на «дюна» среди
 ///   первых пяти есть статья о Фрэнке Херберте, но запрос назвал не его.
 ///
@@ -28,7 +29,8 @@ actor WikipediaPeople {
         let pageID: Int
         let name: String
         let role: Role
-        let photo: URL
+        /// `nil` — фото в Википедии нет: на карточке плейсхолдер обложки.
+        let photo: URL?
         /// В описании «актриса» — подпись карточки «Актриса», а не «Актёр».
         let isFemale: Bool
     }
@@ -88,8 +90,6 @@ actor WikipediaPeople {
     private func fetch(_ query: String) async -> Person? {
         for (rank, page) in await pages(for: query).enumerated() {
             guard
-                let source = page.thumbnail?.source,
-                let photo = URL(string: source),
                 let name = Self.displayName(fromTitle: page.title),
                 let role = Self.role(from: page.description),
                 rank == 0 || PersonNameMatch.matches(name, query: query)
@@ -99,7 +99,7 @@ actor WikipediaPeople {
                 pageID: page.pageid,
                 name: name,
                 role: role,
-                photo: photo,
+                photo: page.thumbnail.flatMap { URL(string: $0.source) },
                 isFemale: Self.femaleMarkers.contains(where: description.contains)
             )
         }

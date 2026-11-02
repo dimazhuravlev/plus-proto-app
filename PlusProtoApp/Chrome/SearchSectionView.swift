@@ -646,8 +646,7 @@ struct SearchListSkeletonRow: View {
 /// Колдунщик музыки — `search widget` макета (`2440:29310`, обновлён в `19151:18648`
 /// 2026-10-31): самый подходящий запросу исполнитель. Строка 80: фото кругом, имя
 /// и «Исполнитель», сердце и play; ниже — карусель его альбомов (`MusicCard` xSmall 95).
-/// Скругление карточки 24. Фон — размытая фотография исполнителя на 20 % поверх тонкой
-/// подложки.
+/// Скругление карточки 24. Фон — Fill/Nine.
 struct MusicWizardCard: View {
     let wizard: SearchState.MusicWizard
     /// Лайк — общий со строкой того же исполнителя в списке.
@@ -774,16 +773,9 @@ struct MusicWizardCard: View {
         }
     }
 
+    /// Только Fill/Nine — без размытой фотографии исполнителя (правка пользователя 2026-11-02).
     private var background: some View {
-        ZStack {
-            // Фото раздуто втрое до размытия — в карточку попадает его центр, а тинт
-            // не гаснет к краям (в макете слой 1029 × 651 под карточкой 370 × 217).
-            artwork(wizard.artist.artwork)
-                .scaleEffect(3)
-                .blur(radius: 60)
-                .opacity(0.2)
-            Color.fillNine
-        }
+        Color.fillNine
     }
 
     @ViewBuilder

@@ -273,7 +273,13 @@ extension CollectionItem {
             guard case .artist(let ref)? = hit.route else { return nil }
             self = .artist(ref)
         case .track:
-            self = .track(MusicNowPlaying(hit: hit), album: hit.route)
+            // Альбом — без прокрутки к треку: она только у тапа по треку в выдаче поиска.
+            var album = hit.route
+            if case .album(var ref)? = album {
+                ref.focusTrackID = nil
+                album = .album(ref)
+            }
+            self = .track(MusicNowPlaying(hit: hit), album: album)
         case .playlist:
             self = .playlist(id: hit.id, title: hit.title, owner: hit.subtitle, cover: hit.artwork)
         case .director, .writer, .actor:

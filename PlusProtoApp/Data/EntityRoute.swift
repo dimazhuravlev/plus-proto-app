@@ -10,6 +10,10 @@ struct EntityRef: Hashable, Codable {
     var title: String
     var subtitle: String
     var artwork: ArtworkSource
+    /// Трек, к которому экран альбома прокручивает треклист и подсвечивает строку, —
+    /// тап по треку в выдаче поиска (PRD общего поиска). Входит в маршрут: карточка
+    /// трека — свой источник зума, отдельный от карточки самого альбома.
+    var focusTrackID: Int? = nil
 }
 
 /// Куда ведёт тап по карточке витрины. `Hashable` нужен дважды: как значение
@@ -29,6 +33,9 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     case artist(EntityRef)
     case director(EntityRef)
     case writer(EntityRef)
+    /// Актёр или актриса — тот же экран, что у режиссёра, с фильмами, где персона играла
+    /// (PRD общего поиска). id — `kp-<id персоны Кинопоиска>`.
+    case actor(EntityRef)
     /// Все серии сериала (`SeriesEpisodesScreen`): шеврон «Сезонов и Эпизодов» экрана
     /// тайтла и «Загрузить другие серии» скачанного сериала. `ref` — сам сериал.
     case episodes(EntityRef)
@@ -43,6 +50,7 @@ enum EntityRoute: Hashable, Identifiable, Codable {
         case .artist(let ref): "artist-" + ref.id
         case .director(let ref): "director-" + ref.id
         case .writer(let ref): "writer-" + ref.id
+        case .actor(let ref): "actor-" + ref.id
         case .episodes(let ref): "episodes-" + ref.id
         }
     }
@@ -50,7 +58,7 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     var ref: EntityRef {
         switch self {
         case .movie(let ref), .book(let ref), .album(let ref), .playlist(let ref),
-             .artist(let ref), .director(let ref), .writer(let ref), .episodes(let ref): ref
+             .artist(let ref), .director(let ref), .writer(let ref), .actor(let ref), .episodes(let ref): ref
         }
     }
 
@@ -69,7 +77,7 @@ enum EntityRoute: Hashable, Identifiable, Codable {
     /// фото персоны — круг.
     var hasRoundArtwork: Bool {
         switch self {
-        case .album, .playlist, .artist, .director, .writer: true
+        case .album, .playlist, .artist, .director, .writer, .actor: true
         case .movie, .book, .episodes: false
         }
     }
