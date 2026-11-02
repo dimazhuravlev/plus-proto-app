@@ -151,6 +151,12 @@ enum ContentPlayer: Equatable, Identifiable {
     }
 }
 
+/// Шаг по очереди свайпом мини-плеера: влево — следующий трек, вправо — предыдущий.
+enum MusicTrackStep {
+    case next
+    case previous
+}
+
 /// Модель action bar: режим + payload на каждый режим.
 ///
 /// `@Observable` вместо `ObservableObject` из MusicPlayer сознательно: наблюдение
@@ -341,6 +347,10 @@ final class ActionBarState {
     /// Следующий трек «Моей волны», выбранный при старте текущего: звук успевает
     /// найти его превью заранее, и «Дальше» играет тот же трек.
     @ObservationIgnored private var vibeNext: MusicNowPlaying?
+    /// Трек волны, который включит свайп вправо: тоже случайный (решение пользователя
+    /// 2026-11-02 — волна поток, «назад» у неё нет). Выбран один раз на трек, как
+    /// `vibeNext`: пилюля показывает его под пальцем, и сыграть должен он же.
+    @ObservationIgnored private var vibePrevious: MusicNowPlaying?
     /// Сборка очереди из альбома трека — одна на трек.
     @ObservationIgnored private var albumQueueTask: Task<Void, Never>?
 
@@ -391,17 +401,24 @@ final class ActionBarState {
     }
 
     /// Смена трека без смены режима: авто-переход на конце превью не должен
-    /// разворачивать круг в капсулу.
-    private func switchTrack(_ item: MusicNowPlaying) {
+    /// разворачивать круг в капсулу. `playing: false` — новый трек встаёт на паузе
+    /// (свайп по мини-плееру на паузе).
+    private func switchTrack(_ item: MusicNowPlaying, playing: Bool = true) {
         music = item
         musicProgress = 0
         isMusicAdvancing = false
-        isMusicPlaying = true
+        isMusicPlaying = playing
         vibeNext = nil
-        startProgressTicking()
+        vibePrevious = nil
+        if playing {
+            startProgressTicking()
+        } else {
+            progressTicker?.cancel()
+            progressTicker = nil
+        }
         // Тот же трек ещё раз — тоже с начала.
         audio { audio in
-            audio.play(item, from: 0, isPlaying: true)
+            audio.play(item, from: 0, isPlaying: playing)
             audio.seek(to: 0)
         }
         // Следующему треку превью ищем заранее: между треками без дыры.
@@ -456,6 +473,51 @@ final class ActionBarState {
         guard queue.count > 1, queue.indices.contains(queueIndex) else { return nil }
         let index = (queueIndex + 1) % queue.count
         return (queue[index], index)
+    }
+
+    /// Что играет перед текущим — зеркало `nextTrack()`: «Моя волна» — тоже случайный
+    /// трек волны, по возможности не тот, что ждёт впереди; очередь — предыдущий по кругу
+    /// (с первого — последний); иначе `nil`.
+    private func previousTrack() -> (item: MusicNowPlaying, index: Int)? {
+        if let music, MyVibeTracks.isVibe(music.id) {
+            let previous = vibePrevious
+                ?? MyVibeTracks.all.filter { $0.id != music.id && $0.id != vibeNext?.id }.randomElement()
+                ?? MyVibeTracks.random(excluding: music.id)
+            vibePrevious = previous
+            return (previous, queueIndex)
+        }
+        guard queue.count > 1, queue.indices.contains(queueIndex) else { return nil }
+        let index = (queueIndex - 1 + queue.count) % queue.count
+        return (queue[index], index)
+    }
+
+    private func neighbor(_ step: MusicTrackStep) -> (item: MusicNowPlaying, index: Int)? {
+        switch step {
+        case .next: nextTrack()
+        case .previous: previousTrack()
+        }
+    }
+
+    /// Что включит свайп мини-плеера в эту сторону — пилюля показывает его под пальцем.
+    /// `nil` — листать некуда (трек без очереди): пилюля тянется с сопротивлением.
+    func neighborTrack(_ step: MusicTrackStep) -> MusicNowPlaying? {
+        neighbor(step)?.item
+    }
+
+    /// Свайп по развёрнутому мини-плееру (PRD общего поиска): соседний трек очереди.
+    /// Транспорт сохраняется — играл прежний, играет и этот, стоял на паузе — стоит;
+    /// прогресс с нуля. Режим не трогаем, в ряд «Слушали недавно» не пишем — как «Дальше».
+    func stepTrack(_ step: MusicTrackStep) {
+        guard let target = neighbor(step) else { return }
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "debugMiniSwipe") != nil {
+            NSLog("[swipe] %@ → %@ (%d/%d, %@)", music?.title ?? "—", target.item.title,
+                  target.index, queue.count, isMusicPlaying ? "играет" : "пауза")
+        }
+        #endif
+        let wasPlaying = isMusicPlaying
+        queueIndex = target.index
+        switchTrack(target.item, playing: wasPlaying)
     }
 
     /// Конец превью решает очередь этого бара: звук только сообщает, что трек доиграл.

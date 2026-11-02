@@ -3,6 +3,8 @@ import SwiftUI
 /// Роль персоны на её экране — один экран на три (`PersonScreen`).
 enum PersonRole {
     case artist, director, writer
+    /// Актёр или актриса — экран режиссёра с фильмами, где персона играла (PRD поиска)
+    case actor
 }
 
 /// Данные экрана персоны (задача пользователя 2026-10-04):
@@ -44,7 +46,8 @@ final class PersonStore {
         guard !isLoaded else { return }
         switch role {
         case .artist: await loadArtist(entity)
-        case .director: await loadDirector(entity)
+        case .director: await loadFilmography(entity, profession: "director")
+        case .actor: await loadFilmography(entity, profession: "actor")
         case .writer: await loadWriter(entity)
         }
         guard !Task.isCancelled else { return }
@@ -177,9 +180,11 @@ final class PersonStore {
         }
     }
 
-    // MARK: - Режиссёр
+    // MARK: - Режиссёр и актёр
 
-    private func loadDirector(_ entity: EntityRef) async {
+    /// Фильмы персоны в профессии `profession` (`enProfession` Кинопоиска): режиссёр —
+    /// снятые, актёр — сыгранные.
+    private func loadFilmography(_ entity: EntityRef, profession: String) async {
         // Пустой ключ Кинопоиска — не ошибка: витрина живёт на моках, сеть не трогаем.
         guard APIKeysCheck.isKinopoiskConfigured else { return }
         var personID = entity.kinopoiskID
@@ -200,10 +205,10 @@ final class PersonStore {
         }
 
         var seen = Set<Int>()
-        let directed = (person.movies ?? [])
-            .filter { $0.enProfession == "director" && seen.insert($0.id).inserted }
+        let filmography = (person.movies ?? [])
+            .filter { $0.enProfession == profession && seen.insert($0.id).inserted }
             .map(\.id)
-        let movies = (try? await KinopoiskService.shared.moviesBrief(ids: directed)) ?? []
+        let movies = (try? await KinopoiskService.shared.moviesBrief(ids: filmography)) ?? []
         guard !Task.isCancelled else { return }
 
         let showable = movies

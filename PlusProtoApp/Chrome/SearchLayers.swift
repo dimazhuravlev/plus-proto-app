@@ -103,8 +103,8 @@ struct SearchLayers<Content: View>: View {
     /// (правки пользователя 2026-10-03). С пустым полем — тоже: на экране тогда
     /// «Искали недавно» (нулевое состояние), а не пустое затемнение.
     ///
-    /// Слой выдачи стоит с затемнением всегда: с запросом от двух символов в нём
-    /// выдача, короче — «Искали недавно» (`SearchResultsView`).
+    /// Слой выдачи стоит с затемнением всегда: с запросом в нём выдача, с пустым полем —
+    /// «Искали недавно» (`SearchResultsView`).
     private var isSearchShown: Bool {
         hostsSearch && (keyboard.isUp || search.isSuspended || actionBar.isSearchFocused || search.isBrowsing)
     }

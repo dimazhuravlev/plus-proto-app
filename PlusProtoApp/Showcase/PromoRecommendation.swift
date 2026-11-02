@@ -9,7 +9,7 @@ extension ShowcaseBlock {
             case .book(let ref): return .book(ref, aspect: nil)
             case .album(let ref): return .album(ref)
             case .artist(let ref): return .artist(ref)
-            case .playlist, .director, .writer, .episodes: break
+            case .playlist, .director, .writer, .actor, .episodes: break
             }
         }
         if case .vibe(let vibe) = self {

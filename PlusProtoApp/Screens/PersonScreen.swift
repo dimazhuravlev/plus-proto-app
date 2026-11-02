@@ -8,13 +8,14 @@ import SwiftUI
 private enum PersonLayout {
     static let side: CGFloat = EntityCoverLayout.side
     /// Фото — во всю ширину экрана, от физического верха: квадрат (`. / cover` 375×375),
-    /// у режиссёра — вертикальное 4:5, чуть вытянутое вниз (правка пользователя 2026-10-16).
+    /// у режиссёра — вертикальное 4:5, чуть вытянутое вниз (правка пользователя 2026-10-16);
+    /// у актёра — так же, экран у них один.
     @MainActor
     static var photoWidth: CGFloat { PlusMetrics.screenWidth }
     static let directorPhotoAspect: CGFloat = 5.0 / 4.0
     @MainActor
     static func photoHeight(for role: PersonRole) -> CGFloat {
-        photoWidth * (role == .director ? directorPhotoAspect : 1)
+        photoWidth * (role.isFilmPerson ? directorPhotoAspect : 1)
     }
     /// Блок названия наезжает на фото на 79 (`mb-[-79px]` макета)
     static let titleOverlap: CGFloat = 79
@@ -57,7 +58,8 @@ private enum PersonLayout {
 
 // MARK: - Экран
 
-/// Экран персоны — исполнителя, режиссёра, писателя (задача пользователя 2026-10-04).
+/// Экран персоны — исполнителя, режиссёра, писателя (задача пользователя 2026-10-04),
+/// актёра (PRD общего поиска 2026-11-02: экран режиссёра с фильмами, где персона играла).
 /// Шапка у всех одна (макет `2455:32136`): фото во всю ширину с затемнением к низу,
 /// поверх — общий блок названия с именем кеглем по длине. Фото тянется за оттягом —
 /// той же резиной, что шапки альбома и книги. Дальше — по роли:
@@ -200,9 +202,9 @@ struct PersonScreen: View {
             if let photo {
                 ArtworkImage(source: photo)
                     .scaledToFill()
-                    // Режиссёр — чёрно-белым, как его портрет в «Съёмочной группе» фильма
-                    // (правка пользователя 2026-10-16).
-                    .grayscale(role == .director ? 1 : 0)
+                    // Режиссёр и актёр — чёрно-белыми, как их портреты в «Съёмочной группе»
+                    // фильма (правка пользователя 2026-10-16).
+                    .grayscale(role.isFilmPerson ? 1 : 0)
                     .transition(.opacity)
             } else if !store.isLoaded {
                 PlusSkeleton.fill
@@ -230,7 +232,7 @@ struct PersonScreen: View {
                 albumsSection
                 similarSection
             }
-        case .director:
+        case .director, .actor:
             worksSection(empty: "Фильмов не нашлось")
         case .writer:
             worksSection(empty: "Книг не нашлось")
@@ -521,4 +523,9 @@ struct PersonScreen: View {
             isExplicit: track.isExplicit
         )))
     }
+}
+
+private extension PersonRole {
+    /// Персона Кинопоиска — режиссёр или актёр: фото 4:5 чёрно-белым, под ним фильмы.
+    var isFilmPerson: Bool { self == .director || self == .actor }
 }

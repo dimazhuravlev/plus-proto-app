@@ -70,9 +70,7 @@ struct SearchTabRows: View {
         if let results {
             let rows = results.rows(filter)
             let wizard = filter == .all ? results.wizard : nil
-            // Трек экран не открывает — источником зума его альбома он не будет;
-            // аудиокнига ведёт на экран своей книги, источник у него — книга.
-            let zoomSources = rows.filter { $0.kind != .track }.firstPerRouteIDs
+            let zoomSources = rows.firstPerRouteIDs
             if let wizard {
                 MusicWizardCard(
                     wizard: wizard,
@@ -132,9 +130,9 @@ struct SearchTabRows: View {
     // MARK: Музыка
 
     /// Строка музыки — `list-item / music` макета `19151:18648`: общая строка полных
-    /// списков (`CollectionListItem`) с обложкой 80, сердце справа. Трек играет тапом по
-    /// всей строке — на обложке кнопка play (задача пользователя 2026-10-31), остальное
-    /// открывает свой экран.
+    /// списков (`CollectionListItem`) с обложкой 80, сердце справа. Тап открывает свой
+    /// экран, у трека — альбом с прокруткой к нему; play на обложке трека — своя зона,
+    /// сразу в плеер (PRD общего поиска). Трек без альбома тапом играет.
     @ViewBuilder
     private func musicRow(_ hit: SearchHit, in rows: [SearchHit], isFirst: Bool, zooms: Bool) -> some View {
         let content = CollectionListItem(
@@ -143,7 +141,7 @@ struct SearchTabRows: View {
             isFirst: isFirst,
             isPressable: hit.kind == .track || hit.route != nil
         ) {
-            SearchMusicThumbnail(hit: hit)
+            SearchMusicThumbnail(hit: hit) { play(hit, in: rows) }
         } trailing: {
             PlusButton(type: .plain, size: .m, accessibilityTitle: isLiked(hit) ? "Убрать из избранного" : "В избранное") {
                 toggleLike(hit)
@@ -153,23 +151,26 @@ struct SearchTabRows: View {
             // Круг 40 — под отрицательным отступом: в раскладке строки глиф 20, до текста 12.
             .padding(.horizontal, SearchMediaLayout.accessoryInset)
         }
-        if hit.kind == .track {
-            Button {
-                search.remember(hit)
-                playSearchTrack(hit, queue: rows, actionBar: actionBar)
-            } label: { content }
-                .buttonStyle(BareButtonStyle())
-                .accessibilityHint("Включить трек")
-        } else if let route = hit.route {
+        if let route = hit.route {
             Button {
                 search.remember(hit)
                 open(route)
             } label: { content }
                 .buttonStyle(BareButtonStyle())
                 .modifier(SearchResultsView.SearchZoomSource(route: route, zoom: zooms ? zoom : nil))
+        } else if hit.kind == .track {
+            Button { play(hit, in: rows) } label: { content }
+                .buttonStyle(BareButtonStyle())
+                .accessibilityHint("Включить трек")
         } else {
             content
         }
+    }
+
+    /// Включённый трек — тот же выбор из выдачи, что переход: в историю.
+    private func play(_ hit: SearchHit, in rows: [SearchHit]) {
+        search.remember(hit)
+        playSearchTrack(hit, queue: rows, actionBar: actionBar)
     }
 
     /// Подпись строки музыки (макет и задача пользователя 2026-10-31). На «Всём» — тип
@@ -403,10 +404,10 @@ struct DotCaptionLine: View {
 }
 
 /// Обложка строки музыки — 80: квадрат r8, у исполнителя круг; у трека — кнопка play
-/// слева снизу (знак, что строка играет, а не открывает альбом). Играет этот трек —
-/// на ней пауза.
+/// слева снизу, своя зона нажатия. Играет этот трек — на ней пауза.
 private struct SearchMusicThumbnail: View {
     let hit: SearchHit
+    let play: () -> Void
 
     @Environment(ActionBarState.self) private var actionBar
 
@@ -430,7 +431,7 @@ private struct SearchMusicThumbnail: View {
         }
         .overlay(alignment: .bottomLeading) {
             if hit.kind == .track {
-                MosaicPlayBadge(isPlaying: isPlaying, size: SearchMediaLayout.playButton)
+                SearchTrackPlayButton(isPlaying: isPlaying, size: SearchMediaLayout.playButton, action: play)
                     .padding(SearchMediaLayout.playInset)
             }
         }

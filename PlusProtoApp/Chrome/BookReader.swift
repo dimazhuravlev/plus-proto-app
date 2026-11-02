@@ -752,7 +752,10 @@ private struct ReaderMusicPlayer: View {
                 onPullUp: {
                     isExpanded = true
                     actionBar.openMusicPlayer()
-                }
+                },
+                // Свайп вбок по развёрнутой пилюле листает треки, как в баре; у круга
+                // горизонталь — бросок (`throwGesture`).
+                swipesTracks: isExpanded
             )
             // Ширина и кривая — те же, что у пилюли в баре: правый край стоит,
             // левый уезжает, внутренности только проявляются. Ширина — экран минус поля 24

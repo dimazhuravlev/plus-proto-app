@@ -118,6 +118,8 @@ enum ActionBarGeometry {
     /// Зазор обложка ↔ тексты. В макете он меньше, чем до кнопок.
     static let miniPlayerCoverGap: CGFloat = 8
     static let miniPlayerActionsGap: CGFloat = 18
+    /// Кнопки пилюли — сердце и play, два глифа plain L через зазор.
+    static var miniPlayerActionsWidth: CGFloat { PlusButtonSize.l.iconBox * 2 + miniPlayerActionsGap }
     /// Чип книги `2001:111014`: стекло со скруглением 8 и полями 4 вокруг обложки высотой 52;
     /// обложка — карточка книги (`BookFigure`, скругление 4 только справа). Ширина — от
     /// пропорций обложки, как у всех книг приложения (правка пользователя 2026-10-16):
@@ -220,6 +222,81 @@ private enum SearchPullConfig {
     static func progress(travel: CGFloat) -> CGFloat {
         let x = max(0, travel - activation)
         return x / (x + halfway)
+    }
+}
+
+/// Свайп по развёрнутой пилюле мини-плеера — смена трека (PRD общего поиска): обложка
+/// с подписями идёт за пальцем и гаснет по мере сдвига, соседний трек въезжает вплотную
+/// следом и проявляется (`trackOpacity`); кнопки и прогресс стоят и не гаснут.
+private enum MiniPlayerSwipeConfig {
+    /// Порог смены трека — доля шага между треками (на 402 — 61 из 202). На нём тик,
+    /// как на пороге оттяга вверх: та же сила и тот же гистерезис (`SearchPullConfig`).
+    static let commitFraction: CGFloat = 0.3
+    /// Резкий рывок на отпускании меняет трек, не дотянув до порога, — числа рывка поля поиска.
+    static let flickVelocity: CGFloat = SearchPullConfig.flickVelocity
+    static let flickMinDistance: CGFloat = SearchPullConfig.flickMinDistance
+    /// Листать некуда (трек без очереди): резина UIScrollView, как у оттяга вверх, —
+    /// содержимое уходит за пальцем не дальше `rubberLimit` и возвращается.
+    static let rubberLimit: CGFloat = 28
+    static let rubberRate: CGFloat = SearchPullConfig.rate
+    /// Доезд сменённого трека — пружина без отдачи со скоростью пальца на старте.
+    static let landDuration: TimeInterval = 0.35
+    /// Не дотянули — возврат пружиной с едва заметной отдачей. Не отдача оттяга вверх
+    /// (0.42): там она на 10 pt растяжения, здесь на ходе до 60 pt подписи виляли бы.
+    static let settleDuration: TimeInterval = 0.32
+    static let settleBounce: Double = 0.15
+    /// Потолок стартовой скорости пружин в долях пути за секунду: рывок с короткого
+    /// хода не швыряет полосу.
+    static let springVelocityLimit: Double = 12
+    /// Сверху и снизу маска полосы шире её кадра: режет только по горизонтали.
+    static let maskBleed: CGFloat = 16
+    /// Reduce Motion: полоса не едет, а тускнеет за пальцем до `reducedDim` у порога;
+    /// смена — старый трек гаснет, затем новый проявляется (по ~300 мс, правило «Движение»).
+    static let reducedDim: Double = 0.5
+    static let reducedFade: Animation = .easeInOut(duration: 0.3)
+
+    static func rubber(_ x: CGFloat) -> CGFloat {
+        let magnitude = abs(x)
+        let pulled = magnitude * rubberLimit * rubberRate / (rubberLimit + rubberRate * magnitude)
+        return x < 0 ? -pulled : pulled
+    }
+
+    /// На какой доле шага трек полосы гаснет целиком. Меньше шага — и уходящий исчезает
+    /// раньше (пусто к ¾ хода), и приходящий проявляется позже (с ¼ хода): правка
+    /// пользователя 2026-11-02, «немного быстрее / немного позже».
+    static let fadeSpan: CGFloat = 0.75
+
+    /// Прозрачность трека полосы от его сдвига (правка пользователя 2026-11-02): на месте 1,
+    /// на `fadeSpan` шага в сторону 0, между — smoothstep, без излома. Функция одна на оба
+    /// трека — каждый по своему расстоянию от места.
+    static func trackOpacity(offset: CGFloat, page: CGFloat) -> Double {
+        guard page > 0 else { return 1 }
+        let t = min(abs(offset) / (page * fadeSpan), 1)
+        return Double(1 - t * t * (3 - 2 * t))
+    }
+}
+
+/// Сдвиг трека полосы мини-плеера и его прозрачность — одной функцией сдвига.
+/// Анимируется только `slide` (доезд и возврат), прозрачность считается от него на
+/// каждом кадре: на пружине она идёт ровно за сдвигом, а не своей интерполяцией.
+/// `drag` — палец, не анимируется: его кадры не сбивают идущий доезд.
+private struct LaneSlide: ViewModifier, Animatable {
+    var slide: CGFloat
+    let drag: CGFloat
+    let page: CGFloat
+    /// Reduce Motion: трек стоит и не гаснет — тусклость ведёт полоса целиком.
+    let isStill: Bool
+
+    var animatableData: CGFloat {
+        get { slide }
+        set { slide = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let offset = slide + drag
+        content
+            .opacity(isStill ? 1 : MiniPlayerSwipeConfig.trackOpacity(offset: offset, page: page))
+            .offset(x: isStill ? 0 : offset)
     }
 }
 
@@ -1373,7 +1450,9 @@ private struct TrailingSlot: View {
                     },
                     // Оттяг вверх — большой плеер и из круга (просьба пользователя 2026-10-31):
                     // тап разворачивает круг, свайп открывает плеер.
-                    onPullUp: { actionBar.openMusicPlayer() }
+                    onPullUp: { actionBar.openMusicPlayer() },
+                    // Свайп вбок — смена трека, только у развёрнутой пилюли (PRD общего поиска).
+                    swipesTracks: layout.showMiniPlayer && !layout.isMiniPlayerCompact && !layout.isRaised
                 )
                 .zoneWidth(layout)
                 .blurReplaceLayer(layout.showMiniPlayer)
@@ -1551,6 +1630,15 @@ struct MiniPlayerPill: View {
     /// Оттяг вверх за порог открывает большой плеер (просьба пользователя 2026-10-31) —
     /// как оттяг поля поиска открывает поиск; у пилюли и у круга. `nil` — оттяг без действия.
     var onPullUp: (() -> Void)? = nil
+    /// Горизонтальный свайп листает очередь (PRD общего поиска): влево — следующий трек,
+    /// вправо — предыдущий. Только у развёрнутой пилюли: у круга горизонталь свободна —
+    /// в читалке ею круг выбрасывают.
+    var swipesTracks = false
+
+    /// Очередь, по которой листает свайп. Читается только в жесте и задачах, не в `body`:
+    /// тик прогресса бара пилюлю не перерисовывает.
+    @Environment(ActionBarState.self) private var actionBar
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Вращение обложки — см. `CoverSpin`.
     @State private var spin = CoverSpin()
@@ -1564,6 +1652,30 @@ struct MiniPlayerPill: View {
     @State private var pull: CGFloat = 0
     /// Хаптика порога уже отдана.
     @State private var tickArmed = false
+
+    /// Ось жеста решается на его первом событии: вертикальный — оттяг к большому плееру,
+    /// горизонтальный — смена трека; другой оси этот жест уже не отдаётся.
+    @State private var dragAxis: Axis?
+    /// Где был палец, когда ось определилась: полоса трогается без скачка на слоп
+    /// распознавания и дальше идёт за пальцем 1:1.
+    @State private var swipeOrigin: CGFloat = 0
+    /// Сдвиг полосы за пальцем — transform. Пишется на кадр жеста в `@State` пилюли, как `pull`.
+    @State private var dragX: CGFloat = 0
+    /// Доезд сменённого трека — отдельным слагаемым: подхватили посреди доезда — он
+    /// доигрывает своё, а палец ведёт полосу с нуля, без скачка на недоеханный остаток.
+    @State private var landX: CGFloat = 0
+    /// Второй трек полосы: под пальцем — сосед, после смены — уходящий. Стоит на шаг
+    /// `swipePage` от текущего в сторону `companionSide`.
+    @State private var companion: MusicNowPlaying?
+    /// −1 слева, +1 справа, 0 — соседа в этом жесте ещё не искали.
+    @State private var companionSide: CGFloat = 0
+    /// Слот текущего трека, 0 или 1. На смене слоты меняются ролями: приходящий трек
+    /// остаётся тем же вью, что ехал соседом, — без подмены картинки и блюра `trackSwap`.
+    @State private var mainSlot = 0
+    /// Поколение смены: завершение прежней анимации не трогает начатую после неё.
+    @State private var swipeGeneration = 0
+    /// Reduce Motion: полоса погашена, пока меняется трек.
+    @State private var isSwipeFaded = false
 
     var body: some View {
         // Ширину пилюли задаёт родитель. Контент лежит в overlay, а не внутри —
@@ -1596,52 +1708,292 @@ struct MiniPlayerPill: View {
             .offset(y: pull > 0 ? -stretch / 2 : stretch / 2)
             .frame(height: PlusMetrics.actionBarHeight)
             // simultaneousGesture: у сердца и play приоритет выше, обычный жест они бы перебили.
-            .simultaneousGesture(pullGesture)
+            .simultaneousGesture(dragGesture)
             // Тап по пилюле раскрывает полноэкранный плеер. Кнопки сердца и play
             // лежат выше по дереву и перехватывают касание сами.
             .onTapGesture(perform: onExpand)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(item.title), \(item.artist)")
+            // Пилюля свернулась посреди свайпа или доезда — полоса на место.
+            .onChange(of: swipesTracks) { _, swipes in
+                if !swipes { settleSwipe() }
+            }
+            // Обложки соседей — заранее: под пальцем сосед въезжает уже с картинкой.
+            .task(id: swipesTracks ? item.id : nil) {
+                guard swipesTracks else { return }
+                for step in [MusicTrackStep.next, .previous] {
+                    guard let url = actionBar.neighborTrack(step)?.cover.remoteURL else { continue }
+                    _ = await ArtworkLoader.shared.image(for: url)
+                }
+            }
+            #if DEBUG
+            // `-debugMiniSwipe <next|previous|cycle>` — свайп по развёрнутой пилюле без пальца,
+            // тем же кодом, что жест (`debugSwipe`). Первый — через 3 с после разворота,
+            // следующий шаг `cycle` — через 2 с после смены трека: задача перезапускается
+            // на новом треке, чтобы жест видел свежий `item`.
+            .task(id: swipesTracks ? item.id : nil) {
+                guard swipesTracks, let step = MiniPlayerDebugSwipe.nextStep() else { return }
+                try? await Task.sleep(for: .seconds(MiniPlayerDebugSwipe.isFirstStep ? 3 : 2))
+                guard !Task.isCancelled else { return }
+                MiniPlayerDebugSwipe.consumeStep()
+                await debugSwipe(step)
+            }
+            #endif
     }
 
     private var stretch: CGFloat { abs(pull) * SearchPullConfig.heightLimit }
 
-    /// Оттяг за пальцем один в один, без анимации; только вертикальный — горизонтальный
-    /// свайп выбрасывает круг в читалке и резину не тянет. Вверх за порог (или резким
-    /// рывком) — большой плеер, на отпускании, как поиск у поля: порог и рывок — его же.
-    private var pullGesture: some Gesture {
+    /// Один жест на обе оси: ось решается на первом событии (`dragAxis`), поэтому оттяг
+    /// и свайп друг другу не мешают. Меряется в глобальных координатах и стоит снаружи
+    /// сдвигов: полоса, едущая под пальцем, не сбивает свой `translation`.
+    private var dragGesture: some Gesture {
         DragGesture(minimumDistance: SearchPullConfig.activation, coordinateSpace: .global)
             .onChanged { value in
-                let dy = value.translation.height
-                guard abs(dy) > abs(value.translation.width) else { return }
-                // Только вверх: бар стоит внизу, тянуть его вниз некуда — как поле поиска
-                // вне фокуса (правка пользователя 2026-10-31).
-                pull = dy < 0 ? SearchPullConfig.progress(travel: -dy) : 0
-                if onPullUp != nil { updateTick(travel: -dy) }
+                if dragAxis == nil {
+                    let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
+                    dragAxis = isHorizontal ? .horizontal : .vertical
+                    if isHorizontal { beginSwipe(at: value.translation.width) }
+                }
+                if dragAxis == .horizontal {
+                    swipeChanged(value.translation.width - swipeOrigin)
+                } else {
+                    pullChanged(value)
+                }
             }
             .onEnded { value in
-                tickArmed = false
-                let travel = -value.translation.height
-                let flick = -value.velocity.height >= SearchPullConfig.flickVelocity
-                    && travel >= SearchPullConfig.flickMinDistance
-                    && travel > abs(value.translation.width)
-                if let onPullUp, pull > 0, travel >= SearchPullConfig.triggerDistance || flick {
-                    onPullUp()
+                let axis = dragAxis
+                dragAxis = nil
+                if axis == .horizontal {
+                    swipeEnded(value.translation.width - swipeOrigin, velocity: value.velocity.width)
+                } else {
+                    pullEnded(value)
                 }
-                guard pull != 0 else { return }
-                withAnimation(SearchPullConfig.release) { pull = 0 }
             }
     }
 
-    /// Тик на пересечении порога вверх — тот же, что у поля поиска.
-    private func updateTick(travel: CGFloat) {
-        if travel >= SearchPullConfig.triggerDistance, !tickArmed {
+    // MARK: Оттяг вверх
+
+    /// Оттяг за пальцем один в один, без анимации. Вверх за порог (или резким рывком) —
+    /// большой плеер, на отпускании, как поиск у поля: порог и рывок — его же.
+    private func pullChanged(_ value: DragGesture.Value) {
+        let dy = value.translation.height
+        // Кадры, где палец ушёл вбок сильнее, чем вверх, резину не тянут: в читалке
+        // горизонталью выбрасывают круг, и его жест решает ось сам.
+        guard abs(dy) > abs(value.translation.width) else { return }
+        // Только вверх: бар стоит внизу, тянуть его вниз некуда — как поле поиска
+        // вне фокуса (правка пользователя 2026-10-31).
+        pull = dy < 0 ? SearchPullConfig.progress(travel: -dy) : 0
+        if onPullUp != nil { updateTick(travel: -dy) }
+    }
+
+    private func pullEnded(_ value: DragGesture.Value) {
+        tickArmed = false
+        let travel = -value.translation.height
+        let flick = -value.velocity.height >= SearchPullConfig.flickVelocity
+            && travel >= SearchPullConfig.flickMinDistance
+            && travel > abs(value.translation.width)
+        if let onPullUp, pull > 0, travel >= SearchPullConfig.triggerDistance || flick {
+            onPullUp()
+        }
+        guard pull != 0 else { return }
+        withAnimation(SearchPullConfig.release) { pull = 0 }
+    }
+
+    // MARK: Свайп — смена трека
+
+    /// Полоса трека — обложка с подписями, всё левее кнопок. Числом, от раскрытой ширины.
+    private var trackLaneWidth: CGFloat {
+        expandedWidth
+            - ActionBarGeometry.miniPlayerPaddingLeading
+            - ActionBarGeometry.miniPlayerPaddingTrailing
+            - ActionBarGeometry.miniPlayerContentGap
+            - ActionBarGeometry.miniPlayerActionsWidth
+    }
+
+    /// Шаг между треками полосы: когда приходящий встал на место, уходящий целиком
+    /// за маской — слева за кромкой пилюли, справа за зазором перед кнопками.
+    private var swipePage: CGFloat {
+        trackLaneWidth + ActionBarGeometry.miniPlayerPaddingLeading + ActionBarGeometry.miniPlayerContentGap
+    }
+
+    private func beginSwipe(at translation: CGFloat) {
+        swipeOrigin = translation
+        // Подхватили посреди доезда прошлой смены — уходящий трек уже почти за маской.
+        companion = nil
+        companionSide = 0
+    }
+
+    /// Полоса за пальцем 1:1; сосед — с той стороны, где освобождается место: тянем
+    /// влево — следующий справа. Соседа нет — сопротивление (`rubber`).
+    private func swipeChanged(_ x: CGFloat) {
+        guard swipesTracks else { return }
+        let side: CGFloat = x < 0 ? 1 : -1
+        if x != 0, side != companionSide {
+            companion = actionBar.neighborTrack(x < 0 ? .next : .previous)
+            companionSide = side
+        }
+        dragX = companion == nil ? MiniPlayerSwipeConfig.rubber(x) : x
+        // Тик — только когда трек есть куда менять: резина без очереди молчит.
+        if companion != nil { updateTick(travel: abs(x), threshold: swipeCommitDistance) }
+    }
+
+    /// Порог смены трека по ходу пальца.
+    private var swipeCommitDistance: CGFloat {
+        swipePage * MiniPlayerSwipeConfig.commitFraction
+    }
+
+    /// За порогом или резким рывком в сторону жеста — смена; рывок назад отменяет
+    /// и дотянутый свайп. Иначе — возврат.
+    private func swipeEnded(_ x: CGFloat, velocity: CGFloat) {
+        // Тик порога уже отдан — на смене хаптики больше нет: одна на действие.
+        let didTick = tickArmed
+        tickArmed = false
+        let side: CGFloat = x < 0 ? 1 : -1
+        guard swipesTracks, x != 0, companion != nil, companionSide == side else {
+            settleSwipe(velocity: velocity)
+            return
+        }
+        let toward = x < 0 ? -velocity : velocity
+        let isPast = abs(x) >= swipeCommitDistance
+            && toward > -MiniPlayerSwipeConfig.flickVelocity
+        let isFlick = toward >= MiniPlayerSwipeConfig.flickVelocity
+            && abs(x) >= MiniPlayerSwipeConfig.flickMinDistance
+        if isPast || isFlick {
+            // Сменили рывком, не дойдя до порога, — тот же тик на отпускании.
+            if !didTick { Self.thresholdTick() }
+            commitSwipe(x < 0 ? .next : .previous, speed: max(0, toward))
+        } else {
+            settleSwipe(velocity: velocity)
+        }
+    }
+
+    /// Стартовая скорость пружины в долях оставшегося пути за секунду — пружина
+    /// подхватывает палец, а не трогается с места. Палец шёл от цели — ноль.
+    private static func springVelocity(_ speed: CGFloat, distance: CGFloat) -> Double {
+        guard distance > 0, speed > 0 else { return 0 }
+        return min(Double(speed / distance), MiniPlayerSwipeConfig.springVelocityLimit)
+    }
+
+    /// Смена трека. Трек меняется сразу на отпускании — звук не ждёт доезда. Хаптику
+    /// отдаёт жест (`swipeChanged`/`swipeEnded`): тик порога, у рывка — на отпускании.
+    private func commitSwipe(_ step: MusicTrackStep, speed: CGFloat) {
+        swipeGeneration += 1
+        let generation = swipeGeneration
+        if reduceMotion {
+            // Полоса не едет: старый трек гаснет, новый проявляется — по очереди.
+            withAnimation(MiniPlayerSwipeConfig.reducedFade) {
+                isSwipeFaded = true
+            } completion: {
+                guard generation == swipeGeneration else { return }
+                actionBar.stepTrack(step)
+                // Новый трек — новым слотом: без кроссфейда `trackSwap` под проявлением.
+                mainSlot = 1 - mainSlot
+                dragX = 0
+                companion = nil
+                companionSide = 0
+                DispatchQueue.main.async {
+                    guard generation == swipeGeneration else { return }
+                    withAnimation(MiniPlayerSwipeConfig.reducedFade) { isSwipeFaded = false }
+                }
+            }
+            return
+        }
+        // Слоты меняются ролями в одном апдейте со сменой трека, и кадр не меняется
+        // ни на пиксель: текущим становится вью соседа на его месте, соседом — уходящий.
+        // Ход пальца переходит в доезд; недоеханный остаток прошлой смены (свайп поверх
+        // доезда) не переносится — к этому моменту он почти весь выбран.
+        let outgoing = item
+        let side = companionSide
+        actionBar.stepTrack(step)
+        mainSlot = 1 - mainSlot
+        landX = dragX + side * swipePage
+        dragX = 0
+        companion = outgoing
+        companionSide = -side
+        let velocity = Self.springVelocity(speed, distance: abs(landX))
+        // Доезд — следующим апдейтом: в одном с перестановкой SwiftUI повёл бы сдвиг
+        // от последнего отрисованного значения, а не от переставленного.
+        DispatchQueue.main.async {
+            guard generation == swipeGeneration else { return }
+            withAnimation(.interpolatingSpring(
+                duration: MiniPlayerSwipeConfig.landDuration,
+                bounce: 0,
+                initialVelocity: velocity
+            )) {
+                landX = 0
+            } completion: {
+                guard generation == swipeGeneration, dragAxis == nil else { return }
+                companion = nil
+                companionSide = 0
+            }
+        }
+    }
+
+    /// Не дотянули (или листать некуда) — полоса возвращается пружиной со скоростью
+    /// пальца. Она же снимает незавершённую смену, если пилюля свернулась посреди неё.
+    private func settleSwipe(velocity: CGFloat = 0) {
+        swipeGeneration += 1
+        let generation = swipeGeneration
+        guard dragX != 0 || companion != nil || isSwipeFaded else { return }
+        // Скорость к месту: палец уже вёл полосу назад — пружина продолжает его ход.
+        let toward = dragX < 0 ? velocity : -velocity
+        let spring = Animation.interpolatingSpring(
+            duration: MiniPlayerSwipeConfig.settleDuration,
+            bounce: MiniPlayerSwipeConfig.settleBounce,
+            initialVelocity: Self.springVelocity(toward, distance: abs(dragX))
+        )
+        let release = {
+            guard generation == swipeGeneration, dragAxis == nil else { return }
+            companion = nil
+            companionSide = 0
+        }
+        if reduceMotion {
+            // Полоса стоит, пружина ведёт только тусклость (`laneOpacity` от `dragX`).
+            withAnimation(spring) {
+                dragX = 0
+                isSwipeFaded = false
+            } completion: { release() }
+            return
+        }
+        // Ход пальца переходит в доезд: анимируется только `landX`, и прозрачность треков
+        // считается от него на каждом кадре (`LaneSlide`) — идёт ровно за сдвигом.
+        landX = dragX
+        dragX = 0
+        isSwipeFaded = false
+        // Пружина — следующим апдейтом, как у смены трека (`commitSwipe`).
+        DispatchQueue.main.async {
+            guard generation == swipeGeneration else { return }
+            withAnimation(spring) { landX = 0 } completion: { release() }
+        }
+    }
+
+    #if DEBUG
+    /// Отладочный свайп — те же `swipeChanged` и `swipeEnded`, что у жеста: палец уходит
+    /// на 40 pt и через 0.15 с отпускается рывком.
+    private func debugSwipe(_ step: MusicTrackStep) async {
+        let x: CGFloat = step == .next ? -40 : 40
+        beginSwipe(at: 0)
+        swipeChanged(x)
+        try? await Task.sleep(for: .milliseconds(150))
+        swipeEnded(x, velocity: x * 20)
+    }
+    #endif
+
+    /// Тик на пересечении порога — тот же, что у поля поиска: вверх — порог большого
+    /// плеера, вбок — порог смены трека (правка пользователя 2026-11-02). Вернули палец
+    /// за порог с запасом гистерезиса — тик взводится заново.
+    private func updateTick(travel: CGFloat, threshold: CGFloat = SearchPullConfig.triggerDistance) {
+        if travel >= threshold, !tickArmed {
             tickArmed = true
-            UIImpactFeedbackGenerator(style: .medium)
-                .impactOccurred(intensity: SearchPullConfig.tickHapticIntensity)
-        } else if travel < SearchPullConfig.triggerDistance - SearchPullConfig.triggerHysteresis {
+            Self.thresholdTick()
+        } else if travel < threshold - SearchPullConfig.triggerHysteresis {
             tickArmed = false
         }
+    }
+
+    private static func thresholdTick() {
+        UIImpactFeedbackGenerator(style: .medium)
+            .impactOccurred(intensity: SearchPullConfig.tickHapticIntensity)
     }
 
     /// Два вложенных стека, а не один плоский: в макете зазор обложка↔тексты 8,
@@ -1654,11 +2006,7 @@ struct MiniPlayerPill: View {
 
     private var content: some View {
         HStack(spacing: ActionBarGeometry.miniPlayerContentGap) {
-            HStack(spacing: ActionBarGeometry.miniPlayerCoverGap) {
-                cover
-                trackInfo
-                    .modifier(MiniPlayerContentFade(opacity: trackInfoOpacity))
-            }
+            trackLane
             actions
                 .modifier(MiniPlayerContentFade(opacity: trackInfoOpacity))
         }
@@ -1667,20 +2015,6 @@ struct MiniPlayerPill: View {
         // Раскладка по раскрытой ширине, а не по текущей — см. `miniPlayerExpandedWidth`.
         // Сжатую пилюлю лишнее просто не видит: его срезает капсула.
         .frame(width: expandedWidth, alignment: .leading)
-    }
-
-    private var cover: some View {
-        Group {
-            if isSpinning {
-                TimelineView(.animation) { timeline in
-                    coverImage
-                        .rotationEffect(.degrees(spin.degrees(at: timeline.date)))
-                }
-            } else {
-                coverImage
-                    .rotationEffect(.degrees(spin.base))
-            }
-        }
         // Флаг меняют и кнопка, и карточка витрины, и debug-прогон — слушаем сам флаг.
         .onChange(of: isPlaying) { _, playing in startSpinPhase(playing) }
         // Холодный старт: бар может подняться уже играющим.
@@ -1695,31 +2029,111 @@ struct MiniPlayerPill: View {
             spin.settle()
             isSpinning = false
         }
+    }
+
+    /// Слот полосы: трек и сторона, где он стоит (0 — на месте).
+    private struct LaneFace {
+        let slot: Int
+        let track: MusicNowPlaying
+        let side: CGFloat
+    }
+
+    private var laneFaces: [LaneFace] {
+        var faces = [LaneFace(slot: mainSlot, track: item, side: 0)]
+        // Под Reduce Motion полоса не едет — второму треку негде стоять.
+        if let companion, !reduceMotion {
+            faces.append(LaneFace(slot: 1 - mainSlot, track: companion, side: companionSide))
+        }
+        return faces
+    }
+
+    /// Полоса трека: текущий и, пока палец тянет или трек доезжает, второй рядом.
+    private var trackLane: some View {
+        ZStack(alignment: .leading) {
+            ForEach(laneFaces, id: \.slot) { face in
+                trackFace(face.track)
+                    .modifier(LaneSlide(
+                        slide: landX + face.side * swipePage,
+                        drag: dragX,
+                        page: swipePage,
+                        isStill: reduceMotion
+                    ))
+                    .accessibilityHidden(face.side != 0)
+            }
+        }
+        .opacity(laneOpacity)
+        .mask { laneMask }
+    }
+
+    /// Reduce Motion: полоса тускнеет за пальцем и гаснет на смене трека.
+    private var laneOpacity: Double {
+        guard reduceMotion else { return 1 }
+        if isSwipeFaded { return 0 }
+        let pulled = abs(dragX) / (swipePage * MiniPlayerSwipeConfig.commitFraction)
+        return 1 - MiniPlayerSwipeConfig.reducedDim * Double(min(pulled, 1))
+    }
+
+    /// Полоса видна от кромки пилюли до кнопок: уходящий трек тает в зазоре перед
+    /// сердцем, а не проезжает под ним. В покое маска ничего не режет — полоса кончается
+    /// раньше градиента.
+    private var laneMask: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: ActionBarGeometry.miniPlayerContentGap)
+        }
+        .padding(.leading, -ActionBarGeometry.miniPlayerPaddingLeading)
+        .padding(.trailing, -ActionBarGeometry.miniPlayerContentGap)
+        .padding(.vertical, -MiniPlayerSwipeConfig.maskBleed)
+    }
+
+    private func trackFace(_ track: MusicNowPlaying) -> some View {
+        HStack(spacing: ActionBarGeometry.miniPlayerCoverGap) {
+            cover(track)
+            trackInfo(track)
+                .modifier(MiniPlayerContentFade(opacity: trackInfoOpacity))
+        }
+    }
+
+    /// Угол — общий у обоих треков полосы: приходящий доезжает уже повёрнутым, как
+    /// крутился бы на месте, и диск продолжает без рывка.
+    private func cover(_ track: MusicNowPlaying) -> some View {
+        Group {
+            if isSpinning {
+                TimelineView(.animation) { timeline in
+                    coverImage(track)
+                        .rotationEffect(.degrees(spin.degrees(at: timeline.date)))
+                }
+            } else {
+                coverImage(track)
+                    .rotationEffect(.degrees(spin.base))
+            }
+        }
         .frame(width: PlusMetrics.miniPlayerCover, height: PlusMetrics.miniPlayerCover)
         .clipShape(Circle())
         .coverBorder(Circle())
     }
 
-    private var coverImage: some View {
-        ArtworkImage(source: item.cover)
+    private func coverImage(_ track: MusicNowPlaying) -> some View {
+        ArtworkImage(source: track.cover)
             .scaledToFill()
     }
 
     /// Без зазора: в макете это два бокса по 16 подряд в контейнере ровно 32
     /// (`spacing: 2` разводил базовые линии на 18 вместо 16).
-    private var trackInfo: some View {
+    private func trackInfo(_ track: MusicNowPlaying) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(item.title)
+            Text(track.title)
                 .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillOne)
                 .lineLimit(1)
-            Text(item.artist)
+            Text(track.artist)
                 .plusText(.textS, .medium)
                 .foregroundStyle(Color.fillSubtitle)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .trackSwap(id: item.id)
+        .trackSwap(id: track.id)
     }
 
     private var actions: some View {
@@ -1760,6 +2174,36 @@ struct MiniPlayerPill: View {
         .padding(-ActionBarGeometry.plainHitInset)
     }
 }
+
+#if DEBUG
+/// Сценарий `-debugMiniSwipe`: шаги на процесс, общие для всех пилюль (бар, читалка).
+/// `next` и `previous` — один свайп; `cycle` — дальше, дальше, назад, назад, трижды.
+@MainActor
+private enum MiniPlayerDebugSwipe {
+    static var isFirstStep = true
+    private static var steps: [MusicTrackStep]?
+
+    /// Шаг снимается только перед самим свайпом: задачу, отменённую на ожидании
+    /// (трек доиграл, пилюля свернулась), сценарий не теряет.
+    static func nextStep() -> MusicTrackStep? {
+        if steps == nil {
+            steps = switch UserDefaults.standard.string(forKey: "debugMiniSwipe") {
+            case "next": [.next]
+            case "previous", "prev": [.previous]
+            case "cycle": Array(repeating: [MusicTrackStep.next, .next, .previous, .previous], count: 3).flatMap { $0 }
+            default: []
+            }
+        }
+        return steps?.first
+    }
+
+    static func consumeStep() {
+        guard steps?.isEmpty == false else { return }
+        steps?.removeFirst()
+        isFirstStep = false
+    }
+}
+#endif
 
 // MARK: - Progress
 

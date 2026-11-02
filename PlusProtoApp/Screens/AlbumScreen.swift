@@ -49,6 +49,22 @@ enum AlbumLayout {
     }
 }
 
+/// Тап по треку в выдаче поиска открывает его альбом (PRD общего поиска): когда зум
+/// закончился, треклист плавно доезжает до трека и строка коротко подсвечивается
+/// (решение пользователя 2026-11-02). Раз за показ экрана.
+enum AlbumTrackFocus {
+    /// Пауза перед доездом: стартовый `scrollTo` до раскладки промахивается (CLAUDE.md).
+    static let settle: Duration = .milliseconds(50)
+    /// Доезд — неспешный ease-in-out: путь бывает через весь треклист.
+    static let scroll: Animation = .easeInOut(duration: 0.6)
+    static let scrollDuration: Duration = .milliseconds(600)
+    /// Подсветка — Fill/Nine во всю ширину строки: встаёт, держится и гаснет.
+    static let highlight = Color.fillNine
+    static let highlightIn: Animation = .easeOut(duration: 0.25)
+    static let hold: Duration = .milliseconds(1000)
+    static let highlightOut: Animation = .easeInOut(duration: 0.6)
+}
+
 // MARK: - Экран
 
 /// Экран альбома по макету `2079:11226`: резиновая шапка (фон-блюр и кавер тянутся
@@ -71,6 +87,11 @@ struct AlbumScreen: View {
     /// Экран на виду по UIKit — от конца появления до начала ухода: голография обложки
     /// живёт только в этом окне (`CoverHoloPresence`).
     @State private var isPresented = false
+    /// Трек из поиска уже показан (`AlbumTrackFocus`) — повторно, на возврате с экрана
+    /// глубже, лента не едет.
+    @State private var didFocusTrack = false
+    /// Строка, подсвеченная после доезда.
+    @State private var highlightedTrack: Int?
 
     init(entity: EntityRef) {
         self.entity = entity
@@ -88,41 +109,45 @@ struct AlbumScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    header
-                    trackList
-                    if !details.others.isEmpty {
-                        othersSection
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        header
+                        trackList
+                        if !details.others.isEmpty {
+                            othersSection
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .task { await store.load(entity) }
+                // Трек из поиска — когда экран встал и треклист пришёл.
+                .task(id: isFocusReady) { await focusTrack(proxy) }
+                .scrollIndicators(.hidden)
+                // Хром (таббар + action bar) на этом экране виден — лента едет под ним.
+                .contentMargins(
+                    .bottom,
+                    PlusChromeMetrics.contentBottomInset + AlbumLayout.bottomClearance,
+                    for: .scrollContent
+                )
+                // Зона кавера начинается от физического верха экрана, а не от safe area.
+                .ignoresSafeArea(edges: .top)
+                .scrollPosition($scrollPosition)
+                .trackNavBarScroll(into: $scrollOffset)
+                #if DEBUG
+                // `-debugScrollTo <pt>`: тот же приём, что на карточке фильма, — приход
+                // данных пересобирает ленту и сбрасывает позицию, поэтому попыток десять.
+                .task(id: store.details == nil) {
+                    let offset = UserDefaults.standard.double(forKey: "debugScrollTo")
+                    guard offset > 0 else { return }
+                    for _ in 0..<10 {
+                        try? await Task.sleep(for: .milliseconds(700))
+                        guard !Task.isCancelled else { return }
+                        scrollPosition.scrollTo(y: offset)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                #endif
             }
-            .task { await store.load(entity) }
-            .scrollIndicators(.hidden)
-            // Хром (таббар + action bar) на этом экране виден — лента едет под ним.
-            .contentMargins(
-                .bottom,
-                PlusChromeMetrics.contentBottomInset + AlbumLayout.bottomClearance,
-                for: .scrollContent
-            )
-            // Зона кавера начинается от физического верха экрана, а не от safe area.
-            .ignoresSafeArea(edges: .top)
-            .scrollPosition($scrollPosition)
-            .trackNavBarScroll(into: $scrollOffset)
-            #if DEBUG
-            // `-debugScrollTo <pt>`: тот же приём, что на карточке фильма, — приход
-            // данных пересобирает ленту и сбрасывает позицию, поэтому попыток десять.
-            .task(id: store.details == nil) {
-                let offset = UserDefaults.standard.double(forKey: "debugScrollTo")
-                guard offset > 0 else { return }
-                for _ in 0..<10 {
-                    try? await Task.sleep(for: .milliseconds(700))
-                    guard !Task.isCancelled else { return }
-                    scrollPosition.scrollTo(y: offset)
-                }
-            }
-            #endif
 
             // Без правого слота: кнопка поиска из навбара убрана (правка пользователя
             // 2026-08-29) — поиск живёт в action bar, и вторая точка входа сверху
@@ -328,6 +353,35 @@ struct AlbumScreen: View {
         actionBar.open(.music(item), queue: tracks.map(nowPlaying))
     }
 
+    // MARK: Трек из поиска
+
+    /// Пора показать трек из поиска: экран встал (зум закончился) и трек есть в треклисте.
+    private var isFocusReady: Bool {
+        guard let id = entity.focusTrackID, isPresented else { return false }
+        return tracks.contains { $0.id == id }
+    }
+
+    /// Доезд до трека и подсветка строки (`AlbumTrackFocus`). С «уменьшением движения» —
+    /// без доезда: лента встаёт на трек сразу, подсветка — одной прозрачностью.
+    private func focusTrack(_ proxy: ScrollViewProxy) async {
+        guard isFocusReady, !didFocusTrack, let id = entity.focusTrackID else { return }
+        didFocusTrack = true
+        try? await Task.sleep(for: AlbumTrackFocus.settle)
+        guard !Task.isCancelled else { return }
+        withAnimation(reduceMotion ? nil : AlbumTrackFocus.scroll) {
+            proxy.scrollTo(Self.rowID(id), anchor: .center)
+        }
+        if !reduceMotion { try? await Task.sleep(for: AlbumTrackFocus.scrollDuration) }
+        guard !Task.isCancelled else { return }
+        withAnimation(AlbumTrackFocus.highlightIn) { highlightedTrack = id }
+        try? await Task.sleep(for: AlbumTrackFocus.hold)
+        // Ушли с экрана посреди подсветки — она гаснет сразу, на возврате её нет.
+        withAnimation(Task.isCancelled ? nil : AlbumTrackFocus.highlightOut) { highlightedTrack = nil }
+    }
+
+    /// Адрес строки трека в ленте — для доезда.
+    private static func rowID(_ trackID: Int) -> String { "album-track-\(trackID)" }
+
     // MARK: Треклист
 
     /// Список идёт сразу, без строки «Диск N» (правка пользователя 2026-08-29).
@@ -387,6 +441,12 @@ struct AlbumScreen: View {
         // Проседает строка, а черты стоят: просевшая черта короче соседних и съезжает.
         // Палец на «ещё» достаётся кнопке — строка под ней не проседает.
         .pressScale(PressMotion.rowScale)
+        // Трек, ради которого открыли альбом из поиска, — коротко подсвечен во всю ширину.
+        .background {
+            AlbumTrackFocus.highlight
+                .opacity(highlightedTrack == track.id ? 1 : 0)
+        }
+        .id(Self.rowID(track.id))
         .overlay(alignment: .bottom) { rowDivider }
         .overlay(alignment: .top) {
             if isFirst { rowDivider }
