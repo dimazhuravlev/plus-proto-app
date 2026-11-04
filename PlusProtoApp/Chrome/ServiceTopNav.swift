@@ -321,12 +321,13 @@ struct TopNavRow: ViewModifier {
     var showsTopShade = true
     /// Подложка держится на полной силе поверх скролла (`ServiceTopNav.holdsBackdrop`).
     var holdsBackdrop = false
+    var followsPull = true
 
     func body(content: Content) -> some View {
         content
             .frame(height: ServiceTopNavLayout.rowHeight)
             // Сдвиг — только у ряда: подложка стоит на месте, а она в покое прозрачна.
-            .offset(y: ServiceTopNavMotion.pullShift(for: scrollOffset))
+            .offset(y: followsPull ? ServiceTopNavMotion.pullShift(for: scrollOffset) : 0)
             .frame(maxWidth: .infinity)
             .background(alignment: .top) {
                 // Только прогрессивный блюр, без затемнения: тёмный градиент подложки
@@ -460,7 +461,7 @@ struct HomeTopNav: View {
             }
             .padding(.trailing, ServiceTopNavLayout.side)
         }
-        .modifier(TopNavRow(scrollOffset: scrollOffset))
+        .modifier(TopNavRow(scrollOffset: scrollOffset, followsPull: false))
     }
 }
 

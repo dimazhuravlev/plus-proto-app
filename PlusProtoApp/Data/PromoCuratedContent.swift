@@ -38,6 +38,14 @@ enum PromoCuratedContent {
     }
 
     static func compose(_ original: [ShowcaseBlock], excluding dismissed: Set<String>) -> [ShowcaseBlock] {
+        // Проекция применяется до фильтра исключений: дизлайк и отмена работают
+        // с тем же id, который видит карусель, даже при повторной сборке каталога.
+        let original = original.map { block -> ShowcaseBlock in
+            if case .movie(let movie) = block, movie.title.lowercased() == "идеальные дни", movie.resume == nil {
+                return .movie(PromoEditorialContent.replacementMovie)
+            }
+            return block
+        }
         func pool(_ fresh: [ShowcaseBlock], _ kind: HomePromoKind) -> [ShowcaseBlock] {
             let remaining = fresh.filter { !dismissed.contains($0.id) }
             let ids = Set(remaining.map(\.id))
@@ -85,5 +93,14 @@ enum PromoCuratedContent {
             if let id { ids.insert(id) }
             return true
         }
+    }
+}
+
+enum PromoEditorialContent {
+    static var replacementMovie: MovieBlock {
+        MovieBlock(id: "local-promo-maid", title: "Горничная",
+                   poster: .asset("shelfMovieMaid"), still: .asset("shelfMovieMaid"),
+                   caption: "Молодая женщина становится горничной в роскошном доме. За безупречной жизнью хозяев скрываются опасные тайны, и новая работа постепенно превращается в ловушку.",
+                   captionTint: .clear)
     }
 }

@@ -1,6 +1,11 @@
 import SwiftUI
 import UIKit
 
+private enum PromoLeftReturnMotion {
+    static let animation: Animation = .easeOut(duration: 0.3)
+    static let offset: CGFloat = 12
+}
+
 /// Ключ слота ряда: копия круга и айтем, а не номер места. По номеру места каждая
 /// вставка и удаление (✕) сдвигала отображение `items[index % count]` почти у всех слотов,
 /// вью получали новый айтем и пересоздавались — пять видимых обложек мигали дважды
@@ -31,6 +36,7 @@ private struct PromoSlotID: Hashable {
 /// в Recently и исходных витринах.
 struct ShowcasePromo: View {
     let items: [ShowcaseBlock]
+    private let fixedPreview: Bool
     let zoom: Namespace.ID
     /// Айтем на месте — на сессию (`ShowcaseCatalog.promoIndex`): экран таба
     /// размонтируется на каждом переключении, а слайдер открывается там, где оставили.
@@ -71,12 +77,16 @@ struct ShowcasePromo: View {
     @State private var isEditingSet = false
     /// Лента встала на стартовую карточку (`placeIfNeeded`).
     @State private var isPlaced = false
+    @State private var returningLeftID: String?
+    @State private var leftReturnProgress: CGFloat = 1
+    @State private var leftReturnTask: Task<Void, Never>?
+    @State private var petalWave = PromoPetalWave<PromoSlotID>(duration: LiftWaveConfig.duration)
+    @State private var playingPetalID: String?
     @State private var hasInteracted = false
     @State private var swipeHaptics = PromoSwipeHapticPolicy()
-    /// Волна запуска по лепестку станции (`LiftWave`).
-    @State private var petalWave = PromoPetalWave()
 
-    init(items: [ShowcaseBlock], zoom: Namespace.ID, savedIndex: Binding<Int>) {
+    init(items: [ShowcaseBlock], zoom: Namespace.ID, savedIndex: Binding<Int>, fixedPreview: Bool = false) {
+        self.fixedPreview = fixedPreview
         self.items = items
         self.zoom = zoom
         _savedIndex = savedIndex
@@ -87,6 +97,7 @@ struct ShowcasePromo: View {
         let start = count + startIndex
         _pageID = State(initialValue: items.isEmpty ? nil : PromoSlotID(copy: 1, item: items[start % count].id))
         _scroll = State(initialValue: PromoScrollState(position: CGFloat(start)))
+
     }
 
     private var count: Int { items.count }
@@ -119,7 +130,7 @@ struct ShowcasePromo: View {
     /// Набор как он есть сейчас — в отложенных шагах ✕ и в замыканиях задач: `items`
     /// там с того прохода, на котором их создали. Тот же состав, что у `items`
     /// (`composed`): обложки рекомендаций без карточек «Продолжить».
-    private var liveItems: [ShowcaseBlock] { Self.composed(catalog.homePromo(catalog.feed.promo)) }
+    private var liveItems: [ShowcaseBlock] { fixedPreview ? items : Self.composed(catalog.homePromo(catalog.feed.promo)) }
 
     /// Промо содержит рекомендации с обложками и описаниями.
     /// Продолженное потребление остаётся в Recently и исходной витрине.
@@ -129,7 +140,7 @@ struct ShowcasePromo: View {
             case .watching, .reading: return nil
             case .movie(let movie):
                 guard movie.resume == nil else { return nil }
-                return movie.title.lowercased() == "идеальные дни" ? .movie(PromoEditorialContent.replacementMovie) : block
+                return block
             case .book(let book): return book.resume == nil ? block : nil
             default: return block
             }
@@ -139,7 +150,44 @@ struct ShowcasePromo: View {
         return result
     }
 
+    private var spacingGeometry: PromoCarouselSpacing? {
+        guard PlusMetrics.screenWidth > 402 else { return nil }
+        let settings = HomePresentationSettings.shared
+        func cards(at width: CGFloat) -> [PromoCarouselSpacing.Card] {
+            let geometry = Layout.geometry(viewportWidth: width)
+            let cards = items.map { item in
+                let card = geometry.card(for: item.homePromoKind)
+                let look = PromoCardLook(id: item.id)
+                return PromoCarouselSpacing.Card(
+                    mainWidth: PromoCarouselSpacing.projectedWidth(width: card.main.width, height: card.main.height,
+                        degrees: settings.uprightEnabled ? 0 : look.centerTilt),
+                    sideWidth: PromoCarouselSpacing.projectedWidth(width: card.neighbour.width, height: card.neighbour.height,
+                        degrees: settings.uprightEnabled ? settings.sideAngle : look.sideTilt))
+            }
+            return Array(repeating: cards, count: Self.copies).flatMap { $0 }
+        }
+        return PromoCarouselSpacing(cards: cards(at: PlusMetrics.screenWidth),
+            viewportWidth: PlusMetrics.screenWidth, baselineCards: cards(at: 402))
+    }
+
+    /// Только окрестность экрана закрепляется в кэше: семь карточек и запас по одной с краёв.
+    private func glowItems(around current: Int?) -> [ShowcaseBlock] {
+        guard !items.isEmpty else { return [] }
+        var seen = Set<String>()
+        return [0, -1, 1, -2, 2, -3, 3, -4, 4].compactMap { delta in
+            let item = items[Self.wrap((current ?? count) + delta, count)]
+            return seen.insert(item.id).inserted ? item : nil
+        }
+    }
+
     var body: some View {
+        let spacing = spacingGeometry
+        let collapsedSpacing = removal.flatMap { removed in spacing.map { $0.removing(at: removed) } }
+        let visibleCount = spacing.map { PlusMetrics.screenWidth > $0.sevenCardMinimumWidth ? 7 : 5 } ?? 5
+        let slots = slotIDs
+        // Снимок этого прохода. Асинхронные действия по-прежнему читают liveItems.
+        let currentPage = pageID.flatMap { id in items.firstIndex { $0.id == id.item }.map { id.copy * count + $0 } }
+        let glowItems = glowItems(around: currentPage)
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 // Ряд — не ленивый: в ленивом перескок на среднюю копию кадр рисовал позицию
@@ -150,7 +198,7 @@ struct ShowcasePromo: View {
                     // Opacity is evaluated by visualEffect DURING the drag, with no
                     // page-ID switch or observation round-trip on each frame.
                     HStack(spacing: 0) {
-                        ForEach(Array(slotIDs.enumerated()), id: \.element) { index, _ in
+                        ForEach(Array(slots.enumerated()), id: \.element) { index, _ in
                             let shift = removal.map { index > $0 ? collapse : 0 } ?? 0
                             PromoSwipeGlow(item: items[index % max(count, 1)], shift: shift, rasters: scroll.rasters)
                         }
@@ -159,8 +207,9 @@ struct ShowcasePromo: View {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                     HStack(spacing: 0) {
-                        ForEach(Array(slotIDs.enumerated()), id: \.element) { index, _ in
-                            slot(index)
+                        ForEach(Array(slots.enumerated()), id: \.element) { index, _ in
+                            slot(index, currentPage: currentPage, visibleCount: visibleCount,
+                                 spacing: spacing, collapsedSpacing: collapsedSpacing)
                         }
                     }
                     .scrollTargetLayout()
@@ -185,18 +234,18 @@ struct ShowcasePromo: View {
                             let coverHeight = item.homePromoKind == .book
                                 ? Layout.book.geometry.frameSize(coverWidth: Layout.book.coverWidth).height
                                 : Layout.poster.height
-                            PromoSynopsis(text: text)
+                            let textWidth = min(300, PlusMetrics.screenWidth - 48)
+                            PromoSynopsis(text: text, availableWidth: textWidth)
                                 .showcaseSwappable()
                                 .modifier(PromoReveal(isShown: revealed == item.id,
                                                       hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
-                                // Аннотация уходит вместе с обложкой, пока открыт экран.
-                                .zoomSourceCaption(Self.zoomRoute(item, isCurrent: true))
+                                .zoomSourceCaption(item.entityRoute)
                                 .offset(y: Layout.cardCenterY + coverHeight / 2 + 16)
                                 .environment(feedback.state(for: item.id))
                         }
                     }
                 }
-                .frame(width: PlusMetrics.screenWidth - 48, height: 40, alignment: .top)
+                .frame(width: PlusMetrics.screenWidth - 48, height: 48, alignment: .top)
                 .allowsHitTesting(false)
             }
             .onScrollGeometryChange(for: CGFloat.self) { [step = Layout.step] geometry in
@@ -233,6 +282,15 @@ struct ShowcasePromo: View {
                     hideReveal()
                 }
             }
+            .onChange(of: HomePresentationSettings.shared.promoLiftWaveEnabled) { _, enabled in
+                if !enabled { petalWave.reset() }
+            }
+            .onDisappear {
+                revealTask?.cancel()
+                leftReturnTask?.cancel()
+                returningLeftID = nil
+                leftReturnProgress = 1
+            }
             .onAppear {
                 scrollProxy = proxy
                 trace("appear")
@@ -244,6 +302,7 @@ struct ShowcasePromo: View {
             // Набор собрался заново (моки → живые, под заставкой) — центральный айтем
             // остаётся в центре, если он есть в новом наборе, иначе — на сохранённом месте.
             .onChange(of: items.map(\.id)) { _, new in
+                petalWave.retain(Set(slotIDs))
                 guard !isEditingSet else {
                     isEditingSet = false
                     pinToEditAnchor()
@@ -251,9 +310,9 @@ struct ShowcasePromo: View {
                 }
                 recenter(new: new)
             }
-            .task(id: items.map { PromoCardGlowRaster.key(for: $0) }) {
-                PromoCardGlowRaster.retain(items)
-                for item in items {
+            .task(id: glowItems.map { PromoCardGlowRaster.key(for: $0) }) {
+                PromoCardGlowRaster.retain(glowItems)
+                for item in glowItems {
                     guard !Task.isCancelled else { return }
                     await PromoCardGlowRaster.render(item)
                     guard !Task.isCancelled else { return }
@@ -386,23 +445,30 @@ struct ShowcasePromo: View {
 
     // MARK: Слот
 
-    private func slot(_ index: Int) -> some View {
+    private func slot(_ index: Int, currentPage: Int?, visibleCount: Int, spacing: PromoCarouselSpacing?,
+                      collapsedSpacing: PromoCarouselSpacing?) -> some View {
         let item = items[index % max(count, 1)]
         let look = PromoCardLook(id: item.id)
-        let isShown = index == page && revealed == item.id
+        let isShown = index == currentPage && revealed == item.id
         let shift = removal.map { index > $0 ? collapse : 0 } ?? 0
+        // Доступность зависит от дискретного окна, а не от каждого дробного кадра скролла.
+        let isVisible = abs(CGFloat(index - scroll.nearestSlot) - shift) <= CGFloat(visibleCount / 2)
+        let leftEntry = item.id == returningLeftID && index < (currentPage ?? index) ? leftReturnProgress : 1
         return ZStack(alignment: .top) {
-            card(item, slotIndex: index, isShown: isShown)
+            card(item, slotIndex: index, currentPage: currentPage, visibleCount: visibleCount, isShown: isShown)
                 .frame(height: Layout.carouselHeight)
-                .modifier(PromoCardMotion(look: look, kind: item.homePromoKind, shift: shift))
-                .offset(y: item.homePromoKind == .station ? (24) : 0)
-
+                .modifier(PromoCardMotion(look: look, kind: item.homePromoKind, slotIndex: index, spacing: spacing,
+                                          collapsedSpacing: collapsedSpacing, removal: removal, collapse: collapse,
+                                          leftEntry: leftEntry, visibleCount: visibleCount))
+                .offset(y: item.homePromoKind == .station ? 24 : 0)
         }
         .frame(width: Layout.step, height: Layout.height, alignment: .top)
         // Центральная — поверх соседей, как в макете: в ряду правый сосед ложился
         // на её кромку. Смена — на середине свайпа, когда карточки равны и почти
         // не касаются.
-        .zIndex(index == page ? 1 : 0)
+        .zIndex(index == currentPage ? 1 : 0)
+        .allowsHitTesting(isVisible)
+        .accessibilityHidden(!isVisible)
         .environment(\.promoDepthShift, shift)
         .environment(feedback.state(for: item.id))
         .environment(\.showcaseRefresh, ShowcaseRefresh(prepare: { nil }, custom: { remove(slot: index) }))
@@ -411,29 +477,32 @@ struct ShowcasePromo: View {
     /// Карточка и пара ✕/✓ на её кромке — пара оверлеем на карточке, а не внутри кнопки:
     /// так у неё свои нажатия, а наклон и масштаб — общие с карточкой. У альбома там же
     /// его подпись, у исполнителя — имя под кругом.
-    private func card(_ item: ShowcaseBlock, slotIndex: Int, isShown: Bool) -> some View {
-        let isCurrent = slotIndex == page
+    private func card(_ item: ShowcaseBlock, slotIndex: Int, currentPage: Int?, visibleCount: Int, isShown: Bool) -> some View {
+        let isCurrent = slotIndex == currentPage
+        let captionRoute = isCurrent ? item.entityRoute : nil
         let pair = PromoPairPlacement(item)
         let petalLayout = item.homePromoKind == .station
-        // Обвязка обложки — бадж, реакции, подписи — уходит вместе с ней, пока открыт
-        // экран карточки: зум прячет только саму обложку (источник).
-        let captionRoute = Self.zoomRoute(item, isCurrent: isCurrent)
-        let waveTrigger = petalWave.triggers[slotID(item, slotIndex: slotIndex)] ?? 0
-        let waveOrigin = petalLayout ? petalWave.origin : .zero
+        let settings = HomePresentationSettings.shared
+        let depthEnabled = settings.promoDepthEnabled
+        let waveEnabled = settings.promoLiftWaveEnabled
+        let slotID = PromoSlotID(copy: slotIndex / max(count, 1), item: item.id)
+        let pulse = petalWave.pulses[slotID]
+        let waveOrigin = pulse?.origin ?? .zero
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
             // Смена по ✕ (`showcaseSwappable`) — внутри лица: у станции она на слоях
             // по отдельности (`PromoStationCard`).
-            PromoCardFace(item: item, waveTrigger: waveTrigger, waveOrigin: waveOrigin)
+            PromoCardFace(item: item, breathing: playingPetalID == item.id
+                          && abs(slotIndex - (currentPage ?? slotIndex)) <= visibleCount / 2
+                          && actionBar.isMusicPlaying && MyVibeTracks.isVibe(actionBar.music?.id),
+                          depthEnabled: depthEnabled, waveEnabled: waveEnabled,
+                          waveTrigger: pulse?.trigger ?? 0, waveOrigin: waveOrigin)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
-        // Точка касания лепестка — начало волны запуска. Тап ловится вместе с кнопкой,
-        // а не вместо неё; у других видов жест выключен.
         .simultaneousGesture(
             SpatialTapGesture().onEnded { tap in
-                petalWave.origin = tap.location
-                petalWave.originAt = .now
+                petalWave.recordTouch(tap.location, at: slotID, time: ProcessInfo.processInfo.systemUptime)
             },
-            including: petalLayout ? .all : .subviews
+            including: waveEnabled && petalLayout && isCurrent && !fixedPreview ? .all : .subviews
         )
         // Источник зума — у каждой копии, но адрес экрана — только у центральной:
         // повторы того же айтема источником не становятся. Без `if`: смена ветки
@@ -443,21 +512,23 @@ struct ShowcasePromo: View {
         .overlay(alignment: .topLeading) {
             if case .album = item {
                 PromoAlbumBadge()
+                    .zoomSourceCaption(captionRoute)
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
-                    .padding(.leading, 16)
-                    .offset(y: -PromoAlbumBadge.boundsSize.height - 8)
+                    .padding(.leading, 8)
+                    .padding(.top, 8)
                     .allowsHitTesting(false)
-                    .zoomSourceCaption(captionRoute)
-                    .promoLayer(depth: PromoDepthMotion.pairDepth, alignment: .topLeading)
+                    .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.pairDepth, alignment: .topLeading)
             }
         }
         .overlay(alignment: pair.alignment) {
             // Пара — у центральной и соседей: стеклянных кнопок у всех 18 слотов не
             // держим. Сосед в окне — чтобы пара ушедшей с центра догасла, а не пропала.
             // У карточки «Продолжить» пары нет — на её месте кнопка (ниже).
-            if !petalLayout, item.promoResume == nil, abs(slotIndex - (page ?? slotIndex)) <= 1 {
+            if !petalLayout, item.promoResume == nil, abs(slotIndex - (currentPage ?? slotIndex)) <= 1 {
                 ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true, recommendation: item)
+                    .zoomSourceCaption(captionRoute)
+                    .allowsHitTesting(!fixedPreview)
                     .modifier(PromoReveal(
                         isShown: isShown,
                         hiddenScale: ShowcasePromoMotion.pairHiddenScale,
@@ -465,38 +536,36 @@ struct ShowcasePromo: View {
                     ))
                     .rotationEffect(pair.rotation)
                     .offset(pair.offset)
-                    .zoomSourceCaption(captionRoute)
-                    .promoLayer(depth: PromoDepthMotion.pairDepth, alignment: pair.alignment)
+                    .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.pairDepth, alignment: pair.alignment)
             }
         }
         .overlay(alignment: .topLeading) {
             if petalLayout, case .vibe(let vibe) = item {
                 VStack(spacing: 24) {
-                    // Волна идёт и по подписи — она лежит на капле. Пару ✕/✓ волна
-                    // не трогает: стеклянные кнопки в растр шейдера не попадают.
                     PromoStationCaption(title: vibe.title, station: vibe.promoStation)
+                        .zoomSourceCaption(captionRoute)
                         .showcaseSwappable()
                         .allowsHitTesting(false)
                         .modifier(LiftWave(
-                            trigger: waveTrigger,
-                            origin: CGPoint(
-                                x: waveOrigin.x - PromoStationLayout.textLeading * Layout.stationScale,
-                                y: waveOrigin.y - PromoStationLayout.textTop * Layout.stationScale
-                            ),
+                            trigger: pulse?.trigger ?? 0,
+                            origin: CGPoint(x: waveOrigin.x - Layout.stationCaptionOrigin.x,
+                                            y: waveOrigin.y - Layout.stationCaptionOrigin.y),
+                            enabled: waveEnabled,
                             overflow: PromoStationLayout.captionWaveOverflow(scale: Layout.stationScale),
                             scale: Layout.stationScale
                         ))
-                    if abs(slotIndex - (page ?? slotIndex)) <= 1 {
+                    if abs(slotIndex - (currentPage ?? slotIndex)) <= 1 {
                         ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true, recommendation: item)
+                            .zoomSourceCaption(captionRoute)
+                            .allowsHitTesting(!fixedPreview)
                             .modifier(PromoReveal(isShown: isShown,
                                                   hiddenScale: ShowcasePromoMotion.pairHiddenScale,
                                                   anchor: .center))
                     }
                 }
-                .frame(width: PromoStationLayout.textWidth * Layout.stationScale)
-                .offset(x: PromoStationLayout.textLeading * Layout.stationScale,
-                        y: PromoStationLayout.textTop * Layout.stationScale)
-                .promoLayer(depth: PromoDepthMotion.captionDepth, alignment: .topLeading)
+                .frame(width: Layout.stationCaptionWidth)
+                .offset(x: Layout.stationCaptionOrigin.x, y: Layout.stationCaptionOrigin.y)
+                .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.captionDepth, alignment: .topLeading)
             }
         }
 
@@ -509,11 +578,11 @@ struct ShowcasePromo: View {
                 // по ней открывает исполнителя, по обложке — альбом. Нажимаема только
                 // пока видна (`PromoReveal`).
                 PromoAlbumCaption(album: album, onArtist: album.artistRoute == nil ? nil : { openArtist(item) })
+                    .zoomSourceCaption(captionRoute)
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
-                    .zoomSourceCaption(captionRoute)
-                    .promoLayer(depth: PromoDepthMotion.captionDepth, alignment: .bottomLeading)
+                    .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.captionDepth, alignment: .bottomLeading)
             }
         }
 
@@ -522,26 +591,20 @@ struct ShowcasePromo: View {
                 // Имя исполнителя — показывается, как подпись альбома: только у центральной,
                 // когда встала. Не нажимается.
                 PromoCenteredCaption(title: caption)
+                    .zoomSourceCaption(captionRoute)
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
                     .offset(y: Layout.artist + Layout.centeredCaptionTop)
-                    .zoomSourceCaption(captionRoute)
-                    .promoLayer(depth: PromoDepthMotion.captionDepth, alignment: .top)
+                    .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.captionDepth, alignment: .top)
             }
         }
     }
 
     private func zoomID(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) -> AnyHashable {
-        if let route = Self.zoomRoute(item, isCurrent: isCurrent) { return AnyHashable(route) }
+        // «Продолжить» книги экрана не открывает — источником зума не становится; фильм
+        // открывает экран тайтла, как обычная карточка.
+        if isCurrent, item.opensPlayerOnTap == false, let route = item.entityRoute { return AnyHashable(route) }
         return AnyHashable("showcase-promo-copy-\(slotIndex)")
-    }
-
-    /// Экран, который разворачивается из карточки, — только у центральной копии.
-    /// «Продолжить» книги экрана не открывает — источником зума не становится; фильм
-    /// открывает экран тайтла, как обычная карточка.
-    private static func zoomRoute(_ item: ShowcaseBlock, isCurrent: Bool) -> EntityRoute? {
-        guard isCurrent, item.opensPlayerOnTap == false else { return nil }
-        return item.entityRoute
     }
 
     /// Тап по центральной — её экран; по соседу — сосед доезжает в центр. Станция «Моей
@@ -549,7 +612,7 @@ struct ShowcasePromo: View {
     /// «Продолжить» фильма — экран тайтла, плеер только по кнопке (правка пользователя
     /// 2026-10-14); «Продолжить» книги — сразу читалка, как его кнопка.
     private func tap(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) {
-        guard removal == nil else { return }
+        guard removal == nil, !(fixedPreview && isCurrent) else { return }
         tapHaptic()
         guard isCurrent else {
             PromoIntroSession.shared.interact()
@@ -561,18 +624,24 @@ struct ShowcasePromo: View {
             return
         }
         if case .vibe = item {
+            playingPetalID = item.id
             actionBar.openMyVibe()
-            // Волна заиграла — по лепестку расходится волна; тап, поставивший её на паузу, — без неё.
-            if actionBar.isMusicPlaying { petalWave.launch(at: slotID(item, slotIndex: slotIndex)) }
+            if HomePresentationSettings.shared.promoLiftWaveEnabled, actionBar.isMusicPlaying {
+                let slot = PromoSlotID(copy: slotIndex / max(count, 1), item: item.id)
+                // Кнопка и SpatialTapGesture могут завершиться в любом порядке.
+                // Следующий проход MainActor читает уже записанную точку этого тапа.
+                Task { @MainActor in
+                    await Task.yield()
+                    guard HomePresentationSettings.shared.promoLiftWaveEnabled,
+                          actionBar.isMusicPlaying, pageID == slot else { return }
+                    let size = Layout.stationSize
+                    petalWave.launch(at: slot, fallbackOrigin: CGPoint(x: size.width / 2, y: size.height / 2),
+                                     time: ProcessInfo.processInfo.systemUptime)
+                }
+            }
             return
         }
         if let route = item.entityRoute { navigation.open(route) }
-    }
-
-    /// Ключ слота — тот же, что у вью ряда: счётчик волны при айтеме, а не при месте —
-    /// после ✕ места сдвигаются, и чужой счётчик пустил бы волну у соседки.
-    private func slotID(_ item: ShowcaseBlock, slotIndex: Int) -> PromoSlotID {
-        PromoSlotID(copy: slotIndex / max(count, 1), item: item.id)
     }
 
     /// Тап по подписи альбома — экран исполнителя. Пока карточку убирают по ✕ или она
@@ -610,6 +679,9 @@ struct ShowcasePromo: View {
             return
         }
         hasInteracted = true
+        leftReturnTask?.cancel()
+        returningLeftID = nil
+        leftReturnProgress = 1
         swipeHaptics.reset()
         removal = slot
         revealTask?.cancel()
@@ -650,18 +722,27 @@ struct ShowcasePromo: View {
                 collapse = 1
             } completion: {
                 var undoRemoval: (@MainActor () -> Void)?
+                let previousID = current[(removedIndex + current.count - 1) % current.count].id
                 editSet {
+                    returningLeftID = previousID
+                    leftReturnProgress = 0
                     undoRemoval = catalog.removePromo(id: removed.id)
                     feedback.remove(removed.id)
                     removal = nil
                     collapse = 0
                     center(on: next.id)
                 }
+                // Перестановка набора намеренно мгновенная; проявление левого соседа
+                // начинается в следующем проходе, чтобы не потеряться в editSet.
+                leftReturnTask = Task { @MainActor in
+                    try? await Task.sleep(for: ShowcasePromoMotion.editSettle)
+                    guard !Task.isCancelled, returningLeftID == previousID else { return }
+                    withAnimation(PromoLeftReturnMotion.animation) { leftReturnProgress = 1 }
+                }
                 if let undoRemoval {
-                    ToastCenter.shared.showDislikedRecommendation {
+                    ToastCenter.shared.showDislikedRecommendation(title: PromoFeedbackCopy.disliked()) {
                         editSet {
                             undoRemoval()
-                            // Если другая карточка уже уходит, не сбиваем её анимацию.
                             if removal == nil { center(on: removed.id) }
                         }
                         scheduleReveal()
@@ -821,29 +902,51 @@ struct ShowcasePromo: View {
 private struct PromoCardMotion: ViewModifier, Animatable {
     let look: PromoCardLook
     let kind: HomePromoKind
-    var shift: CGFloat
-
+    let slotIndex: Int
+    let spacing: PromoCarouselSpacing?
+    let collapsedSpacing: PromoCarouselSpacing?
+    let removal: Int?
+    var collapse: CGFloat
+    private var shift: CGFloat { removal.map { slotIndex > $0 ? collapse : 0 } ?? 0 }
+    var leftEntry: CGFloat
+    var visibleCount: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var animatableData: CGFloat {
-        get { shift }
-        set { shift = newValue }
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(collapse, leftEntry) }
+        set { collapse = newValue.first; leftEntry = newValue.second }
     }
 
     func body(content: Content) -> some View {
         // Всё, что зависит от ширины экрана, берётся здесь, на главном потоке: замыкание
         // `visualEffect` не изолировано.
         let step = ShowcasePromoLayout.step
-        let drop = look.drop * ShowcasePromoLayout.scale
+        let viewportWidth = PlusMetrics.screenWidth
         let settings = HomePresentationSettings.shared
+        let geometry = ShowcasePromoLayout.geometry
+        let additionalDrop = settings.legacySideOffsetEnabled ? CGFloat(settings.legacySideOffset) : 0
+        let drop = geometry.neighbourDrop(additionalOffset: additionalDrop)
         let upright = settings.uprightEnabled
         let sideAngle = settings.sideAngle
-        // В центре — выбранная ширина. По бокам остаётся прежний размер контента.
-        let sideScale = ShowcasePromoLayout.sideScale / settings.multiplier(for: kind)
-        // Объём (`PromoDepthMotion`) — с «уменьшением движения» его нет.
-        let depth: Double = reduceMotion ? 0 : 1
-        return content.visualEffect { [look, shift, upright, sideAngle, sideScale, depth] content, proxy in
-            let position = ShowcasePromoLayout.position(of: proxy, step: step) - shift
+        let depth = settings.promoDepthEnabled && !reduceMotion
+        let card = geometry.card(for: kind)
+        let sideScale = CGSize(width: card.neighbour.width / card.main.width,
+                               height: card.neighbour.height / card.main.height)
+        return content.visualEffect { [look, shift, collapse, leftEntry, upright, sideAngle, sideScale, depth] content, proxy in
+            let rawPosition = ShowcasePromoLayout.position(of: proxy, step: step)
+            let position = rawPosition - shift
+            let horizontalOffset = spacing.map {
+                let start = $0.center(of: CGFloat(slotIndex), scrollPosition: CGFloat(slotIndex) - rawPosition)
+                let center: CGFloat
+                if let removal, let collapsedSpacing {
+                    let endIndex = slotIndex > removal ? slotIndex - 1 : slotIndex
+                    let end = collapsedSpacing.center(of: CGFloat(endIndex), scrollPosition: CGFloat(removal))
+                    center = start + (end - start) * collapse
+                } else {
+                    center = start
+                }
+                return center - viewportWidth / 2 - rawPosition * step
+            } ?? (-shift * step)
             let distance = ShowcasePromoLayout.ease(abs(position))
             let magnitude = look.centerTilt + (look.sideTilt - look.centerTilt) * Double(distance)
             // Знак чередуется по местам ряда: −1 по центру, +1 у соседей, −1 через одну.
@@ -852,23 +955,20 @@ private struct PromoCardMotion: ViewModifier, Animatable {
             let tilt = upright
                 ? sideAngle * Double(distance) * (position < 0 ? -1 : 1)
                 : -magnitude * cos(Double.pi * Double(position))
-            // Наклон — в плоскости карточки, затем сама плоскость поворачивается в 3D:
-            // к центру ряда (вогнутая дуга, внешний край соседа ближе) и чуть назад.
-            let swing = Double(PromoDepthMotion.swing(position))
             return content
-                .scaleEffect(1 - (1 - sideScale) * distance)
+                .scaleEffect(x: 1 + (sideScale.width - 1) * distance,
+                             y: 1 + (sideScale.height - 1) * distance)
+                .opacity(Double(leftEntry) * PromoViewportSizing.visibility(at: position, count: visibleCount))
                 .rotationEffect(.degrees(tilt))
                 .rotation3DEffect(
-                    .degrees(-PromoDepthMotion.yaw * swing * depth),
-                    axis: (x: 0, y: 1, z: 0),
-                    perspective: PromoDepthMotion.perspective
+                    .degrees(depth ? -PromoDepthMotion.yaw * Double(PromoDepthMotion.swing(position)) : 0),
+                    axis: (x: 0, y: 1, z: 0), perspective: PromoDepthMotion.perspective
                 )
                 .rotation3DEffect(
-                    .degrees(PromoDepthMotion.pitch * Double(distance) * depth),
-                    axis: (x: 1, y: 0, z: 0),
-                    perspective: PromoDepthMotion.perspective
+                    .degrees(depth ? PromoDepthMotion.pitch * Double(distance) : 0),
+                    axis: (x: 1, y: 0, z: 0), perspective: PromoDepthMotion.perspective
                 )
-                .offset(x: -shift * step, y: drop * distance)
+                .offset(x: horizontalOffset - PromoLeftReturnMotion.offset * (1 - leftEntry), y: drop * distance)
         }
     }
 }
@@ -896,11 +996,18 @@ private final class PromoFeedbackStore {
 @MainActor
 @Observable
 private final class PromoScrollState {
-    var position: CGFloat
+    var position: CGFloat {
+        didSet {
+            let next = Int(position.rounded())
+            if nearestSlot != next { nearestSlot = next }
+        }
+    }
+    private(set) var nearestSlot: Int
     var rasters = 0
 
     init(position: CGFloat) {
         self.position = position
+        self.nearestSlot = Int(position.rounded())
     }
 }
 
@@ -912,7 +1019,6 @@ private final class PromoScrollState {
 private struct PromoCardLook {
     let centerTilt: Double
     let sideTilt: Double
-    let drop: CGFloat
 
     init(id: String) {
         var hasher = Hasher()
@@ -921,7 +1027,6 @@ private struct PromoCardLook {
         // Только величины: знак задаёт место в ряду (`PromoCardMotion`).
         centerTilt = Double.random(in: ShowcasePromoLayout.centerTilt, using: &generator)
         sideTilt = Double.random(in: ShowcasePromoLayout.sideTilt, using: &generator)
-        drop = CGFloat(Double.random(in: ShowcasePromoLayout.sideDrop, using: &generator))
     }
 }
 
@@ -930,8 +1035,9 @@ private struct PromoCardLook {
 /// лепесток станции (`PromoStationCard`, кадр 208×249).
 private struct PromoCardFace: View {
     let item: ShowcaseBlock
-    /// Волна запуска по лепестку станции (`LiftWave`): смена пускает волну от точки
-    /// касания — в координатах карточки. У других видов не используется.
+    var breathing = false
+    var depthEnabled = false
+    var waveEnabled = false
     var waveTrigger = 0
     var waveOrigin = CGPoint.zero
 
@@ -958,13 +1064,11 @@ private struct PromoCardFace: View {
         case .vibe(let vibe):
             // Смена по ✕ — на слоях лепестка по отдельности, внутри него.
             PromoStationCard(title: vibe.title, station: vibe.promoStation,
-                             showsCaption: false, artDepth: PromoDepthMotion.artDepth)
-                .modifier(LiftWave(
-                    trigger: waveTrigger,
-                    origin: waveOrigin,
-                    overflow: PromoStationLayout.waveOverflow(scale: Layout.stationScale),
-                    scale: Layout.stationScale
-                ))
+                             showsCaption: false, breathing: breathing,
+                             artDepth: depthEnabled ? PromoDepthMotion.artDepth : 0)
+                .modifier(LiftWave(trigger: waveTrigger, origin: waveOrigin, enabled: waveEnabled,
+                                   overflow: PromoStationLayout.waveOverflow(scale: Layout.stationScale),
+                                   scale: Layout.stationScale))
         case .reading, .watching:
             EmptyView()
         }
@@ -1101,10 +1205,11 @@ private struct PromoPairPlacement {
                 offset: CGSize(width: origin.x * Layout.stationScale, height: origin.y * Layout.stationScale),
                 anchor: .center
             )
-        case .movie, .book:
-            // Книга без блока страниц (`card / book`): кромка обложки — кромка карточки,
-            // пара встаёт так же, как у постера.
+        case .movie:
             self.init(alignment: .topTrailing, offset: CGSize(width: -8, height: -PlusMetrics.circleButton / 2), anchor: .topTrailing)
+        case .book:
+            let inset: CGFloat = 0
+            self.init(alignment: .topTrailing, offset: CGSize(width: -8 - inset, height: inset - PlusMetrics.circleButton / 2), anchor: .topTrailing)
         case .reading, .watching:
             self.init(
                 alignment: .bottomLeading,
@@ -1119,39 +1224,6 @@ private struct PromoPairPlacement {
         self.offset = offset
         self.anchor = anchor
         self.rotation = rotation
-    }
-}
-
-/// Волна запуска «Моей волны» по лепестку (`LiftWave`): счётчики пусков по слотам —
-/// у каждого свой, смена одного не пускает волну у других — и последняя точка касания
-/// лепестка в координатах карточки.
-private struct PromoPetalWave {
-    var triggers: [PromoSlotID: Int] = [:]
-    var origin = CGPoint.zero
-    /// Когда поймана точка касания. Кнопка и жест точки срабатывают на одном отпускании
-    /// в любом порядке; старше `freshTap` — точка не от этого нажатия (VoiceOver жеста
-    /// не даёт), и волна идёт из середины лепестка.
-    var originAt = Date.distantPast
-    /// Начало идущей волны: новая, пока она не догасла, не пускается — перезапуск
-    /// обрывал бы её кольцо в один кадр.
-    var startedAt = Date.distantPast
-
-    static let freshTap: TimeInterval = 0.5
-
-    /// Пустить волну у слота, если прежняя догасла.
-    @MainActor
-    mutating func launch(at slot: PromoSlotID) {
-        let now = Date.now
-        guard now.timeIntervalSince(startedAt) >= LiftWaveConfig.duration else { return }
-        if now.timeIntervalSince(originAt) > Self.freshTap {
-            let scale = ShowcasePromoLayout.stationScale
-            origin = CGPoint(
-                x: PromoStationLayout.frame.width * scale / 2,
-                y: PromoStationLayout.frame.height * scale / 2
-            )
-        }
-        startedAt = now
-        triggers[slot, default: 0] += 1
     }
 }
 

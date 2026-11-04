@@ -3,19 +3,26 @@ import SwiftUI
 extension HomeDevControls {
     var layoutControls: some View {
         VStack(alignment: .leading, spacing: 20) {
-            section("Размер Recently") {
-                sliderTile("Высота в свёрнутом виде", value: "\(Int(settings.recentlyHeight)) pt") {
-                    Slider(value: $settings.recentlyHeight, in: 48...96, step: 4)
-                        .accessibilityLabel("Высота карточек Recently, шаг 4 пункта")
-                }
-                hint(
-                    "При оттяге карточки раскрываются до 96 pt и показывают подписи. Прокрутка возвращает выбранную высоту."
-                )
+            section("Recently") {
+                Toggle("Скрыть Recently", isOn: $settings.hideRecently)
+                hint("Высота — 64 pt. При оттяге карточки раскрываются до 112 pt и показывают подписи.")
             }
-            section("Размер промокарточек") {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    toggleTile("Менять размер", isOn: $settings.sizesEnabled)
-                    toggleTile("Центр без наклона", isOn: $settings.uprightEnabled)
+            section("Геометрия карусели") {
+                Toggle("Объём и параллакс при свайпе", isOn: $settings.promoDepthEnabled)
+                    .accessibilityIdentifier("promo-depth-enabled")
+                Toggle("Волна по лепестку при запуске", isOn: $settings.promoLiftWaveEnabled)
+                    .accessibilityIdentifier("promo-lift-wave-enabled")
+                hint("Два независимых эксперимента. Дыхание лепестка работает и без них.")
+                Toggle("Центр без наклона", isOn: $settings.uprightEnabled)
+                Toggle("Лента всех сочетаний типов", isOn: $settings.promoPairPreviewEnabled)
+                hint("Отдельная тестовая лента: все 25 пар пяти типов, включая одинаковые рядом.")
+                Toggle("Настраивать offset соседей", isOn: $settings.legacySideOffsetEnabled)
+                if settings.legacySideOffsetEnabled {
+                    sliderTile("Offset соседей", value: "\(Int(settings.legacySideOffset)) pt") {
+                        Slider(value: $settings.legacySideOffset, in: -96...96, step: 4)
+                            .accessibilityLabel("Вертикальный offset соседей карусели")
+                    }
+                    hint("Минус — выше, плюс — ниже. Центральная карточка остаётся на месте.")
                 }
             }
             section("Ширина по типу контента") {
@@ -24,7 +31,7 @@ extension HomeDevControls {
                         let width = settings.width(for: kind)
                         sliderTile(
                             kind.title,
-                            value: "\(Int(width)) pt · \(String(format: "%.2f", width / kind.originalWidth))×"
+                            value: "\(Int(width)) pt · на 440 pt"
                         ) {
                             Slider(
                                 value: Binding(
@@ -37,9 +44,7 @@ extension HomeDevControls {
                         }
                     }
                 }
-                .disabled(!settings.sizesEnabled)
-                .opacity(settings.sizesEnabled ? 1 : 0.45)
-                hint("Шаг 4 pt. Значения для базового экрана 402 pt.")
+                hint("Шаг 4 pt. Ширины основной карточки на экране 440 pt.")
             }
             section("Наклон боковых карточек") {
                 sliderTile("Один угол для обеих сторон", value: "±\(Int(settings.sideAngle))°") {
@@ -63,13 +68,10 @@ extension HomeDevControls {
                         .accessibilityLabel("Зазор между recently и промоблоком")
                 }
                 .disabled(!settings.heroGapEnabled)
-                Text("Поднять полки под промоблоком").plusText(.textS, .medium)
-                Picker("Поднять полки", selection: $settings.shelfLift) {
-                    ForEach(HomeShelfLift.allCases) { value in
-                        Text(value.title).tag(value)
-                    }
+                sliderTile("Поднять полки под промоблоком", value: "\(Int(settings.shelfLift)) pt") {
+                    Slider(value: $settings.shelfLift, in: -128...320, step: 4)
+                        .accessibilityLabel("Подъём полок, шаг 4 пункта")
                 }
-                .pickerStyle(.segmented)
                 .disabled(!settings.shelvesEnabled)
             }
         }

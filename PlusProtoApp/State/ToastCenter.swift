@@ -84,8 +84,8 @@ final class ToastCenter {
     }
 
     /// Отмена относится только к текущему сообщению; замена/скрытие освобождает действие.
-    func showDislikedRecommendation(undo: @escaping @MainActor () -> Void) {
-        show(title: "Будем показывать меньше такого", action: .undoRecommendation)
+    func showDislikedRecommendation(title: String = "Будем показывать меньше такого", undo: @escaping @MainActor () -> Void) {
+        show(title: title, action: .undoRecommendation)
         undoRecommendation = undo
     }
 

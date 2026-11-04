@@ -3,15 +3,7 @@ import SwiftUI
 extension HomePresentationSettings {
     func setWidth(_ width: Double, for kind: HomePromoKind) {
         let value = (min(max(width, 160), 400) / 4).rounded() * 4
-        if kind == .artist {
-            promoArtistWidth = value
-        } else if kind == .movie {
-            promoMovieWidth = value
-        } else if kind == .book {
-            promoBookWidth = value
-        } else {
-            widths[kind.rawValue] = value
-        }
+        legacyWidths[kind.rawValue] = value
     }
 
     func resetWaveShader() {

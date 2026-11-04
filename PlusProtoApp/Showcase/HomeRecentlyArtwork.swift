@@ -10,16 +10,21 @@ extension HomeQuickAccess {
         let contentWidth = width * HomeQuickAccessLayout.scale
         let width = contentWidth
         return content().frame(width: contentWidth, height: HomeQuickAccessLayout.height)
+        .scaleEffect(1 + 0.025 * HomeQuickAccessLayout.mediaPulse, anchor: .bottom)
+        .offset(y: HomeQuickAccessLayout.mediaStretch * 0.2 - HomeQuickAccessLayout.mediaPulse * 2)
         .overlay(alignment: .bottom) {
             FadingCardCaption(title: title, width: width - leading)
                 .padding(.leading, leading)
                 .opacity(HomeQuickAccessLayout.labelProgress)
-                .frame(height: 16)
-                .offset(y: 20)
+                .frame(height: HomeQuickAccessLayout.captionHeight)
+                .mask(alignment: .top) {
+                    Rectangle().frame(height: HomeQuickAccessLayout.captionHeight * HomeQuickAccessLayout.captionReservation)
+                }
+                .offset(y: HomeQuickAccessLayout.captionSpace)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-        .padding(.bottom, 20 * HomeQuickAccessLayout.labelProgress)
+        .padding(.bottom, HomeQuickAccessLayout.captionSpace * HomeQuickAccessLayout.captionReservation)
         .frame(width: width)
         .preference(key: HomeRecentlyWidths.self, value: [baseWidth])
         .contentShape(Rectangle())
@@ -62,8 +67,6 @@ extension HomeQuickAccess {
             .frame(width: bookSlotWidth * HomeQuickAccessLayout.scale, height: HomeQuickAccessLayout.height)
     }
 
-    /// Книга — общая карточка книги (`BookFigure`, `card / book`) высотой ряда: слот
-    /// 54 × 80 макета, обложка заполняет его целиком.
     private func bookArtwork(_ source: ArtworkSource) -> some View {
         let scale = HomeQuickAccessLayout.scale
         let geometry = BookFigureGeometry(coverHeight: 80 * scale)

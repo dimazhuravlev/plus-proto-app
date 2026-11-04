@@ -60,15 +60,21 @@ struct ShowcaseFeedView: View {
         ScrollView {
             VStack(spacing: 0) {
                 VStack(spacing: HomeQuickAccessLayout.bottom) {
-                    HomeQuickAccess(feed: feed)
-                        .zIndex(Double(feed.blocks.count + 1))
+                    if !HomePresentationSettings.shared.hideRecently {
+                        HomeQuickAccess(feed: feed)
+                            .zIndex(Double(feed.blocks.count + 1))
+                    }
                     if !feed.promo.isEmpty {
+                        if HomePresentationSettings.shared.promoPairPreviewEnabled {
+                            HomePromoPairPreview(items: ShowcasePromo.composed(catalog.homePromo(feed.promo)), zoom: zoom)
+                        } else {
                         ShowcasePromo(
                             items: ShowcasePromo.composed(catalog.homePromo(feed.promo)),
                             zoom: zoom,
                             savedIndex: $promoIndex
                         )
                         .showcaseAppear()
+                        }
                     }
                 }
                 .padding(.top, ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + HomeQuickAccessLayout.top)
@@ -77,13 +83,19 @@ struct ShowcaseFeedView: View {
                     // Блока «Что думаешь?» под полками нет (правка пользователя 2026-10-22):
                     // `RateBlock` остался только в карточке «Продолжить смотреть» ленты без полок.
                     HomeShelves(feed: feed)
-                        .padding(.top, ShowcaseLayout.promoToFirstBlock - CGFloat(HomePresentationSettings.shared.shelfLift.rawValue))
+                        .padding(.top, ShowcaseLayout.promoToFirstBlock - CGFloat(HomePresentationSettings.shared.shelfLift))
                 } else {
                     LegacyShowcaseFeed(feed: feed, zoom: zoom, prepareReplacement: prepareReplacement)
                 }
             }
-            .background(HomeRecentlyScrollBridge(controller: recentlyScroll))
+            .background {
+                if !HomePresentationSettings.shared.hideRecently {
+                    HomeRecentlyScrollBridge(controller: recentlyScroll)
+                }
+            }
             .frame(width: PlusMetrics.screenWidth)
+            .offset(y: !HomePresentationSettings.shared.hideRecently
+                    ? -HomeRecentlyPullState.shared.responsiveNativePull : 0)
             // Клиренс под хромом ленте уже даёт `contentMargins` в корне — это воздух
             // сверх него, чтобы последняя карточка не притиралась к панели действий.
             .padding(.bottom, ShowcaseLayout.feedBottomPadding)
@@ -91,11 +103,12 @@ struct ShowcaseFeedView: View {
         .scrollIndicators(.hidden)
         .scrollPosition($scrollPosition)
         .trackNavBarScroll(into: $scrollOffset)
-        .onScrollPhaseChange { _, phase, context in
-            let offset = context.geometry.contentOffset.y + context.geometry.contentInsets.top
-            recentlyScroll.phaseChanged(phase, offset: offset)
+        .onScrollPhaseChange { _, phase, _ in
+            guard !HomePresentationSettings.shared.hideRecently else { return }
+            recentlyScroll.phaseChanged(phase)
         }
         .onDisappear { recentlyScroll.reset() }
+        .onChange(of: HomePresentationSettings.shared.hideRecently) { _, _ in recentlyScroll.reset() }
         // Повторный тап по табу «Плюс» на корне — к началу ленты, как в системных
         // таббарах (правка пользователя 2026-10-03).
         .onChange(of: navigation.scrollToTopRequests[.plus]) {

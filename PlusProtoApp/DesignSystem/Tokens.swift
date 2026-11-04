@@ -156,7 +156,7 @@ enum PlusMetrics {
 
     private static var cachedScreenWidth: CGFloat?
 
-    /// Ширина экрана устройства — константа процесса (приложение заперто в портрете).
+    /// На iPhone ширина кэшируется для портрета; на iPad берётся актуальная ширина сцены.
     /// От неё считается адаптивная вёрстка (правила 2 и 4 CLAUDE.md): размер вью,
     /// от которого зависит её же раскладка, не читаем.
     ///
@@ -166,11 +166,16 @@ enum PlusMetrics {
     /// Изоляция: `@MainActor` — `UIApplication.shared` главного потока; все потребители — вью.
     @MainActor
     static var screenWidth: CGFloat {
-        if let cachedScreenWidth { return cachedScreenWidth }
-        guard let bounds = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
+        let bounds = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
             .first?.effectiveGeometry.coordinateSpace.bounds
-        else { return designWidth }
+        // На iPad окно меняет размер: телефонный кэш и min(width,height)
+        // давали устаревшую ширину при повороте и изменении окна.
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return bounds?.width ?? designWidth
+        }
+        if let cachedScreenWidth { return cachedScreenWidth }
+        guard let bounds else { return designWidth }
         let width = min(bounds.width, bounds.height)
         cachedScreenWidth = width
         return width

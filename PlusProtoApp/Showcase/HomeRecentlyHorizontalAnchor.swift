@@ -32,10 +32,14 @@ struct HomeRecentlyHorizontalAnchor: UIViewRepresentable {
         private var scale: CGFloat = 1
         private var committedScale: CGFloat?
         private var lastOffset: CGFloat = 0
+        private var resizeAnchor: (offset: CGFloat, scale: CGFloat)?
         private var adjusting = false
 
         func configure(widths: [CGFloat], scale: CGFloat) {
-            if self.widths != widths { committedScale = nil }
+            if self.widths != widths {
+                committedScale = nil
+                resizeAnchor = nil
+            }
             self.widths = widths
             self.scale = scale
             connect()
@@ -60,9 +64,18 @@ struct HomeRecentlyHorizontalAnchor: UIViewRepresentable {
                         candidate.observe(\.contentOffset, options: [.new]) { [weak self] scroll, _ in
                             MainActor.assumeIsolated {
                                 guard let self, !self.adjusting,
-                                      self.committedScale == self.scale,
-                                      self.matchesContentSize(scroll, scale: self.scale) else { return }
-                                self.lastOffset = scroll.contentOffset.x
+                                      let rendered = self.renderedScale(scroll),
+                                      let committed = self.committedScale,
+                                      abs(rendered - committed) < 0.0001 else { return }
+                                if scroll.isDragging || scroll.isTracking || scroll.isDecelerating {
+                                    // Настоящий горизонтальный жест выбирает новую точку.
+                                    self.resizeAnchor = nil
+                                    self.lastOffset = scroll.contentOffset.x
+                                } else if self.resizeAnchor != nil {
+                                    self.reconcile()
+                                } else {
+                                    self.lastOffset = scroll.contentOffset.x
+                                }
                             }
                         }
                     ]
@@ -72,30 +85,44 @@ struct HomeRecentlyHorizontalAnchor: UIViewRepresentable {
             }
         }
 
-        private func matchesContentSize(_ scroll: UIScrollView, scale: CGFloat) -> Bool {
-            let expected = HomeRecentlyCenterAnchor.width(widths, scale: scale,
-                gap: HomeQuickAccessLayout.gap, leading: HomeQuickAccessLayout.leading,
-                trailing: ServiceTopNavLayout.side)
-            return abs(scroll.contentSize.width - expected) < 1
+        private func renderedScale(_ scroll: UIScrollView) -> CGFloat? {
+            HomeRecentlyCenterAnchor.renderedScale(contentWidth: scroll.contentSize.width,
+                widths: widths, gap: HomeQuickAccessLayout.gap,
+                leading: HomeQuickAccessLayout.leading, trailing: ServiceTopNavLayout.side)
         }
 
         private func reconcile() {
             guard !adjusting, let scroll, !widths.isEmpty,
-                  matchesContentSize(scroll, scale: scale) else { return }
+                  let rendered = renderedScale(scroll) else { return }
             guard let oldScale = committedScale else {
-                committedScale = scale
+                // При смене набора ждём его собственную раскладку. Старую ширину
+                // контента нельзя интерпретировать как масштаб нового набора.
+                let expected = HomeRecentlyCenterAnchor.width(widths, scale: scale,
+                    gap: HomeQuickAccessLayout.gap, leading: HomeQuickAccessLayout.leading,
+                    trailing: ServiceTopNavLayout.side)
+                guard abs(scroll.contentSize.width - expected) < 1 else { return }
+                committedScale = rendered
                 lastOffset = scroll.contentOffset.x
                 return
             }
-            guard oldScale != scale else { return }
-            let offset = HomeRecentlyCenterAnchor.offset(lastOffset, viewport: scroll.bounds.width,
-                widths: widths, from: oldScale, to: scale,
+            guard abs(oldScale - rendered) > 0.0001 || resizeAnchor != nil else { return }
+            if resizeAnchor == nil { resizeAnchor = (lastOffset, oldScale) }
+            guard let anchor = resizeAnchor else { return }
+            let offset = HomeRecentlyCenterAnchor.offset(anchor.offset, viewport: scroll.bounds.width,
+                widths: widths, from: anchor.scale, to: rendered,
                 gap: HomeQuickAccessLayout.gap, leading: HomeQuickAccessLayout.leading,
                 trailing: ServiceTopNavLayout.side)
             adjusting = true
-            committedScale = scale
+            committedScale = rendered
             lastOffset = offset
-            scroll.contentOffset.x = offset
+            // В той же раскладке, что и изменение ширины, без отдельной анимации
+            // contentOffset. Иначе доводка высоты и удержание центра расходятся.
+            UIView.performWithoutAnimation {
+                if abs(scroll.contentOffset.x - offset) > 0.01 {
+                    scroll.setContentOffset(CGPoint(x: offset, y: scroll.contentOffset.y), animated: false)
+                }
+            }
+            if abs(rendered - scale) < 0.0001 { resizeAnchor = nil }
             adjusting = false
         }
 
@@ -104,6 +131,7 @@ struct HomeRecentlyHorizontalAnchor: UIViewRepresentable {
             observations.removeAll()
             scroll = nil
             committedScale = nil
+            resizeAnchor = nil
         }
     }
 }

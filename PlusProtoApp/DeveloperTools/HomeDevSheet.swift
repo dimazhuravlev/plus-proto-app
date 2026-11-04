@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HomeDevSheet: View {
+    let onOpenSurvey: (SurveyPreviewSource) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var detent: PresentationDetent = .fraction(0.5)
 
@@ -17,7 +18,7 @@ struct HomeDevSheet: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
             .padding(.bottom, 12)
-            HomeDevControls()
+            HomeDevControls(onOpenSurvey: onOpenSurvey)
         }
         .foregroundStyle(Color.fillOne)
         .preferredColorScheme(.dark)
@@ -40,6 +41,7 @@ enum HomeDevTab: String, CaseIterable, Identifiable {
 }
 
 struct HomeDevControls: View {
+    let onOpenSurvey: (SurveyPreviewSource) -> Void
     @Bindable var settings = HomePresentationSettings.shared
     @State private var tab: HomeDevTab = .layout
     let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
@@ -57,7 +59,22 @@ struct HomeDevControls: View {
                     switch tab {
                     case .layout: layoutControls
                     case .content: contentControls
-                    case .general: DebugGeneralControls()
+                    case .general:
+                        section("Опросы") {
+                            HomeDevFlowLayout(spacing: 8) {
+                                Button("WebView") { onOpenSurvey(.standard) }
+                                Button("Плитки") { onOpenSurvey(.tiles) }
+                                Button("Опрос 3") { onOpenSurvey(.surveyThree) }
+                                Button("Опрос 4") { onOpenSurvey(.surveyFour) }
+                                Button("Опрос 5") { onOpenSurvey(.surveyFive) }
+                                Button("На арабском") { onOpenSurvey(.arabic) }
+                                Button("С эмодзи") { onOpenSurvey(.emoji) }
+                            }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            hint("Превью Отклика внутри нативной iOS-шторки")
+                        }
+                        DebugGeneralControls()
                     }
 
                 }

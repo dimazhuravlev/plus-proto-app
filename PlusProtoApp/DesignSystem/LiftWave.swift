@@ -41,20 +41,33 @@ struct LiftWave: ViewModifier {
     let trigger: Int
     /// Точка касания — в координатах вью без `overflow`
     let origin: CGPoint
+    var enabled = true
     /// Поле под рисунок за кадром вью
     var overflow = EdgeInsets()
     /// Масштаб чисел `LiftWaveConfig` — у лепестка промо `stationScale`
     var scale: CGFloat = 1
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     private typealias Config = LiftWaveConfig
 
+    @ViewBuilder
     func body(content: Content) -> some View {
+        if enabled, scenePhase == .active {
+            wave(content)
+        } else {
+            content
+        }
+    }
+
+    private func wave(_ content: Content) -> some View {
         let center = CGPoint(x: origin.x + overflow.leading, y: origin.y + overflow.top)
         let factor = Float(scale)
         let amplitude = reduceMotion ? 0 : Config.amplitude * factor
-        content
+        let shade = reduceMotion ? 0 : Config.shade
+        let flash = reduceMotion ? Config.reducedFlash : 0
+        return content
             .padding(overflow)
             .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, time in
                 view.layerEffect(
@@ -64,8 +77,8 @@ struct LiftWave: ViewModifier {
                         .float(Config.speed * factor),
                         .float(Config.width * factor),
                         .float(amplitude),
-                        .float(reduceMotion ? 0 : Config.shade),
-                        .float(reduceMotion ? Config.reducedFlash : 0),
+                        .float(shade),
+                        .float(flash),
                         .float(Float(Config.duration))
                     ),
                     maxSampleOffset: CGSize(width: CGFloat(amplitude), height: CGFloat(amplitude)),

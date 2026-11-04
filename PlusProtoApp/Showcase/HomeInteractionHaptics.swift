@@ -4,6 +4,12 @@ import UIKit
 @MainActor enum HomeInteractionHaptics {
     private static let intensity: CGFloat = 0.7
     private static let actionDelay: Duration = .milliseconds(70)
+    private static let recentlyGenerator = UIImpactFeedbackGenerator(style: .soft)
+    static func prepareRecently() { recentlyGenerator.prepare() }
+    static func recently(expanded: Bool) {
+        recentlyGenerator.impactOccurred(intensity: expanded ? 0.55 : 0.3)
+    }
+
     private static let carouselGenerator = UIImpactFeedbackGenerator(style: .soft)
 
     static func prepareCarousel() { carouselGenerator.prepare() }

@@ -7,6 +7,17 @@ enum HomeRecentlyCenterAnchor {
         leading + widths.reduce(0, +) * scale + CGFloat(max(0, widths.count - 1)) * gap + trailing
     }
 
+    /// UIScrollView сообщает промежуточную ширину во время доводки размера.
+    /// Фиксированные gap и поля вычитаются до восстановления масштаба медиа.
+    static func renderedScale(contentWidth: CGFloat, widths: [CGFloat], gap: CGFloat,
+                              leading: CGFloat, trailing: CGFloat) -> CGFloat? {
+        let mediaWidth = widths.reduce(0, +)
+        guard mediaWidth > 0 else { return nil }
+        let fixedWidth = leading + trailing + CGFloat(max(0, widths.count - 1)) * gap
+        let scale = (contentWidth - fixedWidth) / mediaWidth
+        return scale.isFinite && scale > 0 ? scale : nil
+    }
+
     static func offset(_ offset: CGFloat, viewport: CGFloat, widths: [CGFloat],
                        from oldScale: CGFloat, to newScale: CGFloat,
                        gap: CGFloat, leading: CGFloat, trailing: CGFloat) -> CGFloat {

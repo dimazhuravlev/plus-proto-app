@@ -4,117 +4,32 @@ import UIKit
 /// Нативный скролл расходует первые пункты свайпа на сворачивание Recently.
 /// Его delegate и распознаватели SwiftUI остаются владельцами обычной прокрутки.
 @MainActor final class HomeRecentlyScrollController {
-    private var policy = HomeRecentlyPullPolicy()
+    private let responsive = HomeRecentlyResponsiveScrollController()
     private weak var scrollView: UIScrollView?
     private var observation: NSKeyValueObservation?
-    private var isAdjustingOffset = false
-    private var collapseTravel: CGFloat?
-    private var consumedTravel: CGFloat = 0
-    private var collapseOrigin: CGFloat = 0
-    private var gestureActive = false
-    private var didCollapse = false
-
-    private func beginGesture(at offset: CGFloat) {
-        guard !gestureActive else { return }
-        gestureActive = true
-        let progress = HomeRecentlyPullState.shared.progress
-        collapseTravel = progress > 0 ? progress * HomeRecentlyPullConfig.travel : nil
-        collapseOrigin = max(0, offset)
-        consumedTravel = 0
-        didCollapse = false
-        policy.begin(at: offset, progress: progress)
-    }
 
     func attach(_ scroll: UIScrollView) {
         guard scrollView !== scroll else { return }
         detach()
         scrollView = scroll
+        responsive.attach(scroll)
         observation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] scroll, _ in
-            // UIScrollView меняет геометрию на главном потоке; синхронная коррекция
-            // нужна до отрисовки кадра, иначе страница сначала дёрнется вверх.
-            MainActor.assumeIsolated { self?.didScroll(scroll) }
+            // Коррекция нужна на главном потоке до отрисовки следующего кадра.
+            MainActor.assumeIsolated { self?.responsive.didScroll(scroll) }
         }
     }
 
-    func phaseChanged(_ phase: ScrollPhase, offset: CGFloat) {
-        let next: HomeRecentlyPullPolicy.Phase
-        switch phase {
-        case .idle: next = .idle
-        case .tracking: next = .tracking
-        case .interacting: next = .interacting
-        default: next = .settling
-        }
-        if next == .tracking || next == .interacting {
-            beginGesture(at: offset)
-        } else if next == .idle || next == .settling {
-            collapseTravel = nil
-            gestureActive = false
-        }
-        if next == .idle, didCollapse, HomeRecentlyPullState.shared.progress > 0 {
-            // Короткий закрывающий свайп без инерции тоже завершает режим,
-            // а не оставляет ленту навсегда в промежуточном размере.
-            let progress = HomeRecentlyPullState.shared.progress
-            _ = policy.consume(progress * HomeRecentlyPullConfig.travel, progress: progress)
-            withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.2)) {
-                HomeRecentlyPullState.shared.progress = 0
-            }
-            HomeInteractionHaptics.action()
-        }
-        policy.setPhase(next, offset: offset, progress: HomeRecentlyPullState.shared.progress)
-        if next == .interacting, let scrollView { didScroll(scrollView) }
-    }
-
-    private func didScroll(_ scroll: UIScrollView) {
-        guard !isAdjustingOffset else { return }
-        let offset = scroll.contentOffset.y + scroll.adjustedContentInset.top
-        if scroll.isDragging { beginGesture(at: offset) }
-        // В первом кадре UIKit уже двигается, а SwiftUI ещё может сообщать tracking.
-        if policy.phase == .tracking && scroll.isDragging {
-            policy.setPhase(.interacting, offset: offset, progress: HomeRecentlyPullState.shared.progress)
-        }
-        let update: HomeRecentlyPullPolicy.Update?
-        let correctedOffset: CGFloat?
-        let forward = max(0, -scroll.panGestureRecognizer.translation(in: scroll).y)
-        if let travel = collapseTravel, policy.phase == .interacting,
-           forward > 0 || consumedTravel > 0 {
-            // Считаем ход пальца, а не повторные contentOffset после нашей коррекции.
-            // После закрытия остаток того же свайпа сразу передаётся странице.
-            let consumed = min(forward, travel)
-            let delta = max(0, consumed - consumedTravel)
-            consumedTravel = max(consumedTravel, consumed)
-            if delta > 0 { didCollapse = true }
-            update = policy.consume(delta, progress: HomeRecentlyPullState.shared.progress)
-            correctedOffset = collapseOrigin + max(0, forward - travel)
-        } else {
-            let origin = didCollapse ? collapseOrigin : 0
-            update = policy.move(to: offset - origin, progress: HomeRecentlyPullState.shared.progress)
-            correctedOffset = update?.scrollOffset.map { $0 + origin }
-        }
-        guard update != nil || correctedOffset != nil else { return }
-        isAdjustingOffset = true
-        defer { isAdjustingOffset = false }
-        if let corrected = correctedOffset {
-            scroll.contentOffset.y = corrected - scroll.adjustedContentInset.top
-        }
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        if let update {
-            withTransaction(transaction) { HomeRecentlyPullState.shared.progress = update.progress }
-            if update.feedback != nil { HomeInteractionHaptics.action() }
-        }
+    func phaseChanged(_ phase: ScrollPhase) {
+        responsive.phaseChanged(phase)
     }
 
     func reset() {
-        policy.reset()
-        collapseTravel = nil
-        consumedTravel = 0
-        collapseOrigin = 0
-        gestureActive = false
-        didCollapse = false
-        HomeRecentlyPullState.shared.progress = 0
+        responsive.reset()
+        HomeRecentlyPullState.shared.reset()
     }
 
     func detach() {
+        responsive.detach()
         observation?.invalidate()
         observation = nil
         scrollView = nil
@@ -156,5 +71,98 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
                 ancestor = view.superview
             }
         }
+    }
+}
+
+/// Разделяет физический ход списка и пороговую доводку миниатюр.
+@MainActor private final class HomeRecentlyResponsiveScrollController: NSObject {
+    private weak var scroll: UIScrollView?
+    private var policy = HomeRecentlyResponsivePullPolicy()
+    private var active = false
+    private var adjusting = false
+    private var ownsPull = false
+
+    func attach(_ scroll: UIScrollView) {
+        guard self.scroll !== scroll else { return }
+        detach()
+        self.scroll = scroll
+        scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
+    }
+
+    private func begin(_ scroll: UIScrollView) {
+        guard !active else { return }
+        active = true
+        let state = HomeRecentlyPullState.shared
+        state.interruptResponsiveReturn()
+        policy.begin(offset: scroll.contentOffset.y + scroll.adjustedContentInset.top,
+                     pullRatio: state.responsivePullRatio, expanded: state.responsiveExpanded)
+        ownsPull = state.responsivePullRatio > 0 || (ownsPull && scroll.contentOffset.y + scroll.adjustedContentInset.top < 0)
+        if !ownsPull { state.updateResponsiveNativePull(0) }
+        HomeInteractionHaptics.prepareRecently()
+    }
+
+    @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
+        guard let scroll else { return }
+        switch pan.state {
+        case .began: begin(scroll)
+        case .changed: didScroll(scroll)
+        case .ended, .cancelled, .failed: release()
+        default: break
+        }
+    }
+
+    func phaseChanged(_ phase: ScrollPhase) {
+        if phase == .tracking || phase == .interacting, let scroll { begin(scroll) }
+        if phase == .idle || phase == .decelerating || phase == .animating { release() }
+    }
+
+    func didScroll(_ scroll: UIScrollView) {
+        guard !adjusting else { return }
+        let state = HomeRecentlyPullState.shared
+        let offset = scroll.contentOffset.y + scroll.adjustedContentInset.top
+        // Нативный возврат наблюдаем и после отпускания, но он не меняет цель.
+        if ownsPull {
+            state.updateResponsiveNativePull(max(0, -offset))
+            if !active, offset >= -0.01 { ownsPull = false }
+        }
+        guard scroll.isDragging else { return }
+        begin(scroll)
+        guard let update = policy.move(offset: offset, translation: scroll.panGestureRecognizer.translation(in: scroll).y) else { return }
+        ownsPull = ownsPull || update.pullRatio > 0
+        adjusting = true
+        defer { adjusting = false }
+        if ownsPull { state.updateResponsiveNativePull(max(0, -offset)) }
+        state.updateResponsivePull(update.pullRatio, overstretch: update.overstretch)
+        if let expanded = update.expandedChanged {
+            state.setResponsiveExpanded(expanded)
+            HomeInteractionHaptics.recently(expanded: expanded)
+            HomeInteractionHaptics.prepareRecently()
+        }
+        if let corrected = update.scrollOffset,
+           abs(scroll.contentOffset.y - (corrected - scroll.adjustedContentInset.top)) > 0.01 {
+            scroll.contentOffset.y = corrected - scroll.adjustedContentInset.top
+            state.updateResponsiveNativePull(max(0, -corrected))
+        }
+    }
+
+    private func release() {
+        guard active else { return }
+        active = false
+        let state = HomeRecentlyPullState.shared
+        guard ownsPull || state.responsivePullRatio > 0 else { return }
+        state.finishResponsivePull()
+    }
+
+    func reset() {
+        active = false
+        ownsPull = false
+        policy = HomeRecentlyResponsivePullPolicy()
+        HomeRecentlyPullState.shared.stopResponsiveSettling()
+    }
+
+    func detach() {
+        scroll?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
+        scroll = nil
+        reset()
     }
 }
