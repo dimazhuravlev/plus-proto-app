@@ -294,7 +294,7 @@ struct PromoStationPetal: View {
         guard VibePromoStation.palette.indices.contains(paletteIndex) else { return nil }
         let color = VibePromoStation.palette[paletteIndex]
         return PromoPetalCache.image(for: VibePromoStation(
-            id: "palette-\(paletteIndex)", name: "", asset: "", fill: color.fill, rim: color.rim
+            id: "palette-\(paletteIndex)", name: "", asset: "", fillHex: color.fill, rimHex: color.rim
         ))
     }
 
@@ -326,6 +326,7 @@ private enum PromoPetalCache {
         let renderer = ImageRenderer(content: PromoStationBlob(
             fill: station.fill,
             rim: station.rim,
+            neighbor: PromoStationTint.neighbor(ofHex: station.fillHex),
             scale: ShowcasePromoLayout.stationScale
         ))
         renderer.scale = displayScale
@@ -352,11 +353,17 @@ enum PromoStationTint {
     /// Жёлтый — 60° круга тонов.
     private static let yellow: CGFloat = 60.0 / 360.0
 
-    static func neighbor(of color: Color) -> Color {
+    /// Считается по числам хекса, а не по готовому `Color`: тон поворачивается в пространстве
+    /// палитры (`PlusColorSpace`), и в P3 сосед остаётся в P3. `UIColor` здесь — только
+    /// калькулятор RGB ↔ HSB над числами 0…1.
+    static func neighbor(ofHex hex: UInt32) -> Color {
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        guard UIColor(color).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
-            return color
-        }
+        UIColor(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1
+        ).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
         // Кратчайший путь по кругу тонов к жёлтому, не дальше самого жёлтого.
         var delta = yellow - hue
         if delta > 0.5 { delta -= 1 }
@@ -365,7 +372,10 @@ enum PromoStationTint {
         var shifted = hue + step
         if shifted < 0 { shifted += 1 }
         if shifted >= 1 { shifted -= 1 }
-        return Color(hue: Double(shifted), saturation: Double(saturation), brightness: Double(brightness), opacity: Double(alpha))
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0
+        UIColor(hue: shifted, saturation: saturation, brightness: brightness, alpha: 1)
+            .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return Color(paletteRed: Double(red), green: Double(green), blue: Double(blue))
     }
 }
 
@@ -381,6 +391,8 @@ enum PromoStationTint {
 private struct PromoStationBlob: View {
     let fill: Color
     let rim: Color
+    /// Второй тон заливки — `PromoStationTint.neighbor`
+    let neighbor: Color
     let scale: CGFloat
 
     private typealias Layout = PromoStationLayout
@@ -435,7 +447,7 @@ private struct PromoStationBlob: View {
 
     private var shape: some View {
         let canvas = Self.canvas(scale: scale)
-        return Canvas { [fill, rim, scale] context, size in
+        return Canvas { [fill, rim, neighbor, scale] context, size in
             let padding = Layout.blobPadding
             func point(_ point: CGPoint) -> CGPoint {
                 CGPoint(x: (padding + point.x) * scale, y: (padding + point.y) * scale)
@@ -454,7 +466,7 @@ private struct PromoStationBlob: View {
             let left = point(CGPoint(x: 0, y: Layout.blob.height / 2))
             let right = point(CGPoint(x: Layout.blob.width, y: Layout.blob.height / 2))
             let bounds = Path(CGRect(origin: .zero, size: size))
-            for (tone, mask) in [(fill, across), (PromoStationTint.neighbor(of: fill), Gradient(colors: [.clear, .white]))] {
+            for (tone, mask) in [(fill, across), (neighbor, Gradient(colors: [.clear, .white]))] {
                 var half = context
                 half.blendMode = .plusLighter
                 half.drawLayer { layer in

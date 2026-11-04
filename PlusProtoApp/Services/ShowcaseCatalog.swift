@@ -1162,8 +1162,8 @@ final class ShowcaseCatalog {
     /// Логотип в блоке «продолжить смотреть» рисуется в боксе 147pt — на ×3 это 441px.
     private nonisolated static let logoPixelWidth = 441
 
-    private static let mockMovieTint = Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
-    private static let mockBookTint = Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
+    private static var mockMovieTint: Color { Color(paletteRed: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255) }
+    private static var mockBookTint: Color { Color(paletteRed: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255) }
 
     /// Отрывок из моковой ленты — им закрывается блок чтения, когда у живой книги
     /// описание слишком короткое.

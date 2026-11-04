@@ -16,6 +16,9 @@ enum PromoCardGlowConfig {
         let height: CGFloat
         let radius: CGFloat
         let station: VibePromoStation?
+        /// Пространство палитры (`PlusColorSpace`) — у лепестка станции: растр запекает его
+        /// цвет, и тумблер дебаг-меню меняет ключ, а с ним и растр. Обложкам не нужно.
+        let isP3: Bool
     }
     private static var cache = PromoResourceCache<Key, UIImage>(countLimit: 96, costLimit: 24 * 1024 * 1024)
 
@@ -53,7 +56,7 @@ enum PromoCardGlowConfig {
             radius = 16 * Layout.scale
         }
         return Key(source: source, width: size.width, height: size.height, radius: radius,
-                   station: station)
+                   station: station, isP3: station != nil && PlusColorSpace.shared.isP3)
     }
 
     static func cached(_ item: ShowcaseBlock) -> UIImage? { cache[key(for: item)] }

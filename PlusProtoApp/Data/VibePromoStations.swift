@@ -18,9 +18,12 @@ struct VibePromoStation: Hashable {
     let id: String
     let name: String
     let kind: Kind
-    /// Цвет капли и её светлой кромки
-    let fill: Color
-    let rim: Color
+    /// Цвет капли и её светлой кромки — хексами палитры: `Color` считается при обращении,
+    /// в пространстве палитры (`PlusColorSpace`), и переключается вместе с ней.
+    let fillHex: UInt32
+    let rimHex: UInt32
+    var fill: Color { Color(hex: fillHex) }
+    var rim: Color { Color(hex: rimHex) }
 
     /// Иллюстрация жанровой станции; у артист-волны — `nil`.
     var asset: String? {
@@ -43,8 +46,8 @@ struct VibePromoStation: Hashable {
 
 extension VibePromoStation {
     /// Жанровая станция — с иллюстрацией агента.
-    init(id: String, name: String, asset: String, fill: Color, rim: Color) {
-        self.init(id: id, name: name, kind: .genre(asset: asset), fill: fill, rim: rim)
+    init(id: String, name: String, asset: String, fillHex: UInt32, rimHex: UInt32) {
+        self.init(id: id, name: name, kind: .genre(asset: asset), fillHex: fillHex, rimHex: rimHex)
     }
 
     /// Волна «в стиле артиста» (задача 68): id — `artist-wave-<id Deezer>`, название — имя
@@ -55,35 +58,35 @@ extension VibePromoStation {
             id: "artist-wave-\(artist.id)",
             name: artist.name,
             kind: .artist(artist),
-            fill: color.fill,
-            rim: color.rim
+            fillHex: color.fill,
+            rimHex: color.rim
         )
     }
 
     /// Место цвета станции в палитре — по нему фон промо волны «в стиле артиста» берёт
     /// растр её капли.
-    var paletteIndex: Int? { Self.palette.firstIndex { $0.fill == fill && $0.rim == rim } }
+    var paletteIndex: Int? { Self.palette.firstIndex { $0.fill == fillHex && $0.rim == rimHex } }
 
     /// Палитра «Моя волна 2026» — 16 цветов капли и кромки (файл `ggO4AevC3hbrmBYsNGXq3S`,
     /// нода `11403:7010`): carmine, coral, tangerine, clover, emerald, turquoise, aquamarine,
     /// glacier, slate, sapphire, indigo, amethyst, plum, orchid, raspberry, fuchsia.
-    static let palette: [(fill: Color, rim: Color)] = [
-        (Color(hex: 0xF5002E), Color(hex: 0xFF99AC)),
-        (Color(hex: 0xF53700), Color(hex: 0xFFB099)),
-        (Color(hex: 0xF56E00), Color(hex: 0xFFC799)),
-        (Color(hex: 0x34C03E), Color(hex: 0xAFE9B3)),
-        (Color(hex: 0x00C789), Color(hex: 0x00C789)),
-        (Color(hex: 0x00C7A6), Color(hex: 0x00C7A6)),
-        (Color(hex: 0x00B2CC), Color(hex: 0x00B2CC)),
-        (Color(hex: 0x5C8E9B), Color(hex: 0xBFD4D9)),
-        (Color(hex: 0x4F6C9B), Color(hex: 0xBBC8DD)),
-        (Color(hex: 0x0C41E8), Color(hex: 0x9EB4FA)),
-        (Color(hex: 0x160CE8), Color(hex: 0xA29EFA)),
-        (Color(hex: 0x5035C0), Color(hex: 0xBAAFE9)),
-        (Color(hex: 0x7C35C0), Color(hex: 0xCDAFE9)),
-        (Color(hex: 0xBB1ADB), Color(hex: 0xE7A4F4)),
-        (Color(hex: 0xDB1A7D), Color(hex: 0xF4A4CD)),
-        (Color(hex: 0xF5007C), Color(hex: 0xFF99CD)),
+    static let palette: [(fill: UInt32, rim: UInt32)] = [
+        (0xF5002E, 0xFF99AC),
+        (0xF53700, 0xFFB099),
+        (0xF56E00, 0xFFC799),
+        (0x34C03E, 0xAFE9B3),
+        (0x00C789, 0x00C789),
+        (0x00C7A6, 0x00C7A6),
+        (0x00B2CC, 0x00B2CC),
+        (0x5C8E9B, 0xBFD4D9),
+        (0x4F6C9B, 0xBBC8DD),
+        (0x0C41E8, 0x9EB4FA),
+        (0x160CE8, 0xA29EFA),
+        (0x5035C0, 0xBAAFE9),
+        (0x7C35C0, 0xCDAFE9),
+        (0xBB1ADB, 0xE7A4F4),
+        (0xDB1A7D, 0xF4A4CD),
+        (0xF5007C, 0xFF99CD),
     ]
 
     /// Восемь станций — разные иллюстрации, цвета и названия; названия — от пользователя
@@ -91,21 +94,21 @@ extension VibePromoStation {
     /// нода `11403:7010`). Первая — станция макета и мок-промо.
     static let all: [VibePromoStation] = [
         VibePromoStation(id: "medieval-emo", name: "Средневековое симфоническое мидвест-эмо",
-                         asset: "vibeStationPopCarmine", fill: Color(hex: 0xF5002E), rim: Color(hex: 0xFF99AC)),
+                         asset: "vibeStationPopCarmine", fillHex: 0xF5002E, rimHex: 0xFF99AC),
         VibePromoStation(id: "space-fusion", name: "Космический джаз-фьюжн",
-                         asset: "vibeStationPopIndigo", fill: Color(hex: 0x160CE8), rim: Color(hex: 0xA29EFA)),
+                         asset: "vibeStationPopIndigo", fillHex: 0x160CE8, rimHex: 0xA29EFA),
         VibePromoStation(id: "dacha-shoegaze", name: "Дачный шугейз",
-                         asset: "vibeStationSentimentalCoral", fill: Color(hex: 0xF53700), rim: Color(hex: 0xFFB099)),
+                         asset: "vibeStationSentimentalCoral", fillHex: 0xF53700, rimHex: 0xFFB099),
         VibePromoStation(id: "tropical-dreampop", name: "Тропический дрим-поп",
-                         asset: "vibeStationSentimentalAquamarine", fill: Color(hex: 0x00B2CC), rim: Color(hex: 0x00B2CC)),
+                         asset: "vibeStationSentimentalAquamarine", fillHex: 0x00B2CC, rimHex: 0x00B2CC),
         VibePromoStation(id: "sad-hyperpop", name: "Гиперпоп для грустных",
-                         asset: "vibeStationAltrockOrchid", fill: Color(hex: 0xBB1ADB), rim: Color(hex: 0xE7A4F4)),
+                         asset: "vibeStationAltrockOrchid", fillHex: 0xBB1ADB, rimHex: 0xE7A4F4),
         VibePromoStation(id: "siberian-postpunk", name: "Сибирский пост-панк",
-                         asset: "vibeStationAltrockSapphire", fill: Color(hex: 0x0C41E8), rim: Color(hex: 0x9EB4FA)),
+                         asset: "vibeStationAltrockSapphire", fillHex: 0x0C41E8, rimHex: 0x9EB4FA),
         VibePromoStation(id: "balkan-breakcore", name: "Балканский брейккор",
-                         asset: "vibeStationEstradaClover", fill: Color(hex: 0x34C03E), rim: Color(hex: 0xAFE9B3)),
+                         asset: "vibeStationEstradaClover", fillHex: 0x34C03E, rimHex: 0xAFE9B3),
         VibePromoStation(id: "baroque-house", name: "Барочный хаус",
-                         asset: "vibeStationEstradaTangerine", fill: Color(hex: 0xF56E00), rim: Color(hex: 0xFFC799)),
+                         asset: "vibeStationEstradaTangerine", fillHex: 0xF56E00, rimHex: 0xFFC799),
     ]
 }
 

@@ -100,7 +100,7 @@ enum ServiceCarouselRank {
     static let iconSize: CGFloat = 16
     static let iconGap: CGFloat = 4
     /// Сиреневый шапки — `#E2BCE8` макета, вне палитры
-    static let tint = Color(red: 226 / 255, green: 188 / 255, blue: 232 / 255)
+    static var tint: Color { Color(paletteRed: 226 / 255, green: 188 / 255, blue: 232 / 255) }
 
     /// Порядок слоёв: первое место — выше всех.
     static func zIndex(place: Int) -> Double { Double(limit - place) }

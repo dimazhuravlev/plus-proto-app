@@ -29,8 +29,8 @@ enum ServiceTopNavLayout {
 
     /// Активный таб — стеклянная пилюля: фиолетовая заливка 50 %, розовое свечение
     /// снизу, бордер white 30 % и светлая внутренняя кромка сверху.
-    static let pillFill = Color(red: 92 / 255, green: 40 / 255, blue: 177 / 255).opacity(0.5)
-    static let pillGlow = Color(red: 241 / 255, green: 175 / 255, blue: 224 / 255).opacity(0.3)
+    static var pillFill: Color { Color(paletteRed: 92 / 255, green: 40 / 255, blue: 177 / 255).opacity(0.5) }
+    static var pillGlow: Color { Color(paletteRed: 241 / 255, green: 175 / 255, blue: 224 / 255).opacity(0.3) }
     /// Свечение — эллипс от нижней кромки: полуширина пилюли по горизонтали,
     /// 74 % её высоты по вертикали (матрица градиента макета: 34.2 × 29.5 на 69 × 40).
     static let pillGlowHeightShare: CGFloat = 29.5 / 40
@@ -39,14 +39,16 @@ enum ServiceTopNavLayout {
     static let pillHighlight = Color.white.opacity(0.2)
     static let pillBlur: CGFloat = 20
     /// Текст активного таба — градиент сверху вниз: сиреневый 90 % → белый 80 %
-    static let activeText = LinearGradient(
-        colors: [
-            Color(red: 229 / 255, green: 179 / 255, blue: 253 / 255).opacity(0.9),
-            Color.white.opacity(0.8),
-        ],
-        startPoint: .top,
-        endPoint: .bottom
-    )
+    static var activeText: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(paletteRed: 229 / 255, green: 179 / 255, blue: 253 / 255).opacity(0.9),
+                Color.white.opacity(0.8),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
 
     /// Кнопка-аксессуар справа от табов — «Моё», `. / top navigation / buttons`
     /// `17778:34241` файла «ЯПС · Mobile · Current State»: `PlusButton` plain M — круг 40
@@ -64,16 +66,18 @@ enum ServiceTopNavLayout {
     /// Ореол аватара — кольцо 2pt внутрь, градиент слева направо: коралловый → малиновый →
     /// фиолетовый → синий (`aura` навигации «Моего» `17778:34241`, обводка ноды — 2026-10-21;
     /// экспорт SVG ноды отдавал прежний вертикальный фиолетово-розовый).
-    static let aura = LinearGradient(
-        stops: [
-            .init(color: Color(red: 0xFF / 255, green: 0x5C / 255, blue: 0x4D / 255), location: 0),
-            .init(color: Color(red: 0xEB / 255, green: 0x46 / 255, blue: 0x9F / 255), location: 0.2656),
-            .init(color: Color(red: 0x83 / 255, green: 0x41 / 255, blue: 0xEF / 255), location: 0.75),
-            .init(color: Color(red: 0x3F / 255, green: 0x68 / 255, blue: 0xF9 / 255), location: 1),
-        ],
-        startPoint: .leading,
-        endPoint: .trailing
-    )
+    static var aura: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color(paletteRed: 0xFF / 255, green: 0x5C / 255, blue: 0x4D / 255), location: 0),
+                .init(color: Color(paletteRed: 0xEB / 255, green: 0x46 / 255, blue: 0x9F / 255), location: 0.2656),
+                .init(color: Color(paletteRed: 0x83 / 255, green: 0x41 / 255, blue: 0xEF / 255), location: 0.75),
+                .init(color: Color(paletteRed: 0x3F / 255, green: 0x68 / 255, blue: 0xF9 / 255), location: 1),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
 }
 
 enum ServiceTopNavMotion {

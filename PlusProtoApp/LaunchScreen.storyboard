@@ -43,7 +43,7 @@
     <resources>
         <image name="launchSplash" width="375" height="812"/>
         <namedColor name="splashLaunch">
-            <color red="0.76470588235294112" green="0.29803921568627451" blue="0.69019607843137254" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+            <color red="0.76470588235294112" green="0.29803921568627451" blue="0.69019607843137254" alpha="1" colorSpace="custom" customColorSpace="displayP3"/>
         </namedColor>
     </resources>
 </document>

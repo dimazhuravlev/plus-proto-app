@@ -10,21 +10,25 @@ import SwiftUI
 /// - радиальная вспышка у верхней кромки, 37 %;
 /// - бордер 1 внутрь — линейный градиент белого 10 % → 35 % → 0.
 private enum AccentYaPS {
-    static let base = Gradient(stops: [
-        .init(color: Color(hex: 0x291A54), location: 0),
-        .init(color: Color(hex: 0x5C28B1), location: 0.3977),
-        .init(color: Color(hex: 0x9227D5), location: 0.5852),
-        .init(color: Color(hex: 0xE668E5), location: 0.8224),
-        .init(color: Color(hex: 0xF4BBE5), location: 1),
-    ])
+    static var base: Gradient {
+        Gradient(stops: [
+            .init(color: Color(hex: 0x291A54), location: 0),
+            .init(color: Color(hex: 0x5C28B1), location: 0.3977),
+            .init(color: Color(hex: 0x9227D5), location: 0.5852),
+            .init(color: Color(hex: 0xE668E5), location: 0.8224),
+            .init(color: Color(hex: 0xF4BBE5), location: 1),
+        ])
+    }
     static let baseAxis = FigmaLinearAxis(a: 0.9588, b: 0.3202, c: -0.2382)
 
-    static let spark = Gradient(stops: [
-        .init(color: Color(hex: 0xF4DAD9).opacity(0.95), location: 0),
-        .init(color: Color(hex: 0xF678A4).opacity(0.85), location: 0.28),
-        .init(color: Color(hex: 0xF678A4).opacity(0.45), location: 0.52),
-        .init(color: Color(hex: 0x8216C5).opacity(0), location: 1),
-    ])
+    static var spark: Gradient {
+        Gradient(stops: [
+            .init(color: Color(hex: 0xF4DAD9).opacity(0.95), location: 0),
+            .init(color: Color(hex: 0xF678A4).opacity(0.85), location: 0.28),
+            .init(color: Color(hex: 0xF678A4).opacity(0.45), location: 0.52),
+            .init(color: Color(hex: 0x8216C5).opacity(0), location: 1),
+        ])
+    }
     /// Центр и полуоси эллипса вспышки — доли бокса (матрица `[[1.8362, 0, 0.0086], [0, 4.7236, 0.5]]`)
     static let sparkCenter = CGPoint(x: 0.2676, y: 0)
     static let sparkRadii = CGSize(width: 0.2723, height: 0.1059)
@@ -61,12 +65,16 @@ struct AccentYaPSFill<S: InsettableShape>: View {
     let shape: S
 
     var body: some View {
+        // Краски — в `body`, а не в холсте: холст рисует вне него, и смена пространства
+        // палитры (`PlusColorSpace`) его бы не перерисовала.
+        let baseGradient = AccentYaPS.base
+        let sparkGradient = AccentYaPS.spark
         Canvas { context, size in
             let rect = CGRect(origin: .zero, size: size)
             context.clip(to: shape.path(in: rect))
 
             let base = AccentYaPS.baseAxis.points(in: size)
-            context.fill(Path(rect), with: .linearGradient(AccentYaPS.base, startPoint: base.start, endPoint: base.end))
+            context.fill(Path(rect), with: .linearGradient(baseGradient, startPoint: base.start, endPoint: base.end))
 
             var spark = context
             spark.opacity = AccentYaPS.sparkOpacity
@@ -82,7 +90,7 @@ struct AccentYaPSFill<S: InsettableShape>: View {
                 width: size.width / radii.width,
                 height: size.height / radii.height
             )
-            spark.fill(Path(local), with: .radialGradient(AccentYaPS.spark, center: .zero, startRadius: 0, endRadius: 1))
+            spark.fill(Path(local), with: .radialGradient(sparkGradient, center: .zero, startRadius: 0, endRadius: 1))
 
             let border = AccentYaPS.borderAxis.points(in: size)
             let inset = AccentYaPS.borderWidth / 2

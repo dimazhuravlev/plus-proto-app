@@ -272,22 +272,27 @@ private struct ProfileGlow: View {
         tx: 279.53, ty: 147.63
     )
     private static let gradientRadius: CGFloat = 10
-    private static let gradient = Gradient(stops: [
-        .init(color: Color(red: 255 / 255, green: 92 / 255, blue: 77 / 255), location: 0),
-        .init(color: Color(red: 245 / 255, green: 81 / 255, blue: 118 / 255), location: 0.053942),
-        .init(color: Color(red: 235 / 255, green: 70 / 255, blue: 159 / 255), location: 0.10788),
-        .init(color: Color(red: 183 / 255, green: 68 / 255, blue: 199 / 255), location: 0.22017),
-        .init(color: Color(red: 131 / 255, green: 65 / 255, blue: 239 / 255), location: 0.33245),
-        .init(color: Color(red: 98 / 255, green: 49 / 255, blue: 179 / 255), location: 0.49934),
-        .init(color: Color(red: 66 / 255, green: 33 / 255, blue: 120 / 255), location: 0.66623),
-        .init(color: Color(red: 49 / 255, green: 24 / 255, blue: 90 / 255), location: 0.74967),
-        .init(color: Color(red: 33 / 255, green: 16 / 255, blue: 60 / 255), location: 0.83311),
-        .init(color: Color(red: 16 / 255, green: 8 / 255, blue: 30 / 255), location: 0.91656),
-        .init(color: Color(red: 8 / 255, green: 4 / 255, blue: 15 / 255), location: 0.95828),
-        .init(color: .black, location: 1),
-    ])
+    private static var gradient: Gradient {
+        Gradient(stops: [
+            .init(color: Color(paletteRed: 255 / 255, green: 92 / 255, blue: 77 / 255), location: 0),
+            .init(color: Color(paletteRed: 245 / 255, green: 81 / 255, blue: 118 / 255), location: 0.053942),
+            .init(color: Color(paletteRed: 235 / 255, green: 70 / 255, blue: 159 / 255), location: 0.10788),
+            .init(color: Color(paletteRed: 183 / 255, green: 68 / 255, blue: 199 / 255), location: 0.22017),
+            .init(color: Color(paletteRed: 131 / 255, green: 65 / 255, blue: 239 / 255), location: 0.33245),
+            .init(color: Color(paletteRed: 98 / 255, green: 49 / 255, blue: 179 / 255), location: 0.49934),
+            .init(color: Color(paletteRed: 66 / 255, green: 33 / 255, blue: 120 / 255), location: 0.66623),
+            .init(color: Color(paletteRed: 49 / 255, green: 24 / 255, blue: 90 / 255), location: 0.74967),
+            .init(color: Color(paletteRed: 33 / 255, green: 16 / 255, blue: 60 / 255), location: 0.83311),
+            .init(color: Color(paletteRed: 16 / 255, green: 8 / 255, blue: 30 / 255), location: 0.91656),
+            .init(color: Color(paletteRed: 8 / 255, green: 4 / 255, blue: 15 / 255), location: 0.95828),
+            .init(color: .black, location: 1),
+        ])
+    }
 
     var body: some View {
+        // Градиент — в `body`: холст рисует вне него и смену пространства палитры
+        // (`PlusColorSpace`) иначе не увидел бы.
+        let gradient = Self.gradient
         Canvas { context, _ in
             context.addFilter(.blur(radius: Self.blur))
             // Слой целиком — одна операция рисования: блюр ложится на прямоугольник
@@ -303,7 +308,7 @@ private struct ProfileGlow: View {
                 layer.fill(
                     Path(CGRect(x: -reach, y: -reach, width: 2 * reach, height: 2 * reach)),
                     with: .radialGradient(
-                        Self.gradient,
+                        gradient,
                         center: .zero,
                         startRadius: 0,
                         endRadius: Self.gradientRadius
@@ -462,7 +467,7 @@ private struct ProfilePointsBadge: View {
 /// смешение «осветление». Тени из CSS макета: блюр тени — вдвое больше радиуса
 /// в единицах проекта, как у всех блюров.
 private struct ProfilePointsBubble: View {
-    private static let pink = Color(red: 1, green: 158 / 255, blue: 1) // #FF9EFF
+    private static var pink: Color { Color(paletteRed: 1, green: 158 / 255, blue: 1) } // #FF9EFF
     private static let fill = Color(white: 189 / 255).opacity(0.01)
     private static let border = Color.white.opacity(0.2)
     private static let borderWidth: CGFloat = 0.855
@@ -625,15 +630,17 @@ private struct ProfileVideoQualityWidget: View {
 private struct ProfileDownloadWidget: View {
     /// Пройденный шаг — градиент макета под 149.46°, переведённый в юнит-спейс сегмента
     /// 41 × 8 (CSS-угол → ручки). Видимые стопы — розово-фиолетовые, как на рендере макета.
-    private static let doneStep = LinearGradient(
-        stops: [
-            .init(color: Color(red: 156 / 255, green: 59 / 255, blue: 233 / 255), location: 0.19554),
-            .init(color: Color(red: 230 / 255, green: 104 / 255, blue: 229 / 255), location: 0.69348),
-            .init(color: Color(red: 244 / 255, green: 187 / 255, blue: 229 / 255), location: 1),
-        ],
-        startPoint: UnitPoint(x: 0.32818, y: -0.99238),
-        endPoint: UnitPoint(x: 0.67182, y: 1.99238)
-    )
+    private static var doneStep: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color(paletteRed: 156 / 255, green: 59 / 255, blue: 233 / 255), location: 0.19554),
+                .init(color: Color(paletteRed: 230 / 255, green: 104 / 255, blue: 229 / 255), location: 0.69348),
+                .init(color: Color(paletteRed: 244 / 255, green: 187 / 255, blue: 229 / 255), location: 1),
+            ],
+            startPoint: UnitPoint(x: 0.32818, y: -0.99238),
+            endPoint: UnitPoint(x: 0.67182, y: 1.99238)
+        )
+    }
 
     var body: some View {
         ProfileSquareWidget {
@@ -671,16 +678,18 @@ private struct ProfileDownloadWidget: View {
 /// Знак Плюса на градиенте бренда (`2701:30229`): круг 16 с градиентом слева направо
 /// и белый знак поверх.
 private struct ProfilePlusBadge: View {
-    private static let gradient = LinearGradient(
-        stops: [
-            .init(color: Color(hex: 0xFF5C4D), location: 0),
-            .init(color: Color(hex: 0xEB469F), location: 0.265625),
-            .init(color: Color(hex: 0x8341EF), location: 0.75),
-            .init(color: Color(hex: 0x3F68F9), location: 1),
-        ],
-        startPoint: .leading,
-        endPoint: .trailing
-    )
+    private static var gradient: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color(hex: 0xFF5C4D), location: 0),
+                .init(color: Color(hex: 0xEB469F), location: 0.265625),
+                .init(color: Color(hex: 0x8341EF), location: 0.75),
+                .init(color: Color(hex: 0x3F68F9), location: 1),
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
 
     var body: some View {
         Image("iconPlusSign")

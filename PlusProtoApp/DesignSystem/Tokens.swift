@@ -9,23 +9,25 @@ import SwiftUI
 /// на константы `.Color constants` (Monochrome/White-30, Accent/Sugar Grape…), — они в
 /// комментариях. Градиенты в палитру не входят: вынесенные живут в `PlusGradient`,
 /// остальные — у своих компонентов.
+///
+/// Цвета из хекса — вычисляемые: пространство палитры (`PlusColorSpace`, P3 или sRGB)
+/// переключается на лету. Белый и чёрный с прозрачностью от него не зависят.
 extension Color {
     // MARK: Accent
 
     /// Accent/Primary — Accent/Sugar Grape. Активный чипс фильтров выдачи, лейбл тайтла
     /// у меты, «нравится».
-    static let accentPrimary = Color(hex: 0xA332FF)
+    static var accentPrimary: Color { Color(hex: 0xA332FF) }
     /// Accent/Secondary — Accent/Sugar Grape
-    static let accentSecondary = Color(hex: 0xA332FF)
-
+    static var accentSecondary: Color { Color(hex: 0xA332FF) }
     // MARK: Fill
 
     /// Fill/One — Monochrome/White. Основной текст, иконки.
     static let fillOne = Color.white
     /// Fill/Two — Monochrome/Snow
-    static let fillTwo = Color(hex: 0xF2F2F2)
+    static var fillTwo: Color { Color(hex: 0xF2F2F2) }
     /// Fill/Three — Monochrome/Platinum
-    static let fillThree = Color(hex: 0xE6E6E6)
+    static var fillThree: Color { Color(hex: 0xE6E6E6) }
     /// Fill/Four — Monochrome/White-80. Текстовые блоки длиннее двух строк (UI kit `7529:2161`).
     static let fillFour = Color.white.opacity(0.8)
     /// Fill/Five — Monochrome/White-60. Вторичные иконки строк треков.
@@ -52,13 +54,13 @@ extension Color {
     /// Surface/One — Monochrome/Black. Холст экранов.
     static let surfaceOne = Color.black
     /// Surface/Two — Monochrome/Charcoal
-    static let surfaceTwo = Color(hex: 0x141414)
+    static var surfaceTwo: Color { Color(hex: 0x141414) }
     /// Surface/Three — Monochrome/Gray
-    static let surfaceThree = Color(hex: 0x333333)
+    static var surfaceThree: Color { Color(hex: 0x333333) }
     /// Surface/Four — Monochrome/Graphitic
-    static let surfaceFour = Color(hex: 0x1F1F1F)
+    static var surfaceFour: Color { Color(hex: 0x1F1F1F) }
     /// Surface/Five — Monochrome/Gray-50
-    static let surfaceFive = Color(hex: 0x333333).opacity(0.5)
+    static var surfaceFive: Color { Color(hex: 0x333333).opacity(0.5) }
     /// Surface/Highlight — Monochrome/White-6
     static let surfaceHighlight = Color.white.opacity(0.06)
     /// Surface/Inverted — Monochrome/White
@@ -71,45 +73,42 @@ extension Color {
     /// Buttons/Inverted — Monochrome/White. Белые кнопки: ▶ «Моей волны», выбранный чип оценки.
     static let buttonsInverted = Color.white
     /// Buttons/Extra One — Monochrome/Graphitic
-    static let buttonsExtraOne = Color(hex: 0x1F1F1F)
+    static var buttonsExtraOne: Color { Color(hex: 0x1F1F1F) }
     /// Buttons/Extra Two — Monochrome/White-8
     static let buttonsExtraTwo = Color.white.opacity(0.08)
     /// Buttons/Extra Three — Monochrome/Graphitic-95
-    static let buttonsExtraThree = Color(hex: 0x1F1F1F).opacity(0.95)
-
+    static var buttonsExtraThree: Color { Color(hex: 0x1F1F1F).opacity(0.95) }
     // MARK: System
 
     /// System/Hint — Accent/Blue Lagoon
-    static let systemHint = Color(hex: 0x3A71F9)
+    static var systemHint: Color { Color(hex: 0x3A71F9) }
     /// System/Error — Accent/Permanent Geranium Lake
-    static let systemError = Color(hex: 0xE5312E)
+    static var systemError: Color { Color(hex: 0xE5312E) }
     /// System/Bright Red — Accent/Red
-    static let systemBrightRed = Color(hex: 0xFF0000)
+    static var systemBrightRed: Color { Color(hex: 0xFF0000) }
     /// System/So-so — Monochrome/Light Gray
-    static let systemSoSo = Color(hex: 0x777777)
+    static var systemSoSo: Color { Color(hex: 0x777777) }
     /// System/Success — Accent/American Green
-    static let systemSuccess = Color(hex: 0x3BB33B)
+    static var systemSuccess: Color { Color(hex: 0x3BB33B) }
     /// System/iOS Navbar One — Monochrome/Charcoal-90
-    static let systemIOSNavbarOne = Color(hex: 0x141414).opacity(0.9)
+    static var systemIOSNavbarOne: Color { Color(hex: 0x141414).opacity(0.9) }
     /// System/iOS Navbar Two — Monochrome/Black
     static let systemIOSNavbarTwo = Color.black
     /// System/iOS Navbar darkBlur — Monochrome/Charcoal-70
-    static let systemIOSNavbarDarkBlur = Color(hex: 0x141414).opacity(0.7)
+    static var systemIOSNavbarDarkBlur: Color { Color(hex: 0x141414).opacity(0.7) }
     /// System/Android Navbar One — Monochrome/Black
     static let systemAndroidNavbarOne = Color.black
 
     // MARK: Plus
 
     /// Plus/Solid One — Accent/Orchid. Акцент Плюса: заливка прогресс-баров.
-    static let plusSolidOne = Color(hex: 0xD88DFC)
+    static var plusSolidOne: Color { Color(hex: 0xD88DFC) }
     /// Plus/Solid Two — Accent/Dark Orchid
-    static let plusSolidTwo = Color(hex: 0x8F05BC)
-
+    static var plusSolidTwo: Color { Color(hex: 0x8F05BC) }
     // MARK: YaPS
 
     /// YaPS/Accent Color — Accent/Orchid (стиль, привязанный к переменной)
-    static let yapsAccentColor = Color(hex: 0xD88DFC)
-
+    static var yapsAccentColor: Color { Color(hex: 0xD88DFC) }
     // MARK: Вне палитры
 
     /// Buttons/Primary — белый 10 %: фон стекла, круглых кнопок и тайлов. В коллекции Theme
@@ -119,10 +118,11 @@ extension Color {
 }
 
 extension Color {
-    /// Цвет по хексу макета `0xRRGGBB` — палитра выше и палитры станций «Моей волны».
+    /// Цвет по хексу макета `0xRRGGBB` — палитра выше и палитры станций «Моей волны»,
+    /// в пространстве палитры (`PlusColorSpace`).
     init(hex: UInt32) {
         self.init(
-            red: Double((hex >> 16) & 0xFF) / 255,
+            paletteRed: Double((hex >> 16) & 0xFF) / 255,
             green: Double((hex >> 8) & 0xFF) / 255,
             blue: Double(hex & 0xFF) / 255
         )
@@ -255,15 +255,17 @@ enum PlusGradient {
     static let tabBarUnderlay = bottomUnderlay(peak: tabBarUnderlayPeak)
 
     /// Заливка глифа активного таба — диагональный градиент слева-сверху вниз-вправо
-    static let activeTabGlyph = LinearGradient(
-        stops: [
-            .init(color: Color(red: 0xE2 / 255, green: 0x69 / 255, blue: 0xE1 / 255), location: 0.0),
-            .init(color: Color(red: 0x89 / 255, green: 0x3B / 255, blue: 0xBA / 255), location: 0.4),
-            .init(color: Color(red: 0xF1 / 255, green: 0xAF / 255, blue: 0xE0 / 255), location: 1.0),
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static var activeTabGlyph: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color(hex: 0xE269E1), location: 0.0),
+                .init(color: Color(hex: 0x893BBA), location: 0.4),
+                .init(color: Color(hex: 0xF1AFE0), location: 1.0),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 
     /// Заливка глифа неактивного таба — белый с падающей прозрачностью, поверх ещё 0.9 общей непрозрачности (макет обновлён 2026-10-12)
     static let inactiveTabGlyph = LinearGradient(

@@ -55,9 +55,13 @@ enum TaskalkaColorMap {
         return LCH(l: l, c: c, h: h)
     }
 
-    /// sRGB 0…1 в точке поля — цвет точек и свечения под пальцем.
-    static func rgb(at point: CGPoint) -> SIMD3<Double> {
-        srgb(lch(at: point))
+    /// Компоненты 0…1 в точке поля, в пространстве палитры (`PlusColorSpace`), — цвет
+    /// точек и свечения под пальцем.
+    static func rgb(
+        at point: CGPoint,
+        in space: Color.RGBColorSpace = PlusColorSpace.shared.rgbSpace
+    ) -> SIMD3<Double> {
+        rgb(lch(at: point), in: space)
     }
 
     /// Слово заголовка — градиент двух близких оттенков цвета места (просьба пользователя
@@ -68,7 +72,11 @@ enum TaskalkaColorMap {
         var lifted = base
         lifted.l = min(1, base.l + Map.wordLift)
         lifted.h += Map.wordHueShift
-        return LinearGradient.horizontal(TaskalkaPalette.color(srgb(base)), TaskalkaPalette.color(srgb(lifted)))
+        let space = PlusColorSpace.shared.rgbSpace
+        return LinearGradient.horizontal(
+            TaskalkaPalette.color(rgb(base, in: space), in: space),
+            TaskalkaPalette.color(rgb(lifted, in: space), in: space)
+        )
     }
 
     private static func smoothstep(_ edge0: Double, _ edge1: Double, _ x: Double) -> Double {
@@ -76,19 +84,23 @@ enum TaskalkaColorMap {
         return t * t * (3 - 2 * t)
     }
 
-    /// OKLCH → sRGB (Björn Ottosson, OKLab), вне охвата — обрезка по каналам.
-    static func srgb(_ color: LCH) -> SIMD3<Double> {
+    /// OKLCH → компоненты в `space` (Björn Ottosson, OKLab), вне охвата — обрезка
+    /// по каналам. В Display P3 охват шире: обрезается ~3 % поля против ~10 % в sRGB
+    /// (замер 2026-11-04).
+    static func rgb(_ color: LCH, in space: Color.RGBColorSpace) -> SIMD3<Double> {
         let hue = color.h * .pi / 180
         let a = color.c * cos(hue), b = color.c * sin(hue)
         let l_ = color.l + 0.3963377774 * a + 0.2158037573 * b
         let m_ = color.l - 0.1055613458 * a - 0.0638541728 * b
         let s_ = color.l - 0.0894841775 * a - 1.2914855480 * b
         let l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_
-        let linear = SIMD3(
+        let linearSRGB = SIMD3(
             4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
             -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
             -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
         )
+        // У sRGB и Display P3 одна кривая гаммы — отличаются только первичные цвета.
+        let linear = space == .displayP3 ? PlusColorSpace.linearP3(fromLinearSRGB: linearSRGB) : linearSRGB
         func gamma(_ v: Double) -> Double {
             let clamped = min(max(v, 0), 1)
             return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * pow(clamped, 1 / 2.4) - 0.055

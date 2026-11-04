@@ -36,7 +36,10 @@ using namespace metal;
     // Свет: впереди гребня ярче, позади темнее (производная горба). `flash` — ровная
     // вспышка без движения, ветка «уменьшения движения». Цвет с умноженной альфой —
     // каналы не выше альфы, иначе полупрозрачный край капли светился бы сильнее середины.
+    // Границы — от исходного канала: цвет палитры в P3 приходит расширенным (ниже нуля,
+    // выше альфы), и свет не срезает его до охвата sRGB, а только не уводит дальше.
     float light = envelope * (shade * 2.0 * x * bump + flash);
-    color.rgb = clamp(color.rgb + half(light) * color.a, half3(0.0), half3(color.a));
+    half3 lit = color.rgb + half(light) * color.a;
+    color.rgb = clamp(lit, min(color.rgb, half3(0.0)), max(color.rgb, half3(color.a)));
     return color;
 }

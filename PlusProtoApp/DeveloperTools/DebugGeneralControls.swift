@@ -46,6 +46,14 @@ struct DebugGeneralControls: View {
             headlineReset
                 .padding(.top, Layout.resetTop)
 
+            title("Цвета", top: Layout.sectionGap)
+            toggleIsland(
+                "Display P3",
+                isOn: colorSpaceP3,
+                accessibility: "Цвета палитры в Display P3"
+            )
+            note("Выключено — sRGB, как в Фигме прототипа. Картинки и видео не меняются")
+
             title("Вид поисковой выдачи", top: Layout.sectionGap)
 
             optionsIsland
@@ -93,6 +101,14 @@ struct DebugGeneralControls: View {
             )
             note("Включено — подсказка у кнопки порядка после каждого перезапуска приложения; выключено — один раз, факт показа хранится на устройстве")
         }
+    }
+
+    /// Пространство цветов палитры (`PlusColorSpace`): P3 или sRGB, на лету во всём приложении.
+    private var colorSpaceP3: Binding<Bool> {
+        Binding(
+            get: { PlusColorSpace.shared.isP3 },
+            set: { PlusColorSpace.shared.setP3($0) }
+        )
     }
 
     private func title(_ text: String, top: CGFloat = ProfileLayout.titleTop) -> some View {
