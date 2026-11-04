@@ -858,7 +858,9 @@ final class CoverHoloSensor {
     /// за следующий ключ, а «(…)» читает массивом.
     static let fixedLight: simd_quatd? = {
         let raw = UserDefaults.standard.object(forKey: "debugHoloTurn")
-        let items = (raw as? [Any]) ?? (raw as? String)?.split(separator: ",").map { String($0) } ?? []
+        // Типы — явно: компилятор Xcode 26.3 выводил цепочку `??` как `[Any]?` и не собирал её.
+        let words: [Any] = (raw as? String)?.split(separator: ",").map { String($0) } ?? []
+        let items: [Any] = (raw as? [Any]) ?? words
         let parts = items.compactMap { Double(String(describing: $0).trimmingCharacters(in: .whitespaces)) }
         guard parts.count == 2 || parts.count == 3 else { return nil }
         let degree = Double.pi / 180
