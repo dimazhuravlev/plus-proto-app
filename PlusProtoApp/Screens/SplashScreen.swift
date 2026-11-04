@@ -58,15 +58,17 @@ struct SplashScreen: View {
 private enum SplashPalette {
     /// Из левого нижнего угла в правый верхний: в макете градиент задан вектором
     /// (0, 812) → (375, 0), то есть по диагонали кадра, а не по его стороне.
-    static let background = LinearGradient(
-        stops: [
-            .init(color: Color(red: 1, green: 0x5C / 255, blue: 0x4D / 255), location: 0), // #FF5C4D
-            .init(color: Color(red: 0xEB / 255, green: 0x46 / 255, blue: 0x9F / 255), location: 0.4), // #EB469F
-            .init(color: Color(red: 0x83 / 255, green: 0x41 / 255, blue: 0xEF / 255), location: 1), // #8341EF
-        ],
-        startPoint: .bottomLeading,
-        endPoint: .topTrailing
-    )
+    static var background: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color(paletteRed: 1, green: 0x5C / 255, blue: 0x4D / 255), location: 0), // #FF5C4D
+                .init(color: Color(paletteRed: 0xEB / 255, green: 0x46 / 255, blue: 0x9F / 255), location: 0.4), // #EB469F
+                .init(color: Color(paletteRed: 0x83 / 255, green: 0x41 / 255, blue: 0xEF / 255), location: 1), // #8341EF
+            ],
+            startPoint: .bottomLeading,
+            endPoint: .topTrailing
+        )
+    }
 }
 
 /// Плюс Яндекса из макета заставки.

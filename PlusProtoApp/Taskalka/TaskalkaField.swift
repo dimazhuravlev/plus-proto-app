@@ -424,11 +424,14 @@ private struct TaskalkaDots: View, Animatable {
     private typealias Style = TaskalkaDotsStyle
 
     var body: some View {
+        // Пространство палитры — в `body`: холст рисует вне него, и в покое (таймлайн
+        // на паузе) смену пространства (`PlusColorSpace`) иначе не увидел бы.
+        let space = PlusColorSpace.shared.rgbSpace
         TimelineView(.animation(minimumInterval: nil, paused: rippleStart == nil && !isFlowing)) { context in
             let ripple = rippleProgress(at: context.date)
             let now = context.date.timeIntervalSinceReferenceDate
             Canvas { canvas, size in
-                draw(in: &canvas, size: size, ripple: ripple, now: now)
+                draw(in: &canvas, size: size, ripple: ripple, now: now, space: space)
             }
             // Шире поля: крайние точки по кромке набухают и качаются за неё.
             .padding(-Style.bleed)
@@ -442,7 +445,13 @@ private struct TaskalkaDots: View, Animatable {
         return CGFloat(raw)
     }
 
-    private func draw(in canvas: inout GraphicsContext, size: CGSize, ripple: CGFloat?, now: TimeInterval) {
+    private func draw(
+        in canvas: inout GraphicsContext,
+        size: CGSize,
+        ripple: CGFloat?,
+        now: TimeInterval,
+        space: Color.RGBColorSpace
+    ) {
         // Холст сдвинут на `bleed` влево-вверх — поле в его координатах.
         let panel = self.panel.offsetBy(dx: Style.bleed, dy: Style.bleed)
         let finger = CGPoint(x: panel.minX + point.x * panel.width, y: panel.minY + point.y * panel.height)
@@ -488,7 +497,7 @@ private struct TaskalkaDots: View, Animatable {
                 }
                 let radius = Style.restRadius + (Style.peakRadius - Style.restRadius) * touch + Style.rippleRadius * wave
                 let own = CGPoint(x: (dot.x - panel.minX) / panel.width, y: (dot.y - panel.minY) / panel.height)
-                let lit = TaskalkaMap.color(at: own) * (1 - Style.lighten) + SIMD3(repeating: Style.lighten)
+                let lit = TaskalkaMap.color(at: own, in: space) * (1 - Style.lighten) + SIMD3(repeating: Style.lighten)
                 let share = Double(min(1, touch * 1.6))
                 // От белого 30 % покоя — к цвету настроения; волна только чуть подсвечивает.
                 let rgb = SIMD3<Double>(repeating: 1) * (1 - share) + lit * share
@@ -498,7 +507,7 @@ private struct TaskalkaDots: View, Animatable {
                     at: placed,
                     radius: radius,
                     sway: sway,
-                    color: TaskalkaPalette.color(rgb, opacity: min(1, opacity))
+                    color: TaskalkaPalette.color(rgb, opacity: min(1, opacity), in: space)
                 )
             }
         }

@@ -172,7 +172,7 @@ enum HomeQuickAccessLayout {
     }
     @MainActor static var occupiedHeight: CGFloat { top + rowHeight + bottom }
     static let feedback = Animation.smooth(duration: 0.3)
-    static let progressColor = Color(red: 216 / 255, green: 141 / 255, blue: 252 / 255)
+    static var progressColor: Color { Color(paletteRed: 216 / 255, green: 141 / 255, blue: 252 / 255) }
 }
 
 

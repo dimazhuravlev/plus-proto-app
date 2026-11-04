@@ -1464,13 +1464,18 @@ enum TaskalkaMap {
         return toNearest + hysteresis < toCurrent ? nearest : current
     }
 
-    /// Цвет поля в точке — непрерывный, по карте цвета (`TaskalkaColorMap`).
-    static func color(at point: CGPoint) -> SIMD3<Double> {
-        TaskalkaColorMap.rgb(at: point)
+    /// Цвет поля в точке — непрерывный, по карте цвета (`TaskalkaColorMap`), компонентами
+    /// в пространстве палитры.
+    static func color(
+        at point: CGPoint,
+        in space: Color.RGBColorSpace = PlusColorSpace.shared.rgbSpace
+    ) -> SIMD3<Double> {
+        TaskalkaColorMap.rgb(at: point, in: space)
     }
 }
 
-/// Компоненты цветов палитры — смесь считается в RGB.
+/// Компоненты цветов палитры — смесь считается в RGB, компоненты — в пространстве палитры
+/// (`PlusColorSpace`): числа хекса и карты цвета читаются в нём же.
 enum TaskalkaPalette {
     static func rgb(_ hex: UInt32) -> SIMD3<Double> {
         SIMD3(
@@ -1480,7 +1485,11 @@ enum TaskalkaPalette {
         )
     }
 
-    static func color(_ rgb: SIMD3<Double>, opacity: Double = 1) -> Color {
-        Color(.sRGB, red: rgb.x, green: rgb.y, blue: rgb.z, opacity: opacity)
+    static func color(
+        _ rgb: SIMD3<Double>,
+        opacity: Double = 1,
+        in space: Color.RGBColorSpace = PlusColorSpace.shared.rgbSpace
+    ) -> Color {
+        Color(space, red: rgb.x, green: rgb.y, blue: rgb.z, opacity: opacity)
     }
 }

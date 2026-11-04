@@ -15,14 +15,16 @@ enum MyVibeLayout {
     static let playIcon: CGFloat = 34
     static let titleToPlay: CGFloat = 118
     /// Глиф кнопки — фиолетовый градиент сверху слева вниз направо
-    static let playGradient = LinearGradient(
-        colors: [
-            Color(red: 0x5C / 255, green: 0x28 / 255, blue: 0xB1 / 255),
-            Color(red: 0x9C / 255, green: 0x38 / 255, blue: 1),
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static var playGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(paletteRed: 0x5C / 255, green: 0x28 / 255, blue: 0xB1 / 255),
+                Color(paletteRed: 0x9C / 255, green: 0x38 / 255, blue: 1),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 }
 
 /// Главная Музыки — содержимое таба (задача пользователя 2026-10-04): общая навигация

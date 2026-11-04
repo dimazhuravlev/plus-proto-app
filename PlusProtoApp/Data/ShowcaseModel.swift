@@ -392,7 +392,7 @@ extension ShowcaseFeed {
                 poster: .asset("mockMoviePoster"),
                 still: .asset("mockChipMovieStill"),
                 caption: "Одинокий уборщик ищет красоту в каждом мгновении. Шедевр Вима Вендерса о магии жизни — и номинант на «Оскар»",
-                captionTint: Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
+                captionTint: Color(paletteRed: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
             )),
             .album(AlbumBlock(
                 id: "akvarium",
@@ -412,7 +412,7 @@ extension ShowcaseFeed {
                 render: .asset("mockBookZamirovskaya"),
                 cover: .asset("mockBookZamirovskaya"),
                 caption: "Рассказы Татьяны Замировской о катастрофах и о том, как они меняют память, язык и нас самих",
-                captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
+                captionTint: Color(paletteRed: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
             // Первый круг — фильм, альбом, книга, исполнитель; за ним станция, потом второй
             // круг — книга и волна «в стиле артиста» (`ShowcaseCatalog.publishPromo`).
@@ -425,7 +425,7 @@ extension ShowcaseFeed {
                 render: .asset("mockBookFedorova"),
                 cover: .asset("mockBookFedorova"),
                 caption: "Две повести Ани Фёдоровой о детстве на стыке девяностых и нулевых: бабушка, тамагочи, приволжский город",
-                captionTint: Color(red: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
+                captionTint: Color(paletteRed: 0xBC / 255, green: 0xEB / 255, blue: 0xFB / 255)
             )),
             // Волна «в стиле артиста» (задача 68) — мок-исполнитель; у живой — артист
             // из запаса исполнителей круга (`ShowcaseCatalog.pickPromoArtistWave`).
@@ -438,7 +438,7 @@ extension ShowcaseFeed {
                 poster: .asset("mockMoviePoster"),
                 still: .asset("mockChipMovieStill"),
                 caption: "Обыкновенный уборщик ищет красоту в каждом мгновении. Шедевр Вима Вендерса о магии жизни",
-                captionTint: Color(red: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
+                captionTint: Color(paletteRed: 0xA7 / 255, green: 0xCA / 255, blue: 0xC6 / 255)
             )),
             .album(AlbumBlock(
                 id: "akvarium",
@@ -453,7 +453,7 @@ extension ShowcaseFeed {
                 cover: .asset("mockBookGraeberTruth"),
                 caption: "Эссе Дэвида Гребера: мир — то, что мы создаём, и его вполне можно устроить иначе",
                 // Светлый тон жёлтой обложки — как у живых книг, где тон берётся с обложки.
-                captionTint: Color(red: 0xF6 / 255, green: 0xF1 / 255, blue: 0xB0 / 255)
+                captionTint: Color(paletteRed: 0xF6 / 255, green: 0xF1 / 255, blue: 0xB0 / 255)
             )),
             .vibe(Self.mockVibe),
             .reading(ReadingBlock(

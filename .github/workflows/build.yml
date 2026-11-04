@@ -43,11 +43,17 @@ jobs:
       # Generic-назначение: проверяем компиляцию, а не конкретный рантайм симулятора —
       # иначе образ раннера сменит набор рантаймов и проверка покраснеет на пустом месте.
       # Подпись выключена: команда разработчика из проекта на раннере не резолвится.
+      # Полный лог — в файл: хвост в 40 строк при падении показывал только список
+      # упавших шагов, а сами ошибки компилятора оставались выше (PR #35).
       - name: Собрать
         run: |
-          set -o pipefail
+          set +e
           xcodebuild -project PlusProtoApp.xcodeproj -scheme PlusProtoApp \
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
-            build 2>&1 | tail -40
+            build > build.log 2>&1
+          status=$?
+          grep -E "error:|fatal error" build.log | sort -u | head -60
+          tail -40 build.log
+          exit $status

@@ -66,9 +66,10 @@ struct VibeStation: Identifiable {
     let title: String
     /// Иконка агента — ассет; у станции исполнителя вместо неё фото (`photo`).
     let agent: String
-    /// Цвет капли и её светлой кромки
-    let fill: Color
-    let rim: Color
+    /// Цвет капли и её светлой кромки — хексами макета: `Color` считается при обращении,
+    /// в пространстве палитры (`PlusColorSpace`), и переключается вместе с ней.
+    let fillHex: UInt32
+    let rimHex: UInt32
     /// Фото исполнителя кругом — у станции исполнителя (в макете у Cream soda фото
     /// группы; в экспорт SVG оно не попало, берём фото Deezer, id 5535442).
     var photo: URL? = nil
@@ -77,20 +78,23 @@ struct VibeStation: Identifiable {
     /// добавляем (правка пользователя 2026-10-09).
     static let all: [VibeStation] = [
         VibeStation(id: "testosterone", title: "Укол тестостерона", agent: "vibeAgentElectronicsPink",
-                    fill: Color(hex: 0xE7338F), rim: Color(hex: 0xF4A4CD)),
+                    fillHex: 0xE7338F, rimHex: 0xF4A4CD),
         VibeStation(id: "cream-soda", title: "Cream soda", agent: "",
-                    fill: Color(hex: 0x5C8E9B), rim: Color(hex: 0x99F2FF),
+                    fillHex: 0x5C8E9B, rimHex: 0x99F2FF,
                     photo: URL(string: "https://cdn-images.dzcdn.net/images/artist/e41bf19f0bd5fbe74298b1981a21cd77/250x250-000000-80-0-0.jpg")),
         VibeStation(id: "garage", title: "Спальничный гэридж", agent: "vibeAgentPop",
-                    fill: Color(hex: 0xF02A4F), rim: Color(hex: 0xF8A0B0)),
+                    fillHex: 0xF02A4F, rimHex: 0xF8A0B0),
         VibeStation(id: "night-minimal", title: "Ночной минимал", agent: "vibeAgentElectronicsBlue",
-                    fill: Color(hex: 0x426DF5), rim: Color(hex: 0x9EB4FA)),
+                    fillHex: 0x426DF5, rimHex: 0x9EB4FA),
         VibeStation(id: "testosterone-altrock", title: "Укол тестостерона", agent: "vibeAgentAltrock",
-                    fill: Color(hex: 0x4F6C9B), rim: Color(hex: 0xBBC8DD)),
+                    fillHex: 0x4F6C9B, rimHex: 0xBBC8DD),
     ]
 
     /// Стартовая — по центру макета
     static let startIndex = 2
+
+    var fill: Color { Color(hex: fillHex) }
+    var rim: Color { Color(hex: rimHex) }
 }
 
 /// Барабан станций над action bar: лепестки листаются вбок и катятся по дуге — к краям
@@ -291,7 +295,9 @@ private enum VibeBlobCache {
     private static var images: [String: UIImage] = [:]
 
     static func image(for station: VibeStation, compact: Bool = false) -> UIImage? {
-        let key = station.id + (compact ? "-compact" : "")
+        // Пространство палитры — в ключе: растр запекает цвет, а тумблер дебаг-меню
+        // переключает его на лету.
+        let key = station.id + (compact ? "-compact" : "") + (PlusColorSpace.shared.isP3 ? "-p3" : "-srgb")
         if let hit = images[key] { return hit }
         let renderer = ImageRenderer(content: VibeBlobShape(fill: station.fill, rim: station.rim, compact: compact))
         renderer.scale = 2
@@ -402,8 +408,10 @@ enum VibeBlobFill {
 
     /// Цвет, притушенный к чёрному на долю `factor` — стопы макета.
     private static func dimmed(_ color: Color, by factor: Double) -> Color {
+        // Компоненты `resolve` — в расширенном sRGB при любом пространстве палитры.
         let resolved = color.resolve(in: EnvironmentValues())
         return Color(
+            .sRGB,
             red: Double(resolved.red) * factor,
             green: Double(resolved.green) * factor,
             blue: Double(resolved.blue) * factor

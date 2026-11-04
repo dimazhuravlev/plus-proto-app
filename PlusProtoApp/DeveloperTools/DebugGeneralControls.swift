@@ -18,6 +18,8 @@ struct DebugGeneralControls: View {
     @AppStorage(CollectionReorderHint.everySessionKey) private var reorderHintEverySession = false
     /// Таскалка в пустом поиске вместо истории и рекомендаций — ключ `taskalkaInSearch` (`TaskalkaDebug`).
     @AppStorage(TaskalkaDebug.enabledKey) private var taskalkaInSearch = false
+    /// Вариант рефлекса крупных обложек — ключ `coverSheenStyle` (`CoverSheenStyle`).
+    @AppStorage(CoverSheenStyle.storageKey) private var sheenStyle: CoverSheenStyle = .defaultStyle
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
@@ -46,9 +48,21 @@ struct DebugGeneralControls: View {
             headlineReset
                 .padding(.top, Layout.resetTop)
 
+            title("Цвета", top: Layout.sectionGap)
+            toggleIsland(
+                "Display P3",
+                isOn: colorSpaceP3,
+                accessibility: "Цвета палитры в Display P3"
+            )
+            note("Выключено — sRGB, как в Фигме прототипа. Картинки и видео не меняются")
+
             title("Вид поисковой выдачи", top: Layout.sectionGap)
 
             optionsIsland
+
+            title("Рефлекс обложки", top: Layout.sectionGap)
+            sheenIsland
+            note("Альбом, плейлист, книга, большой плеер. Наклоните и поверните телефон в плоскости экрана: полоса едет и поворачивается")
 
             title("Пустой поиск", top: Layout.sectionGap)
             toggleIsland(
@@ -93,6 +107,14 @@ struct DebugGeneralControls: View {
             )
             note("Включено — подсказка у кнопки порядка после каждого перезапуска приложения; выключено — один раз, факт показа хранится на устройстве")
         }
+    }
+
+    /// Пространство цветов палитры (`PlusColorSpace`): P3 или sRGB, на лету во всём приложении.
+    private var colorSpaceP3: Binding<Bool> {
+        Binding(
+            get: { PlusColorSpace.shared.isP3 },
+            set: { PlusColorSpace.shared.setP3($0) }
+        )
     }
 
     private func title(_ text: String, top: CGFloat = ProfileLayout.titleTop) -> some View {
@@ -271,6 +293,54 @@ struct DebugGeneralControls: View {
             RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
                 .fill(Color.fillNine)
         )
+    }
+
+    /// Варианты рефлекса обложки — тот же островок выбора, что у вида выдачи.
+    private var sheenIsland: some View {
+        VStack(spacing: 0) {
+            ForEach(CoverSheenStyle.allCases) { style in
+                sheenRow(style)
+                    .overlay(alignment: .top) {
+                        if style != CoverSheenStyle.allCases.first {
+                            Rectangle()
+                                .fill(ProfileLayout.divider)
+                                .frame(height: 0.5)
+                                .padding(.leading, ProfileLayout.dividerInset)
+                        }
+                    }
+            }
+        }
+        .padding(.vertical, ProfileLayout.islandPadding)
+        .background(
+            RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
+                .fill(Color.fillNine)
+        )
+    }
+
+    private func sheenRow(_ style: CoverSheenStyle) -> some View {
+        Button {
+            guard style != sheenStyle else { return }
+            TabBarMotion.tapHaptic()
+            sheenStyle = style
+        } label: {
+            HStack(spacing: ProfileLayout.cellGap) {
+                Text(style.title)
+                    .plusText(.textM, .medium)
+                    .foregroundStyle(Color.fillOne)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image("iconDone")
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: Layout.checkIcon, height: Layout.checkIcon)
+                    .foregroundStyle(Color.fillOne)
+                    .opacity(style == sheenStyle ? 1 : 0)
+            }
+            .padding(.horizontal, ProfileLayout.cellHorizontal)
+            .padding(.vertical, ProfileLayout.cellVertical)
+            .contentShape(.rect)
+        }
+        .buttonStyle(CellHighlightButtonStyle())
+        .accessibilityAddTraits(style == sheenStyle ? .isSelected : [])
     }
 
     private func optionRow(_ style: SearchResultsStyle) -> some View {
