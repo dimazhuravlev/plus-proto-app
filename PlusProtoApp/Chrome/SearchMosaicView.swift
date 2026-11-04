@@ -703,7 +703,7 @@ private struct MosaicContentKey: Equatable {
 /// «Искали недавно» сеткой — нулевое состояние поиска в режиме сетки (задача
 /// пользователя 2026-10-05; включается тем же пунктом дебаг-меню, что сетка выдачи).
 /// Перехода в полный список нет: вся история — найденное и стартовый набор — сразу
-/// в сетке, а в её конце «Удалить историю поиска».
+/// в сетке, а последней ячейкой — плитка «Удалить историю» (`SearchHistoryClearTile`).
 ///
 /// Тапы отсюда историю не переставляют, как и из ленты каруселей: сетка сдвинулась бы
 /// под зумом открытой карточки, и на возврате он сворачивался бы не в ту карточку.
@@ -729,20 +729,13 @@ struct SearchRecentsMosaicView: View {
         let zoomSources = items.firstPerRouteIDs
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Справа — крестик удаления истории (правка пользователя 2026-10-30:
-                // вместо кнопки «Удалить историю поиска» под сеткой).
-                HStack(spacing: 0) {
-                    Text("Искали недавно")
-                        .plusHeadline(.s)
-                        .foregroundStyle(Color.fillOne)
-                    Spacer(minLength: 0)
-                    SearchHistoryClearButton {
-                        clearSearchHistoryFading($gridOpacity, search: search)
-                    }
-                }
                 // Строку держит рамка, текст — по её центру: так же, как у заголовка
                 // карусели, на той же базовой линии, что в Фигме.
-                .frame(height: Layout.headerLine)
+                Text("Искали недавно")
+                    .plusHeadline(.s)
+                    .foregroundStyle(Color.fillOne)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: Layout.headerLine)
                 .padding(.top, Layout.headerTop)
                 .padding(.bottom, Layout.headerBottom)
                 .padding(.horizontal, MosaicLayout.side)
@@ -762,6 +755,10 @@ struct SearchRecentsMosaicView: View {
                             play: { track in playSearchTrack(track, queue: items, actionBar: actionBar) }
                         )
                     }
+                    // Последней ячейкой — следующей по порядку, как любая карточка (`MosaicGrid`).
+                    SearchHistoryClearTile {
+                        clearSearchHistoryFading($gridOpacity, search: search)
+                    }
                 }
                 .padding(.horizontal, MosaicLayout.side)
             }
@@ -778,10 +775,53 @@ struct SearchRecentsMosaicView: View {
     }
 }
 
-/// Крестик в шапке «Искали недавно» — удалить историю целиком, с подтверждением системной
-/// шторкой действий (правка пользователя 2026-10-30: вместо кнопки «Удалить историю
-/// поиска» под лентой; работает так же). Plain M — глиф 20, как шеврон заголовка;
-/// круг 40 — под отрицательным отступом, раскладка шапки держит глиф.
+/// Плитка «Удалить историю» — последняя ячейка сетки «Искали недавно» (макет
+/// `19421:186653`, правка пользователя 2026-11-03: вместо крестика в шапке). Круг
+/// на ширину колонки, как обложка исполнителя: заливка и бордер Fill/Nine, по центру
+/// корзина 20 Fill/Seven и подпись Text S Medium в две строки. Тап — та же системная
+/// шторка подтверждения, что у крестика ленты каруселей.
+private struct SearchHistoryClearTile: View {
+    let onConfirm: () -> Void
+    @State private var isConfirming = false
+
+    private enum Layout {
+        static let icon: CGFloat = 20
+        static let iconGap: CGFloat = 4
+        static let border: CGFloat = 0.67
+    }
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            isConfirming = true
+        } label: {
+            VStack(spacing: Layout.iconGap) {
+                Image("iconDelete")
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: Layout.icon, height: Layout.icon)
+                    .foregroundStyle(Color.fillSeven)
+                Text("Удалить\nисторию")
+                    .plusText(.textS, .medium)
+                    .foregroundStyle(Color.fillOne)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(width: MosaicLayout.card, height: MosaicLayout.card)
+            .background(Color.fillNine, in: Circle())
+            .overlay { Circle().strokeBorder(Color.fillNine, lineWidth: Layout.border) }
+            .contentShape(Circle())
+        }
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+        .accessibilityLabel("Удалить историю поиска")
+        .searchHistoryClearConfirmation(isPresented: $isConfirming, onConfirm: onConfirm)
+    }
+}
+
+/// Крестик в шапке «Искали недавно» ленты каруселей — удалить историю целиком,
+/// с подтверждением системной шторкой действий (правка пользователя 2026-10-30: вместо
+/// кнопки «Удалить историю поиска» под лентой; работает так же; у сетки — плитка
+/// `SearchHistoryClearTile`). Plain M — глиф 20, как шеврон заголовка; круг 40 — под
+/// отрицательным отступом, раскладка шапки держит глиф.
 struct SearchHistoryClearButton: View {
     /// Подтвердили — вызывающий гасит свою ленту и стирает историю
     /// (`clearSearchHistoryFading`).
@@ -801,9 +841,15 @@ struct SearchHistoryClearButton: View {
                 .foregroundStyle(Color.fillFive)
         }
         .padding(-(PlusButtonSize.m.height - PlusButtonSize.m.iconBox) / 2)
-        // Системная шторка действий — макет `19220:88965` (PRD общего поиска; прежде —
-        // алерт «Точно удалить историю?»).
-        .confirmationDialog("Удалить историю поиска?", isPresented: $isConfirming, titleVisibility: .visible) {
+        .searchHistoryClearConfirmation(isPresented: $isConfirming, onConfirm: onConfirm)
+    }
+}
+
+private extension View {
+    /// Системная шторка действий — макет `19220:88965` (PRD общего поиска; прежде —
+    /// алерт «Точно удалить историю?»).
+    func searchHistoryClearConfirmation(isPresented: Binding<Bool>, onConfirm: @escaping () -> Void) -> some View {
+        confirmationDialog("Удалить историю поиска?", isPresented: isPresented, titleVisibility: .visible) {
             Button("Да, удалить", role: .destructive, action: onConfirm)
             Button("Назад", role: .cancel) {}
         }
