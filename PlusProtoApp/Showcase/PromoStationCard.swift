@@ -56,6 +56,27 @@ enum PromoStationLayout {
     /// Пара ✕/✓ — внутри карточки, левый верхний угол в (61, 214)
     static let pairOrigin = CGPoint(x: 61, y: 214)
 
+    /// Поле под волну запуска (`LiftWave`): её растр — по кадру, а капля с блюром
+    /// уходит за кадр влево и вниз на ~110, вправо — на ~15, иллюстрация с полем
+    /// под блюр — вверх на 9 (расчёт по эллипсу и повороту капли выше).
+    private static let waveInsets = EdgeInsets(top: 16, leading: 120, bottom: 120, trailing: 24)
+    /// У подписи — запас под выносные элементы букв за строкой.
+    private static let captionWaveInset: CGFloat = 6
+
+    static func waveOverflow(scale: CGFloat) -> EdgeInsets {
+        EdgeInsets(
+            top: waveInsets.top * scale,
+            leading: waveInsets.leading * scale,
+            bottom: waveInsets.bottom * scale,
+            trailing: waveInsets.trailing * scale
+        )
+    }
+
+    static func captionWaveOverflow(scale: CGFloat) -> EdgeInsets {
+        let inset = captionWaveInset * scale
+        return EdgeInsets(top: inset, leading: inset, bottom: inset, trailing: inset)
+    }
+
     /// Волна «в стиле артиста» — макет `2698:27113`, те же координаты. Фото — круг во весь
     /// квадрат `artBox`, обводка 1 белым 15 % внутрь и внутреннее свечение белым 50 %
     /// (в макете inset-блюр 32, в коде радиус вдвое меньше — конвенция проекта).
@@ -79,6 +100,9 @@ struct PromoStationCard: View {
     let title: String
     let station: VibePromoStation
     var showsCaption = true
+    /// В ряду промо иллюстрация — слой над каплей (`PromoDepthMotion`): на свайпе
+    /// уходит к центру ряда на столько, на месте соседа. 0 — вне промо, слоя нет.
+    var artDepth: CGFloat = 0
 
     private typealias Layout = PromoStationLayout
 
@@ -95,6 +119,7 @@ struct PromoStationCard: View {
                     .showcaseSwappable()
                     .offset(x: Layout.artOrigin.x * scale, y: Layout.artOrigin.y * scale)
                     .accessibilityHidden(true)
+                    .promoLayer(depth: artDepth, alignment: .topLeading)
             }
             .overlay(alignment: .topLeading) {
                 if showsCaption {

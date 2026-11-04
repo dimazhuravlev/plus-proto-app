@@ -73,6 +73,8 @@ struct ShowcasePromo: View {
     @State private var isPlaced = false
     @State private var hasInteracted = false
     @State private var swipeHaptics = PromoSwipeHapticPolicy()
+    /// Волна запуска по лепестку станции (`LiftWave`).
+    @State private var petalWave = PromoPetalWave()
 
     init(items: [ShowcaseBlock], zoom: Namespace.ID, savedIndex: Binding<Int>) {
         self.items = items
@@ -401,6 +403,7 @@ struct ShowcasePromo: View {
         // на её кромку. Смена — на середине свайпа, когда карточки равны и почти
         // не касаются.
         .zIndex(index == page ? 1 : 0)
+        .environment(\.promoDepthShift, shift)
         .environment(feedback.state(for: item.id))
         .environment(\.showcaseRefresh, ShowcaseRefresh(prepare: { nil }, custom: { remove(slot: index) }))
     }
@@ -415,12 +418,23 @@ struct ShowcasePromo: View {
         // Обвязка обложки — бадж, реакции, подписи — уходит вместе с ней, пока открыт
         // экран карточки: зум прячет только саму обложку (источник).
         let captionRoute = Self.zoomRoute(item, isCurrent: isCurrent)
+        let waveTrigger = petalWave.triggers[slotID(item, slotIndex: slotIndex)] ?? 0
+        let waveOrigin = petalLayout ? petalWave.origin : .zero
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
             // Смена по ✕ (`showcaseSwappable`) — внутри лица: у станции она на слоях
             // по отдельности (`PromoStationCard`).
-            PromoCardFace(item: item)
+            PromoCardFace(item: item, waveTrigger: waveTrigger, waveOrigin: waveOrigin)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+        // Точка касания лепестка — начало волны запуска. Тап ловится вместе с кнопкой,
+        // а не вместо неё; у других видов жест выключен.
+        .simultaneousGesture(
+            SpatialTapGesture().onEnded { tap in
+                petalWave.origin = tap.location
+                petalWave.originAt = .now
+            },
+            including: petalLayout ? .all : .subviews
+        )
         // Источник зума — у каждой копии, но адрес экрана — только у центральной:
         // повторы того же айтема источником не становятся. Без `if`: смена ветки
         // пересоздавала карточку посреди свайпа, и она моргала.
@@ -435,6 +449,7 @@ struct ShowcasePromo: View {
                     .offset(y: -PromoAlbumBadge.boundsSize.height - 8)
                     .allowsHitTesting(false)
                     .zoomSourceCaption(captionRoute)
+                    .promoLayer(depth: PromoDepthMotion.pairDepth, alignment: .topLeading)
             }
         }
         .overlay(alignment: pair.alignment) {
@@ -451,14 +466,26 @@ struct ShowcasePromo: View {
                     .rotationEffect(pair.rotation)
                     .offset(pair.offset)
                     .zoomSourceCaption(captionRoute)
+                    .promoLayer(depth: PromoDepthMotion.pairDepth, alignment: pair.alignment)
             }
         }
         .overlay(alignment: .topLeading) {
             if petalLayout, case .vibe(let vibe) = item {
                 VStack(spacing: 24) {
+                    // Волна идёт и по подписи — она лежит на капле. Пару ✕/✓ волна
+                    // не трогает: стеклянные кнопки в растр шейдера не попадают.
                     PromoStationCaption(title: vibe.title, station: vibe.promoStation)
                         .showcaseSwappable()
                         .allowsHitTesting(false)
+                        .modifier(LiftWave(
+                            trigger: waveTrigger,
+                            origin: CGPoint(
+                                x: waveOrigin.x - PromoStationLayout.textLeading * Layout.stationScale,
+                                y: waveOrigin.y - PromoStationLayout.textTop * Layout.stationScale
+                            ),
+                            overflow: PromoStationLayout.captionWaveOverflow(scale: Layout.stationScale),
+                            scale: Layout.stationScale
+                        ))
                     if abs(slotIndex - (page ?? slotIndex)) <= 1 {
                         ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true, recommendation: item)
                             .modifier(PromoReveal(isShown: isShown,
@@ -469,6 +496,7 @@ struct ShowcasePromo: View {
                 .frame(width: PromoStationLayout.textWidth * Layout.stationScale)
                 .offset(x: PromoStationLayout.textLeading * Layout.stationScale,
                         y: PromoStationLayout.textTop * Layout.stationScale)
+                .promoLayer(depth: PromoDepthMotion.captionDepth, alignment: .topLeading)
             }
         }
 
@@ -485,6 +513,7 @@ struct ShowcasePromo: View {
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
                     .offset(x: Layout.albumCaptionLeading, y: Layout.albumCaptionGap + Layout.albumAvatar)
                     .zoomSourceCaption(captionRoute)
+                    .promoLayer(depth: PromoDepthMotion.captionDepth, alignment: .bottomLeading)
             }
         }
 
@@ -497,6 +526,7 @@ struct ShowcasePromo: View {
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
                     .offset(y: Layout.artist + Layout.centeredCaptionTop)
                     .zoomSourceCaption(captionRoute)
+                    .promoLayer(depth: PromoDepthMotion.captionDepth, alignment: .top)
             }
         }
     }
@@ -532,9 +562,17 @@ struct ShowcasePromo: View {
         }
         if case .vibe = item {
             actionBar.openMyVibe()
+            // Волна заиграла — по лепестку расходится волна; тап, поставивший её на паузу, — без неё.
+            if actionBar.isMusicPlaying { petalWave.launch(at: slotID(item, slotIndex: slotIndex)) }
             return
         }
         if let route = item.entityRoute { navigation.open(route) }
+    }
+
+    /// Ключ слота — тот же, что у вью ряда: счётчик волны при айтеме, а не при месте —
+    /// после ✕ места сдвигаются, и чужой счётчик пустил бы волну у соседки.
+    private func slotID(_ item: ShowcaseBlock, slotIndex: Int) -> PromoSlotID {
+        PromoSlotID(copy: slotIndex / max(count, 1), item: item.id)
     }
 
     /// Тап по подписи альбома — экран исполнителя. Пока карточку убирают по ✕ или она
@@ -785,6 +823,8 @@ private struct PromoCardMotion: ViewModifier, Animatable {
     let kind: HomePromoKind
     var shift: CGFloat
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var animatableData: CGFloat {
         get { shift }
         set { shift = newValue }
@@ -800,7 +840,9 @@ private struct PromoCardMotion: ViewModifier, Animatable {
         let sideAngle = settings.sideAngle
         // В центре — выбранная ширина. По бокам остаётся прежний размер контента.
         let sideScale = ShowcasePromoLayout.sideScale / settings.multiplier(for: kind)
-        return content.visualEffect { [look, shift, upright, sideAngle, sideScale] content, proxy in
+        // Объём (`PromoDepthMotion`) — с «уменьшением движения» его нет.
+        let depth: Double = reduceMotion ? 0 : 1
+        return content.visualEffect { [look, shift, upright, sideAngle, sideScale, depth] content, proxy in
             let position = ShowcasePromoLayout.position(of: proxy, step: step) - shift
             let distance = ShowcasePromoLayout.ease(abs(position))
             let magnitude = look.centerTilt + (look.sideTilt - look.centerTilt) * Double(distance)
@@ -810,9 +852,22 @@ private struct PromoCardMotion: ViewModifier, Animatable {
             let tilt = upright
                 ? sideAngle * Double(distance) * (position < 0 ? -1 : 1)
                 : -magnitude * cos(Double.pi * Double(position))
+            // Наклон — в плоскости карточки, затем сама плоскость поворачивается в 3D:
+            // к центру ряда (вогнутая дуга, внешний край соседа ближе) и чуть назад.
+            let swing = Double(PromoDepthMotion.swing(position))
             return content
                 .scaleEffect(1 - (1 - sideScale) * distance)
                 .rotationEffect(.degrees(tilt))
+                .rotation3DEffect(
+                    .degrees(-PromoDepthMotion.yaw * swing * depth),
+                    axis: (x: 0, y: 1, z: 0),
+                    perspective: PromoDepthMotion.perspective
+                )
+                .rotation3DEffect(
+                    .degrees(PromoDepthMotion.pitch * Double(distance) * depth),
+                    axis: (x: 1, y: 0, z: 0),
+                    perspective: PromoDepthMotion.perspective
+                )
                 .offset(x: -shift * step, y: drop * distance)
         }
     }
@@ -875,6 +930,10 @@ private struct PromoCardLook {
 /// лепесток станции (`PromoStationCard`, кадр 208×249).
 private struct PromoCardFace: View {
     let item: ShowcaseBlock
+    /// Волна запуска по лепестку станции (`LiftWave`): смена пускает волну от точки
+    /// касания — в координатах карточки. У других видов не используется.
+    var waveTrigger = 0
+    var waveOrigin = CGPoint.zero
 
     private typealias Layout = ShowcasePromoLayout
 
@@ -899,7 +958,13 @@ private struct PromoCardFace: View {
         case .vibe(let vibe):
             // Смена по ✕ — на слоях лепестка по отдельности, внутри него.
             PromoStationCard(title: vibe.title, station: vibe.promoStation,
-                             showsCaption: false)
+                             showsCaption: false, artDepth: PromoDepthMotion.artDepth)
+                .modifier(LiftWave(
+                    trigger: waveTrigger,
+                    origin: waveOrigin,
+                    overflow: PromoStationLayout.waveOverflow(scale: Layout.stationScale),
+                    scale: Layout.stationScale
+                ))
         case .reading, .watching:
             EmptyView()
         }
@@ -1054,6 +1119,39 @@ private struct PromoPairPlacement {
         self.offset = offset
         self.anchor = anchor
         self.rotation = rotation
+    }
+}
+
+/// Волна запуска «Моей волны» по лепестку (`LiftWave`): счётчики пусков по слотам —
+/// у каждого свой, смена одного не пускает волну у других — и последняя точка касания
+/// лепестка в координатах карточки.
+private struct PromoPetalWave {
+    var triggers: [PromoSlotID: Int] = [:]
+    var origin = CGPoint.zero
+    /// Когда поймана точка касания. Кнопка и жест точки срабатывают на одном отпускании
+    /// в любом порядке; старше `freshTap` — точка не от этого нажатия (VoiceOver жеста
+    /// не даёт), и волна идёт из середины лепестка.
+    var originAt = Date.distantPast
+    /// Начало идущей волны: новая, пока она не догасла, не пускается — перезапуск
+    /// обрывал бы её кольцо в один кадр.
+    var startedAt = Date.distantPast
+
+    static let freshTap: TimeInterval = 0.5
+
+    /// Пустить волну у слота, если прежняя догасла.
+    @MainActor
+    mutating func launch(at slot: PromoSlotID) {
+        let now = Date.now
+        guard now.timeIntervalSince(startedAt) >= LiftWaveConfig.duration else { return }
+        if now.timeIntervalSince(originAt) > Self.freshTap {
+            let scale = ShowcasePromoLayout.stationScale
+            origin = CGPoint(
+                x: PromoStationLayout.frame.width * scale / 2,
+                y: PromoStationLayout.frame.height * scale / 2
+            )
+        }
+        startedAt = now
+        triggers[slot, default: 0] += 1
     }
 }
 
