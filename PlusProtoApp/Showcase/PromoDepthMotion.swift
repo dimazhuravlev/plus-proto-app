@@ -44,9 +44,14 @@ extension View {
     /// соседа) — к повороту карточки, как будто висит над её поверхностью. Рамка —
     /// во всю карточку, раскладка — по `alignment`, как у оверлея: место в ряду
     /// считается от центра карточки, а не слоя.
-    func promoLayer(depth: CGFloat, alignment: Alignment) -> some View {
-        frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-            .modifier(PromoLayerDepth(depth: depth))
+    @ViewBuilder
+    func promoLayer(enabled: Bool, depth: CGFloat, alignment: Alignment) -> some View {
+        if enabled {
+            frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                .modifier(PromoLayerDepth(depth: depth))
+        } else {
+            self
+        }
     }
 }
 

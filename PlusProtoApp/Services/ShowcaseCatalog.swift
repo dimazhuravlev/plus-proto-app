@@ -727,11 +727,11 @@ final class ShowcaseCatalog {
         guard hasLoaded || isStation, removed.isReplaceable else { return nil }
         let task = upcomingPromo.removeValue(forKey: removed.id)
             ?? Task { await self.makePromoReplacement(for: removed) }
-        var replacement = await Self.value(of: task, within: Self.replacementTimeout)
+        var replacement = await PromoTaskDeadline.value(of: task, within: Self.replacementTimeout)
         // Заготовка устарела: тот же айтем успел встать в круг по другому ✕.
         if let taken = replacement, isPromoTaken(taken.block.id) {
             let fresh = Task { await self.makePromoReplacement(for: removed) }
-            replacement = await Self.value(of: fresh, within: Self.replacementTimeout)
+            replacement = await PromoTaskDeadline.value(of: fresh, within: Self.replacementTimeout)
         }
         guard let replacement, !isPromoTaken(replacement.block.id) else { return nil }
         return ShowcasePromoAddition(block: replacement.block, commit: replacement.commit)

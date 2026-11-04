@@ -1,11 +1,5 @@
 import SwiftUI
 
-enum HomeShelfLift: Int, CaseIterable, Identifiable {
-    case off = 0, up16 = 16, up32 = 32
-    var id: Int { rawValue }
-    var title: String { self == .off ? "Как раньше" : "↑ \(rawValue) px" }
-}
-
 enum HomePromoKind: String, CaseIterable, Identifiable {
     case movie, album, book, artist, station
     var id: Self { self }
@@ -25,14 +19,7 @@ enum HomePromoKind: String, CaseIterable, Identifiable {
         case .station: 208
         }
     }
-    var initialWidth: Double {
-        switch self {
-        case .movie, .book: 236
-        case .album: 276
-        case .artist: 280
-        case .station: 260
-        }
-    }
+
 }
 
 /// Общие параметры главной; отдельный компонент девменю меняет их через слой хранения.
@@ -40,25 +27,21 @@ enum HomePromoKind: String, CaseIterable, Identifiable {
 final class HomePresentationSettings {
     static let shared = HomePresentationSettings()
     private static let prefix = "localHomeDev."
-    private static let presetWidths = Dictionary(uniqueKeysWithValues: HomePromoKind.allCases.map { ($0.rawValue, $0.initialWidth) })
+    private static let legacyDefaultWidths: [String: Double] = [
+        "movie": 240, "book": 240, "album": 272, "artist": 272, "station": 272
+    ]
     /// Базовые параметры оставшихся регуляторов. Существующие локальные значения приоритетнее.
     private static let selectedDefaults: [String: Any] = [
-        "recentlyHeight": 64.0, "sizes": true, "upright": true,
-        "promoArtistWidth": 280.0,
-        "promoMovieWidth": 236.0, "promoBookWidth": 236.0,
+        "upright": true,
         "headerGapEnabled": true, "headerGap": 8.0,
         "heroGapEnabled": true, "heroGap": 24.0,
-        "shelves": true, "shelfLift": 32, "widths": presetWidths
+        "shelves": true, "shelfLift": 32
     ]
-    var promoArtistWidth: Double { didSet { save("promoArtistWidth", promoArtistWidth) } }
-    var shelfLift: HomeShelfLift { didSet { save("shelfLift", shelfLift.rawValue) } }
+    var shelfLift: Double { didSet { save("shelfLift", shelfLift) } }
     var heroGapEnabled: Bool { didSet { save("heroGapEnabled", heroGapEnabled) } }
     var heroGap: Double { didSet { save("heroGap", heroGap) } }
     var headerGapEnabled: Bool { didSet { save("headerGapEnabled", headerGapEnabled) } }
     var headerGap: Double { didSet { save("headerGap", headerGap) } }
-    var promoMovieWidth: Double { didSet { save("promoMovieWidth", promoMovieWidth) } }
-    var promoBookWidth: Double { didSet { save("promoBookWidth", promoBookWidth) } }
-    var sizesEnabled: Bool { didSet { save("sizes", sizesEnabled) } }
     var uprightEnabled: Bool { didSet { save("upright", uprightEnabled) } }
     var shelvesEnabled: Bool { didSet { save("shelves", shelvesEnabled) } }
     var recentlyWaveVideoEnabled: Bool { didSet { save("recentlyWaveVideo", recentlyWaveVideoEnabled) } }
@@ -77,10 +60,16 @@ final class HomePresentationSettings {
     var recentlyWaveSaturation: Double { didSet { save("recentlyWaveSaturation", recentlyWaveSaturation) } }
     var recentlyWaveContrast: Double { didSet { save("recentlyWaveContrast", recentlyWaveContrast) } }
     var recentlyPreviewIndex = -1
-    var recentlyHeight: Double { didSet { save("recentlyHeight", recentlyHeight) } }
     var recentlyPreviewProgress: Double = 0.82
+    var promoPairPreviewEnabled: Bool { didSet { save("promoPairPreviewEnabled", promoPairPreviewEnabled) } }
+    var promoDepthEnabled: Bool { didSet { save("promoDepthEnabled", promoDepthEnabled) } }
+    var promoLiftWaveEnabled: Bool { didSet { save("promoLiftWaveEnabled", promoLiftWaveEnabled) } }
+    var hideRecently: Bool { didSet { save("hideRecently", hideRecently) } }
+    var legacySideOffsetEnabled: Bool { didSet { save("legacySideOffsetEnabled", legacySideOffsetEnabled) } }
+    var legacySideOffset: Double { didSet { save("legacySideOffset", legacySideOffset) } }
+    var legacyWidths: [String: Double] { didSet { save("legacyWidths", legacyWidths) } }
     var sideAngle: Double { didSet { save("angle", sideAngle) } }
-    var widths: [String: Double] { didSet { save("widths", widths) } }
+
 
     private init() {
         let defaults = HomeSettingsStorage(defaults: Dictionary(uniqueKeysWithValues: Self.selectedDefaults.map {
@@ -90,31 +79,32 @@ final class HomePresentationSettings {
         // установку. Другие настройки и последующие ручные правки сохраняются.
         let layoutRevision = Self.prefix + "recentlyLayout20261022"
         if defaults.object(forKey: layoutRevision) as? Bool != true {
-            HomeSettingsStorage.save(64.0, forKey: Self.prefix + "recentlyHeight")
             HomeSettingsStorage.save(24.0, forKey: Self.prefix + "heroGap")
             HomeSettingsStorage.save(true, forKey: Self.prefix + "heroGapEnabled")
             HomeSettingsStorage.save(true, forKey: layoutRevision)
         }
+        let legacyOffsetRevision = Self.prefix + "legacyOffset32_20261029"
+        if defaults.object(forKey: legacyOffsetRevision) as? Bool != true {
+            HomeSettingsStorage.save(true, forKey: Self.prefix + "legacySideOffsetEnabled")
+            HomeSettingsStorage.save(32.0, forKey: Self.prefix + "legacySideOffset")
+            HomeSettingsStorage.save(true, forKey: legacyOffsetRevision)
+        }
+        let legacyWidthsRevision = Self.prefix + "legacyWidths240_272_on440_20261029"
+        if defaults.object(forKey: legacyWidthsRevision) as? Bool != true {
+            HomeSettingsStorage.save(Self.legacyDefaultWidths, forKey: Self.prefix + "legacyWidths")
+            HomeSettingsStorage.save(true, forKey: legacyWidthsRevision)
+        }
         func flag(_ key: String) -> Bool {
             defaults.object(forKey: Self.prefix + key) as? Bool ?? true
         }
-        let oldArtistWidth = (defaults.dictionary(forKey: Self.prefix + "widths")?[HomePromoKind.artist.rawValue] as? Double)
-        promoArtistWidth = defaults.object(forKey: Self.prefix + "promoArtistWidth") as? Double
-            ?? oldArtistWidth.flatMap { $0 == 276 ? nil : $0 } ?? 280
-        let storedShelfLift = defaults.object(forKey: Self.prefix + "shelfLift") as? Int ?? 32
-        shelfLift = HomeShelfLift(rawValue: storedShelfLift) ?? .up32
-        if storedShelfLift == 24 {
-            HomeSettingsStorage.save(32, forKey: Self.prefix + "shelfLift")
-        }
+        let storedShelfLift = defaults.object(forKey: Self.prefix + "shelfLift") as? Double ?? 32
+        shelfLift = (min(max(storedShelfLift, -128), 320) / 4).rounded() * 4
         heroGapEnabled = flag("heroGapEnabled")
         let storedHeroGap = defaults.object(forKey: Self.prefix + "heroGap") as? Double ?? 24
         heroGap = (min(max(storedHeroGap, -24), 96) / 4).rounded() * 4
         headerGapEnabled = flag("headerGapEnabled")
         let storedHeaderGap = defaults.object(forKey: Self.prefix + "headerGap") as? Double ?? 8
         headerGap = (min(max(storedHeaderGap, -24), 160) / 4).rounded() * 4
-        promoMovieWidth = defaults.object(forKey: Self.prefix + "promoMovieWidth") as? Double ?? 236
-        promoBookWidth = defaults.object(forKey: Self.prefix + "promoBookWidth") as? Double ?? 236
-        sizesEnabled = flag("sizes")
         uprightEnabled = flag("upright")
         shelvesEnabled = flag("shelves")
         recentlyWaveVideoEnabled = flag("recentlyWaveVideo")
@@ -132,36 +122,26 @@ final class HomePresentationSettings {
         recentlyWaveOpacity = min(max(defaults.object(forKey: Self.prefix + "recentlyWaveOpacity") as? Double ?? 1, 0.5), 1)
         recentlyWaveSaturation = min(max(defaults.object(forKey: Self.prefix + "recentlyWaveSaturation") as? Double ?? 1.25, 0.75), 2)
         recentlyWaveContrast = min(max(defaults.object(forKey: Self.prefix + "recentlyWaveContrast") as? Double ?? 1.15, 0.8), 1.5)
-        let height = defaults.object(forKey: Self.prefix + "recentlyHeight") as? Double ?? 64
-        recentlyHeight = (min(max(height, 48), 96) / 4).rounded() * 4
         #if DEBUG
         // Только на этот процесс: компактный контрольный кадр без записи тестовых
         // размеров и прогресса в настройки или историю пользователя.
         if ProcessInfo.processInfo.arguments.contains("-debugRecentlyLayout") {
-            recentlyHeight = 48
             recentlyPreviewIndex = 0
         }
-        if ProcessInfo.processInfo.arguments.contains("-debugPromoArtistName") {
-            sizesEnabled = true
-        }
         #endif
+        promoPairPreviewEnabled = defaults.object(forKey: Self.prefix + "promoPairPreviewEnabled") as? Bool ?? false
+        promoDepthEnabled = defaults.object(forKey: Self.prefix + "promoDepthEnabled") as? Bool ?? false
+        promoLiftWaveEnabled = defaults.object(forKey: Self.prefix + "promoLiftWaveEnabled") as? Bool ?? false
+        legacyWidths = defaults.dictionary(forKey: Self.prefix + "legacyWidths") as? [String: Double]
+            ?? Self.legacyDefaultWidths
+        hideRecently = defaults.object(forKey: Self.prefix + "hideRecently") as? Bool ?? false
+        legacySideOffsetEnabled = defaults.object(forKey: Self.prefix + "legacySideOffsetEnabled") as? Bool ?? true
+        legacySideOffset = min(max(defaults.object(forKey: Self.prefix + "legacySideOffset") as? Double ?? 32, -96), 96)
         sideAngle = defaults.object(forKey: Self.prefix + "angle") as? Double ?? 5
-        widths = defaults.dictionary(forKey: Self.prefix + "widths") as? [String: Double]
-            ?? Dictionary(uniqueKeysWithValues: HomePromoKind.allCases.map { ($0.rawValue, $0.initialWidth) })
     }
 
     func width(for kind: HomePromoKind) -> Double {
-        guard sizesEnabled else { return kind.originalWidth }
-        switch kind {
-        case .artist: return promoArtistWidth
-        case .movie: return promoMovieWidth
-        case .book: return promoBookWidth
-        default: return widths[kind.rawValue] ?? kind.initialWidth
-        }
-    }
-
-    func multiplier(for kind: HomePromoKind) -> CGFloat {
-        CGFloat(width(for: kind) / kind.originalWidth)
+        legacyWidths[kind.rawValue] ?? Self.legacyDefaultWidths[kind.rawValue] ?? kind.originalWidth
     }
 
     private func save(_ key: String, _ value: Any) {

@@ -95,7 +95,7 @@ struct PromoIntroSurface: ViewModifier {
 
 /// Figma 362:25524, исходный размер до поворота 53.34×20.
 struct PromoAlbumBadge: View {
-    static let boundsSize = CGSize(width: 54.3136205206, height: 22.7641912586)
+    static let boundsSize = CGSize(width: 53.34, height: 20)
     @Environment(ShowcaseFeedbackState.self) private var feedback: ShowcaseFeedbackState?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -107,10 +107,10 @@ struct PromoAlbumBadge: View {
         Text("Новое").plusText(.textS, .semibold)
             .foregroundStyle(Color.fillOne)
             .frame(width: 53.34, height: 20)
-            .glassSurface(RoundedRectangle(cornerRadius: 6), blur: 20,
-                          fill: .fillNine, border: .fillNine, borderWidth: 0.67)
-            .rotationEffect(.degrees(3))
-            // Рамка учитывает поворот: отступы измеряются от видимых краёв баджа.
+            // Background blur 16 в макете = радиус 8 в конвенции GlassSurface.
+            .glassSurface(RoundedRectangle(cornerRadius: 6), blur: 8,
+                          fill: Color(red: 0.2, green: 0.2, blue: 0.2).opacity(0.5), border: .clear, borderWidth: 0)
+            // Рамка совпадает с видимыми границами баджа без поворота.
             .frame(width: Self.boundsSize.width, height: Self.boundsSize.height)
             .opacity(isHiddenByIntro ? 0 : 1)
             // Бадж возвращается после сужения капсулы, когда они уже не перекрываются.

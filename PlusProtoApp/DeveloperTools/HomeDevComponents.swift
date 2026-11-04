@@ -8,18 +8,6 @@ extension HomeDevControls {
         }
     }
 
-    func toggleTile(_ title: String, isOn: Binding<Bool>) -> some View {
-        HStack(spacing: 8) {
-            Text(title).fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-            Toggle(title, isOn: isOn).labelsHidden().controlSize(.small).fixedSize()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.buttonsSecondary, in: RoundedRectangle(cornerRadius: 14))
-        .accessibilityElement(children: .contain)
-    }
-
     func sliderTile<Control: View>(_ title: String, value: String, @ViewBuilder control: () -> Control) -> some View
     {
         VStack(alignment: .leading, spacing: 6) {

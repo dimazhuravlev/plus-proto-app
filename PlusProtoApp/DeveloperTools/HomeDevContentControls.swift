@@ -118,7 +118,7 @@ extension HomeDevControls {
                 }
                 hint("Новый набор меняет контент и место фильма в recently. История просмотра сохраняется.")
             }
-            section("Подсказка реакции") {
+            section("Кнопки фидбека") {
                 Button("Повторить подсказку") { PromoIntroSession.shared.replay() }
                     .buttonStyle(.bordered)
                 hint(

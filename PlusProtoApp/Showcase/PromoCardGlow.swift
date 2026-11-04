@@ -20,7 +20,9 @@ enum PromoCardGlowConfig {
     private static var cache = PromoResourceCache<Key, UIImage>(countLimit: 96, costLimit: 24 * 1024 * 1024)
 
     static func retain(_ items: [ShowcaseBlock]) {
-        cache.retain(Set(items.map { key(for: $0) }))
+        // Семь видимых карточек и по одной на подходе. Даже при прогреве длинной
+        // ленты закреплённый набор ограничен; остальные растры подчиняются бюджету.
+        cache.retain(Set(items.prefix(9).map { key(for: $0) }))
     }
 
     private static func store(_ image: UIImage, for key: Key) {
