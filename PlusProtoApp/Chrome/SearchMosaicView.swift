@@ -3,7 +3,16 @@ import SwiftUI
 /// Числа сетки выдачи — макет `2479:24822`: три колонки по 118 с зазором 8, между
 /// карточками в колонке 16, поля 16, сетка на 8 ниже чипсов, обложка → подпись 6.
 enum MosaicLayout {
-    static let columns = 3
+    /// Колонок — по правилу PRD общего поиска (SAFT-9189): n = max(3, ⌊(W − 24) / 158⌋),
+    /// то есть колонка не уже `minCard` при полях 16 и зазоре 8. На айфоне всегда три.
+    /// От ширины экрана, а не от рамки сетки (правило 2 CLAUDE.md).
+    @MainActor
+    static var columns: Int {
+        let fit = (PlusMetrics.screenWidth - 2 * side + columnGap) / (minCard + columnGap)
+        return max(3, Int(fit.rounded(.down)))
+    }
+    /// Самая узкая колонка правила PRD
+    static let minCard: CGFloat = 150
     static let side: CGFloat = 16
     static let columnGap: CGFloat = 8
     static let rowGap: CGFloat = 16
@@ -23,13 +32,14 @@ enum MosaicLayout {
     /// с отступом 6 от кромок (правка пользователя 2026-10-05; в макете `2479:25744` — 30 и 4).
     static let playButton = PlusButtonSize.m
     static let playInset: CGFloat = 6
-    /// Порция — четыре ряда. Первая сразу, следующие — на подходе к низу.
+    /// Порция — четыре ряда по три колонки. Первая сразу, следующие — на подходе к низу.
     static let chunk = 12
     /// За сколько до низа ленты дописывать следующую порцию — около трёх рядов:
     /// карточки встают за краем экрана, и долистать до пустоты не успеть.
     static let prefetchDistance: CGFloat = 600
-    /// Скелетоны внизу, пока едет добор, — ряд на все три колонки.
-    static let tailSkeletons = 3
+    /// Скелетоны внизу, пока едет добор, — ряд на все колонки.
+    @MainActor
+    static var tailSkeletons: Int { columns }
     /// Подложка закреплённых чипсов проявляется за первые 24 скролла — как у полной
     /// выдачи раздела.
     static let backdropRamp: CGFloat = 24
@@ -81,10 +91,11 @@ enum MosaicMotion {
 /// пользователя 2026-10-05). Карусели остаются; вид выбирается в дебаг-меню профиля
 /// (`SearchResultsStyle`).
 ///
-/// Все разделы в одной ленте, порядок — `SearchState.mixed`: в первом ряду лучшее
-/// из разных API, дальше по весу совпадения с запросом. Карточки одной ширины,
-/// высота — по контенту: постер, квадрат, круг исполнителя, книга своих пропорций
-/// и подпись своей высоты (строк — как в каруселях: две на название, одна на подпись).
+/// Все разделы в одной ленте, порядок — `SearchState.mixed`: строго по ступени
+/// совпадения с запросом, внутри ступени сервисы по кругу (PRD общего поиска).
+/// Раскладка — построчно (`MosaicGrid`). Карточки одной ширины, высота — по контенту:
+/// постер, квадрат, круг исполнителя, книга своих пропорций и подпись своей высоты
+/// (строк — как в каруселях: две на название, одна на подпись).
 ///
 /// Сверху закреплены табы первого уровня — Всё, Музыка, Кино, Книги (макеты
 /// `19151:18648`, `19184:22008`, `19191:22495`, задача пользователя 2026-10-31): «Всё» —
@@ -302,7 +313,7 @@ struct SearchMosaicView: View {
                 }
                 if search.isExtendingMosaic, !items.isEmpty, revealed >= items.count {
                     ForEach(0..<MosaicLayout.tailSkeletons, id: \.self) { index in
-                        MosaicSkeletonCard(shape: MosaicLayout.skeletonPattern[index])
+                        MosaicSkeletonCard(shape: MosaicLayout.skeletonPattern[index % MosaicLayout.skeletonPattern.count])
                             .transition(.opacity)
                     }
                 }
@@ -692,7 +703,7 @@ private struct MosaicContentKey: Equatable {
 /// «Искали недавно» сеткой — нулевое состояние поиска в режиме сетки (задача
 /// пользователя 2026-10-05; включается тем же пунктом дебаг-меню, что сетка выдачи).
 /// Перехода в полный список нет: вся история — найденное и стартовый набор — сразу
-/// в сетке, а в её конце «Удалить историю поиска».
+/// в сетке, а последней ячейкой — плитка «Удалить историю» (`SearchHistoryClearTile`).
 ///
 /// Тапы отсюда историю не переставляют, как и из ленты каруселей: сетка сдвинулась бы
 /// под зумом открытой карточки, и на возврате он сворачивался бы не в ту карточку.
@@ -718,20 +729,13 @@ struct SearchRecentsMosaicView: View {
         let zoomSources = items.firstPerRouteIDs
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Справа — крестик удаления истории (правка пользователя 2026-10-30:
-                // вместо кнопки «Удалить историю поиска» под сеткой).
-                HStack(spacing: 0) {
-                    Text("Искали недавно")
-                        .plusHeadline(.s)
-                        .foregroundStyle(Color.fillOne)
-                    Spacer(minLength: 0)
-                    SearchHistoryClearButton {
-                        clearSearchHistoryFading($gridOpacity, search: search)
-                    }
-                }
                 // Строку держит рамка, текст — по её центру: так же, как у заголовка
                 // карусели, на той же базовой линии, что в Фигме.
-                .frame(height: Layout.headerLine)
+                Text("Искали недавно")
+                    .plusHeadline(.s)
+                    .foregroundStyle(Color.fillOne)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: Layout.headerLine)
                 .padding(.top, Layout.headerTop)
                 .padding(.bottom, Layout.headerBottom)
                 .padding(.horizontal, MosaicLayout.side)
@@ -751,6 +755,10 @@ struct SearchRecentsMosaicView: View {
                             play: { track in playSearchTrack(track, queue: items, actionBar: actionBar) }
                         )
                     }
+                    // Последней ячейкой — следующей по порядку, как любая карточка (`MosaicGrid`).
+                    SearchHistoryClearTile {
+                        clearSearchHistoryFading($gridOpacity, search: search)
+                    }
                 }
                 .padding(.horizontal, MosaicLayout.side)
             }
@@ -767,10 +775,53 @@ struct SearchRecentsMosaicView: View {
     }
 }
 
-/// Крестик в шапке «Искали недавно» — удалить историю целиком, с подтверждением системной
-/// шторкой действий (правка пользователя 2026-10-30: вместо кнопки «Удалить историю
-/// поиска» под лентой; работает так же). Plain M — глиф 20, как шеврон заголовка;
-/// круг 40 — под отрицательным отступом, раскладка шапки держит глиф.
+/// Плитка «Удалить историю» — последняя ячейка сетки «Искали недавно» (макет
+/// `19421:186653`, правка пользователя 2026-11-03: вместо крестика в шапке). Круг
+/// на ширину колонки, как обложка исполнителя: заливка и бордер Fill/Nine, по центру
+/// корзина 20 Fill/Seven и подпись Text S Medium в две строки. Тап — та же системная
+/// шторка подтверждения, что у крестика ленты каруселей.
+private struct SearchHistoryClearTile: View {
+    let onConfirm: () -> Void
+    @State private var isConfirming = false
+
+    private enum Layout {
+        static let icon: CGFloat = 20
+        static let iconGap: CGFloat = 4
+        static let border: CGFloat = 0.67
+    }
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            isConfirming = true
+        } label: {
+            VStack(spacing: Layout.iconGap) {
+                Image("iconDelete")
+                    .renderingMode(.template)
+                    .resizable()
+                    .frame(width: Layout.icon, height: Layout.icon)
+                    .foregroundStyle(Color.fillSeven)
+                Text("Удалить\nисторию")
+                    .plusText(.textS, .medium)
+                    .foregroundStyle(Color.fillOne)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(width: MosaicLayout.card, height: MosaicLayout.card)
+            .background(Color.fillNine, in: Circle())
+            .overlay { Circle().strokeBorder(Color.fillNine, lineWidth: Layout.border) }
+            .contentShape(Circle())
+        }
+        .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+        .accessibilityLabel("Удалить историю поиска")
+        .searchHistoryClearConfirmation(isPresented: $isConfirming, onConfirm: onConfirm)
+    }
+}
+
+/// Крестик в шапке «Искали недавно» ленты каруселей — удалить историю целиком,
+/// с подтверждением системной шторкой действий (правка пользователя 2026-10-30: вместо
+/// кнопки «Удалить историю поиска» под лентой; работает так же; у сетки — плитка
+/// `SearchHistoryClearTile`). Plain M — глиф 20, как шеврон заголовка; круг 40 — под
+/// отрицательным отступом, раскладка шапки держит глиф.
 struct SearchHistoryClearButton: View {
     /// Подтвердили — вызывающий гасит свою ленту и стирает историю
     /// (`clearSearchHistoryFading`).
@@ -790,9 +841,15 @@ struct SearchHistoryClearButton: View {
                 .foregroundStyle(Color.fillFive)
         }
         .padding(-(PlusButtonSize.m.height - PlusButtonSize.m.iconBox) / 2)
-        // Системная шторка действий — макет `19220:88965` (PRD общего поиска; прежде —
-        // алерт «Точно удалить историю?»).
-        .confirmationDialog("Удалить историю поиска?", isPresented: $isConfirming, titleVisibility: .visible) {
+        .searchHistoryClearConfirmation(isPresented: $isConfirming, onConfirm: onConfirm)
+    }
+}
+
+private extension View {
+    /// Системная шторка действий — макет `19220:88965` (PRD общего поиска; прежде —
+    /// алерт «Точно удалить историю?»).
+    func searchHistoryClearConfirmation(isPresented: Binding<Bool>, onConfirm: @escaping () -> Void) -> some View {
+        confirmationDialog("Удалить историю поиска?", isPresented: isPresented, titleVisibility: .visible) {
             Button("Да, удалить", role: .destructive, action: onConfirm)
             Button("Назад", role: .cancel) {}
         }
@@ -841,9 +898,12 @@ private struct MosaicTail: Equatable {
 
 // MARK: - Раскладка
 
-/// Раскладка «кирпичом»: колонки одной ширины, карточка встаёт в самую короткую
-/// (при равенстве — в левую). Порядок выдачи читается сверху вниз, а порция,
-/// дописанная в конец, не двигает уже стоящие карточки.
+/// Раскладка построчно (PRD общего поиска, SAFT-9189): колонки одной ширины, карточка
+/// с номером i встаёт в колонку i mod n — слева направо, каждый следующий ряд с первой
+/// колонки — и под предыдущую в своей колонке с зазором `rowSpacing`; ряды по высоте
+/// не выравниваются. Прежде карточка вставала в самую короткую колонку — расчёт
+/// высот ради порядка признан лишним усложнением. Порция, дописанная в конец,
+/// не двигает уже стоящие карточки.
 ///
 /// Высоты — замер самих карточек на ширину колонки: подпись своей высоты, и знать
 /// её заранее неоткуда. Замер — раз на смену содержимого, а не на кадр скролла,
@@ -885,15 +945,16 @@ struct MosaicGrid: Layout {
 
     private func frames(width: CGFloat, subviews: Subviews, cache: inout Cache) -> [CGRect] {
         if cache.width == width, cache.frames.count == subviews.count { return cache.frames }
+        let columns = max(1, columns)
         let count = CGFloat(columns)
         let columnWidth = max(0, (width - columnSpacing * (count - 1)) / count)
         // Низ каждой колонки; стартовый «минус зазор» ставит первую карточку на 0.
         var bottoms = Array(repeating: -rowSpacing, count: columns)
         var frames: [CGRect] = []
         frames.reserveCapacity(subviews.count)
-        for subview in subviews {
+        for (index, subview) in subviews.enumerated() {
             let height = subview.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height
-            let column = bottoms.indices.min { bottoms[$0] < bottoms[$1] } ?? 0
+            let column = index % columns
             let y = bottoms[column] + rowSpacing
             frames.append(CGRect(
                 x: CGFloat(column) * (columnWidth + columnSpacing),
