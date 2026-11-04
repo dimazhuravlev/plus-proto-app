@@ -7,7 +7,7 @@ struct RecentWaveShader: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var epoch = Date()
     private var settings: HomePresentationSettings { .shared }
-    private var baseScale: CGFloat { CGFloat(settings.recentlyHeight) / 80 }
+    private var baseScale: CGFloat { HomeQuickAccessLayout.collapsedHeight / 80 }
 
     private var moving: Bool {
         isPlaying && !reduceMotion && settings.waveShaderSpeed > 0

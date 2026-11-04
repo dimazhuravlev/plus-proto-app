@@ -91,7 +91,7 @@ struct HomeQuickAccess: View {
                 .buttonStyle(.plain)
                 .padding(.leading, HomeQuickAccessLayout.leading)
                 .padding(.trailing, ServiceTopNavLayout.side)
-                .frame(height: HomeQuickAccessLayout.rowHeight)
+                .frame(height: HomeQuickAccessLayout.rowHeight, alignment: .top)
                 .backgroundPreferenceValue(HomeRecentlyWidths.self) { widths in
                     HomeRecentlyHorizontalAnchor(widths: widths, scale: HomeQuickAccessLayout.scale)
                 }
@@ -99,7 +99,7 @@ struct HomeQuickAccess: View {
             .scrollIndicators(.hidden)
             // Ореол волны выходит за бокс миниатюры, но не увеличивает высоту ряда.
             .scrollClipDisabled()
-            .frame(height: HomeQuickAccessLayout.rowHeight)
+            .frame(height: HomeQuickAccessLayout.rowHeight, alignment: .top)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Быстрый доступ")
             .task {
@@ -223,8 +223,7 @@ struct HomeQuickAccess: View {
                 .contentShape(Rectangle())
                 .animation(HomeQuickAccessLayout.feedback, value: isVibePlaying)
         }
-        .accessibilityLabel(isVibePlaying ? "Пауза Моей волны" : "Включить Мою волну")
-        .accessibilityValue(isVibePlaying ? "Играет" : "На паузе")
+        .accessibilityLabel("Открыть опрос с Моей волны")
     }
 
     private func open(_ block: ShowcaseBlock) {

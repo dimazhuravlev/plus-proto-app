@@ -23,6 +23,28 @@ import Foundation
                 expect(offset(oldGap - viewport / 2, 0.8, 1.2, viewport: viewport), newGap - viewport / 2)
             }
         }
+        // Доводка приходит как последовательность фактических contentSize,
+        // пока SwiftUI уже хранит конечный масштаб. Якорь берётся один раз.
+        for opening in [true, false] {
+            let startScale: CGFloat = opening ? 0.8 : 1.2
+            let endScale: CGFloat = opening ? 1.2 : 0.8
+            let startOffset: CGFloat = 330
+            for frame in 0...80 {
+                let t = CGFloat(frame) / 80
+                let expectedScale = startScale + (endScale - startScale) * (1 - (1 - t) * (1 - t))
+                let contentWidth = HomeRecentlyCenterAnchor.width(widths, scale: expectedScale,
+                    gap: 8, leading: 8, trailing: 16)
+                guard let rendered = HomeRecentlyCenterAnchor.renderedScale(contentWidth: contentWidth,
+                    widths: widths, gap: 8, leading: 8, trailing: 16) else { preconditionFailure() }
+                expect(rendered, expectedScale)
+                let currentOffset = offset(startOffset, startScale, rendered)
+                expect(offset(currentOffset, rendered, startScale), startOffset)
+            }
+        }
+        precondition(HomeRecentlyCenterAnchor.renderedScale(contentWidth: 100, widths: [],
+            gap: 8, leading: 8, trailing: 16) == nil)
+        precondition(HomeRecentlyCenterAnchor.renderedScale(contentWidth: 1, widths: widths,
+            gap: 8, leading: 8, trailing: 16) == nil)
         // Нет накопления дрейфа при сотне покадровых раскрытий/сворачиваний.
         var x: CGFloat = 430
         for _ in 0..<100 {

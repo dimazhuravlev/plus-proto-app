@@ -207,7 +207,7 @@ struct ShowcaseFeedbackPair: View {
                 : ShowcaseFeedbackMotion.hiddenContentScale
         ))
         .allowsHitTesting(!(state?.isSwapping ?? false) && !(state?.isDone ?? false))
-        .accessibilityHidden(state?.isPairHidden ?? false)
+        .accessibilityHidden((state?.isPairHidden ?? false))
         .onChange(of: state?.debugDismisses) { dismiss() }
         .onChange(of: state?.debugDones) { done() }
         .onChange(of: PromoIntroSession.shared.hasInteracted) { _, interacted in
@@ -290,9 +290,11 @@ struct ShowcaseFeedbackPair: View {
         else { UINotificationFeedbackGenerator().notificationOccurred(.success) }
         state.isDone = true
         // Сущности в паре нет — вместо обложки иконка, кнопки нет.
-        if usesPromoReactions, let item = recommendation?.recommendationCollectionItem {
+        if usesPromoReactions {
             let duration: Duration = ProcessInfo.processInfo.arguments.contains("-debugPromoRecommendationToast") ? .seconds(30) : .seconds(4)
-            ToastCenter.shared.show(title: "Учтём оценку\nв рекомендациях", action: .saveRecommendation(item), duration: duration)
+            ToastCenter.shared.show(title: PromoFeedbackCopy.liked(),
+                                    action: recommendation?.recommendationCollectionItem.map { .saveRecommendation($0) },
+                                    duration: duration)
         } else {
             ToastCenter.shared.show(title: ToastCopy.randomDone(), graphic: .icon("iconDone"))
         }
