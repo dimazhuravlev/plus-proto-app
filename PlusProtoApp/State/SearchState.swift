@@ -571,16 +571,15 @@ final class SearchState {
         let order = Self.order(for: text, music: musicHits, movies: movieHits, books: bookHits)
 
         // Сетке — шире каруселей: плейлисты в музыке, режиссёры и писатели — сразу
-        // за своими работами (`creators`).
+        // за своими работами (`creators`). Разделы — в порядке ответа сервисов, а не
+        // карусельном `ranked` (`inAnswerOrder`).
         let directors = await directors(for: movieHits, text: text)
         guard !Task.isCancelled else { return }
         let playlistHits = (foundPlaylists ?? []).map(SearchHit.init(playlist:))
-        let (mosaicMovies, movieCreators) = Self.withCreators(directors, in: movieHits, for: text)
-        let (mosaicBooks, bookCreators) = Self.withCreators(fetchedBooks.writers, in: bookHits, for: text)
         let mosaicByKind: [Section.Kind: [SearchHit]] = [
-            .music: Self.ranked(musicHits + playlistHits, for: text),
-            .movies: mosaicMovies,
-            .books: mosaicBooks,
+            .music: fetchedMusic + playlistHits,
+            .movies: Self.withCreators(directors, in: Self.inAnswerOrder(movieHits, answer: fetchedMovies)),
+            .books: Self.withCreators(fetchedBooks.writers, in: Self.inAnswerOrder(bookHits, answer: fetchedBooks.hits)),
         ]
         let results = Results(
             text: text,
@@ -589,12 +588,7 @@ final class SearchState {
             music: musicHits,
             movies: movieHits,
             books: bookHits,
-            mixed: Self.mixed(
-                order.map { ($0, mosaicByKind[$0] ?? []) },
-                for: text,
-                leadsWithHeads: true,
-                inherited: movieCreators.merging(bookCreators) { left, _ in left }
-            ),
+            mixed: Self.mixed(mosaicByKind, for: text),
             status: status
         )
         // Выдачу без опоздавшего или упавшего сервиса не кэшируем: повторный ввод того же
@@ -766,6 +760,9 @@ final class SearchState {
         let wizard: MusicWizard?
         /// Сервис не ответил или сети нет — выдачи нет, на табе ошибка.
         var failure: SearchFailure? = nil
+        /// Ответ ручек в их порядке, до `ranked`: добор сетки ставит карточки одной
+        /// ступени в нём (`inAnswerOrder`).
+        var answer: [SearchHit] = []
 
         static func failed(_ kind: Section.Kind, _ text: String, _ failure: SearchFailure) -> FullResults {
             FullResults(kind: kind, text: text, hits: [], wizard: nil, failure: failure)
@@ -857,19 +854,21 @@ final class SearchState {
             switch kind {
             case .music:
                 let (hits, wizard) = try await fetchFullMusic(text)
-                return FullResults(kind: kind, text: text, hits: Self.ranked(hits, for: text), wizard: wizard)
+                return FullResults(kind: kind, text: text, hits: Self.ranked(hits, for: text), wizard: wizard, answer: hits)
             case .movies:
-                let hits = Self.ranked(try await fetchFullMovies(text), for: text)
+                let answer = try await fetchFullMovies(text)
+                let hits = Self.ranked(answer, for: text)
                 // Персоны, которых назвал запрос, — первыми, как в обзоре; к ним — найденные
                 // в составах фильмов полной выдачи.
                 let named = Self.namedPersons(in: shown?.text == text ? shown?.movies ?? [] : cache[text]?.movies ?? [])
                 let cast = await castPersons(in: hits, text: text, excluding: Set(named.map(\.title.folded)))
-                return FullResults(kind: kind, text: text, hits: named + cast + hits, wizard: nil)
+                return FullResults(kind: kind, text: text, hits: named + cast + hits, wizard: nil, answer: answer)
             case .books:
                 let found = try await BooksService.shared.search(text, limit: FullLimits.books)
-                let hits = Self.ranked(found.map(SearchHit.init(book:)), for: text)
+                let answer = found.map(SearchHit.init(book:))
+                let hits = Self.ranked(answer, for: text)
                 let overview = shown?.text == text ? shown?.books : cache[text]?.books
-                return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: overview, hits), wizard: nil)
+                return FullResults(kind: kind, text: text, hits: personFirst(.writer, in: overview, hits), wizard: nil, answer: answer)
             }
         } catch {
             guard !Task.isCancelled else { return .failed(kind, text, .failed) }
@@ -1190,7 +1189,7 @@ final class SearchState {
             return TabResults(kind: kind, text: text, revision: revision, hits: hits, wizard: base.wizard, unwatchable: [], personCounts: [:])
         case .movies:
             let directors = await directors(for: base.hits, text: text)
-            let hits = Self.withCreators(directors, in: base.hits, for: text).hits
+            let hits = Self.withCreators(directors, in: base.hits)
             let (unwatchable, counts) = await movieFacts(hits, text: text)
             return TabResults(kind: kind, text: text, revision: revision, hits: hits, wizard: nil, unwatchable: unwatchable, personCounts: counts)
         case .books:
@@ -1200,7 +1199,7 @@ final class SearchState {
                 if let aspect = aspects[books[index].id] { books[index].artworkAspect = aspect }
             }
             let writers = await Self.writers(for: books)
-            let hits = await Self.withAudiobooks(Self.withCreators(writers, in: books, for: text).hits)
+            let hits = await Self.withAudiobooks(Self.withCreators(writers, in: books))
             return TabResults(kind: kind, text: text, revision: revision, hits: hits, wizard: nil, unwatchable: [], personCounts: Self.writerCounts(hits))
         }
     }
@@ -1398,7 +1397,7 @@ final class SearchState {
     }
 
     /// Добрать сетку: полные выдачи трёх разделов параллельно, за вычетом уже показанного,
-    /// смешанные тем же порядком (`mixed`) и дописанные в конец.
+    /// смешанные тем же правилом (`mixed`) и дописанные в конец.
     func extendMosaic() {
         guard let base = shown, canExtendMosaic else { return }
         let text = base.text
@@ -1420,7 +1419,8 @@ final class SearchState {
             var known = Set(base.mixed.map(\.id))
             var fresh: [Section.Kind: [SearchHit]] = [:]
             for result in full {
-                fresh[result.kind] = result.hits.filter { known.insert($0.id).inserted }
+                fresh[result.kind] = Self.inAnswerOrder(result.hits, answer: result.answer)
+                    .filter { known.insert($0.id).inserted }
             }
             // Книге в сетке высоту задают пропорции обложки — снимаем их до показа,
             // как в обзоре (`fetchBooks`): узнай их поздно, колонки переложились бы.
@@ -1432,100 +1432,67 @@ final class SearchState {
                 fresh[.books] = newBooks
             }
 
-            let extra = Self.mixed(
-                base.order.map { ($0, fresh[$0] ?? []) },
-                for: text,
-                leadsWithHeads: false,
-                after: base.mixed.last?.kind.domain
-            )
+            // Порция упорядочивается сама по себе тем же правилом и встаёт в конец:
+            // показанные карточки не двигаются.
+            let extra = Self.mixed(fresh, for: text)
             self.mosaicExtra[text, default: []] += extra
             self.mosaicDone.insert(text)
             if self.mosaicLoading == text { self.mosaicLoading = nil }
         }
     }
 
-    /// Смешивание разделов для сетки. Единого скора у трёх API нет (см. `MatchScore`),
-    /// поэтому вес карточки — тот же, что у порядка секций: ступень совпадения
-    /// с названием × (1 + доля × вес внутри домена).
+    /// Смешивание разделов для сетки — по PRD общего поиска (SAFT-9189). Единого скора
+    /// у трёх API нет (см. `MatchScore`), поэтому порядок — строго по ступени совпадения
+    /// с названием (`step`), сильнее — выше. Популярности внутри сервиса (`authority`)
+    /// в сетке нет, отдельных первых мест у сервисов и штрафа за серию — тоже: слабый
+    /// сервис может целиком уйти вниз.
     ///
-    /// 1. **Первый ряд** — лучшее от каждого раздела по силе совпадения, по убыванию
-    ///    веса: наверху сетки — самое релевантное из разных API, а не пачка одного.
-    ///    Порога нет (PRD общего поиска): прежде раздел без вхождения запроса в название
-    ///    в первый ряд не попадал.
-    /// 2. **Дальше** — слияние трёх очередей: на каждом шаге берётся голова с бо́льшим
-    ///    весом, но каждая следующая подряд карточка того же раздела теряет 15 %
-    ///    (`MixScore.repeatPenalty`). Сильный раздел идёт несколько карточек подряд,
-    ///    слабые не проваливаются в самый низ, а без совпадений разделы чередуются.
-    ///
-    /// Порядок внутри раздела не трогается — это его `ranked`: точное совпадение
-    /// первым, исполнитель выше своих треков, чередование видов музыки.
-    private enum MixScore {
-        /// Во сколько раз легчает каждая следующая подряд карточка того же раздела
-        static let repeatPenalty = 0.85
-        /// Прибавка к весу: у карточек без совпадения он ноль, и без неё штраф
-        /// за повтор ничего бы не менял — хвост шёл бы пачкой одного раздела.
-        static let floor = 1.0
-    }
-
-    /// Вес карточки — ступень совпадения × (1 + доля × вес внутри домена); тот же,
-    /// что у порядка секций (`score`).
-    private static func weight(_ hit: SearchHit, _ needle: String) -> Double {
-        match(hit, needle) * (1 + hit.authority * MatchScore.authorityShare)
-    }
-
-    /// `after` — раздел последней уже показанной карточки: добор продолжает её серию.
-    /// `inherited` — вес создателей, взятый от их работ (`withCreators`).
-    private static func mixed(
-        _ queues: [(kind: Section.Kind, hits: [SearchHit])],
-        for text: String,
-        leadsWithHeads: Bool,
-        after previous: Section.Kind? = nil,
-        inherited: [String: Double] = [:]
-    ) -> [SearchHit] {
+    /// Внутри одной ступени сервисы чередуются по кругу — Музыка, Кино, Книги, снова
+    /// Музыка (`mixOrder`); у кого карточки этой ступени кончились, того пропускаем.
+    /// Карточки одного сервиса с одной ступенью — в порядке, в каком они пришли
+    /// (`inAnswerOrder`): правил карусели вроде «исполнитель выше своих треков» здесь нет.
+    /// Добор упорядочивается тем же правилом сам по себе и встаёт в конец (`extendMosaic`).
+    private static func mixed(_ services: [Section.Kind: [SearchHit]], for text: String) -> [SearchHit] {
         let needle = text.folded
-        func weight(_ hit: SearchHit) -> Double {
-            max(Self.weight(hit, needle), inherited[hit.id] ?? 0)
+        let lanes = mixOrder.map { kind in
+            (services[kind] ?? []).map { (hit: $0, step: step($0, needle)) }
         }
-
-        var queues = queues.map { (kind: $0.kind, hits: ArraySlice($0.hits)) }
+        let steps = Set(lanes.flatMap { $0.map(\.step) }).sorted(by: >)
         var result: [SearchHit] = []
-        var last = previous
-        var run = previous == nil ? 0 : 1
-
-        func take(_ index: Int) {
-            result.append(queues[index].hits.removeFirst())
-            if queues[index].kind == last {
-                run += 1
-            } else {
-                last = queues[index].kind
-                run = 1
-            }
-        }
-
-        if leadsWithHeads {
-            // Ничья — по порядку секций: он уже отражает, о чём запрос.
-            let heads = queues.indices
-                .filter { !queues[$0].hits.isEmpty }
-                .sorted { left, right in
-                    let l = weight(queues[left].hits.first!), r = weight(queues[right].hits.first!)
-                    return l != r ? l > r : left < right
+        for current in steps {
+            var queues = lanes.map { lane in ArraySlice(lane.filter { $0.step == current }.map(\.hit)) }
+            while queues.contains(where: { !$0.isEmpty }) {
+                for index in queues.indices where !queues[index].isEmpty {
+                    result.append(queues[index].removeFirst())
                 }
-            for index in heads { take(index) }
-        }
-
-        while true {
-            var best: (index: Int, value: Double)?
-            for index in queues.indices {
-                guard let head = queues[index].hits.first else { continue }
-                let repeats = queues[index].kind == last ? run : 0
-                let value = (weight(head) + MixScore.floor) * pow(MixScore.repeatPenalty, Double(repeats))
-                // Строго больше: при равенстве остаётся раздел выше по порядку секций.
-                if best.map({ value > $0.value }) ?? true { best = (index, value) }
             }
-            guard let best else { break }
-            take(best.index)
         }
         return result
+    }
+
+    /// Круг чередования сервисов в ступени — фиксированный (PRD), а не порядок секций
+    /// каруселей (`order`).
+    private static let mixOrder: [Section.Kind] = [.music, .movies, .books]
+
+    /// Ступень лестницы PRD: точное → начало → целое слово → вхождение → исполнитель
+    /// или автор → похожее → нет совпадения. Та же `match`, только похожее — одна
+    /// ступень, какой бы ни была похожесть слов (`fuzzyMatch` даёт до `MatchScore.fuzzy`).
+    private static func step(_ hit: SearchHit, _ needle: String) -> Double {
+        let value = match(hit, needle)
+        return value > 0 ? max(value, MatchScore.fuzzy) : 0
+    }
+
+    /// Раздел в порядке ответа сервиса — для сетки. Карусели и табы ставят по `ranked`
+    /// (исполнитель выше своих треков, похожее — по похожести), а в сетке карточки
+    /// одной ступени идут так, как их отдала ручка. Персоны, которых прототип
+    /// добавляет в раздел сам (их нет в `answer`), остаются впереди — на своих местах.
+    private static func inAnswerOrder(_ hits: [SearchHit], answer: [SearchHit]) -> [SearchHit] {
+        let position = Dictionary(answer.enumerated().map { ($0.element.id, $0.offset) }) { first, _ in first }
+        let added = hits.filter { position[$0.id] == nil }
+        let answered = hits.compactMap { hit in position[hit.id].map { (hit, $0) } }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+        return added + answered
     }
 
     // MARK: - Ранжирование секций
@@ -1535,13 +1502,14 @@ final class SearchState {
     /// и сравнивать их выдачи между собой нечем. Поэтому меру считаем сами —
     /// по совпадению запроса с названием, а названия у нас уже есть в `SearchHit`.
     private enum MatchScore {
-        /// Название — это ровно запрос
+        /// Название — это ровно запрос, в том числе слитно: без пробелов, дефисов
+        /// и знаков («short paris» → «Shortparis», `joinedMatch`)
         static let exact = 100.0
-        /// Название начинается с запроса («интерстел» → «Интерстеллар»)
+        /// Название начинается с запроса («интерстел» → «Интерстеллар»), и слитно тоже
         static let prefix = 70.0
         /// Запрос — целое слово внутри названия
         static let word = 45.0
-        /// Запрос где-то внутри названия
+        /// Запрос где-то внутри названия, и слитно тоже
         static let substring = 25.0
         /// Совпал подзаголовок — исполнитель, автор, год с жанром
         static let subtitle = 15.0
@@ -1606,6 +1574,12 @@ final class SearchState {
         return hits.map { weight($0, needle) }.max() ?? 0
     }
 
+    /// Вес результата для порядка секций — ступень совпадения × (1 + доля × вес внутри
+    /// домена). Сетка его не берёт: у неё только ступень (`step`).
+    private static func weight(_ hit: SearchHit, _ needle: String) -> Double {
+        match(hit, needle) * (1 + hit.authority * MatchScore.authorityShare)
+    }
+
     /// Порядок внутри карусели — по той же ступени совпадения, что и порядок секций
     /// (правка пользователя 2026-10-04: на «кино» группа «Кино» стояла третьей —
     /// за своими песнями, которые совпадали с запросом только исполнителем).
@@ -1634,25 +1608,55 @@ final class SearchState {
     /// лучшая из названия, второго названия и подзаголовка; 0 — не совпал.
     /// Подзаголовок спорит с названием на равных: альбом The Mars Volta на запрос
     /// «mars volta» совпадает исполнителем (15), и это сильнее похожего названия
-    /// чужой группы (`fuzzy`).
+    /// чужой группы (`fuzzy`). Подзаголовок сравнивается и слитно (`joined`): треки
+    /// Shortparis на «short paris» — тоже совпадение по исполнителю.
     private static func match(_ hit: SearchHit, _ needle: String) -> Double {
         let titles = [hit.title] + (hit.altTitle.map { [$0] } ?? [])
         let best = titles.map { titleMatch($0.folded, needle) }.max() ?? 0
-        let bySubtitle = hit.subtitle.folded.contains(needle) ? MatchScore.subtitle : 0
-        return max(best, bySubtitle)
+        let subtitle = hit.subtitle.folded
+        let joinedNeedle = joined(needle)
+        let bySubtitle = subtitle.contains(needle)
+            || (!joinedNeedle.isEmpty && joined(subtitle).contains(joinedNeedle))
+        return max(best, bySubtitle ? MatchScore.subtitle : 0)
     }
 
+    /// Лучшая ступень из обычного сравнения и слитного (`joinedMatch`).
     private static func titleMatch(_ title: String, _ needle: String) -> Double {
         // Артикль в начале — не часть имени: «The Mars Volta» на «mars volta» — точное
         // совпадение, а не вхождение. Вхождением группа стояла за треком «Mars Volta»
         // другого исполнителя (жалоба пользователя 2026-10-05).
         let title = withoutArticle(title)
         let needle = withoutArticle(needle)
+        return max(spacedMatch(title, needle), joinedMatch(title, needle))
+    }
+
+    private static func spacedMatch(_ title: String, _ needle: String) -> Double {
         if title == needle { return MatchScore.exact }
         if title.hasPrefix(needle) { return MatchScore.prefix }
         if containsWords(title, needle) { return MatchScore.word }
         if title.contains(needle) { return MatchScore.substring }
         return fuzzyMatch(title, needle) ?? 0
+    }
+
+    /// Слитное сравнение — пробелы, дефисы и знаки препинания не важны (правило
+    /// пользователя 2026-11-03): на «short paris» группа Shortparis не проходила ни одну
+    /// ступень и стояла ниже Lorna Shore («shore» ~ «short») и «Ça shoot à paris»,
+    /// проходивших как похожее; так же «ac dc» → AC/DC, «би 2» → «Би-2». Ступени —
+    /// только строкой целиком: «целое слово» и «похожее» сравнивают слова и слитного
+    /// вида не имеют.
+    private static func joinedMatch(_ title: String, _ needle: String) -> Double {
+        let title = joined(title)
+        let needle = joined(needle)
+        guard !needle.isEmpty else { return 0 }
+        if title == needle { return MatchScore.exact }
+        if title.hasPrefix(needle) { return MatchScore.prefix }
+        if title.contains(needle) { return MatchScore.substring }
+        return 0
+    }
+
+    /// Строка без всего, что не буква и не цифра: «AC/DC» → «acdc» (после `folded`).
+    private static func joined(_ text: String) -> String {
+        String(text.filter { $0.isLetter || $0.isNumber })
     }
 
     /// Английские артикли: в каталогах Deezer и Кинопоиска они стоят в начале имён
@@ -1859,8 +1863,6 @@ final class SearchState {
         static let sources = 3
         /// Персон на раздел — не больше двух: сетка про контент, а не про людей
         static let perDomain = 2
-        /// Вес персоны — доля веса её работы: встаёт сразу за ней, но не впереди
-        static let inheritedShare = 0.9
     }
 
     /// Режиссёры лучших фильмов — из состава, который уже на руках: у запаса на диске
@@ -1991,16 +1993,11 @@ final class SearchState {
         name.folded.split(separator: " ").last.map(String.init) ?? name.folded
     }
 
-    /// Вставить создателей сразу за их работами и дать им вес: доля веса работы
-    /// (`CreatorLimits.inheritedShare`) — иначе персона без совпадения имени с запросом
-    /// стояла бы головой очереди с нулём и держала за собой весь раздел. Персона,
-    /// которую назвал сам запрос, уже в разделе — второй раз её не ставим.
-    private static func withCreators(
-        _ creators: [Creator],
-        in hits: [SearchHit],
-        for text: String
-    ) -> (hits: [SearchHit], inherited: [String: Double]) {
-        let needle = text.folded
+    /// Вставить создателей сразу за их работами. Веса работы они не наследуют (PRD
+    /// общего поиска): в сетке это обычные карточки своего сервиса со своей ступенью
+    /// совпадения по имени, и создатель, которого запрос не назвал, встаёт в нижнюю
+    /// ступень. Персона, которую назвал сам запрос, уже в разделе — второй раз её не ставим.
+    private static func withCreators(_ creators: [Creator], in hits: [SearchHit]) -> [SearchHit] {
         // Писатель — по фамилии: имя автора у изданий пишут по-разному, а Википедия зовёт
         // его коротко («Лев Толстой» и «Лев Николаевич Толстой» — один человек).
         func key(_ person: SearchHit) -> String {
@@ -2008,13 +2005,11 @@ final class SearchState {
         }
         var present = Set(hits.filter { $0.kind == .director || $0.kind == .writer || $0.kind == .actor }.map(key))
         var result = hits
-        var inherited: [String: Double] = [:]
         for creator in creators where present.insert(key(creator.person)).inserted {
             guard let index = result.firstIndex(where: { $0.id == creator.source }) else { continue }
             result.insert(creator.person, at: index + 1)
-            inherited[creator.person.id] = weight(result[index], needle) * CreatorLimits.inheritedShare
         }
-        return (result, inherited)
+        return result
     }
 
     /// Сколько ждём обложки книг. Не дождались — карточка встаёт на пропорции
