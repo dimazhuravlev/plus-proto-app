@@ -45,6 +45,7 @@ extension ActionBarState {
     /// Включить «Мою Волну». Волна уже в баре — тот же трек: повторный тап ставит
     /// на паузу и снимает с неё, как у любого трека; иначе — трек волны наугад.
     func openMyVibe() {
+        recently.record(.myVibe)
         if let current = music, MyVibeTracks.isVibe(current.id) {
             open(.music(current))
         } else {

@@ -13,6 +13,8 @@ enum RecentItem: Codable, Equatable, Identifiable {
     /// Главная «Моя волна» — после того как её включили кнопкой таба Музыки или плиткой
     /// ряда (`openMainVibe`; правка пользователя 2026-10-16). Станции волны сюда не пишутся.
     case myVibe
+    case entity(EntityRoute)
+    case station(String)
 
     /// Повтор поднимается наверх, а не дублируется. Музыка — по альбому или плейлисту,
     /// из которого трек играл (`containerID`): разные треки одного альбома — одна плитка
@@ -24,6 +26,16 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .book(let book): "book:" + book.id
         case .artist(let artist): "artist:" + artist.id
         case .myVibe: "myVibe"
+        case .station(let id): "station:" + id
+        case .entity(let route):
+            switch route {
+            case .movie(let ref): "movie:" + ref.id
+            case .book(let ref): "book:" + ref.id
+            case .album(let ref): "music:album:" + ref.id
+            case .playlist(let ref): "music:playlist:" + ref.id
+            case .artist(let ref): "artist:" + ref.id
+            default: route.id
+            }
         }
     }
 
@@ -34,6 +46,8 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .music(let track): "\(track.title), \(track.artist)"
         case .book(let book): book.title
         case .artist(let artist): artist.title
+        case .entity(let route): route.ref.title
+        case .station(let id): VibeStation.all.first { $0.id == id }?.title ?? id
         case .myVibe: "Моя волна"
         }
     }
@@ -46,6 +60,8 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .music(let track): track.cover
         case .book(let book): book.cover
         case .artist(let artist): artist.artwork
+        case .entity(let route): route.ref.artwork
+        case .station(let id): .asset(VibeStation.all.first { $0.id == id }?.agent ?? "")
         case .myVibe: .asset("vibeRecentDrop")
         }
     }
@@ -60,6 +76,8 @@ enum RecentItem: Codable, Equatable, Identifiable {
 /// Сеется один раз: удалённые и вытесненные из ряда не возвращаются.
 @Observable
 final class RecentlyConsumed {
+    static let shared = RecentlyConsumed()
+
     private(set) var items: [RecentItem] = [] {
         didSet { persist() }
     }
@@ -84,6 +102,7 @@ final class RecentlyConsumed {
         }
         guard !defaults.bool(forKey: Self.seededKey) else { return }
         if items.isEmpty { items = RecentlySeeds.items }
+        persist()
         defaults.set(true, forKey: Self.seededKey)
     }
 
@@ -109,6 +128,31 @@ final class RecentlyConsumed {
     /// Картинки ряда — для прогрева под заставкой.
     var artworks: [ArtworkSource] {
         items.map(\.artwork)
+    }
+
+    func clear() {
+        UserDefaults.standard.set(true, forKey: Self.seededKey)
+        items = []
+    }
+
+    func fillExamples() {
+        UserDefaults.standard.set(true, forKey: Self.seededKey)
+        var examples = RecentlySeeds.items
+        examples.insert(.book(BookInProgress(id: "graeber-truth", cover: .asset("mockBookGraeberTruth"),
+            title: "Главная тайная истина мира…", author: "Дэвид Гребер")), at: 2)
+        examples.insert(.station("testosterone"), at: 4)
+        items = [.myVibe] + examples + VibeStation.all.filter { $0.photo == nil && $0.id != "testosterone" }.map { .station($0.id) }
+    }
+
+    func recordVisit(_ route: EntityRoute) {
+        let item: RecentItem
+        switch route {
+        case .episodes: return
+        case .artist(let ref): item = .artist(ref)
+        default: item = .entity(route)
+        }
+        // Opening a detail must not replace richer playback information.
+        record(items.first { $0.id == item.id } ?? item)
     }
 
     private func persist() {

@@ -2,10 +2,11 @@ import SwiftUI
 
 struct HomeQuickAccess: View {
     let feed: ShowcaseFeed
+    var showsTelegramOverlay = false
     @State private var debugWaveIsPlaying = false
-    @Environment(ActionBarState.self) private var actionBar
-    @Environment(AppNavigationState.self) private var navigation
-    @Environment(CinemaCatalog.self) private var cinema
+    @Environment(ActionBarState.self) var actionBar
+    @Environment(AppNavigationState.self) var navigation
+    @Environment(CinemaCatalog.self) var cinema
 
     private var isVibePlaying: Bool {
         #if DEBUG
@@ -16,7 +17,7 @@ struct HomeQuickAccess: View {
         return actionBar.isMusicPlaying && actionBar.music.map { MyVibeTracks.isVibe($0.id) } == true
     }
 
-    private var content: HomeRecentlyContent {
+    var content: HomeRecentlyContent {
         HomeRecentlyContent(
             feed: feed,
             cinemaPromos: cinema.promos,
@@ -26,66 +27,35 @@ struct HomeQuickAccess: View {
         )
     }
 
-    private var compactStations: [VibeStation] { content.compactStations }
-    private var movie: MovieBlock? { content.movie }
-    private var album: AlbumBlock? { content.album }
-    private var book: BookBlock? { content.book }
-    private var artist: ArtistBlock? { content.artist }
-    private var additionalItems: [HomeShelfItem] { content.additionalItems }
-    private var moviePosition: Int { content.moviePosition }
+    var compactStations: [VibeStation] { content.compactStations }
+    var movie: MovieBlock? { content.movie }
+    var album: AlbumBlock? { content.album }
+    var book: BookBlock? { content.book }
+    var artist: ArtistBlock? { content.artist }
+    var additionalItems: [HomeShelfItem] { content.additionalItems }
+    var moviePosition: Int { content.moviePosition }
 
     var body: some View {
+        if showsTelegramOverlay {
+            telegramOverlay
+        } else if HomeRecentlyInlineLayout.isEnabled {
+            inlineLabelsRow
+        } else if HomeRecentlyTelegramLayout.isEnabled {
+            telegramRow
+
+        } else {
+            standardRow
+        }
+    }
+
+    private var standardRow: some View {
         ScrollViewReader { reader in
             ScrollView(.horizontal) {
                 HStack(spacing: HomeQuickAccessLayout.gap) {
-                    captioned("Моя волна", width: 70, leading: 4) { vibeButton }
-                        .zIndex(1)
-                    if moviePosition == 0 { movieCard }
-                    if let album {
-                        Button { open(.album(album)) } label: {
-                            captioned(album.subtitle, width: 78) {
-                                artwork(album.cover, width: 78, height: 78, radius: 12)
-                            }
-                        }
-                        .accessibilityLabel("\(album.title), \(album.subtitle)")
-                        .zIndex(1)
-                    }
-                    if moviePosition == 1 { movieCard }
-                    if HomePresentationSettings.shared.recentlyPreviewIndex < 0, let current = actionBar.book {
-                        Button { actionBar.read(current) } label: { captioned(current.title, width: bookSlotWidth) { bookThumbnail(current.cover) } }
-                            .accessibilityLabel("Продолжить читать: \(current.title)")
-                            .zIndex(1)
-                    } else if let book {
-                        Button { open(.book(book)) } label: { captioned(book.title, width: bookSlotWidth) { bookThumbnail(book.cover) } }
-                            .accessibilityLabel(book.title)
-                            .zIndex(1)
-                    }
-                    if moviePosition == 2 { movieCard }
-                    if HomePresentationSettings.shared.recentlyPreviewIndex >= 0 {
-                        let pool = HomeShelfSamples.artists
-                        let item = pool[HomePresentationSettings.shared.recentlyPreviewIndex % pool.count]
-                        Button { navigation.open(item.route) } label: {
-                            captioned(item.title, width: 80) {
-                                artwork(item.artwork, width: 80, height: 80, radius: 40)
-                            }
-                        }.accessibilityLabel(item.title)
-                            .zIndex(1)
-                    } else if let artist {
-                        Button { open(.artist(artist)) } label: {
-                            captioned(artist.name, width: 80) {
-                                artwork(artist.picture, width: 80, height: 80, radius: 40)
-                            }
-                        }
-                        .accessibilityLabel(artist.name)
-                        .zIndex(1)
-                    }
-                    if moviePosition == 3 { movieCard }
-                    ForEach(Array(additionalItems.enumerated()), id: \.offset) { index, item in
-                        additionalCard(item).zIndex(1)
-                        if moviePosition == index + 4 { movieCard }
-                        if index < compactStations.count {
-                            stationCard(compactStations[index]).zIndex(compactStations[index].photo == nil ? 0 : 1)
-                        }
+                    ForEach(actionBar.recently.items) { item in
+                        historyCard(item)
+                            .id(item.id)
+                            .accessibilityIdentifier("recent-history-" + item.id)
                     }
                 }
                 .buttonStyle(.plain)
@@ -113,7 +83,7 @@ struct HomeQuickAccess: View {
                 }
                 if ProcessInfo.processInfo.arguments.contains("-debugRecentPetals") {
                     try? await Task.sleep(for: .seconds(2))
-                    reader.scrollTo("recent-station-" + compactStations[0].id, anchor: .center)
+                    reader.scrollTo("station:testosterone", anchor: .center)
                 }
                 #endif
             }
@@ -178,8 +148,13 @@ struct HomeQuickAccess: View {
         actionBar.watchHistory.entries.first { $0.id == id }?.progress
     }
 
-    private var vibeButton: some View {
+    var vibeButton: some View {
         let scale = HomeQuickAccessLayout.scale
+        let inlineProgress = HomeRecentlyInlineLayout.isEnabled ? HomeRecentlyPullState.shared.progress : 0
+        let controlWidth = (isVibePlaying ? 43.0 : 42.0) * 0.8 + 8 * inlineProgress
+        let controlHeight = (isVibePlaying ? 47.0 : 47.5) * 0.8 + 8 * inlineProgress
+        let controlOpacity = HomeRecentlyInlineLayout.isEnabled
+            ? HomeRecentlyInlineLayout.smooth((inlineProgress - 0.25) / 0.65) : 1
         return Button {
             if actionBar.music.map({ MyVibeTracks.isVibe($0.id) }) == true {
                 actionBar.toggleMusicPlayback()
@@ -212,12 +187,13 @@ struct HomeQuickAccess: View {
                 }
                 .overlay {
                     // SVG glyph centres differ from their shadow canvas centres.
-                    // Keep the control fixed-size, following the artwork centre (6, -0.5).
+                    // Keep the visible glyph centred as its canvas grows during expansion.
                     Image(isVibePlaying ? "quickAccessPause" : "quickAccessPlay")
                         .resizable()
-                        .frame(width: (isVibePlaying ? 43 : 42) * 0.8, height: (isVibePlaying ? 47 : 47.5) * 0.8)
-                        .offset(x: 6 * scale + (isVibePlaying ? -5.5 : -7) * 0.8,
-                                y: -0.5 * scale + (isVibePlaying ? 7.5 : 7.75) * 0.8)
+                        .frame(width: controlWidth, height: controlHeight)
+                        .offset(x: 6 * scale + (isVibePlaying ? -5.5 : -7) * controlWidth / (isVibePlaying ? 43 : 42),
+                                y: -0.5 * scale + (isVibePlaying ? 7.5 : 7.75) * controlHeight / (isVibePlaying ? 47 : 47.5))
+                        .opacity(controlOpacity)
                         .allowsHitTesting(false)
                 }
                 .contentShape(Rectangle())

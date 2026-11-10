@@ -59,8 +59,8 @@ struct ShowcaseFeedView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                VStack(spacing: HomeQuickAccessLayout.bottom) {
-                    if !HomePresentationSettings.shared.hideRecently {
+                VStack(spacing: (HomeQuickAccessLayout.isVisible ? HomeQuickAccessLayout.bottom : 0) * (HomeRecentlyTelegramLayout.isEnabled ? HomeRecentlyPullState.shared.progress : 1)) {
+                    if HomeQuickAccessLayout.isVisible {
                         HomeQuickAccess(feed: feed)
                             .zIndex(Double(feed.blocks.count + 1))
                     }
@@ -77,7 +77,7 @@ struct ShowcaseFeedView: View {
                         }
                     }
                 }
-                .padding(.top, ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + HomeQuickAccessLayout.top)
+                .padding(.top, ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + (HomeQuickAccessLayout.isVisible ? HomeQuickAccessLayout.top : 0))
 
                 if HomePresentationSettings.shared.shelvesEnabled {
                     // Блока «Что думаешь?» под полками нет (правка пользователя 2026-10-22):
@@ -89,12 +89,12 @@ struct ShowcaseFeedView: View {
                 }
             }
             .background {
-                if !HomePresentationSettings.shared.hideRecently {
+                if HomeQuickAccessLayout.isVisible {
                     HomeRecentlyScrollBridge(controller: recentlyScroll)
                 }
             }
             .frame(width: PlusMetrics.screenWidth)
-            .offset(y: !HomePresentationSettings.shared.hideRecently
+            .offset(y: HomeQuickAccessLayout.isVisible
                     ? -HomeRecentlyPullState.shared.responsiveNativePull : 0)
             // Клиренс под хромом ленте уже даёт `contentMargins` в корне — это воздух
             // сверх него, чтобы последняя карточка не притиралась к панели действий.
@@ -104,11 +104,23 @@ struct ShowcaseFeedView: View {
         .scrollPosition($scrollPosition)
         .trackNavBarScroll(into: $scrollOffset)
         .onScrollPhaseChange { _, phase, _ in
-            guard !HomePresentationSettings.shared.hideRecently else { return }
+            guard HomeQuickAccessLayout.isVisible else { return }
             recentlyScroll.phaseChanged(phase)
         }
+        .onChange(of: HomeRecentlyTelegramState.shared.expansionRequests) { _, _ in
+            guard HomeRecentlyTelegramLayout.isEnabled || HomeRecentlyInlineLayout.isEnabled else { return }
+            recentlyScroll.expandFromTap()
+        }
         .onDisappear { recentlyScroll.reset() }
-        .onChange(of: HomePresentationSettings.shared.hideRecently) { _, _ in recentlyScroll.reset() }
+        .onChange(of: HomePresentationSettings.shared.recentlyInlineLabelsEnabled) { _, _ in
+            recentlyScroll.reset()
+            scrollPosition.scrollTo(edge: .top)
+        }
+        .onChange(of: HomePresentationSettings.shared.recentlyTelegramEnabled) { _, _ in
+            recentlyScroll.reset()
+            scrollPosition.scrollTo(edge: .top)
+        }
+        .onChange(of: HomeQuickAccessLayout.isVisible) { _, _ in recentlyScroll.reset() }
         // Повторный тап по табу «Плюс» на корне — к началу ленты, как в системных
         // таббарах (правка пользователя 2026-10-03).
         .onChange(of: navigation.scrollToTopRequests[.plus]) {
@@ -204,9 +216,19 @@ private struct ShowcaseAppear: ViewModifier {
             .opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : ShowcaseMotion.appearOffset)
             .onScrollVisibilityChange(threshold: ShowcaseMotion.appearThreshold) { visible in
+                #if DEBUG
+                if MixMotionCapture.scenario == "entrance" { return }
+                #endif
                 guard visible, !shown else { return }
                 withAnimation(ShowcaseMotion.appear) { shown = true }
             }
+            #if DEBUG
+            .task {
+                if await MixMotionCapture.waitForEntrance() {
+                    withAnimation(ShowcaseMotion.appear) { shown = true }
+                }
+            }
+            #endif
     }
 }
 

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Переносит точку внутри карточки (или gap) между двумя размерами ленты.
-/// Gap и внешние поля не масштабируются вместе с изображениями.
+/// Поля и gap постоянны.
 enum HomeRecentlyCenterAnchor {
     static func width(_ widths: [CGFloat], scale: CGFloat, gap: CGFloat, leading: CGFloat, trailing: CGFloat) -> CGFloat {
         leading + widths.reduce(0, +) * scale + CGFloat(max(0, widths.count - 1)) * gap + trailing
@@ -22,6 +22,10 @@ enum HomeRecentlyCenterAnchor {
                        from oldScale: CGFloat, to newScale: CGFloat,
                        gap: CGFloat, leading: CGFloat, trailing: CGFloat) -> CGFloat {
         guard oldScale > 0, newScale > 0, !widths.isEmpty else { return offset }
+        // В начале ряда удерживаем левый край; любой реальный сдвиг выбирает центр.
+        if offset <= 0.01 { return 0 }
+        let oldGap = gap
+        let newGap = gap
         let point = offset + viewport / 2
         var oldX = leading
         var newX = leading
@@ -33,15 +37,15 @@ enum HomeRecentlyCenterAnchor {
                 mapped = newX + (point - oldX) * newScale / oldScale
                 break
             }
-            if index < widths.count - 1, point <= oldEnd + gap {
-                mapped = newEnd + (point - oldEnd)
+            if index < widths.count - 1, point <= oldEnd + oldGap {
+                mapped = newEnd + (point - oldEnd) * newGap / oldGap
                 break
             }
-            oldX = oldEnd + gap
-            newX = newEnd + gap
+            oldX = oldEnd + oldGap
+            newX = newEnd + newGap
             mapped = point + newX - oldX
         }
-        let total = width(widths, scale: newScale, gap: gap, leading: leading, trailing: trailing)
+        let total = width(widths, scale: newScale, gap: newGap, leading: leading, trailing: trailing)
         return min(max(0, mapped - viewport / 2), max(0, total - viewport))
     }
 }

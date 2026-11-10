@@ -37,6 +37,17 @@ struct ShowcaseScreen: View {
         // Навигация «Главной» — как у сервисных табов: поверх ленты, со своей подложкой.
         .overlay(alignment: .top) {
             HomeTopNav(scrollOffset: scrollOffset, openDevMenu: { isHomeDevShown = true })
+                // Header layout must not inherit the carousel's entrance animation.
+                .transaction { $0.animation = nil }
+                .modifier(HomeHeaderAppearance())
+                .opacity(HomePresentationSettings.shared.promoGlowInspectionEnabled ? 0 : 1)
+        }
+        .overlay {
+            if HomeRecentlyTelegramLayout.isEnabled {
+                HomeQuickAccess(feed: catalog.feed, showsTelegramOverlay: true)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
         .navigationDestination(for: CollectionListRoute.self) { route in
             SearchLayers(host: .pushed) { CollectionListScreen(route: route) }
@@ -96,5 +107,24 @@ struct ShowcaseScreen: View {
         // Загрузку витрины держит корень (`AppRootView`): пока она идёт, на экране
         // стоит заставка, а этот экран за своё время жизни не отвечает — его
         // размонтирует переключение таба.
+    }
+}
+
+
+/// A separate opacity layer keeps the header stationary during the first layout.
+private struct HomeHeaderAppearance: ViewModifier {
+    @Environment(\.promoIntroReady) private var introReady
+    @State private var shown = ShowcaseAppearMemory.hasShown
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .task(id: introReady) {
+                guard introReady, !shown else { return }
+                // Let the navigation stack establish its safe area before revealing it.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.35)) { shown = true }
+            }
     }
 }

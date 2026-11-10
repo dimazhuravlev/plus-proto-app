@@ -12,6 +12,14 @@ struct HomeSettingsStorage {
         object(forKey: key) as? [String: Any]
     }
 
+    /// Типизированное чтение учитывает и YES/NO из одноразовых параметров запуска.
+    func bool(forKey key: String) -> Bool {
+        if UserDefaults.standard.object(forKey: key) != nil {
+            return UserDefaults.standard.bool(forKey: key)
+        }
+        return defaults[key] as? Bool ?? false
+    }
+
     static func save(_ value: Any, forKey key: String) {
         UserDefaults.standard.set(value, forKey: key)
     }

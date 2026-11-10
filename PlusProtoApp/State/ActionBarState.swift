@@ -217,9 +217,9 @@ final class ActionBarState {
     let watchHistory = WatchHistory()
     /// Начатые книги — «Читаю» коллекции и начатое в её карусели «Книги».
     let readingHistory = ReadingHistory()
-    /// Ряд «продолженного потребления» «Главной» (задача 71) — пишется отсюда же,
-    /// из единого входа плееров (`open`).
-    let recently = RecentlyConsumed()
+    /// Общая история Recently: посещения сущностей и запуски всех плееров,
+    /// включая переходы из веера через `watch` / `read`.
+    let recently = RecentlyConsumed.shared
 
     /// Транспорт музыки — отдельными свойствами, а не полями `music`: они меняются
     /// на каждом тике плеера, и при вложении в структуру тик инвалидировал бы
@@ -404,6 +404,7 @@ final class ActionBarState {
     /// разворачивать круг в капсулу. `playing: false` — новый трек встаёт на паузе
     /// (свайп по мини-плееру на паузе).
     private func switchTrack(_ item: MusicNowPlaying, playing: Bool = true) {
+        if playing, !MyVibeTracks.isVibe(item.id) { recently.record(.music(item)) }
         music = item
         musicProgress = 0
         isMusicAdvancing = false
@@ -673,6 +674,9 @@ final class ActionBarState {
         // паузу) и сразу, если звук уже загружен, — без полусекунды до первого тика.
         musicProgress = audioFractionNow() ?? liveMusicProgress
         isMusicPlaying.toggle()
+        if isMusicPlaying, let music {
+            recently.record(MyVibeTracks.isVibe(music.id) ? .myVibe : .music(music))
+        }
         isMusicAdvancing = isMusicPlaying && audioFractionNow() != nil
         if isMusicPlaying {
             startProgressTicking()
@@ -760,16 +764,12 @@ final class ActionBarState {
                 toggleMusicPlayback()
             } else {
                 startMusic(item, queue: list, at: index)
-                // Волна — поток с закреплённой плиткой в начале ряда, в ряд не пишется.
-                if !MyVibeTracks.isVibe(item.id) { recently.record(.music(item)) }
             }
         case .movie(let item):
             watch(item)
             // В ряд — под выехавшим плеером, вместе с баром (`applyPendingResume`).
-            pendingRecent = .movie(item)
         case .book(let item):
             read(item)
-            pendingRecent = .book(item)
         }
     }
 
@@ -843,6 +843,7 @@ final class ActionBarState {
             item.runtime = watchHistory.runtime(for: item.id)
         }
         deferResume(.movie(item))
+        pendingRecent = .movie(item)
         contentPlayer = .movie(item)
     }
 
@@ -851,6 +852,7 @@ final class ActionBarState {
     func read(_ item: BookInProgress) {
         let showsMusic = isMusicPlaying && music != nil
         deferResume(.book(item))
+        pendingRecent = .book(item)
         contentPlayer = .reader(item, showsMusic: showsMusic)
     }
 

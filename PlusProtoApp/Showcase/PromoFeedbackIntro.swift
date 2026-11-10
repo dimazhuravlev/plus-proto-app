@@ -53,17 +53,18 @@ enum PromoIntroMotion {
 struct PromoIntroDoneFace: View {
     let expanded: Bool
     let isDone: Bool
-    private static let title = "Рекомендовать"
-    private static var expandedWidth: CGFloat {
+    var title = "Рекомендовать"
+    var icon = "promoLike"
+    private var expandedWidth: CGFloat {
         let font = UIFont(name: PlusFont.textSemibold, size: PlusTextSize.textM.size)
             ?? .systemFont(ofSize: PlusTextSize.textM.size, weight: .semibold)
         return 16 + 20 + 6 + ceil((title as NSString).size(withAttributes: [.font: font]).width) + 20
     }
 
     var body: some View {
-        Color.clear.frame(width: expanded ? Self.expandedWidth : 40, height: 40)
+        Color.clear.frame(width: expanded ? expandedWidth : 40, height: 40)
             .overlay(alignment: .leading) {
-                Text(Self.title).plusText(.textM, .semibold)
+                Text(title).plusText(.textM, .semibold)
                     .foregroundStyle(isDone ? Color.black : Color.fillOne).fixedSize()
                     .padding(.leading, 42)
                     .opacity(expanded ? 1 : 0)
@@ -71,7 +72,7 @@ struct PromoIntroDoneFace: View {
                     .accessibilityHidden(true)
             }
             .overlay(alignment: .leading) {
-                Image("promoLike").renderingMode(.template).resizable()
+                Image(icon).renderingMode(.template).resizable()
                     .frame(width: 20, height: 20)
                     .foregroundStyle(isDone ? Color.black : Color.fillOne)
                     .padding(.leading, expanded ? 16 : 10)
@@ -96,11 +97,12 @@ struct PromoIntroSurface: ViewModifier {
 /// Figma 362:25524, исходный размер до поворота 53.34×20.
 struct PromoAlbumBadge: View {
     static let boundsSize = CGSize(width: 53.34, height: 20)
-    @Environment(ShowcaseFeedbackState.self) private var feedback: ShowcaseFeedbackState?
+    /// То же состояние, из которого пара рисует раскрытую капсулу.
+    let feedback: ShowcaseFeedbackState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isHiddenByIntro: Bool {
-        PromoIntroSession.shared.isPending || (feedback?.isIntroExpanded ?? false)
+        !feedback.isPairHidden && (PromoIntroSession.shared.isPending || feedback.isIntroExpanded)
     }
 
     var body: some View {
@@ -114,7 +116,7 @@ struct PromoAlbumBadge: View {
             .frame(width: Self.boundsSize.width, height: Self.boundsSize.height)
             .opacity(isHiddenByIntro ? 0 : 1)
             // Бадж возвращается после сужения капсулы, когда они уже не перекрываются.
-            .animation(isHiddenByIntro ? nil : .easeOut(duration: PromoIntroMotion.badgeFadeDuration)
+            .animation(isHiddenByIntro ? .linear(duration: 0) : .easeOut(duration: PromoIntroMotion.badgeFadeDuration)
                 .delay(reduceMotion ? PromoIntroMotion.reducedCollapseDuration : PromoIntroMotion.collapseDuration),
                 value: isHiddenByIntro)
             .allowsHitTesting(false)

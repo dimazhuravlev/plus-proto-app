@@ -4,15 +4,36 @@ extension HomeDevControls {
     var layoutControls: some View {
         VStack(alignment: .leading, spacing: 20) {
             section("Recently") {
+                Button("Очистить Recently") {
+                    RecentlyConsumed.shared.clear()
+                    HomeRecentlyPullState.shared.reset()
+                }.accessibilityIdentifier("recently-clear")
+                Button("Быстро заполнить Recently") {
+                    RecentlyConsumed.shared.fillExamples()
+                    settings.hideRecently = false
+                }.accessibilityIdentifier("recently-fill")
                 Toggle("Скрыть Recently", isOn: $settings.hideRecently)
+                Toggle("Recently · подписи справа", isOn: $settings.recentlyInlineLabelsEnabled)
+                    .accessibilityIdentifier("recently-inline-labels")
+                hint("Выключено по умолчанию. Компактный ряд под шапкой: подписи справа гаснут, под карточками появляются новые. Приоритет над вариантом Telegram.")
+                Toggle("Recently · как в Telegram", isOn: $settings.recentlyTelegramEnabled)
+                    .accessibilityIdentifier("recently-telegram")
+                hint("Выключено по умолчанию. Три обложки рядом с логотипом раскрываются в ряд, остальные выезжают слева направо.")
                 hint("Высота — 64 pt. При оттяге карточки раскрываются до 112 pt и показывают подписи.")
             }
+            section("Реакции карусели") {
+                Toggle("V2: сохранение вместо лайка", isOn: $settings.promoSaveV2Enabled)
+                    .accessibilityIdentifier("promo-save-v2-enabled")
+                hint("Выключено по умолчанию. Книги — плюс, кино — закладка с плюсом, музыка — сердце. Нажатие сразу сохраняет в «Моё».")
+            }
             section("Геометрия карусели") {
+                Toggle("Свечение · карточки 10%", isOn: $settings.promoGlowInspectionEnabled)
+                hint("Выключено по умолчанию. Карточки, подписи и реакции видны с непрозрачностью 10%, чтобы сопоставлять их со свечением при листании.")
                 Toggle("Объём и параллакс при свайпе", isOn: $settings.promoDepthEnabled)
                     .accessibilityIdentifier("promo-depth-enabled")
                 Toggle("Волна по лепестку при запуске", isOn: $settings.promoLiftWaveEnabled)
                     .accessibilityIdentifier("promo-lift-wave-enabled")
-                hint("Два независимых эксперимента. Дыхание лепестка работает и без них.")
+                hint("Оба эффекта включены по умолчанию. Дыхание лепестка работает независимо от них.")
                 Toggle("Центр без наклона", isOn: $settings.uprightEnabled)
                 Toggle("Лента всех сочетаний типов", isOn: $settings.promoPairPreviewEnabled)
                 hint("Отдельная тестовая лента: все 25 пар пяти типов, включая одинаковые рядом.")

@@ -174,40 +174,57 @@ struct ShowcaseFeedbackPair: View {
     var introEligible = false
     var usesIntroDesign = false
     var usesPromoReactions = false
+    var usesSaveReaction = false
     var recommendation: ShowcaseBlock? = nil
     @Environment(\.promoIntroReady) private var introReady
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(CollectionIconStyle.storageKey) private var collectionIconStyle = CollectionIconStyle.defaultStyle
     private var introExpanded: Bool { state?.isIntroExpanded ?? false }
+    private var savesRecommendation: Bool { usesPromoReactions && usesSaveReaction }
+    private var savedItem: CollectionItem? { recommendation?.recommendationCollectionItem }
+    private var isSaved: Bool {
+        usesPromoReactions && (savedItem.map { CollectionStore.shared.isFavorite($0.id) } ?? false)
+    }
 
     private var canShowIntro: Bool {
         usesIntroDesign && introEligible && introReady && scenePhase == .active
+            && !isSaved
             && !(state?.isDone ?? false) && !(state?.isPairHidden ?? false) && !(state?.isSwapping ?? false)
     }
 
     var body: some View {
+        Group {
+            if !isSaved { feedback }
+        }
+    }
+
+    private var feedback: some View {
         HStack(spacing: PlusMetrics.circleButtonGap) {
             if usesPromoReactions {
                 Button(action: dismiss) {
-                    Image("promoDislike").renderingMode(.template).resizable()
+                    Image(collectionIconStyle == .plus ? "iconCross" : "promoDislike").renderingMode(.template).resizable()
                         .frame(width: 20, height: 20).foregroundStyle(Color.fillOne)
                         .frame(width: 40, height: 40).modifier(PromoIntroSurface())
                 }
                 .buttonStyle(PressScaleButtonStyle())
                 .accessibilityLabel("Не рекомендовать")
+                .accessibilityIdentifier("promo-feedback-dismiss-" + (recommendation?.id ?? ""))
+                .modifier(MixCaptureTarget(name: (recommendation?.id ?? "") + ":dislike"))
             } else {
                 PlusButton(icon: "iconCross", type: .secondary, size: .m, accessibilityTitle: "Показать другое", haptic: .inAction, action: dismiss)
             }
             doneButton
+                .modifier(MixCaptureTarget(name: (recommendation?.id ?? "") + ":like"))
         }
         .modifier(ShowcaseHideEffect(
-            isHidden: (state?.isPairHidden ?? false) || (state?.isContentHidden ?? false),
+            isHidden: isSaved || (state?.isPairHidden ?? false) || (state?.isContentHidden ?? false),
             scale: (state?.isPairHidden ?? false)
                 ? ShowcaseFeedbackMotion.hiddenPairScale
                 : ShowcaseFeedbackMotion.hiddenContentScale
         ))
-        .allowsHitTesting(!(state?.isSwapping ?? false) && !(state?.isDone ?? false))
-        .accessibilityHidden((state?.isPairHidden ?? false))
+        .allowsHitTesting(!isSaved && !(state?.isSwapping ?? false) && !(state?.isDone ?? false))
+        .accessibilityHidden(isSaved || (state?.isPairHidden ?? false))
         .onChange(of: state?.debugDismisses) { dismiss() }
         .onChange(of: state?.debugDones) { done() }
         .onChange(of: PromoIntroSession.shared.hasInteracted) { _, interacted in
@@ -217,10 +234,15 @@ struct ShowcaseFeedbackPair: View {
             if !enabled { collapseIntro() }
         }
         .task(id: PromoIntroTrigger(eligible: canShowIntro, generation: PromoIntroSession.shared.generation)) {
-            guard let state, canShowIntro, PromoIntroSession.shared.claim() else { return }
+            guard let state, canShowIntro else { return }
             var instant = Transaction()
             instant.disablesAnimations = true
-            withTransaction(instant) { state.isIntroExpanded = true }
+            // Погашение pending и раскрытие — одна транзакция: бадж не получает
+            // промежуточное разрешение на показ между claim и раскрытием.
+            withTransaction(instant) {
+                guard PromoIntroSession.shared.claim() else { return }
+                state.isIntroExpanded = true
+            }
         }
     }
 
@@ -244,11 +266,16 @@ struct ShowcaseFeedbackPair: View {
         return Group {
             if usesPromoReactions {
                 Button(action: done) {
-                    PromoIntroDoneFace(expanded: introExpanded, isDone: isDone)
+                    PromoIntroDoneFace(expanded: introExpanded, isDone: isDone || isSaved,
+                                       title: savesRecommendation ? "Сохранить" : "Рекомендовать",
+                                       icon: collectionIconStyle == .plus ? "iconAdd" :
+                                        (savesRecommendation ? (recommendation?.promoSaveIcon ?? "promoSaveMusic") : "promoLike"))
                 }
                 .buttonStyle(PressScaleButtonStyle())
-                .accessibilityLabel("Рекомендовать")
-                .accessibilityAddTraits(isDone ? .isSelected : [])
+                .accessibilityIdentifier("promo-feedback-save-" + (recommendation?.id ?? ""))
+                .accessibilityLabel(savesRecommendation ? (isSaved ? "Сохранено в «Моё»" : "Сохранить в «Моё»") : "Рекомендовать")
+                .accessibilityAddTraits(isDone || isSaved ? .isSelected : [])
+                .disabled(savesRecommendation && savedItem == nil)
             } else {
                 PlusButton(icon: "iconDone", type: isDone ? .white : .secondary, size: .m, accessibilityTitle: "То, что надо", haptic: .inAction, action: done)
                     .transaction { $0.animation = nil }
@@ -260,7 +287,7 @@ struct ShowcaseFeedbackPair: View {
     /// ✕: айтем гаснет, каталог тем временем готовит замену; новый контент встаёт,
     /// когда старый погас и замена готова, — и проявляется. Хаптик — обычный одиночный.
     private func dismiss() {
-        guard let state, !state.isSwapping, !state.isDone else { return }
+        guard let state, !isSaved, !state.isSwapping, !state.isDone else { return }
         interactWithPromo()
         state.isSwapping = true
         if usesPromoReactions { HomeInteractionHaptics.action() }
@@ -284,7 +311,8 @@ struct ShowcaseFeedbackPair: View {
 
     /// ✓: хаптик success (двойное вибро), кнопка белеет сразу, через 800 мс пара гаснет.
     private func done() {
-        guard let state, !state.isSwapping, !state.isDone else { return }
+        guard let state, !isSaved, !state.isSwapping, !state.isDone else { return }
+        guard !savesRecommendation || savedItem != nil else { return }
         interactWithPromo()
         if usesPromoReactions { HomeInteractionHaptics.action() }
         else { UINotificationFeedbackGenerator().notificationOccurred(.success) }
@@ -292,9 +320,12 @@ struct ShowcaseFeedbackPair: View {
         // Сущности в паре нет — вместо обложки иконка, кнопки нет.
         if usesPromoReactions {
             let duration: Duration = ProcessInfo.processInfo.arguments.contains("-debugPromoRecommendationToast") ? .seconds(30) : .seconds(4)
-            ToastCenter.shared.show(title: PromoFeedbackCopy.liked(),
-                                    action: recommendation?.recommendationCollectionItem.map { .saveRecommendation($0) },
-                                    duration: duration)
+            if savesRecommendation, let item = savedItem {
+                ToastCenter.shared.saveRecommendation(item, title: PromoFeedbackCopy.saved(), duration: duration)
+            } else {
+                ToastCenter.shared.show(title: PromoFeedbackCopy.liked(),
+                                        duration: duration)
+            }
         } else {
             ToastCenter.shared.show(title: ToastCopy.randomDone(), graphic: .icon("iconDone"))
         }

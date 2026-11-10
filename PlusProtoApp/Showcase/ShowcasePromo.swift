@@ -1,11 +1,6 @@
 import SwiftUI
 import UIKit
 
-private enum PromoLeftReturnMotion {
-    static let animation: Animation = .easeOut(duration: 0.3)
-    static let offset: CGFloat = 12
-}
-
 /// Ключ слота ряда: копия круга и айтем, а не номер места. По номеру места каждая
 /// вставка и удаление (✕) сдвигала отображение `items[index % count]` почти у всех слотов,
 /// вью получали новый айтем и пересоздавались — пять видимых обложек мигали дважды
@@ -77,9 +72,6 @@ struct ShowcasePromo: View {
     @State private var isEditingSet = false
     /// Лента встала на стартовую карточку (`placeIfNeeded`).
     @State private var isPlaced = false
-    @State private var returningLeftID: String?
-    @State private var leftReturnProgress: CGFloat = 1
-    @State private var leftReturnTask: Task<Void, Never>?
     @State private var petalWave = PromoPetalWave<PromoSlotID>(duration: LiftWaveConfig.duration)
     @State private var playingPetalID: String?
     @State private var hasInteracted = false
@@ -99,6 +91,69 @@ struct ShowcasePromo: View {
         _scroll = State(initialValue: PromoScrollState(position: CGFloat(start)))
 
     }
+
+    #if DEBUG
+    private func captureLocate(_ kind: String) -> Bool {
+        guard !liveItems.isEmpty, let current = page else { return false }
+        let item = liveItems[Self.wrap(current, liveItems.count)]
+        let target: HomePromoKind = kind == "petal" ? .station : (kind == "album" ? .album : .movie)
+        let matches = item.homePromoKind == target
+        if matches { scheduleReveal() }
+        if !matches { page = current + 1 }
+        return matches
+    }
+
+    private func capturePerform(_ action: String) async {
+        guard !liveItems.isEmpty, let current = page else { return }
+        let item = liveItems[Self.wrap(current, liveItems.count)]
+        let target: String?
+        switch action {
+        case "like", "save", "intro-collapse": target = item.id + ":like"
+        case "dislike": target = item.id + ":dislike"
+        case "play", "pause", "open": target = item.id + ":card:\(current)"
+        case "tap-neighbor":
+            let index = Self.wrap(current + 1, liveItems.count)
+            target = liveItems[index].id + ":card:\(current + 1)"
+        default: target = nil
+        }
+        if let target { await MixCaptureTouches.shared.press(target: target) }
+        switch action {
+        case "intro-replay": PromoIntroSession.shared.replay()
+        case "prepare-save":
+            // Только в сценарии съёмки; исходная коллекция восстановится из снимка.
+            if let saved = item.recommendationCollectionItem { CollectionStore.shared.setFavorite(saved, false) }
+        case "intro-collapse":
+            PromoIntroSession.shared.interact()
+        case "open":
+            tap(item, slotIndex: current, isCurrent: true)
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                MixCaptureTouches.shared.tap(at: CGPoint(x: 24, y: 84))
+                navigation.close()
+            }
+        case "back": navigation.pop()
+        case "reset-playback":
+            if actionBar.isMusicPlaying { actionBar.toggleMusicPlayback() }
+        case "next":
+            MixCaptureTouches.shared.swipe(target: item.id + ":card:\(current)")
+            PromoIntroSession.shared.interact()
+            withAnimation(ShowcasePromoMotion.step) { page = current + 1 }
+        case "tap-neighbor":
+            let index = Self.wrap(current + 1, liveItems.count)
+            tap(liveItems[index], slotIndex: current + 1, isCurrent: false)
+        case "play":
+            tap(item, slotIndex: current, isCurrent: true)
+        case "like", "save":
+            feedback.state(for: item.id).debugDones += 1
+        case "dislike":
+            feedback.state(for: item.id).debugDismisses += 1
+        case "pause":
+            tap(item, slotIndex: current, isCurrent: true)
+        case "undo": ToastCenter.shared.activate()
+        default: break
+        }
+    }
+    #endif
 
     private var count: Int { items.count }
 
@@ -134,8 +189,10 @@ struct ShowcasePromo: View {
 
     /// Промо содержит рекомендации с обложками и описаниями.
     /// Продолженное потребление остаётся в Recently и исходной витрине.
+    /// Порядок сохраняется: старт без артиста выбирает HomePromoStartPolicy,
+    /// а перестановка первой карточки здесь меняла левого соседа после ✕.
     static func composed(_ promo: [ShowcaseBlock]) -> [ShowcaseBlock] {
-        var result: [ShowcaseBlock] = promo.compactMap { block in
+        promo.compactMap { block in
             switch block {
             case .watching, .reading: return nil
             case .movie(let movie):
@@ -145,9 +202,6 @@ struct ShowcasePromo: View {
             default: return block
             }
         }
-        guard let first = HomePromoStartPolicy.index(in: result, preferred: 0, isArtist: { $0.homePromoKind == .artist }) else { return [] }
-        if first != 0 { result.swapAt(0, first) }
-        return result
     }
 
     private var spacingGeometry: PromoCarouselSpacing? {
@@ -213,6 +267,7 @@ struct ShowcasePromo: View {
                         }
                     }
                     .scrollTargetLayout()
+                    .opacity(HomePresentationSettings.shared.promoGlowInspectionEnabled ? MixMotionCapture.glowForegroundOpacity : 1)
                 }
             }
             // По одной карточке за свайп, как бы ни бросили.
@@ -246,6 +301,7 @@ struct ShowcasePromo: View {
                     }
                 }
                 .frame(width: PlusMetrics.screenWidth - 48, height: 48, alignment: .top)
+                .opacity(HomePresentationSettings.shared.promoGlowInspectionEnabled ? MixMotionCapture.glowForegroundOpacity : 1)
                 .allowsHitTesting(false)
             }
             .onScrollGeometryChange(for: CGFloat.self) { [step = Layout.step] geometry in
@@ -287,9 +343,6 @@ struct ShowcasePromo: View {
             }
             .onDisappear {
                 revealTask?.cancel()
-                leftReturnTask?.cancel()
-                returningLeftID = nil
-                leftReturnProgress = 1
             }
             .onAppear {
                 scrollProxy = proxy
@@ -320,6 +373,7 @@ struct ShowcasePromo: View {
                 }
             }
             #if DEBUG
+            .task { await MixMotionCapture.run(locate: captureLocate, perform: capturePerform) }
             // `-debugHomePromoStep <back|next|n|cycle>` — через 3с пролистать слайдер:
             // свайпнуть из шелла нечем. `cycle` — вперёд по карточке раз в 1.6 с, 14 шагов:
             // круг проходит перескок копий, его снимают на видео. Словами, а не «-1»: минус
@@ -453,13 +507,12 @@ struct ShowcasePromo: View {
         let shift = removal.map { index > $0 ? collapse : 0 } ?? 0
         // Доступность зависит от дискретного окна, а не от каждого дробного кадра скролла.
         let isVisible = abs(CGFloat(index - scroll.nearestSlot) - shift) <= CGFloat(visibleCount / 2)
-        let leftEntry = item.id == returningLeftID && index < (currentPage ?? index) ? leftReturnProgress : 1
         return ZStack(alignment: .top) {
             card(item, slotIndex: index, currentPage: currentPage, visibleCount: visibleCount, isShown: isShown)
                 .frame(height: Layout.carouselHeight)
                 .modifier(PromoCardMotion(look: look, kind: item.homePromoKind, slotIndex: index, spacing: spacing,
                                           collapsedSpacing: collapsedSpacing, removal: removal, collapse: collapse,
-                                          leftEntry: leftEntry, visibleCount: visibleCount))
+                                          visibleCount: visibleCount))
                 .offset(y: item.homePromoKind == .station ? 24 : 0)
         }
         .frame(width: Layout.step, height: Layout.height, alignment: .top)
@@ -498,6 +551,7 @@ struct ShowcasePromo: View {
                           waveTrigger: pulse?.trigger ?? 0, waveOrigin: waveOrigin)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
+        .modifier(MixCaptureTarget(name: item.id + ":card:\(slotIndex)"))
         .simultaneousGesture(
             SpatialTapGesture().onEnded { tap in
                 petalWave.recordTouch(tap.location, at: slotID, time: ProcessInfo.processInfo.systemUptime)
@@ -511,7 +565,7 @@ struct ShowcasePromo: View {
         .accessibilityLabel(item.promoAccessibilityLabel)
         .overlay(alignment: .topLeading) {
             if case .album = item {
-                PromoAlbumBadge()
+                PromoAlbumBadge(feedback: feedback.state(for: item.id))
                     .zoomSourceCaption(captionRoute)
                     .showcaseSwappable()
                     .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .leading))
@@ -526,7 +580,8 @@ struct ShowcasePromo: View {
             // держим. Сосед в окне — чтобы пара ушедшей с центра догасла, а не пропала.
             // У карточки «Продолжить» пары нет — на её месте кнопка (ниже).
             if !petalLayout, item.promoResume == nil, abs(slotIndex - (currentPage ?? slotIndex)) <= 1 {
-                ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true, recommendation: item)
+                ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true,
+                                     usesSaveReaction: settings.promoSaveV2Enabled, recommendation: item)
                     .zoomSourceCaption(captionRoute)
                     .allowsHitTesting(!fixedPreview)
                     .modifier(PromoReveal(
@@ -555,7 +610,8 @@ struct ShowcasePromo: View {
                             scale: Layout.stationScale
                         ))
                     if abs(slotIndex - (currentPage ?? slotIndex)) <= 1 {
-                        ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true, recommendation: item)
+                        ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true,
+                                             usesSaveReaction: settings.promoSaveV2Enabled, recommendation: item)
                             .zoomSourceCaption(captionRoute)
                             .allowsHitTesting(!fixedPreview)
                             .modifier(PromoReveal(isShown: isShown,
@@ -623,9 +679,12 @@ struct ShowcasePromo: View {
             actionBar.open(resume)
             return
         }
-        if case .vibe = item {
+        if case .vibe(let vibe) = item {
             playingPetalID = item.id
             actionBar.openMyVibe()
+            if let station = VibeStation.all.first(where: { $0.title == vibe.promoStation.name }) {
+                actionBar.recently.record(.station(station.id))
+            }
             if HomePresentationSettings.shared.promoLiftWaveEnabled, actionBar.isMusicPlaying {
                 let slot = PromoSlotID(copy: slotIndex / max(count, 1), item: item.id)
                 // Кнопка и SpatialTapGesture могут завершиться в любом порядке.
@@ -679,9 +738,6 @@ struct ShowcasePromo: View {
             return
         }
         hasInteracted = true
-        leftReturnTask?.cancel()
-        returningLeftID = nil
-        leftReturnProgress = 1
         swipeHaptics.reset()
         removal = slot
         revealTask?.cancel()
@@ -722,22 +778,12 @@ struct ShowcasePromo: View {
                 collapse = 1
             } completion: {
                 var undoRemoval: (@MainActor () -> Void)?
-                let previousID = current[(removedIndex + current.count - 1) % current.count].id
                 editSet {
-                    returningLeftID = previousID
-                    leftReturnProgress = 0
                     undoRemoval = catalog.removePromo(id: removed.id)
                     feedback.remove(removed.id)
                     removal = nil
                     collapse = 0
                     center(on: next.id)
-                }
-                // Перестановка набора намеренно мгновенная; проявление левого соседа
-                // начинается в следующем проходе, чтобы не потеряться в editSet.
-                leftReturnTask = Task { @MainActor in
-                    try? await Task.sleep(for: ShowcasePromoMotion.editSettle)
-                    guard !Task.isCancelled, returningLeftID == previousID else { return }
-                    withAnimation(PromoLeftReturnMotion.animation) { leftReturnProgress = 1 }
                 }
                 if let undoRemoval {
                     ToastCenter.shared.showDislikedRecommendation(title: PromoFeedbackCopy.disliked()) {
@@ -908,13 +954,12 @@ private struct PromoCardMotion: ViewModifier, Animatable {
     let removal: Int?
     var collapse: CGFloat
     private var shift: CGFloat { removal.map { slotIndex > $0 ? collapse : 0 } ?? 0 }
-    var leftEntry: CGFloat
     var visibleCount: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(collapse, leftEntry) }
-        set { collapse = newValue.first; leftEntry = newValue.second }
+    var animatableData: CGFloat {
+        get { collapse }
+        set { collapse = newValue }
     }
 
     func body(content: Content) -> some View {
@@ -932,7 +977,7 @@ private struct PromoCardMotion: ViewModifier, Animatable {
         let card = geometry.card(for: kind)
         let sideScale = CGSize(width: card.neighbour.width / card.main.width,
                                height: card.neighbour.height / card.main.height)
-        return content.visualEffect { [look, shift, collapse, leftEntry, upright, sideAngle, sideScale, depth] content, proxy in
+        return content.visualEffect { [look, shift, collapse, upright, sideAngle, sideScale, depth] content, proxy in
             let rawPosition = ShowcasePromoLayout.position(of: proxy, step: step)
             let position = rawPosition - shift
             let horizontalOffset = spacing.map {
@@ -958,7 +1003,7 @@ private struct PromoCardMotion: ViewModifier, Animatable {
             return content
                 .scaleEffect(x: 1 + (sideScale.width - 1) * distance,
                              y: 1 + (sideScale.height - 1) * distance)
-                .opacity(Double(leftEntry) * PromoViewportSizing.visibility(at: position, count: visibleCount))
+                .opacity(PromoViewportSizing.visibility(at: position, count: visibleCount))
                 .rotationEffect(.degrees(tilt))
                 .rotation3DEffect(
                     .degrees(depth ? -PromoDepthMotion.yaw * Double(PromoDepthMotion.swing(position)) : 0),
@@ -968,7 +1013,7 @@ private struct PromoCardMotion: ViewModifier, Animatable {
                     .degrees(depth ? PromoDepthMotion.pitch * Double(distance) : 0),
                     axis: (x: 1, y: 0, z: 0), perspective: PromoDepthMotion.perspective
                 )
-                .offset(x: horizontalOffset - PromoLeftReturnMotion.offset * (1 - leftEntry), y: drop * distance)
+                .offset(x: horizontalOffset, y: drop * distance)
         }
     }
 }

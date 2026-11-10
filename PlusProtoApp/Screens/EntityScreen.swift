@@ -4,9 +4,15 @@ import SwiftUI
 /// `EntityRoute`, и он же служит `sourceID` зум-перехода.
 struct EntityScreen: View {
     let route: EntityRoute
+    @State private var recordedVisit = false
 
     var body: some View {
         screen
+            .onAppear {
+                guard !recordedVisit else { return }
+                recordedVisit = true
+                RecentlyConsumed.shared.recordVisit(route)
+            }
             // Пока экран на месте, подпись карточки, из которой он развернулся, спрятана
             // вместе с её обложкой (`ZoomPresence`).
             .background {

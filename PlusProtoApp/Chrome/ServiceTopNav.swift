@@ -361,7 +361,7 @@ struct TopNavRow: ViewModifier {
                 PlusGradient.bottomUnderlay(peak: ServiceTopNavLayout.topShadePeak)
                     .scaleEffect(y: -1)
                     .frame(height: ServiceTopNavLayout.topShadeHeight)
-                    .opacity(showsTopShade
+                        .opacity(showsTopShade
                         ? NavBarRamp.progress(scrollOffset, start: 0, length: ServiceTopNavLayout.topShadeRamp)
                         : 0)
                     .allowsHitTesting(false)
@@ -440,8 +440,27 @@ struct HomeTopNav: View {
             Image("logoYandexPlus")
                 .resizable()
                 .frame(width: Layout.logo.width, height: Layout.logo.height)
+                .frame(width: HomeRecentlyTelegramLayout.isEnabled ? 84 : Layout.logo.width, alignment: .trailing)
+                .clipped()
                 .accessibilityLabel("Яндекс Плюс")
                 .padding(.leading, ServiceTopNavLayout.side)
+            if HomeRecentlyTelegramLayout.isEnabled {
+                Button {
+                    HomeRecentlyTelegramState.shared.expansionRequests += 1
+                } label: {
+                    Color.clear.frame(width: 100, height: 44)
+                        .contentShape(Rectangle())
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                            HomeRecentlyTelegramState.shared.headerFrame = $0
+                        }
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+                .allowsHitTesting(HomeRecentlyPullState.shared.progress < 0.01)
+                .accessibilityHidden(HomeRecentlyPullState.shared.progress >= 0.01)
+                .accessibilityLabel("Развернуть Recently")
+                .accessibilityIdentifier("recently-telegram-expand")
+            }
             Spacer(minLength: 0)
             HStack(spacing: 0) {
                 // Видео не принимает касания; явная область нажатия покрывает весь слот.
