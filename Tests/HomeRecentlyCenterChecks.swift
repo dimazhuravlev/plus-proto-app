@@ -52,6 +52,9 @@ import Foundation
             for step in (1...64).reversed() { x = offset(x, 0.8 + CGFloat(step) / 160, 0.8 + CGFloat(step - 1) / 160) }
         }
         expect(x, 430)
+        expect(offset(0, 0.8, 1.4), 0)
+        expect(offset(-12, 0.8, 1.4), 0)
+        precondition(offset(0.1, 0.8, 1.4) > 0.1)
         expect(offset(0, 1.2, 0.8), 0) // У границы не появляется пустое поле.
         let total = HomeRecentlyCenterAnchor.width(widths, scale: 0.8, gap: 8, leading: 8, trailing: 16)
         expect(offset(10000, 1.2, 0.8), total - 402)

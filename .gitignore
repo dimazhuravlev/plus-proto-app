@@ -9,3 +9,6 @@ build/
 *.xcuserstate
 .DS_Store
 _assets/
+
+# Локальные записи анимаций карусели и контрольные кадры
+/output/mix-motion/

@@ -23,6 +23,8 @@ import UIKit
         responsive.phaseChanged(phase)
     }
 
+    func expandFromTap() { responsive.expandFromTap() }
+
     func reset() {
         responsive.reset()
         HomeRecentlyPullState.shared.reset()
@@ -89,6 +91,22 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
         scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
     }
 
+    func expandFromTap() {
+        guard let scroll else { return }
+        // A programmatic return to the top must never reuse the last pan translation.
+        adjusting = true
+        active = false
+        ownsPull = false
+        policy = HomeRecentlyResponsivePullPolicy()
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top), animated: false)
+        adjusting = false
+        let state = HomeRecentlyPullState.shared
+        state.updateResponsiveNativePull(0)
+        state.setResponsiveExpanded(true)
+        state.finishResponsivePull()
+        HomeInteractionHaptics.recently(expanded: true)
+    }
+
     private func begin(_ scroll: UIScrollView) {
         guard !active else { return }
         active = true
@@ -112,6 +130,7 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
     }
 
     func phaseChanged(_ phase: ScrollPhase) {
+        guard !adjusting else { return }
         if phase == .tracking || phase == .interacting, let scroll { begin(scroll) }
         if phase == .idle || phase == .decelerating || phase == .animating { release() }
     }

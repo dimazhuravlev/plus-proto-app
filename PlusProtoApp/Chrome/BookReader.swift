@@ -299,15 +299,7 @@ struct BookReaderView: View {
 
     private var pages: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: BookReaderLayout.paragraphGap) {
-                ForEach(Array(text.pages.enumerated()), id: \.offset) { _, paragraph in
-                    Text(paragraph)
-                        .plusText(.textL, .medium)
-                        // Fill 4 — цвет UI kit для текстовых блоков длиннее двух строк.
-                        .foregroundStyle(Color.fillFour)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+            BookReaderParagraphs(paragraphs: text.pages)
             .padding(.horizontal, BookReaderLayout.textInset)
             .padding(.top, BookReaderLayout.textTop)
             .padding(.bottom, textBottom)

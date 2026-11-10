@@ -7,7 +7,7 @@ struct HomeRecentlyWidths: PreferenceKey {
     static func reduce(value: inout [CGFloat], nextValue: () -> [CGFloat]) { value += nextValue() }
 }
 
-/// Сохраняет точку под центром viewport при pull-to. Обычная горизонтальная
+/// У нулевого offset держит левый край, после прокрутки — центр viewport при pull-to. Обычная горизонтальная
 /// прокрутка, инерция и распознаватели остаются у нативного ScrollView.
 struct HomeRecentlyHorizontalAnchor: UIViewRepresentable {
     let widths: [CGFloat]

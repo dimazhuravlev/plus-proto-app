@@ -77,6 +77,7 @@ extension EnvironmentValues {
 }
 
 private struct PressScaleEffect: ViewModifier {
+    @Environment(\.mixCapturePressTarget) private var captureTarget
     let scale: CGFloat
     var isButtonPressed = false
     var isTrackingEnabled = true
@@ -84,7 +85,12 @@ private struct PressScaleEffect: ViewModifier {
     @State private var isTouched = false
 
     func body(content: Content) -> some View {
-        let isPressed = isTouched || isButtonPressed
+        #if DEBUG
+        let capturedPress = captureTarget != nil && MixCaptureTouches.shared.pressedTarget == captureTarget
+        #else
+        let capturedPress = false
+        #endif
+        let isPressed = isTouched || isButtonPressed || capturedPress
         content
             // Анимация — только у масштаба: смена содержимого (активный таб, глиф)
             // едет своей кривой, а не кривой нажатия.

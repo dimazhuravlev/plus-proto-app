@@ -102,6 +102,7 @@ extension HomeDevControls {
                     hint("Цветовые настройки меняют только recently, вкладка Музыки сохраняет свой вид.")
                 }
             }
+            if !HomeQuickAccessLayout.isStandard {
             section("Recently · контент для примерки") {
                 LazyVGrid(columns: columns, spacing: 8) {
                     action("Другой набор", icon: "arrow.triangle.2.circlepath") {
@@ -117,6 +118,7 @@ extension HomeDevControls {
                     }
                 }
                 hint("Новый набор меняет контент и место фильма в recently. История просмотра сохраняется.")
+            }
             }
             section("Кнопки фидбека") {
                 Button("Повторить подсказку") { PromoIntroSession.shared.replay() }

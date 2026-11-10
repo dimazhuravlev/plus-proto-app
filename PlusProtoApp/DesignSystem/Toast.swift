@@ -168,10 +168,7 @@ enum ToastLayout {
 
     /// Всё в ряду, кроме текста: отступы, графика, кнопка с зазором.
     private static func nonTextWidth(for config: ToastConfig) -> CGFloat {
-        let hasButton = config.action != nil
-        var width = leadingInset(for: config.graphic) + graphicWidth(for: config.graphic)
-        width += hasButton ? gap + actionButtonWidth(for: config) + trailingWithButton : trailingNoButton
-        return width
+        48
     }
 
     static func actionButtonWidth(for config: ToastConfig) -> CGFloat {
@@ -184,7 +181,7 @@ enum ToastLayout {
 
     /// Места под фразу: от `max-width` вычитаем всё остальное в ряду.
     static func textMaxWidth(for config: ToastConfig) -> CGFloat {
-        (config.action == .undoRecommendation ? dislikeWidth : maxWidth) - nonTextWidth(for: config)
+        maxWidth - nonTextWidth(for: config)
     }
 
     /// Ширина фразы: самая длинная строка после переноса по словам в `maxWidth`.
@@ -212,8 +209,6 @@ enum ToastLayout {
 
     /// Ширина пилюли: обнимает текст, не шире `maxWidth`.
     static func pillWidth(for config: ToastConfig) -> CGFloat {
-        if config.action == .undoRecommendation { return dislikeWidth }
-        if config.action?.isSaveRecommendation == true { return maxWidth }
         return nonTextWidth(for: config)
             + textWidth(config.title, maxWidth: textMaxWidth(for: config))
     }
@@ -221,178 +216,26 @@ enum ToastLayout {
 
 // MARK: - Вид
 
-/// Пилюля тоста по компоненту `toast` из Library: графика слева (обложка / аватарка /
-/// иконка / ничего), фраза до двух строк, кнопка-шеврон — только если у тоста есть действие.
+/// Информационный тост: только текст, без графики и кнопок. Тап закрывает сообщение.
 struct ToastView: View {
     let config: ToastConfig
     var coverRotation: Double = ToastMotion.coverRestRotation
     var coverOffsetY: CGFloat = 0
 
-    private var hasButton: Bool { config.action != nil }
-
-    private var leadingInset: CGFloat { ToastLayout.leadingInset(for: config.graphic) }
-
-    private var trailingInset: CGFloat {
-        hasButton ? ToastLayout.trailingWithButton : ToastLayout.trailingNoButton
-    }
-
-    /// Ширина фразы считается заранее (`ToastLayout.textWidth`), от констант и шрифта.
-    private var textWidth: CGFloat {
-        if config.action?.requiresExplicitButton == true { return ToastLayout.textMaxWidth(for: config) }
-        return ToastLayout.textWidth(config.title, maxWidth: ToastLayout.textMaxWidth(for: config))
-    }
-
     var body: some View {
-        HStack(spacing: 0) {
-            switch config.graphic {
-            case .cover(let source):
-                cover(
-                    source,
-                    width: ToastLayout.coverSide,
-                    height: ToastLayout.coverSide,
-                    frameWidth: ToastLayout.coverFrame,
-                    frameHeight: ToastLayout.coverFrame
-                )
-                .padding(.trailing, ToastLayout.coverGap)
-            case .poster(let source), .book(let source):
-                cover(
-                    source,
-                    width: ToastLayout.posterWidth,
-                    height: ToastLayout.posterHeight,
-                    frameWidth: ToastLayout.posterFrameWidth,
-                    frameHeight: ToastLayout.posterFrameHeight,
-                    isBook: config.graphic == .book(source)
-                )
-                .padding(.trailing, ToastLayout.coverGap)
-            case .icon(let name):
-                icon(name)
-                    .padding(.trailing, ToastLayout.gap)
-            case .avatar(let source):
-                avatar(source)
-                    .padding(.trailing, ToastLayout.gap)
-            case .none:
-                EmptyView()
-            }
-
-            Text(config.title)
-                .plusText(.textS, .medium)
-                .foregroundStyle(Color.fillOne)
-                .multilineTextAlignment(.leading)
-                .lineLimit(2)
-                .frame(width: textWidth, alignment: .leading)
-                .contentTransition(.opacity)
-
-            if hasButton {
-                if config.action?.isSaveRecommendation == true {
-                    Button { ToastCenter.shared.activate() } label: {
-                        HStack(spacing: 6) {
-                            Image("toastSavePlus").renderingMode(.template).resizable().frame(width: 16, height: 16)
-                            Text("Сохранить").plusText(.textS, .semibold)
-                        }
-                        .foregroundStyle(Color.fillOne)
-                        .padding(.leading, 14).padding(.trailing, 16)
-                        .frame(width: ToastLayout.actionButtonWidth(for: config), height: 32)
-                        .background(Color.buttonsSecondary, in: Capsule())
-                    }
-                    .buttonStyle(PressScaleButtonStyle())
-                    .padding(.leading, ToastLayout.gap)
-                } else if config.action == .undoRecommendation {
-                    Button { ToastCenter.shared.activate() } label: {
-                        Text("Отменить")
-                            .plusText(.textS, .semibold)
-                            .foregroundStyle(Color.fillOne)
-                            .frame(width: ToastLayout.undoButtonWidth, height: ToastLayout.buttonSize)
-                            .background(Color.buttonsSecondary, in: Capsule())
-                    }
-                    .buttonStyle(PressScaleButtonStyle())
-                    .padding(.leading, ToastLayout.gap)
-                } else {
-                    chevronButton
-                        .padding(.leading, ToastLayout.gap)
-                }
-            }
-        }
-        .padding(.leading, leadingInset)
-        .padding(.trailing, trailingInset)
-        .frame(width: ToastLayout.pillWidth(for: config), height: ToastLayout.height, alignment: .leading)
-        .clipShape(Capsule(style: .continuous))
-        .chromeGlass(Capsule(style: .continuous))
-    }
-
-    /// Обложка r4 с наклоном 6° и тенью внутри рамки (квадрат 32 в 35.17 или портрет 32×44
-    /// в 36.424×47.104). Кадр задаёт распорка, картинка — `scaledToFill` в overlay (см. CLAUDE.md).
-    private func cover(
-        _ source: ArtworkSource,
-        width: CGFloat,
-        height: CGFloat,
-        frameWidth: CGFloat,
-        frameHeight: CGFloat,
-        isBook: Bool = false
-    ) -> some View {
-        coverFace(source, width: width, height: height, isBook: isBook)
-            .shadow(color: .black.opacity(0.2), radius: ToastLayout.coverShadowRadius, y: ToastLayout.coverShadowY)
-            .rotationEffect(.degrees(coverRotation))
-            .offset(y: coverOffsetY)
-            .frame(width: frameWidth, height: frameHeight)
-            .transition(.opacity)
-    }
-
-    /// Книга — карточка книги (`card / book`) со скруглением обложек тоста; остальное —
-    /// обложка r4.
-    @ViewBuilder
-    private func coverFace(_ source: ArtworkSource, width: CGFloat, height: CGFloat, isBook: Bool) -> some View {
-        if isBook {
-            BookFigure(
-                geometry: BookFigureGeometry(coverHeight: height).cornerRadius(ToastLayout.coverRadius),
-                coverWidth: width
-            ) {
-                // Как у всех книг — `SkeletonArtwork` (см. CLAUDE.md, «Грабли»: `ArtworkImage(...).scaledToFill()` растягивал обложку вширь).
-                SkeletonArtwork(source: source)
-            }
-        } else {
-            Color.clear
-                .frame(width: width, height: height)
-                .overlay { ArtworkImage(source: source).scaledToFill() }
-                .clipShape(RoundedRectangle(cornerRadius: ToastLayout.coverRadius))
-                .overlay {
-                    RoundedRectangle(cornerRadius: ToastLayout.coverRadius)
-                        .strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
-                }
-        }
-    }
-
-    /// Круглое фото: кадр задаёт распорка, картинка — `scaledToFill` в overlay; под ней заливка
-    /// на время загрузки, обводка внутрь hairline белый 8 % (как миниатюра артиста на табе «Моё»).
-    private func avatar(_ source: ArtworkSource) -> some View {
-        Color.fillNine
-            .frame(width: ToastLayout.avatarSize, height: ToastLayout.avatarSize)
-            .overlay { ArtworkImage(source: source).scaledToFill() }
-            .clipShape(Circle())
-            .overlay {
-                Circle().strokeBorder(Color.fillNine, lineWidth: PlusMetrics.hairline)
-            }
-            .transition(.opacity)
-    }
-
-    private func icon(_ name: String) -> some View {
-        Image(name)
-            .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
-            .frame(width: ToastLayout.iconGlyph, height: ToastLayout.iconGlyph)
+        Text(config.title)
+            .plusText(.textS, .medium)
             .foregroundStyle(Color.fillOne)
-            .frame(width: ToastLayout.iconSlot, height: ToastLayout.iconSlot)
-            .transition(.opacity)
-    }
-
-    /// Шеврон — вид `PlusButton` chrome S: нажимается тост целиком.
-    private var chevronButton: some View {
-        PlusButtonLabel(icon: "iconChevronRight", type: .chrome, size: .s)
-            .transition(.opacity)
+            .multilineTextAlignment(.leading)
+            .lineLimit(2)
+            .frame(width: ToastLayout.textWidth(config.title, maxWidth: ToastLayout.textMaxWidth(for: config)), alignment: .leading)
+            .contentTransition(.opacity)
+            .padding(.horizontal, 24)
+            .frame(width: ToastLayout.pillWidth(for: config), height: ToastLayout.height, alignment: .leading)
+            .clipShape(Capsule(style: .continuous))
+            .chromeGlass(Capsule(style: .continuous))
     }
 }
-
-// MARK: - Показ
 
 /// Показывает `ToastCenter.shared.current`: появление, смена на месте, уход.
 ///
@@ -439,14 +282,8 @@ private struct ToastPresenter: View {
                     .offset(y: dragY)
                     .opacity(opacity)
                     .blur(radius: blurRadius)
-                    .onTapGesture {
-                        // Сохранение и отмена выполняются только явной кнопкой.
-                        // Фиксируем config этого кадра: смена тоста внутри кнопки
-                        // не должна тем же тапом активировать следующий тост.
-                        if config.action?.requiresExplicitButton != true { tap() }
-                    }
+                    .onTapGesture { tap() }
                     .simultaneousGesture(swipeGesture)
-                    .accessibilityAddTraits(config.action != nil && config.action?.requiresExplicitButton != true ? .isButton : [])
                     .onAppear { animateIn() }
                     .onDisappear { OverlayLayerState.shared.setInteractiveFrame(nil, for: "toast") }
             }
@@ -485,11 +322,7 @@ private struct ToastPresenter: View {
     /// (6 pt) системный тап ещё может сработать.
     private func tap() {
         guard !swipeActive, !flyingOut, displayed?.id == center.current?.id else { return }
-        if displayed?.action?.isSaveRecommendation == true {
-            center.dismiss()
-        } else {
-            center.activate()
-        }
+        center.dismiss()
     }
 
     private func finishSwipe(_ value: DragGesture.Value) {

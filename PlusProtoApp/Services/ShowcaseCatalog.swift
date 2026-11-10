@@ -55,6 +55,9 @@ final class ShowcaseCatalog {
     private var upcomingPromo: [String: Task<Replacement?, Never>] = [:]
     /// Убранные из промо по ✕ — новые айтемы их не возвращают.
     private var dismissedPromoIDs: Set<String> = []
+    /// После первого ✕ карусель редактирует показанный круг напрямую. Повторная
+    /// сборка HQ-пулов сдвигала все карточки того же вида уже после схлопывания.
+    private var editedHomePromo: [ShowcaseBlock]?
     /// Они же по произведению (`workKey`): не возвращаются и другим изданием.
     private var dismissedPromoWorks: Set<String> = []
     /// Карточки ленты, убранные ✕ целиком («Продолжить читать»): их слот схлопывается,
@@ -733,24 +736,34 @@ final class ShowcaseCatalog {
             let fresh = Task { await self.makePromoReplacement(for: removed) }
             replacement = await PromoTaskDeadline.value(of: fresh, within: Self.replacementTimeout)
         }
-        guard let replacement, !isPromoTaken(replacement.block.id) else { return nil }
+        guard let replacement, !isPromoTaken(replacement.block.id),
+              PromoCuratedContent.uniqueArtists(homePromo(feed.promo) + [replacement.block]).last?.id == replacement.block.id
+        else { return nil }
         return ShowcasePromoAddition(block: replacement.block, commit: replacement.commit)
     }
 
     private func isPromoTaken(_ id: String) -> Bool {
         dismissedPromoIDs.contains(id) || feed.promo.contains { $0.id == id }
+            || homePromo(feed.promo).contains { $0.id == id }
     }
 
     /// Подмена только промоблока: recently, полки и книги сохраняют исходные данные.
     func homePromo(_ original: [ShowcaseBlock]) -> [ShowcaseBlock] {
+        if let editedHomePromo { return editedHomePromo }
         let blocks = PromoCuratedContent.compose(original, excluding: dismissedPromoIDs)
         return PromoCuratedContent.uniqueArtists(blocks)
     }
 
-    /// Новый айтем — в круг сразу за айтемом `id`. И в набор своего вида, чтобы поздняя
-    /// сборка (`publishPromo`) его не потеряла. `nil` — в начало набора: в круге там стоят
-    /// карточки «Продолжить» (задача 69), которых в наборе каталога нет.
+    /// Новый айтем — сразу за `id` в показанном круге и в исходном каталоге.
+    /// HQ-соседа может не быть в каталоге; его место берём из показанного круга.
+    /// `nil` — в начало набора.
     func insertPromo(_ addition: ShowcasePromoAddition, after id: String?) {
+        var shown = homePromo(feed.promo)
+        if !shown.contains(where: { $0.id == addition.block.id }) {
+            let index = id.flatMap { id in shown.firstIndex { $0.id == id }.map { $0 + 1 } } ?? 0
+            shown.insert(addition.block, at: index)
+        }
+        editedHomePromo = shown
         var promo = feed.promo
         let index = id.map { id in promo.firstIndex { $0.id == id }.map { $0 + 1 } ?? promo.count } ?? 0
         promo.insert(addition.block, at: index)
@@ -769,6 +782,11 @@ final class ShowcaseCatalog {
 
     /// Убирает айтем и возвращает точечную отмену, не откатывающую другие изменения каталога.
     func removePromo(id: String) -> @MainActor () -> Void {
+        let shown = homePromo(feed.promo)
+        let shownIndex = shown.firstIndex { $0.id == id }
+        let shownOriginal = shownIndex.map { shown[$0] }
+        let shownBeforeIDs = shownIndex.map { shown.prefix($0).reversed().map(\.id) } ?? []
+        let shownAfterIDs = shownIndex.map { shown.dropFirst($0 + 1).map(\.id) } ?? []
         let originalIndex = feed.promo.firstIndex { $0.id == id }
         let original = originalIndex.map { feed.promo[$0] }
         let previousID = originalIndex.flatMap { $0 > 0 ? feed.promo[$0 - 1].id : nil }
@@ -776,6 +794,7 @@ final class ShowcaseCatalog {
         let wasDismissed = dismissedPromoIDs.contains(id)
         let wasWorkDismissed = work.map { dismissedPromoWorks.contains($0) } ?? false
         dismissedPromoIDs.insert(id)
+        editedHomePromo = shown.filter { $0.id != id }
         if let removed = feed.promo.first(where: { $0.id == id }), let work = Self.workKey(of: removed) {
             dismissedPromoWorks.insert(work)
         }
@@ -792,10 +811,20 @@ final class ShowcaseCatalog {
             guard let self else { return }
             if !wasDismissed { self.dismissedPromoIDs.remove(id) }
             if let work, !wasWorkDismissed { self.dismissedPromoWorks.remove(work) }
-            // У HQ-карточки может не быть записи в исходной ленте: ей достаточно
-            // снять исключение, и homePromo снова включит её в проекцию.
             if let original, !self.feed.promo.contains(where: { $0.id == id }) {
                 self.insertPromo(ShowcasePromoAddition(block: original, commit: {}), after: previousID)
+            }
+            // Отмена возвращает именно показанную HQ-карточку на прежнее место,
+            // сохраняя остальные дизлайки и вставки, сделанные после неё.
+            if let shownOriginal {
+                var current = self.homePromo(self.feed.promo).filter { $0.id != id }
+                let index = shownBeforeIDs.lazy.compactMap { previous in
+                    current.firstIndex { $0.id == previous }.map { $0 + 1 }
+                }.first ?? shownAfterIDs.lazy.compactMap { next in
+                    current.firstIndex { $0.id == next }
+                }.first ?? min(shownIndex ?? 0, current.count)
+                current.insert(shownOriginal, at: index)
+                self.editedHomePromo = current
             }
         }
     }

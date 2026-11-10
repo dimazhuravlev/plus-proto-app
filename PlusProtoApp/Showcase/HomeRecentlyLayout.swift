@@ -55,7 +55,7 @@ import UIKit
         guard responsiveExpanded != expanded else { return }
         responsiveExpanded = expanded
         responsivePulse = 0
-        let duration = expanded ? 0.35 : 0.25
+        let duration = expanded ? ((HomeRecentlyTelegramLayout.isEnabled || HomeRecentlyInlineLayout.isEnabled) ? 0.42 : 0.35) : 0.25
         if UIAccessibility.isReduceMotionEnabled {
             responsiveExpansion = expanded ? 1 : 0
             refreshResponsiveGeometry()
@@ -125,8 +125,17 @@ import UIKit
     private func refreshResponsiveGeometry() {
         var instant = Transaction(); instant.disablesAnimations = true
         withTransaction(instant) {
-            progress = HomeRecentlyResponsivePullPolicy.visualProgress(pullRatio: responsivePullRatio, expansion: responsiveExpansion)
-            labelOpacity = HomeRecentlyResponsivePullPolicy.captionOpacity(progress)
+            if HomeRecentlyTelegramLayout.isEnabled || HomeRecentlyInlineLayout.isEnabled {
+                progress = 0.45 * min(1, max(0, responsivePullRatio)) + 0.55 * min(1, max(0, responsiveExpansion))
+            } else {
+                progress = HomeRecentlyResponsivePullPolicy.visualProgress(pullRatio: responsivePullRatio, expansion: responsiveExpansion)
+            }
+            if HomeRecentlyTelegramLayout.isEnabled {
+                let t = min(1, max(0, (progress - 0.72) / 0.28))
+                labelOpacity = t * t * (3 - 2 * t)
+            } else {
+                labelOpacity = HomeRecentlyResponsivePullPolicy.captionOpacity(progress)
+            }
         }
     }
 
@@ -136,41 +145,59 @@ import UIKit
 /// Верхняя лента «Главной», Figma NS7mKDEaIwxlgTdds2h5s6 / 328:43468.
 /// Миниатюры имеют постоянный размер, остаток ряда доступен горизонтальным скроллом.
 enum HomeQuickAccessLayout {
+    @MainActor static var isStandard: Bool {
+        let settings = HomePresentationSettings.shared
+        return !settings.recentlyInlineLabelsEnabled && !settings.recentlyTelegramEnabled
+    }
+    @MainActor static var isVisible: Bool {
+        !HomePresentationSettings.shared.hideRecently && (!isStandard || !RecentlyConsumed.shared.items.isEmpty)
+    }
+    @MainActor static var cornerRadius: CGFloat { 6 + 6 * HomeRecentlyPullState.shared.progress }
+
     static let expandedHeight: CGFloat = 112
     static let captionHeight: CGFloat = 32
     static let captionGap: CGFloat = 4
     static var captionSpace: CGFloat { captionHeight + captionGap }
     static let collapsedHeight: CGFloat = 64
     @MainActor static var height: CGFloat {
-        collapsedHeight + (expandedHeight - collapsedHeight) * HomeRecentlyPullState.shared.progress
+        if HomeRecentlyTelegramLayout.isEnabled || HomeRecentlyInlineLayout.isEnabled { return expandedHeight }
+        return collapsedHeight + (expandedHeight - collapsedHeight) * HomeRecentlyPullState.shared.progress
     }
     @MainActor static var labelProgress: CGFloat {
         HomeRecentlyPullState.shared.labelOpacity
     }
     @MainActor static var scale: CGFloat { height / 80 }
     @MainActor static var mediaPulse: CGFloat {
-        HomeRecentlyPullState.shared.responsivePulse
+        HomeRecentlyTelegramLayout.isEnabled ? 0 : HomeRecentlyPullState.shared.responsivePulse
     }
     @MainActor static var mediaStretch: CGFloat {
-        HomeRecentlyPullState.shared.responsiveStretch
+        HomeRecentlyTelegramLayout.isEnabled ? 0 : HomeRecentlyPullState.shared.responsiveStretch
     }
     static let gap: CGFloat = 8
     static let leading: CGFloat = 8
     @MainActor static var top: CGFloat {
-        HomePresentationSettings.shared.headerGapEnabled ? CGFloat(HomePresentationSettings.shared.headerGap) : 16
+        let base = HomePresentationSettings.shared.headerGapEnabled ? CGFloat(HomePresentationSettings.shared.headerGap) : 16
+        return HomeRecentlyInlineLayout.isEnabled ? base * HomeRecentlyPullState.shared.progress : base
     }
     @MainActor static var bottom: CGFloat {
         let settings = HomePresentationSettings.shared
-        if settings.heroGapEnabled { return CGFloat(settings.heroGap) }
-        return 16
+        let base = settings.heroGapEnabled ? CGFloat(settings.heroGap) : 16
+        return HomeRecentlyInlineLayout.isEnabled ? max(0, 24 + (base - 32) * HomeRecentlyPullState.shared.progress) : base
     }
     @MainActor static var captionReservation: CGFloat { HomeRecentlyPullState.shared.labelOpacity }
     @MainActor static var rowHeight: CGFloat {
+        if HomeRecentlyInlineLayout.isEnabled { return 32 + 116 * HomeRecentlyPullState.shared.progress }
+        if HomeRecentlyTelegramLayout.isEnabled {
+            return (expandedHeight + captionSpace) * HomeRecentlyPullState.shared.progress
+        }
+        return standardRowHeight
+    }
+    @MainActor static var standardRowHeight: CGFloat {
         // Скролл освобождает место по ходу оттяга; миниатюры догоняют его доводкой.
         max(height + captionSpace * captionReservation,
             collapsedHeight + HomeRecentlyPullConfig.travel * HomeRecentlyPullState.shared.responsivePullRatio)
     }
-    @MainActor static var occupiedHeight: CGFloat { top + rowHeight + bottom }
+    @MainActor static var occupiedHeight: CGFloat { isVisible ? top + rowHeight + bottom : 0 }
     static let feedback = Animation.smooth(duration: 0.3)
     static var progressColor: Color { Color(paletteRed: 216 / 255, green: 141 / 255, blue: 252 / 255) }
 }

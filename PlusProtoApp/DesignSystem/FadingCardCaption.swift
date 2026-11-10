@@ -5,6 +5,7 @@ import UIKit
 struct FadingCardCaption: View {
     let title: String
     let width: CGFloat
+    var leadingAligned = false
 
     private var font: UIFont {
         PlusTextSize.textS.uiFont(.medium)
@@ -33,19 +34,19 @@ struct FadingCardCaption: View {
 
     var body: some View {
         let lines = lines
-        VStack(alignment: .center, spacing: 0) {
+        VStack(alignment: leadingAligned ? .leading : .center, spacing: 0) {
             ForEach(Array(lines.prefix(2).enumerated()), id: \.offset) { index, line in
                 Text(line)
                     .plusText(.textS, .medium)
                     .foregroundStyle(Color.fillOne)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
-                    .frame(width: width, height: 16, alignment: .center)
+                    .frame(width: width, height: 16, alignment: leadingAligned ? .leading : .center)
                     .clipped()
                     .mask {
                         if index == 1 && lines.count > 2 {
                             let textWidth = min(width, max(1, (line as NSString).size(withAttributes: [.font: font]).width))
-                            let end = (width + textWidth) / 2
+                            let end = leadingAligned ? textWidth : (width + textWidth) / 2
                             LinearGradient(stops: [
                                 .init(color: .white, location: 0),
                                 .init(color: .white, location: max(0, end - 16) / max(1, width)),

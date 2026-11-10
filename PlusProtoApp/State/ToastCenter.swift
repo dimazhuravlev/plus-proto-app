@@ -17,8 +17,8 @@ enum ToastGraphic: Equatable {
     case icon(String)
 }
 
-/// Действие тоста: переход доступен по всей пилюле, сохранение и отмена — только кнопкой.
-/// Замыкание отмены хранится в центре, поэтому `ToastConfig` остаётся `Equatable`.
+/// Прежние значения действий сохранены для совместимости вызовов.
+/// Информационные тосты их не отображают и не выполняют.
 enum ToastAction: Equatable {
     /// Открыть таб «Моё».
     case openCollection
@@ -64,9 +64,6 @@ final class ToastCenter {
     @ObservationIgnored
     private var token = 0
 
-    @ObservationIgnored
-    private var undoRecommendation: (@MainActor () -> Void)?
-
     /// Открывает «Моё» откуда угодно (закрывает фильм, плееры, профиль, поиск). Регистрирует
     /// корень приложения: окно тоста окружения корня не видит, а навигация живёт в `@State` корня.
     @ObservationIgnored
@@ -78,15 +75,23 @@ final class ToastCenter {
         action: ToastAction? = nil,
         duration: Duration = .seconds(4)
     ) {
-        undoRecommendation = nil
-        current = ToastConfig(title: title, graphic: graphic, action: action, duration: duration)
+        // Аргументы графики и действия оставлены для совместимости вызовов.
+        // Все тосты информационные: только текст, без скрытых действий по тапу.
+        current = ToastConfig(title: title, graphic: .none, action: nil, duration: duration)
         startTimer(duration)
     }
 
-    /// Отмена относится только к текущему сообщению; замена/скрытие освобождает действие.
+    /// Подтверждение дизлайка — только текст. Старый параметр отмены не сохраняется.
     func showDislikedRecommendation(title: String = "Будем показывать меньше такого", undo: @escaping @MainActor () -> Void) {
-        show(title: title, action: .undoRecommendation)
-        undoRecommendation = undo
+        show(title: title)
+    }
+
+    /// V2 карусели сохраняет сразу. Повторное сохранение не меняет дату и порядок
+    /// коллекции; тост только подтверждает результат.
+    func saveRecommendation(_ item: CollectionItem, title: String, duration: Duration = .seconds(4)) {
+        let alreadySaved = CollectionStore.shared.isFavorite(item.id)
+        if !alreadySaved { CollectionStore.shared.setFavorite(item, true) }
+        show(title: alreadySaved ? "Уже сохранено" : title, duration: duration)
     }
 
     /// Таймер автоскрытия. Меняет токен — предыдущий таймер больше ничего не закроет.
@@ -111,28 +116,13 @@ final class ToastCenter {
         startTimer(current.duration)
     }
 
-    /// Тап по тосту: тост уходит; есть действие — выполняем его, с хаптикой кнопки. Тост без
-    /// кнопки закрывается молча. В окне затухания (`current == nil`) тап ничего не делает.
+    /// Текстовый тост только закрывается, без действий с коллекцией или оценкой.
     func activate() {
-        guard let action = current?.action else {
-            if current != nil { dismiss() }
-            return
-        }
-        PlayerHaptics.tap()
-        let undo = undoRecommendation
         dismiss()
-        switch action {
-        case .undoRecommendation: undo?()
-        case .openCollection: openCollection?()
-        case .saveRecommendation(let item):
-            CollectionStore.shared.setFavorite(item, true)
-            show(title: "Добавили в Любимое", action: .openCollection)
-        }
     }
 
     func dismiss() {
         token += 1
         current = nil
-        undoRecommendation = nil
     }
 }

@@ -84,7 +84,7 @@ struct ResolvedArtwork<Content: View, Placeholder: View>: View {
                                 .allowsHitTesting(false)
                         }
                         .overlay {
-                            BookCoverShape(radius: bookDecor.radius)
+                            BookCoverShape(radius: bookDecor.radius, roundsTopTrailingCorner: bookDecor.roundsTopTrailingCorner)
                                 .strokeBorder(CoverBorder.color, lineWidth: bookDecor.borderWidth)
                                 .allowsHitTesting(false)
                         }

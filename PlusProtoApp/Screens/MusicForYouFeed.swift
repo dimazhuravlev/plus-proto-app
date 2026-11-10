@@ -102,7 +102,7 @@ struct MusicForYouFeed: View {
                 ))
             case .artist(let ref):
                 items.append(MusicItem(id: "recent-" + recent.id, shape: .circle, title: ref.title, cover: ref.artwork, route: .artist(ref)))
-            case .movie, .book, .myVibe:
+            case .movie, .book, .myVibe, .entity, .station:
                 break
             }
         }

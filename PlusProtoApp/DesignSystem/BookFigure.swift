@@ -14,6 +14,7 @@ import UIKit
 /// книга выглядит так же, как маленькая. Хайрлайн бордера от размера не зависит.
 struct BookFigureGeometry {
     let coverHeight: CGFloat
+    var roundsTopTrailingCorner = true
 
     /// Пропорции, пока своих нет, — 2:3, как у постера.
     static let defaultAspect: CGFloat = 2.0 / 3.0
@@ -121,13 +122,14 @@ struct BookFigure<Cover: View>: View {
     var body: some View {
         let decor = BookCoverDecor(
             radius: geometry.coverRadius,
+            roundsTopTrailingCorner: geometry.roundsTopTrailingCorner,
             spineWidth: geometry.spineWidth,
             borderWidth: geometry.borderWidth
         )
         PlusSkeleton.fill
             .overlay { cover.environment(\.bookCoverDecor, decor) }
             .frame(width: coverWidth, height: geometry.coverHeight)
-            .clipShape(BookCoverShape(radius: geometry.coverRadius))
+            .clipShape(BookCoverShape(radius: geometry.coverRadius, roundsTopTrailingCorner: geometry.roundsTopTrailingCorner))
     }
 }
 
@@ -236,6 +238,7 @@ struct SeriesLayerShape: Shape {
 /// левые прямые.
 struct BookCoverShape: InsettableShape {
     let radius: CGFloat
+    var roundsTopTrailingCorner = true
     var inset: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
@@ -243,14 +246,14 @@ struct BookCoverShape: InsettableShape {
             topLeadingRadius: 0,
             bottomLeadingRadius: 0,
             bottomTrailingRadius: max(0, radius - inset),
-            topTrailingRadius: max(0, radius - inset),
+            topTrailingRadius: roundsTopTrailingCorner ? max(0, radius - inset) : 0,
             style: .continuous
         )
         .path(in: rect.insetBy(dx: inset, dy: inset))
     }
 
     func inset(by amount: CGFloat) -> BookCoverShape {
-        BookCoverShape(radius: radius, inset: inset + amount)
+        BookCoverShape(radius: radius, roundsTopTrailingCorner: roundsTopTrailingCorner, inset: inset + amount)
     }
 }
 
@@ -259,6 +262,7 @@ struct BookCoverShape: InsettableShape {
 /// Что загруженная обложка книги рисует поверх себя: бордер по контуру, тон и корешок.
 struct BookCoverDecor {
     let radius: CGFloat
+    var roundsTopTrailingCorner = true
     let spineWidth: CGFloat
     let borderWidth: CGFloat
 }

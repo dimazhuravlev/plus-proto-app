@@ -12,6 +12,7 @@ struct PlusProtoAppApp: App {
             print("⚠️ APIKeys.kinopoisk пуст — витрина идёт на моках, сеть не трогаем. Ключ: README, раздел «Ключи»")
         }
         #if DEBUG
+        MixMotionCapture.preparePreferences()
         Self.parseDebugLaunchArguments()
         #endif
     }
@@ -173,6 +174,7 @@ struct PlusProtoAppApp: App {
                 .preferredColorScheme(.dark)
                 #if DEBUG
                 .debugHitAreaProbe()
+                .overlay { MixCaptureTouchesOverlay() }
                 #endif
         }
     }

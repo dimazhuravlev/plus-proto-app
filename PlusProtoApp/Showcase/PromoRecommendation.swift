@@ -1,7 +1,7 @@
 import SwiftUI
 
 extension ShowcaseBlock {
-    /// Лайк обучает рекомендации; только отдельная кнопка тоста сохраняет сущность.
+    /// В V1 сохраняет кнопка тоста после лайка, в V2 — сама реакция сохранения.
     var recommendationCollectionItem: CollectionItem? {
         if let route = entityRoute {
             switch route {
@@ -23,5 +23,15 @@ extension ShowcaseBlock {
                                   artwork: vibe.promoStation.artwork, playable: music)
         }
         return nil
+    }
+
+    /// Figma uBatydFjyjVhDM8AZqG5gC, 19598:7496. Музыкальные типы
+    /// (включая артистов и станции) используют одно сервисное сердце.
+    var promoSaveIcon: String {
+        switch homePromoKind {
+        case .book: "promoSaveBook"
+        case .movie: "promoSaveMovie"
+        case .album, .artist, .station: "promoSaveMusic"
+        }
     }
 }
