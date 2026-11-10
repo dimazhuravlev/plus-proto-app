@@ -133,8 +133,49 @@ enum MusicPlayerMotion {
 /// это живёт в презентере (`PullToDismiss`), а не здесь. Экран прокручивается
 /// целиком — обложка, транспорт, очередь; навбар стоит, а под ним при прокрутке
 /// проявляется общая подложка с прогрессивным блюром (`NavBarBackdrop`).
+/// Ряд транспорта при «+» коллекции (просьба пользователя 2026-11-10): крест и «+» —
+/// 32, как «назад» и «дальше», а зазоры между рисунками одинаковые. Меряются по краске
+/// глифов, а не по кадрам: у «дальше» рисунок сдвинут влево, у креста и «+» поля
+/// разные — при кадрах 64 впритык зазор у краёв выходил на 11 шире, чем у ▶.
+/// Поля краски — доли холста 16, замер SVG ДС.
+enum MusicTransportEvenLayout {
+    private typealias L = MusicPlayerLayout
+    private static let box = L.controlIconLarge
+    /// Крест — 2.77 / 16 с обеих сторон.
+    private static let crossInset: CGFloat = 2.767 / 16
+    /// «Дальше» — слева 2.67 / 16, справа 3.53 / 16; у «назад» (зеркало) — наоборот.
+    private static let nextLeadingInset: CGFloat = 2.667 / 16
+    private static let nextTrailingInset: CGFloat = 3.533 / 16
+    /// «+» — 1.87 / 16 с обеих сторон; галочка шире, зазор у неё на 1 уже.
+    private static let addInset: CGFloat = 1.867 / 16
+
+    private static var circleHalf: CGFloat { L.control / 2 }
+    private static var skipInkWidth: CGFloat { box * (1 - nextLeadingInset - nextTrailingInset) }
+
+    /// «+» стоит, где стояла крайняя кнопка: ▶, зазор 12 и две кнопки 64 от центра.
+    static var likeCenter: CGFloat { L.control * 2 + L.playbackGap }
+
+    /// Зазор между рисунками — тот, при котором «+» остаётся на месте:
+    /// ▶ · зазор · «дальше» · зазор · «+».
+    static var gap: CGFloat {
+        (likeCenter - circleHalf - skipInkWidth + box * addInset - box / 2) / 2
+    }
+
+    /// Центры от центра ▶; «назад» и крест — зеркально, со знаком минус.
+    static var skipCenter: CGFloat { circleHalf + gap - box * nextLeadingInset + box / 2 }
+    static var dislikeCenter: CGFloat {
+        circleHalf + 2 * gap + skipInkWidth - box * crossInset + box / 2
+    }
+
+    /// Зона нажатия — 64 в высоту, в ширину до соседней кнопки: кадры не наезжают.
+    static var hitWidth: CGFloat { min(L.control, dislikeCenter - skipCenter) }
+    static var rowWidth: CGFloat { 2 * (max(likeCenter, dislikeCenter) + hitWidth / 2) }
+}
+
 struct MusicPlayerView: View {
     @Environment(ActionBarState.self) private var actionBar
+    /// «Не нравится» — крест при «+» коллекции, перечёркнутое сердце при прежних иконках.
+    @AppStorage(CollectionIconStyle.storageKey) private var collectionIconStyle = CollectionIconStyle.defaultStyle
     @State private var scrollOffset: CGFloat = 0
     /// Плеер на виду по UIKit — голография центральной обложки живёт только в этом окне
     /// (`CoverHoloPresence`): с начала ухода вниз она гаснет.
@@ -441,23 +482,69 @@ struct MusicPlayerView: View {
 
     // MARK: Транспорт
 
+    @ViewBuilder
     private var controls: some View {
-        HStack(spacing: 0) {
-            controlButton(icon: "iconDislike", box: MusicPlayerLayout.controlIconSmall, title: "Не нравится") {
-                actionBar.skipToNext()
-            }
-            HStack(spacing: MusicPlayerLayout.playbackGap) {
-                controlButton(icon: "iconNext", box: MusicPlayerLayout.controlIconLarge, title: "С начала", mirrored: true) {
-                    actionBar.restartTrack()
-                }
-                playPauseButton
-                controlButton(icon: "iconNext", box: MusicPlayerLayout.controlIconLarge, title: "Дальше") {
-                    actionBar.skipToNext()
-                }
-            }
-            likeButton
+        Group {
+            if collectionIconStyle == .plus { evenControls } else { legacyControls }
         }
         .padding(.vertical, MusicPlayerLayout.controlsPadding)
+    }
+
+    /// Прежний ряд по макету: кадры 64 впритык, вокруг ▶ зазоры 12, сердца 24.
+    private var legacyControls: some View {
+        HStack(spacing: 0) {
+            dislikeButton(box: MusicPlayerLayout.controlIconSmall)
+            HStack(spacing: MusicPlayerLayout.playbackGap) {
+                restartButton()
+                playPauseButton
+                nextButton()
+            }
+            likeButton(box: MusicPlayerLayout.controlIconSmall)
+        }
+    }
+
+    /// Ряд при «+» коллекции: крест и «+» размером со «назад» и «дальше», зазоры между
+    /// рисунками одинаковые (`MusicTransportEvenLayout`). Кнопки стоят от центра ▶.
+    private var evenControls: some View {
+        typealias Even = MusicTransportEvenLayout
+        let box = MusicPlayerLayout.controlIconLarge
+        return ZStack {
+            dislikeButton(box: box, hitWidth: Even.hitWidth)
+                .offset(x: -Even.dislikeCenter)
+            restartButton(hitWidth: Even.hitWidth)
+                .offset(x: -Even.skipCenter)
+            playPauseButton
+            nextButton(hitWidth: Even.hitWidth)
+                .offset(x: Even.skipCenter)
+            likeButton(box: box, hitWidth: Even.hitWidth)
+                .offset(x: Even.likeCenter)
+        }
+        .frame(width: Even.rowWidth, height: MusicPlayerLayout.control)
+    }
+
+    // Рядом «+» коллекции перечёркнутое сердце читалось бы чужим — крест
+    // (задача пользователя 2026-11-10).
+    private func dislikeButton(box: CGFloat, hitWidth: CGFloat = MusicPlayerLayout.control) -> some View {
+        controlButton(
+            icon: collectionIconStyle == .plus ? "iconCross" : "iconDislike",
+            box: box,
+            hitWidth: hitWidth,
+            title: "Не нравится"
+        ) {
+            actionBar.skipToNext()
+        }
+    }
+
+    private func restartButton(hitWidth: CGFloat = MusicPlayerLayout.control) -> some View {
+        controlButton(icon: "iconNext", box: MusicPlayerLayout.controlIconLarge, hitWidth: hitWidth, title: "С начала", mirrored: true) {
+            actionBar.restartTrack()
+        }
+    }
+
+    private func nextButton(hitWidth: CGFloat = MusicPlayerLayout.control) -> some View {
+        controlButton(icon: "iconNext", box: MusicPlayerLayout.controlIconLarge, hitWidth: hitWidth, title: "Дальше") {
+            actionBar.skipToNext()
+        }
     }
 
     /// «Назад» — отзеркаленный глиф «дальше»: зеркальные ассеты проект не плодит
@@ -465,6 +552,7 @@ struct MusicPlayerView: View {
     private func controlButton(
         icon: String,
         box: CGFloat,
+        hitWidth: CGFloat = MusicPlayerLayout.control,
         title: String,
         mirrored: Bool = false,
         action: @escaping () -> Void
@@ -475,7 +563,7 @@ struct MusicPlayerView: View {
         } label: {
             MovieIcon(name: icon, box: box)
                 .scaleEffect(x: mirrored ? -1 : 1)
-                .frame(width: MusicPlayerLayout.control, height: MusicPlayerLayout.control)
+                .frame(width: hitWidth, height: MusicPlayerLayout.control)
                 .contentShape(Circle())
         }
         .buttonStyle(PressScaleButtonStyle())
@@ -498,16 +586,16 @@ struct MusicPlayerView: View {
         .accessibilityLabel(isPlaying ? "Пауза" : "Играть")
     }
 
-    /// Сердце: контур — не нравится (макет паузы), залитое — нравится (макет воспроизведения).
-    private var likeButton: some View {
+    /// Отметка коллекции: «+» ↔ галочка или прежнее сердце, контур ↔ залитое (`LikeGlyph`).
+    private func likeButton(box: CGFloat, hitWidth: CGFloat = MusicPlayerLayout.control) -> some View {
         let isLiked = actionBar.isMusicLiked
         return Button {
             PlayerHaptics.tap()
             actionBar.toggleMusicLike()
         } label: {
             // Общий рисунок лайка (`LikeGlyph`) — тот же, что в мини-плеере и везде.
-            LikeGlyph(isLiked: isLiked, box: MusicPlayerLayout.controlIconSmall)
-                .frame(width: MusicPlayerLayout.control, height: MusicPlayerLayout.control)
+            LikeGlyph(isLiked: isLiked, box: box)
+                .frame(width: hitWidth, height: MusicPlayerLayout.control)
                 .contentShape(Circle())
         }
         .buttonStyle(PressScaleButtonStyle())

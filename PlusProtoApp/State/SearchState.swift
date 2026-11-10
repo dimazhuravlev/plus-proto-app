@@ -579,7 +579,7 @@ final class SearchState {
         let mosaicByKind: [Section.Kind: [SearchHit]] = [
             .music: fetchedMusic + playlistHits,
             .movies: Self.withCreators(directors, in: Self.inAnswerOrder(movieHits, answer: fetchedMovies)),
-            .books: Self.withCreators(fetchedBooks.writers, in: Self.inAnswerOrder(bookHits, answer: fetchedBooks.hits)),
+            .books: Self.withBookMocks(Self.withCreators(fetchedBooks.writers, in: Self.inAnswerOrder(bookHits, answer: fetchedBooks.hits)), query: text),
         ]
         let results = Results(
             text: text,
@@ -1042,8 +1042,12 @@ final class SearchState {
             case .artists: hit.kind == .artist
             case .playlists: hit.kind == .playlist
             case .watchable: hit.kind == .movie && !unwatchable.contains(hit.id)
-            case .books: hit.kind == .book && hit.isAudiobook != true
+            case .books: hit.kind == .book && hit.isAudiobook != true && hit.isComic != true
             case .audiobooks: hit.isAudiobook == true
+            case .comics: hit.kind == .book && hit.isComic == true
+            case .series: hit.kind == .series
+            case .serials: hit.kind == .serial
+            case .shelves: hit.kind == .shelf
             case .authors: hit.kind == .writer
             }
         }
@@ -1199,7 +1203,7 @@ final class SearchState {
                 if let aspect = aspects[books[index].id] { books[index].artworkAspect = aspect }
             }
             let writers = await Self.writers(for: books)
-            let hits = await Self.withAudiobooks(Self.withCreators(writers, in: books))
+            let hits = Self.withBookMocks(await Self.withAudiobooks(Self.withCreators(writers, in: books)), query: text)
             return TabResults(kind: kind, text: text, revision: revision, hits: hits, wizard: nil, unwatchable: [], personCounts: Self.writerCounts(hits))
         }
     }
@@ -1342,6 +1346,33 @@ final class SearchState {
         }
         return result
     }
+
+    /// Моки книжных типов, которых нет ни в одном открытом источнике (решения
+    /// пользователя 2026-11-07), — из найденных книг (не аудиокниг), по одному на выдачу:
+    /// серия — из первой книги, сразу за ней (Google Books серий не отдаёт: замер — ни
+    /// у одного из 80 результатов нет `seriesInfo`); сериал — из второй, за ней полка
+    /// из первых книг (`SearchHit(shelf:)`). В обзоре «Всё» и в табе «Книги»; добор
+    /// сетки моков не добавляет.
+    private static func withBookMocks(_ hits: [SearchHit], query: String) -> [SearchHit] {
+        let books = hits.filter { $0.kind == .book && $0.isAudiobook != true }
+        guard let first = books.first else { return hits }
+        let second = books.dropFirst().first
+        let shelf = SearchHit(shelf: Array(books.prefix(shelfBooks)), query: query)
+        var result: [SearchHit] = []
+        for hit in hits {
+            result.append(hit)
+            if hit.id == first.id { result.append(SearchHit(series: hit)) }
+            if hit.id == second?.id {
+                result.append(SearchHit(serial: hit))
+                if let shelf { result.append(shelf) }
+            }
+        }
+        return result
+    }
+
+    /// Сколько книг на полке-моке — столько, сколько книг в обзоре (`perKind`): число
+    /// на полке в «Всём» и в табе «Книги» одно.
+    private static let shelfBooks = perKind
 
     // MARK: - Сетка
 
@@ -2061,7 +2092,7 @@ extension SearchHit.Kind {
         switch self {
         case .track, .album, .artist, .playlist: .music
         case .movie, .director, .actor: .movies
-        case .book, .writer: .books
+        case .book, .writer, .series, .serial, .shelf: .books
         }
     }
 }
@@ -2131,6 +2162,62 @@ private extension SearchHit {
             isAudiobook: true
         )
     }
+
+    /// Серия книги `book` — мок (`SearchState.withBookMocks`): название, автор и обложка
+    /// с её пропорциями — книги. Маршрута нет: экрана серии в прототипе нет.
+    init(series book: SearchHit) {
+        self.init(
+            id: SearchHit.seriesPrefix + book.id,
+            kind: .series,
+            title: book.title,
+            subtitle: book.subtitle,
+            artwork: book.artwork,
+            route: nil,
+            authority: book.authority,
+            artworkAspect: book.artworkAspect
+        )
+    }
+
+    /// Сериал книги `book` — мок (`SearchState.withBookMocks`), как серия: название, автор
+    /// и обложка — книги. Маршрута нет: экрана сериала в прототипе нет.
+    init(serial book: SearchHit) {
+        self.init(
+            id: SearchHit.serialPrefix + book.id,
+            kind: .serial,
+            title: book.title,
+            subtitle: book.subtitle,
+            artwork: book.artwork,
+            route: nil,
+            authority: book.authority,
+            artworkAspect: book.artworkAspect
+        )
+    }
+
+    /// Полка из книг `books` — мок (`SearchState.withBookMocks`): название — запрос
+    /// с прописной, владелец — «Яндекс Книги», как у редакционных полок на скриншотах
+    /// Яндекс Книг (пример пользователя 2026-11-07); обложка — мозаика первых четырёх.
+    /// Книг с обложкой меньше четырёх — полки нет: мозаику не из чего сложить.
+    init?(shelf books: [SearchHit], query: String) {
+        let title = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let covers = Array(books.compactMap(\.artwork).prefix(ShelfCollage.cells))
+        guard let initial = title.first, covers.count == ShelfCollage.cells else { return nil }
+        self.init(
+            id: SearchHit.shelfPrefix + title.folded,
+            kind: .shelf,
+            title: initial.uppercased() + title.dropFirst(),
+            subtitle: "Яндекс Книги",
+            artwork: covers.first,
+            route: nil,
+            collage: covers,
+            bookCount: books.count
+        )
+    }
+
+    /// Серия выдачи — `series-<id книги>`, сериал — `serial-<id книги>`, полка —
+    /// `shelf-<запрос>`.
+    static let seriesPrefix = "series-"
+    static let serialPrefix = "serial-"
+    static let shelfPrefix = "shelf-"
 
     init(artist: DeezerArtistBrief) {
         let picture = (artist.pictureXl ?? artist.pictureBig ?? artist.pictureMedium)?.deezerUpscaled
@@ -2296,7 +2383,8 @@ private extension SearchHit {
                 title: book.title,
                 subtitle: book.author,
                 artwork: book.coverURL.map { ArtworkSource.remote($0) } ?? .asset("mockChipBookCover")
-            ))
+            )),
+            isComic: book.isComic ? true : nil
         )
     }
 }
@@ -2330,13 +2418,16 @@ enum SearchSubfilter: Hashable {
     case tracks, albums, artists, playlists
     /// Только фильмы с кнопкой «Смотреть» — без персон и без тех, что нельзя смотреть
     case watchable
-    case books, audiobooks, authors
+    /// Чипсы Книг — набор и порядок задачи пользователя 2026-11-07 (по чипсам Яндекс
+    /// Книг): комиксы — настоящие, по категории тома; серии, сериалы и полки — моки
+    /// (`SearchState.withBookMocks`).
+    case books, audiobooks, comics, authors, series, serials, shelves
 
     static func options(for kind: SearchState.Section.Kind) -> [SearchSubfilter] {
         switch kind {
         case .music: [.all, .tracks, .albums, .artists, .playlists]
         case .movies: [.all, .watchable]
-        case .books: [.all, .books, .audiobooks, .authors]
+        case .books: [.all, .books, .audiobooks, .comics, .authors, .series, .serials, .shelves]
         }
     }
 
@@ -2350,7 +2441,11 @@ enum SearchSubfilter: Hashable {
         case .watchable: "Можно смотреть"
         case .books: "Книги"
         case .audiobooks: "Аудиокниги"
+        case .comics: "Комиксы"
         case .authors: "Авторы"
+        case .series: "Серии"
+        case .serials: "Сериалы"
+        case .shelves: "Полки"
         }
     }
 }

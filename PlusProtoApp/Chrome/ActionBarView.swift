@@ -111,7 +111,8 @@ enum ActionBarGeometry {
     /// крест читался одной прозрачностью; затем 0.7 — и это мало (правки пользователя
     /// 2026-10-05). 0.4 от центра: крест раскрывается на месте вместе с прозрачностью.
     static let clearCollapsedScale: CGFloat = 0.4
-    static let miniPlayerPaddingLeading: CGFloat = 6
+    /// Обложка — на 4 от кромки, как у чипов книги и кино (`PlusMetrics.miniPlayerCover`).
+    static let miniPlayerPaddingLeading: CGFloat = 4
     static let miniPlayerPaddingTrailing: CGFloat = 18
     /// Зазор тексты ↔ кнопки
     static let miniPlayerContentGap: CGFloat = 12
@@ -1413,7 +1414,19 @@ private struct TrailingClipShape: Shape {
 
 private struct TrailingSlot: View {
     @Environment(ActionBarState.self) private var actionBar
+    /// Стопка плееров над баром — открывается долгим нажатием на компактный плеер.
+    @Environment(PlayerStackState.self) private var playerStack
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if DEBUG
+    @Environment(\.chromeLayer) private var chromeLayer
+    #endif
     let layout: ActionBarLayout
+    /// Компактный плеер вжат пальцем — и держится вжатым, пока палец ведёт по вееру
+    /// (правка пользователя 2026-11-07). Один отклик на всю зону: у круга своего нет,
+    /// а свой у чипа отпускал, едва палец уходил вверх к вееру.
+    @State private var isCompactPressed = false
+    @State private var compactPressedAt = ContinuousClock.now
+    @State private var compactRelease: Task<Void, Never>?
 
     var body: some View {
         // Каждый слой получает ширину зоны сам (`zoneWidth`), и это несущее правило.
@@ -1440,6 +1453,8 @@ private struct TrailingSlot: View {
                     // Полноэкранный из круга не открываем: круг — это свёрнутый
                     // плеер, и первый тап обязан его развернуть.
                     onExpand: {
+                        // Отпускание после долгого нажатия — не тап.
+                        guard !playerStack.blocksBar else { return }
                         if layout.isMiniPlayerCompact {
                             // Разворот круга — отклик как у кнопок плеера (правка пользователя 2026-10-10).
                             PlayerHaptics.tap()
@@ -1450,19 +1465,26 @@ private struct TrailingSlot: View {
                     },
                     // Оттяг вверх — большой плеер и из круга (просьба пользователя 2026-10-31):
                     // тап разворачивает круг, свайп открывает плеер.
-                    onPullUp: { actionBar.openMusicPlayer() },
+                    onPullUp: {
+                        // Палец ведут от круга вверх к стопке плееров — это не оттяг.
+                        guard !playerStack.blocksBar else { return }
+                        actionBar.openMusicPlayer()
+                    },
                     // Свайп вбок — смена трека, только у развёрнутой пилюли (PRD общего поиска).
-                    swipesTracks: layout.showMiniPlayer && !layout.isMiniPlayerCompact && !layout.isRaised
+                    swipesTracks: layout.showMiniPlayer && !layout.isMiniPlayerCompact && !layout.isRaised,
+                    isShown: layout.showMiniPlayer,
+                    isPullSuspended: playerStack.blocksBar
                 )
                 .zoneWidth(layout)
-                .blurReplaceLayer(layout.showMiniPlayer)
+                // Пока круг стопки едет на его место, свой круг бара спрятан (`hidesBarMusic`).
+                .blurReplaceLayer(layout.showMiniPlayer && !playerStack.hidesBarMusic)
             }
 
             // Чипы — «продолжить читать» и «продолжить смотреть»: тап открывает
             // читалку и киноплеер (в макете они и нарисованы развёрнутыми
             // именно под этот переход).
             if let book = actionBar.book {
-                ChipButton(title: book.title, action: { actionBar.read(book) }) {
+                ChipButton(title: book.title, shouldFire: { !playerStack.blocksBar }, action: { actionBar.read(book) }) {
                     BookChip(cover: book.cover, aspect: actionBar.bookCoverAspect)
                 }
                 .zoneWidth(layout)
@@ -1470,7 +1492,7 @@ private struct TrailingSlot: View {
             }
 
             if let movie = actionBar.movie {
-                ChipButton(title: movie.title, action: { actionBar.watch(movie) }) {
+                ChipButton(title: movie.title, shouldFire: { !playerStack.blocksBar }, action: { actionBar.watch(movie) }) {
                     MovieChip(still: movie.still)
                 }
                 .zoneWidth(layout)
@@ -1487,8 +1509,59 @@ private struct TrailingSlot: View {
         // содержимое влево на половину разницы, где его срезает `TrailingClipShape`.
         // Так и получался «обрезанный слева кавер» — но только у тех, у кого payload
         // кино или книги вообще есть, поэтому ловилось не всегда (жалоба 2026-08-29).
+        // Вжатие — как у круглых кнопок, от центра зоны: в компакте плеер занимает её целиком.
+        .scaleEffect(isCompactPressed ? PressMotion.buttonScale : 1)
         .frame(width: layout.trailingWidth, alignment: .leading)
         .frame(height: PlusMetrics.actionBarHeight)
+        // Долгое нажатие на компактный плеер — стопка остальных плееров над баром
+        // (`PlayerStackState`). Распознаватель живёт и после открытия стопки, пока палец
+        // на экране: он ведёт палец по стопке к плееру, отпускание выбирает или закрывает.
+        .gesture(PlayerStackHold(
+            // Нажатие отзывается у любого компактного плеера; веер — только если есть что
+            // показать (`canOpenStack`, проверка в `openStack`).
+            isEnabled: (isCompactShown && playerStack.acceptsHold) || playerStack.isHoldActive,
+            onPress: setCompactPressed,
+            onHold: openStack,
+            onMove: { playerStack.hover(at: $0) },
+            onEnd: { playerStack.release(at: $0, bar: actionBar, reduceMotion: reduceMotion) }
+        ))
+        // VoiceOver: провести пальцем по стопке нечем — плееры стопки стоят действиями
+        // компактного плеера, по названию айтема; выбор — тем же кодом, что палец.
+        .accessibilityActions {
+            if canOpenStack {
+                ForEach(PlayerStackState.kinds(of: actionBar).others, id: \.self) { kind in
+                    if let title = PlayerStackState.title(of: kind, in: actionBar) {
+                        Button(title) { pickFromStack(kind) }
+                    }
+                }
+            }
+        }
+        #if DEBUG
+        // `-debugPlayerStack open|music|book|movie` — стопка плееров без пальца: через 3 с
+        // после запуска открывается тем же кодом, что долгое нажатие, и через 1.5 с выбирает
+        // названный плеер тем же кодом, что отпускание пальца на нём; `open` — через 3 с
+        // закрывается, как отпускание мимо.
+        .task {
+            guard chromeLayer == nil,
+                  let value = UserDefaults.standard.string(forKey: "debugPlayerStack") else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            guard openStack() else {
+                NSLog("[stack] нечего показать: режим %@, других плееров нет", actionBar.mode.rawValue)
+                return
+            }
+            let kind: PlayerStackKind? = switch value {
+            case "music": .music
+            case "book": .book
+            case "movie": .movie
+            default: nil
+            }
+            try? await Task.sleep(for: .seconds(kind == nil ? 3 : 1.5))
+            guard !Task.isCancelled else { return }
+            if let kind { playerStack.select(kind, bar: actionBar, reduceMotion: reduceMotion) }
+            playerStack.release(at: nil, bar: actionBar, reduceMotion: reduceMotion)
+        }
+        #endif
         #if DEBUG
         // `-debugBarProbe 1` — надпись поверх правой зоны: заказанная ширина, реальная
         // отрисованная и режим. Отвечает на вопрос, разъехались ли состояние и геометрия:
@@ -1524,6 +1597,59 @@ private struct TrailingSlot: View {
         .padding(.leading, layout.gap)
         // Правое поле экрана — часть правой зоны, а не бара: см. комментарий в `ActionBarView`.
         .padding(.trailing, layout.screenMargin)
+    }
+
+    /// На месте плеера в баре — компакт: круг музыки, чип книги или кино. Не в поиске
+    /// и не под открытым плеером.
+    private var isCompactShown: Bool {
+        !layout.isRaised && actionBar.contentPlayer == nil
+            && (layout.isMiniPlayerCompact || layout.showBookChip || layout.showMovieChip)
+    }
+
+    /// Вжатие — сразу под пальцем; отпускание — не раньше `PressMotion.minimumHold`
+    /// от вжатия, как у кнопок (`PressScaleButtonStyle`). Своими транзакциями: морф бара
+    /// в том же апдейте (тап по кругу его разворачивает) едет своей кривой.
+    private func setCompactPressed(_ pressed: Bool) {
+        compactRelease?.cancel()
+        if pressed {
+            compactPressedAt = .now
+            withAnimation(PressMotion.pressIn) { isCompactPressed = true }
+            if canOpenStack { PlayerStackHaptics.prepare() }
+            return
+        }
+        let left = PressMotion.minimumHold - (ContinuousClock.now - compactPressedAt)
+        guard left > .zero else {
+            withAnimation(PressMotion.release) { isCompactPressed = false }
+            return
+        }
+        compactRelease = Task { @MainActor in
+            try? await Task.sleep(for: left)
+            guard !Task.isCancelled else { return }
+            withAnimation(PressMotion.release) { isCompactPressed = false }
+        }
+    }
+
+    /// Стопку открывает только компактный плеер — круг музыки, чип книги или кино — и
+    /// только если есть что показать над ним. Не в поиске и не под открытым плеером.
+    private var canOpenStack: Bool {
+        guard !layout.isRaised, actionBar.contentPlayer == nil else { return false }
+        let kinds = PlayerStackState.kinds(of: actionBar)
+        return kinds.current != nil && !kinds.others.isEmpty
+    }
+
+    /// Состав — на момент удержания: бар мог смениться, пока палец стоял.
+    private func openStack() -> Bool {
+        guard canOpenStack, playerStack.acceptsHold else { return false }
+        let kinds = PlayerStackState.kinds(of: actionBar)
+        playerStack.open(kinds.others, from: kinds.current)
+        return true
+    }
+
+    /// Выбор без пальца (VoiceOver): веер раскрывается и сразу отдаёт плеер.
+    private func pickFromStack(_ kind: PlayerStackKind) {
+        guard openStack() else { return }
+        playerStack.select(kind, bar: actionBar, reduceMotion: reduceMotion)
+        playerStack.release(at: nil, bar: actionBar, reduceMotion: reduceMotion)
     }
 }
 
@@ -1634,6 +1760,13 @@ struct MiniPlayerPill: View {
     /// вправо — предыдущий. Только у развёрнутой пилюли: у круга горизонталь свободна —
     /// в читалке ею круг выбрасывают.
     var swipesTracks = false
+    /// Виден ли плеер (в баре — его слой не погашен). Показался на паузе — обложка с нуля:
+    /// так её рисует круг стопки плееров (`PlayerStackMusicCircle`), и посадка круга
+    /// из стопки в бар не дёргает картинку. Скрытый угол всё равно никто не видел.
+    var isShown = true
+    /// Палец держит стопку плееров над баром (`PlayerStackState`): его ведут вверх к ней,
+    /// и оттяг пилюлю не тянет.
+    var isPullSuspended = false
 
     /// Очередь, по которой листает свайп. Читается только в жесте и задачах, не в `body`:
     /// тик прогресса бара пилюлю не перерисовывает.
@@ -1718,6 +1851,14 @@ struct MiniPlayerPill: View {
             .onChange(of: swipesTracks) { _, swipes in
                 if !swipes { settleSwipe() }
             }
+            .onChange(of: isShown) { _, shown in
+                if shown, !isPlaying, !isSpinning { spin = CoverSpin() }
+            }
+            .onChange(of: isPullSuspended) { _, suspended in
+                guard suspended else { return }
+                tickArmed = false
+                if pull != 0 { withAnimation(SearchPullConfig.release) { pull = 0 } }
+            }
             // Обложки соседей — заранее: под пальцем сосед въезжает уже с картинкой.
             .task(id: swipesTracks ? item.id : nil) {
                 guard swipesTracks else { return }
@@ -1776,6 +1917,7 @@ struct MiniPlayerPill: View {
     /// Оттяг за пальцем один в один, без анимации. Вверх за порог (или резким рывком) —
     /// большой плеер, на отпускании, как поиск у поля: порог и рывок — его же.
     private func pullChanged(_ value: DragGesture.Value) {
+        guard !isPullSuspended else { return }
         let dy = value.translation.height
         // Кадры, где палец ушёл вбок сильнее, чем вверх, резину не тянут: в читалке
         // горизонталью выбрасывают круг, и его жест решает ось сам.
@@ -2161,14 +2303,14 @@ struct MiniPlayerPill: View {
         .padding(-ActionBarGeometry.plainHitInset)
     }
 
-    /// Лайк прямо из мини-плеера (просьба пользователя 2026-10-03). Нравится — залитое
-    /// белое сердце, как в полноэкранном плеере (правка того же дня: раньше лайк здесь
-    /// был акцентным контуром); смена — тем же кросс-попом, что у play/pause.
+    /// Лайк прямо из мини-плеера (просьба пользователя 2026-10-03) — отметка коллекции,
+    /// как в полноэкранном плеере: «+» ↔ галочка или прежнее сердце (`CollectionIconStyle`);
+    /// смена — тем же кросс-попом, что у play/pause.
     private var likeButton: some View {
         PlusButton(type: .plain, size: .l, accessibilityTitle: isLiked ? "Убрать из любимых" : "Нравится") {
             onToggleLike()
         } icon: {
-            // Общий рисунок лайка (`LikeGlyph`) — эталон для всех сердец проекта.
+            // Общий рисунок отметки коллекции (`LikeGlyph`) — эталон для всех мест.
             LikeGlyph(isLiked: isLiked, box: PlusButtonSize.l.iconBox)
         }
         .padding(-ActionBarGeometry.plainHitInset)
@@ -2262,23 +2404,29 @@ struct MusicProgressReader<Content: View>: View {
 /// та же, что у «Смотреть» и «Читать» на экранах сущностей.
 private struct ChipButton<Label: View>: View {
     let title: String
+    /// Читается в момент тапа: отпускание после долгого нажатия (стопка плееров) — не тап.
+    var shouldFire: () -> Bool = { true }
     let action: () -> Void
     @ViewBuilder let label: () -> Label
 
     var body: some View {
         Button {
+            guard shouldFire() else { return }
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
             action()
         } label: {
             label()
         }
-        .buttonStyle(PressScaleButtonStyle())
+        // Вжатие рисует зона компакта (`TrailingSlot.isCompactPressed`): оно же держит чип
+        // вжатым под веером плееров, а свой отклик кнопки дал бы двойной скейл.
+        .buttonStyle(BareButtonStyle())
         .accessibilityLabel(title)
     }
 }
 
-private struct BookChip: View {
+/// Не `private`: тот же чип стоит в стопке плееров над баром (`PlayerStackOverlay`).
+struct BookChip: View {
     let cover: ArtworkSource
     /// Пропорции обложки (`ActionBarState.bookCoverAspect`); `nil` — макетная ширина.
     let aspect: CGFloat?
@@ -2291,7 +2439,12 @@ private struct BookChip: View {
             geometry: BookFigureGeometry(coverHeight: coverSize.height).cornerRadius(ActionBarGeometry.bookCoverRadius),
             coverWidth: coverSize.width
         ) {
-            ArtworkImage(source: cover).scaledToFill()
+            // Как у всех книг — `SkeletonArtwork`: заполнение у самой картинки внутри
+            // обвязки обложки. `ArtworkImage(...).scaledToFill()` заполнял распорку обвязки
+            // без своих пропорций — обложка растягивалась вширь и срезалась по бокам
+            // («apien» вместо «Sapiens», жалоба пользователя 2026-11-07), и чип, хотя
+            // и шёл шириной от обложки, читался кадрированным.
+            SkeletonArtwork(source: cover)
         }
             .frame(width: chipSize.width, height: chipSize.height)
             .chromeGlass(RoundedRectangle(cornerRadius: ActionBarGeometry.bookChipRadius, style: .continuous))
@@ -2300,7 +2453,8 @@ private struct BookChip: View {
     }
 }
 
-private struct MovieChip: View {
+/// Не `private`: тот же чип стоит в стопке плееров над баром (`PlayerStackOverlay`).
+struct MovieChip: View {
     let still: ArtworkSource
 
     var body: some View {

@@ -199,7 +199,7 @@ struct SearchTabRows: View {
                 // Числа нет — автор плейлиста, как прежде.
                 parts.append(CaptionPart(text: hit.subtitle, truncates: true))
             }
-        case .movie, .book, .director, .writer, .actor:
+        case .movie, .book, .director, .writer, .actor, .series, .serial, .shelf:
             break
         }
         return parts
@@ -218,7 +218,10 @@ struct SearchTabRows: View {
 
     /// Подпись через точку (макеты): фильм — оригинальное название и год; книга —
     /// «Книга» и автор, аудиокнига — «Аудио» и автор; режиссёр и автор — роль и, если их
-    /// работ в выдаче больше одной, сколько (решение пользователя 2026-10-31).
+    /// работ в выдаче больше одной, сколько (решение пользователя 2026-10-31). Серия —
+    /// «Серия» и автор, на своём чипсе — только автор (решение пользователя 2026-11-07);
+    /// сериал — так же, «Сериал»; полка — «Полка» и сколько на ней книг, на своём чипсе —
+    /// только число; комикс — «Комикс» и автор, как книга (2026-11-07).
     private func caption(_ hit: SearchHit, _ results: SearchState.TabResults) -> [CaptionPart] {
         switch hit.kind {
         case .movie:
@@ -230,8 +233,22 @@ struct SearchTabRows: View {
             if !hit.subtitle.isEmpty { parts.append(CaptionPart(text: hit.subtitle)) }
             return parts
         case .book:
-            var parts = [CaptionPart(text: hit.isAudiobook == true ? "Аудио" : "Книга")]
+            let type = hit.isAudiobook == true ? "Аудио" : hit.isComic == true ? "Комикс" : "Книга"
+            var parts = [CaptionPart(text: type)]
             if !hit.subtitle.isEmpty { parts.append(CaptionPart(text: hit.subtitle, truncates: true)) }
+            return parts
+        case .series, .serial:
+            var parts: [CaptionPart] = []
+            if filter == .all { parts.append(CaptionPart(text: hit.kind == .series ? "Серия" : "Сериал")) }
+            if !hit.subtitle.isEmpty { parts.append(CaptionPart(text: hit.subtitle, truncates: true)) }
+            return parts
+        case .shelf:
+            var parts: [CaptionPart] = []
+            if filter == .all { parts.append(CaptionPart(text: "Полка")) }
+            if let count = hit.bookCount {
+                let books = CollectionCopy.plural(count, one: "книга", few: "книги", many: "книг")
+                parts.append(CaptionPart(text: "\(count) \(books)"))
+            }
             return parts
         case .director:
             return role("Режиссёр", works: results.personCounts[hit.id], one: "фильм", few: "фильма", many: "фильмов")
@@ -253,7 +270,9 @@ struct SearchTabRows: View {
 
     /// Справа: у фильма — закладка «Позже» (то же «Любимое», что на экране тайтла),
     /// у книги — «+» в «Буду читать», у аудиокниги — свой «+», отдельно от книги
-    /// (решение пользователя 2026-10-31); у персон — ничего.
+    /// (решение пользователя 2026-10-31); у серии, сериала и полки — «+», как у книги,
+    /// но коллекция их не хранит: отметка локальная, как сердца персон (`liked`);
+    /// у персон — ничего.
     private func accessory(_ hit: SearchHit, _ results: SearchState.TabResults) -> SearchRowAccessory? {
         switch hit.kind {
         case .movie:
@@ -264,6 +283,8 @@ struct SearchTabRows: View {
             return .add(isOn: collection.isFavorite(hit: hit) ?? false) {
                 _ = collection.toggleFavorite(hit: hit)
             }
+        case .series, .serial, .shelf:
+            return .add(isOn: isLiked(hit)) { toggleLike(hit) }
         case .track, .album, .artist, .playlist, .director, .writer, .actor:
             return nil
         }
@@ -442,14 +463,18 @@ private struct SearchMusicThumbnail: View {
     }
 }
 
-/// Обложка строки: постер 2:3 у фильма и режиссёра, книга в проекции (`BookFigure`),
-/// квадрат у аудиокниги, круг у автора.
+/// Обложка строки: постер 2:3 у фильма и режиссёра, книга в проекции (`BookFigure`)
+/// у книги, комикса и сериала, стопка у серии (`SeriesStack`), квадрат у аудиокниги,
+/// мозаика у полки (`ShelfCollage`), круг у автора.
 private struct SearchMediaCover: View {
     let hit: SearchHit
     let isContentShown: Bool
 
     var body: some View {
-        if hit.kind == .book, hit.isAudiobook != true {
+        if hit.kind == .series {
+            // Габарит — место обложки книги в строке (макет `19672:9019`).
+            SeriesStack(width: SearchMediaLayout.cover, aspect: hit.artworkAspect, style: .row) { artwork }
+        } else if hit.kind == .serial || (hit.kind == .book && hit.isAudiobook != true) {
             // Книга — общий рисунок по ширине обложки: высоту дают пропорции, снятые
             // до показа.
             let book = BookFigureGeometry.fitting(width: SearchMediaLayout.cover, aspect: hit.artworkAspect)
@@ -469,7 +494,7 @@ private struct SearchMediaCover: View {
     private var height: CGFloat {
         switch hit.kind {
         case .movie, .director, .actor: SearchMediaLayout.posterHeight
-        case .track, .album, .artist, .playlist, .book, .writer: SearchMediaLayout.cover
+        case .track, .album, .artist, .playlist, .book, .writer, .series, .serial, .shelf: SearchMediaLayout.cover
         }
     }
 
@@ -477,14 +502,17 @@ private struct SearchMediaCover: View {
         switch hit.kind {
         case .writer, .artist:
             AnyShape(Circle())
-        case .track, .album, .playlist, .movie, .book, .director, .actor:
+        case .track, .album, .playlist, .movie, .book, .director, .actor, .series, .serial, .shelf:
             AnyShape(RoundedRectangle(cornerRadius: SearchMediaLayout.coverRadius, style: .continuous))
         }
     }
 
     @ViewBuilder
     private var artwork: some View {
-        if let source = hit.artwork {
+        if let collage = hit.collage {
+            ShelfCollage(sources: collage, appear: MosaicMotion.contentAppear)
+                .opacity(isContentShown ? 1 : 0)
+        } else if let source = hit.artwork {
             ResolvedArtwork(source: source, appear: MosaicMotion.contentAppear) { image in
                 image.resizable().scaledToFill()
             } placeholder: {

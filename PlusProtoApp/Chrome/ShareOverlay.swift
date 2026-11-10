@@ -382,7 +382,9 @@ struct ShareOverlay: View {
             let (geometry, coverWidth) = ShareCardLayout.book(aspect: aspect)
             BookFigure(geometry: geometry, coverWidth: coverWidth) {
                 if let cover = entity.cover {
-                    ArtworkImage(source: cover).scaledToFill()
+                    // Как у всех книг — `SkeletonArtwork`: заполнение у самой картинки внутри обвязки
+                    // обложки (`ArtworkImage(...).scaledToFill()` растягивал её вширь, см. CLAUDE.md, «Грабли»).
+                    SkeletonArtwork(source: cover)
                 }
             }
             .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 2)

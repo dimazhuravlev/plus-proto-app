@@ -282,7 +282,9 @@ extension CollectionItem {
             self = .track(MusicNowPlaying(hit: hit), album: album)
         case .playlist:
             self = .playlist(id: hit.id, title: hit.title, owner: hit.subtitle, cover: hit.artwork)
-        case .director, .writer, .actor:
+        // Серия, сериал и полка выдачи — моки без экрана (`SearchHit.Kind.series`):
+        // места в коллекции у них нет, «+» у них свой, локальный.
+        case .director, .writer, .actor, .series, .serial, .shelf:
             return nil
         }
     }

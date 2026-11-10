@@ -110,6 +110,8 @@ struct BottomChrome: View {
     /// в том числе пока клавиатура ещё уезжает после «Назад», затемнения или ухода
     /// в карточку — сюда не попадает (второе ревью 2026-10-03).
     @State private var isFocusKeyboardServed = false
+    /// Стопка плееров над баром — у каждого хрома своя, как и сам бар.
+    @State private var playerStack = PlayerStackState()
 
     var body: some View {
         VStack(spacing: PlusChromeMetrics.actionBarToTabsGap) {
@@ -128,6 +130,10 @@ struct BottomChrome: View {
                 .animation(keyboard.motion ?? ActionBarMotion.morph, value: isTabBarHidden)
                 .allowsHitTesting(!actionBar.isSearchFocused && !isTabBarHidden)
         }
+        // Стопка плееров (`PlayerStackOverlay`) — подложкой от верхней кромки бара: веер
+        // выезжает из-за текущего плеера, а не поверх него.
+        .background(alignment: .top) { PlayerStackOverlay() }
+        .environment(playerStack)
         // Ниже границы safe area на `chromeDrop`: оверлей корня прижат к ней.
         .padding(.bottom, -PlusChromeMetrics.chromeDrop)
         // Системный подъём над клавиатурой выключен: SwiftUI поднял бы весь хром

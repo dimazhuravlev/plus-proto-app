@@ -589,6 +589,14 @@ final class ActionBarState {
         mode = .music
     }
 
+    /// Круг музыки на месте компактного плеера — посадка из стопки плееров над баром
+    /// (`PlayerStackState`): круг сперва встаёт в бар, затем разворачивается (`expandMiniPlayer`).
+    /// Чип книги или кино уходит тем же морфом, payload остаётся.
+    func showMusicCompact() {
+        guard music != nil else { return }
+        mode = .search
+    }
+
     // MARK: - Диск
 
     /// Снимок бара на диске. Восстанавливается на холодном старте, чтобы плеер

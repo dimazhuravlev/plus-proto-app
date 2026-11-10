@@ -803,7 +803,7 @@ private struct MovieMainButtons: View {
         PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: MovieLayout.buttonSize, fillsWidth: true, haptic: .inAction, action: onPlay)
     }
 
-    /// «Позже» — закладка в «Любимом» коллекции: в коллекции — залитая.
+    /// «Позже» — отметка «Любимого» коллекции: «+» ↔ галочка или прежняя закладка (`BookmarkGlyph`).
     private var watchLaterButton: some View {
         PlusButton(
             "Позже",

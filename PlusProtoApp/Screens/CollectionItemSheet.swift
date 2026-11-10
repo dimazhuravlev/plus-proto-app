@@ -11,7 +11,8 @@ import SwiftUI
 ///   и свой набор пунктов;
 /// - фильм вне «Скачанного» — макета нет, пункты из соседних макетов.
 ///
-/// Пункты показывают состояние: отмеченное «Нравится» — залитым сердцем в акценте,
+/// Пункты показывают состояние: отмеченное «Нравится» — галочкой в акценте (при прежних
+/// иконках — залитым сердцем),
 /// скачанное — «Удалить из загрузок». Подключено то, у чего в прототипе есть логика
 /// (отметки, экраны сущности, альбома и исполнителя, шеринг, «Моя волна»); остальные пункты только откликаются.
 @MainActor
@@ -174,12 +175,14 @@ enum CollectionItemSheet {
             }
         }
 
-        /// «Нравится» — залитое сердце в акценте у отмеченного, тап снимает отметку.
+        /// «Нравится» — «+», у отмеченного галочка в акценте (при прежних иконках — сердце
+        /// и залитое сердце, `CollectionIconStyle`); тап снимает отметку.
         private var like: ActionSheetItem {
             let item = item, collection = collection
             let isLiked = collection.isFavorite(item.id)
+            let isPlus = CollectionIconStyle.current == .plus
             return ActionSheetItem(
-                icon: isLiked ? "iconLiked" : "iconLove",
+                icon: isLiked ? (isPlus ? "iconDone" : "iconLiked") : (isPlus ? "iconAdd" : "iconLove"),
                 title: "Нравится",
                 iconColor: isLiked ? .accentPrimary : .fillOne
             ) {

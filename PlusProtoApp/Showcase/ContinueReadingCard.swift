@@ -267,7 +267,9 @@ struct ContinueReadingCard: View {
     private var miniBookCover: some View {
         let size = ShowcaseLayout.scaled(ReadingCardLayout.miniBookSize)
         return BookFigure(geometry: BookFigureGeometry(coverHeight: size.height), coverWidth: size.width) {
-            ArtworkImage(source: block.cover).scaledToFill()
+            // Как у всех книг — `SkeletonArtwork`: заполнение у самой картинки внутри обвязки
+            // обложки (`ArtworkImage(...).scaledToFill()` растягивал её вширь, см. CLAUDE.md, «Грабли»).
+            SkeletonArtwork(source: block.cover)
         }
     }
 
