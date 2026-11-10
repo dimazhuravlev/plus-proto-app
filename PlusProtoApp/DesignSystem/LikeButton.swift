@@ -1,27 +1,28 @@
 import SwiftUI
 
-/// Сердце «нравится» — одно поведение везде, как в мини-плеере (правка пользователя
-/// 2026-10-04): контур ↔ залитое сменяются кросс-попом — прозрачность и масштаб 0.4
-/// той же пружиной, что play/pause бара (`ActionBarMotion.iconSwap`). Цвета у мест
-/// свои (в строках выдачи контур приглушён), движение — общее.
-struct LikeGlyph: View {
-    let isLiked: Bool
+/// Смена двух глифов на месте — кросс-поп: прозрачность и масштаб 0.4 той же пружиной,
+/// что play/pause бара (`ActionBarMotion.iconSwap`). Общий для всех отметок коллекции:
+/// сердца, закладки и «+».
+private struct CrossPopGlyph: View {
+    let off: String
+    let on: String
+    let isOn: Bool
     let box: CGFloat
     var offColor: Color = .fillOne
     var onColor: Color = .fillOne
 
     var body: some View {
         ZStack {
-            glyph("iconLove")
+            glyph(off)
                 .foregroundStyle(offColor)
-                .opacity(isLiked ? 0 : 1)
-                .scaleEffect(isLiked ? ActionBarMotion.iconSwapScale : 1)
-            glyph("iconLiked")
+                .opacity(isOn ? 0 : 1)
+                .scaleEffect(isOn ? ActionBarMotion.iconSwapScale : 1)
+            glyph(on)
                 .foregroundStyle(onColor)
-                .opacity(isLiked ? 1 : 0)
-                .scaleEffect(isLiked ? 1 : ActionBarMotion.iconSwapScale)
+                .opacity(isOn ? 1 : 0)
+                .scaleEffect(isOn ? 1 : ActionBarMotion.iconSwapScale)
         }
-        .animation(ActionBarMotion.iconSwap, value: isLiked)
+        .animation(ActionBarMotion.iconSwap, value: isOn)
     }
 
     private func glyph(_ name: String) -> some View {
@@ -29,6 +30,31 @@ struct LikeGlyph: View {
             .renderingMode(.template)
             .resizable()
             .frame(width: box, height: box)
+    }
+}
+
+/// «Нравится» — отметка коллекции у музыки, книг и персон, одно поведение везде, как
+/// в мини-плеере (правка пользователя 2026-10-04). Рисунок — по `CollectionIconStyle`:
+/// «+» ↔ галочка (по умолчанию, задача пользователя 2026-11-10) или прежнее сердце,
+/// контур ↔ залитое. Цвета у мест свои (в строках выдачи контур приглушён), движение — общее.
+struct LikeGlyph: View {
+    let isLiked: Bool
+    let box: CGFloat
+    var offColor: Color = .fillOne
+    var onColor: Color = .fillOne
+
+    @AppStorage(CollectionIconStyle.storageKey) private var style = CollectionIconStyle.defaultStyle
+
+    var body: some View {
+        let isPlus = style == .plus
+        CrossPopGlyph(
+            off: isPlus ? "iconAdd" : "iconLove",
+            on: isPlus ? "iconDone" : "iconLiked",
+            isOn: isLiked,
+            box: box,
+            offColor: offColor,
+            onColor: onColor
+        )
     }
 }
 
@@ -90,62 +116,41 @@ struct LikeGlassButton: View {
     }
 }
 
-/// Закладка «Позже» — контур с плюсом ↔ залитая, тем же кросс-попом, что сердце:
-/// тайтл в «Любимом» коллекции «Моё» (2026-10-04).
+/// «Позже» — отметка коллекции у кино: тайтл в «Любимом» коллекции «Моё» (2026-10-04).
+/// Рисунок — по `CollectionIconStyle`: «+» ↔ галочка, как у музыки и книг, или прежняя
+/// закладка, контур ↔ залитая; движение — то же, что у сердца.
 struct BookmarkGlyph: View {
     let isSaved: Bool
     let box: CGFloat
     /// Контур — тише в строках выдачи поиска (Fill/Five, макет `19184:22008`).
     var offColor: Color = .fillOne
-    /// Контур с плюсом — у «Позже»; в строках выдачи поиска — простой (`iconBookmarkPlain`).
+    /// Прежняя закладка: с плюсом — у «Позже»; в строках выдачи поиска — простая (`iconBookmarkPlain`).
     var offIcon = "iconBookmark"
 
-    var body: some View {
-        ZStack {
-            glyph(offIcon, color: offColor)
-                .opacity(isSaved ? 0 : 1)
-                .scaleEffect(isSaved ? ActionBarMotion.iconSwapScale : 1)
-            glyph("iconBookmarkFilled", color: .fillOne)
-                .opacity(isSaved ? 1 : 0)
-                .scaleEffect(isSaved ? 1 : ActionBarMotion.iconSwapScale)
-        }
-        .animation(ActionBarMotion.iconSwap, value: isSaved)
-    }
+    @AppStorage(CollectionIconStyle.storageKey) private var style = CollectionIconStyle.defaultStyle
 
-    private func glyph(_ name: String, color: Color) -> some View {
-        Image(name)
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: box, height: box)
-            .foregroundStyle(color)
+    var body: some View {
+        let isPlus = style == .plus
+        CrossPopGlyph(
+            off: isPlus ? "iconAdd" : offIcon,
+            on: isPlus ? "iconDone" : "iconBookmarkFilled",
+            isOn: isSaved,
+            box: box,
+            offColor: offColor
+        )
     }
 }
 
 /// «+» книги в выдаче поиска — в «Буду читать» коллекции; добавленная — галочка, тем же
 /// кросс-попом, что закладка (решение пользователя 2026-10-31, макет `19191:22495`).
+/// Был «+» и при прежних иконках — `CollectionIconStyle` его не трогает.
 struct AddGlyph: View {
     let isAdded: Bool
     let box: CGFloat
     var offColor: Color = .fillOne
 
     var body: some View {
-        ZStack {
-            glyph("iconAdd", color: offColor)
-                .opacity(isAdded ? 0 : 1)
-                .scaleEffect(isAdded ? ActionBarMotion.iconSwapScale : 1)
-            glyph("iconDone", color: .fillOne)
-                .opacity(isAdded ? 1 : 0)
-                .scaleEffect(isAdded ? 1 : ActionBarMotion.iconSwapScale)
-        }
-        .animation(ActionBarMotion.iconSwap, value: isAdded)
-    }
-
-    private func glyph(_ name: String, color: Color) -> some View {
-        Image(name)
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: box, height: box)
-            .foregroundStyle(color)
+        CrossPopGlyph(off: "iconAdd", on: "iconDone", isOn: isAdded, box: box, offColor: offColor)
     }
 }
 

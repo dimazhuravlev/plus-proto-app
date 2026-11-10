@@ -863,8 +863,8 @@ struct SearchResultsView: View {
     private func labelTrailing(_ kind: SearchHit.Kind) -> CGFloat {
         switch kind {
         case .artist: 0
-        case .track, .album, .playlist: Layout.labelTrailing
-        case .movie, .book, .director, .writer, .actor: Layout.size.posterLabelTrailing
+        case .track, .album, .playlist, .shelf: Layout.labelTrailing
+        case .movie, .book, .director, .writer, .actor, .series, .serial: Layout.size.posterLabelTrailing
         }
     }
 
@@ -873,8 +873,8 @@ struct SearchResultsView: View {
     /// вровень с книгами (макет пользователя 2026-10-03).
     private func coverHeight(_ kind: SearchHit.Kind) -> CGFloat {
         switch kind {
-        case .track, .album, .artist, .playlist: Layout.card
-        case .movie, .book, .director, .actor: Layout.card / Layout.posterAspect
+        case .track, .album, .artist, .playlist, .shelf: Layout.card
+        case .movie, .book, .director, .actor, .series, .serial: Layout.card / Layout.posterAspect
         case .writer: Layout.bookCoverHeight
         }
     }

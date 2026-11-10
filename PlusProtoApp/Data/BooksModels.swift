@@ -61,6 +61,13 @@ struct GoogleBook: Decodable, Identifiable {
         volumeInfo.imageLinks?.thumbnail != nil && volumeInfo.readingModes?.image == true
     }
 
+    /// Комикс — по категории тома: «Comics & Graphic Novels» у западных изданий, «Comic
+    /// books, strips, etc» у русских («Майор Гром»). Замер 2026-11-07: на «Бэтмена» —
+    /// 10 комиксов из 20, на «Мастера и Маргариту» — ни одного.
+    var isComic: Bool {
+        volumeInfo.categories?.contains { $0.range(of: "comic", options: .caseInsensitive) != nil } ?? false
+    }
+
     var coverURL: URL? {
         guard volumeInfo.imageLinks?.thumbnail != nil else { return nil }
         // Собираем ссылку сами, а не правим thumbnail: у него бывает `edge=curl`,

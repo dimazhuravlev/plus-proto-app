@@ -525,7 +525,8 @@ struct BookReaderView: View {
                 .cornerRadius(BookReaderLayout.coverCorner),
             coverWidth: BookReaderLayout.coverSize.width
         ) {
-            ArtworkImage(source: book.cover).scaledToFill()
+            // Как у всех книг — `SkeletonArtwork` (см. CLAUDE.md, «Грабли»: `ArtworkImage(...).scaledToFill()` растягивал обложку вширь).
+            SkeletonArtwork(source: book.cover)
         }
     }
 

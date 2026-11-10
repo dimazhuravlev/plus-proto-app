@@ -534,10 +534,13 @@ struct SearchListRow: View {
         case .artist: "Исполнитель"
         case .playlist: "Плейлист"
         case .movie: "Фильм"
-        case .book: "Книга"
+        case .book: hit.isComic == true ? "Комикс" : "Книга"
         case .director: "Режиссёр"
         case .writer: "Писатель"
         case .actor: hit.subtitle.isEmpty ? "Актёр" : hit.subtitle
+        case .series: "Серия"
+        case .serial: "Сериал"
+        case .shelf: "Полка"
         }
     }
 
@@ -545,7 +548,7 @@ struct SearchListRow: View {
     private var showsDetail: Bool {
         guard !hit.subtitle.isEmpty else { return false }
         switch hit.kind {
-        case .track, .album, .movie, .book: return true
+        case .track, .album, .movie, .book, .series, .serial, .shelf: return true
         default: return false
         }
     }

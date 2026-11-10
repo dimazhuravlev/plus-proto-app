@@ -213,7 +213,9 @@ enum PlusMetrics {
     static let actionBarGap: CGFloat = 8
     /// Компактные поиск и музплеер — всегда круг
     static let actionBarCompact: CGFloat = 60
-    static let miniPlayerCover: CGFloat = 48
+    /// Обложка мини-плеера музыки — поля 4 до кромки круга и пилюли, как у чипов книги
+    /// и кино (правка пользователя 2026-11-10; было 48 — поля 6).
+    static let miniPlayerCover: CGFloat = 52
 
     // Кнопки на карточках
     static let circleButton: CGFloat = 40

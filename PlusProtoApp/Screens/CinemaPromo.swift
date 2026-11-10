@@ -333,7 +333,7 @@ private struct CinemaPromoSlide: View {
         HStack(spacing: CinemaPromoLayout.buttonGap) {
             PlusButton("Смотреть", icon: "iconPlay", type: .accent, size: CinemaPromoLayout.buttonSize, haptic: .inAction, action: watch)
 
-            // «Позже» — как на карточке тайтла: закладка в «Любимом» коллекции «Моё».
+            // «Позже» — как на карточке тайтла: отметка «Любимого» коллекции «Моё» (`BookmarkGlyph`).
             let isSaved = collectionItem.map { collection.isFavorite($0.id) } ?? false
             PlusButton(
                 type: .secondary,

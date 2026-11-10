@@ -155,6 +155,81 @@ struct AudiobookFigure<Cover: View>: View {
     }
 }
 
+// MARK: - Серия
+
+/// Числа стопки серии — макеты `19668:8959` (карточка сетки) и `19672:9019` (строка таба
+/// «Книги») файла `uBatydFjyjVhDM8AZqG5gC`: шаг сдвига слоёв и прозрачный зазор между
+/// ними. На любой ширине колонки — одни и те же.
+struct SeriesStackStyle {
+    /// Сдвиг каждого следующего слоя влево и вниз
+    let step: CGFloat
+    /// Прозрачный зазор между слоем и слоем над ним
+    let gap: CGFloat
+
+    /// Карточка сетки «Всё»
+    static let grid = SeriesStackStyle(step: 6, gap: 2)
+    /// Строка таба «Книги»
+    static let row = SeriesStackStyle(step: 4, gap: 1.5)
+    /// Три копии одной обложки
+    static let layers = 3
+}
+
+/// Серия — стопка из трёх копий обложки книги (`BookFigure`, задача пользователя
+/// 2026-11-07): передняя справа сверху, каждая следующая — на шаг левее и ниже. Габарит
+/// по ширине — как у карточки книги того же места: передняя уже на два шага, высота —
+/// по её пропорциям плюс два шага.
+///
+/// Между слоями — прозрачный зазор, а не обводка цветом фона: под выдачей не чёрный
+/// фон, а блюр и размытия. Поэтому каждый задний слой вырезан по контуру слоя над ним,
+/// увеличенному на зазор (`SeriesLayerShape`).
+struct SeriesStack<Cover: View>: View {
+    /// Габарит по ширине — ширина карточки книги этого места
+    let width: CGFloat
+    let aspect: CGFloat?
+    let style: SeriesStackStyle
+    @ViewBuilder var cover: Cover
+
+    var body: some View {
+        let depth = CGFloat(SeriesStackStyle.layers - 1) * style.step
+        let frontWidth = width - depth
+        let book = BookFigureGeometry.fitting(width: frontWidth, aspect: aspect)
+        ZStack(alignment: .topLeading) {
+            // Снизу вверх: первым — самый дальний слой.
+            ForEach((0..<SeriesStackStyle.layers).reversed(), id: \.self) { layer in
+                let shift = CGFloat(layer) * style.step
+                BookFigure(geometry: book.geometry, coverWidth: frontWidth) { cover }
+                    .clipShape(SeriesLayerShape(
+                        radius: book.geometry.coverRadius,
+                        step: style.step,
+                        gap: style.gap,
+                        isCut: layer > 0
+                    ))
+                    .padding(.leading, depth - shift)
+                    .padding(.top, shift)
+            }
+        }
+        .frame(width: width, height: book.geometry.coverHeight + depth, alignment: .topLeading)
+    }
+}
+
+/// Слой стопки серии: свой контур обложки минус контур слоя над ним (на шаг правее
+/// и выше), увеличенный на зазор, — прозрачный вырез вместо обводки. Форма выреза — как
+/// у обложки: слева прямые углы (корешок), справа — радиус обложки плюс зазор.
+struct SeriesLayerShape: Shape {
+    let radius: CGFloat
+    let step: CGFloat
+    let gap: CGFloat
+    /// Передний слой не вырезается
+    var isCut = true
+
+    func path(in rect: CGRect) -> Path {
+        let own = BookCoverShape(radius: radius).path(in: rect)
+        guard isCut else { return own }
+        let above = rect.offsetBy(dx: step, dy: -step).insetBy(dx: -gap, dy: -gap)
+        return own.subtracting(BookCoverShape(radius: radius + gap).path(in: above))
+    }
+}
+
 // MARK: - Форма обложки
 
 /// Форма обложки книги: правые углы скруглены (сглаживание 60 % — `.continuous`),

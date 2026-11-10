@@ -433,7 +433,8 @@ private struct CollectionPeekThumbnail: View {
                 coverWidth: TabBarGeometry.peekPosterSize.width
             ) {
                 if let artwork = item.artwork {
-                    ArtworkImage(source: artwork).scaledToFill()
+                    // Как у всех книг — `SkeletonArtwork` (см. CLAUDE.md, «Грабли»: `ArtworkImage(...).scaledToFill()` растягивал обложку вширь).
+                    SkeletonArtwork(source: artwork)
                 }
             }
         case .album, .track, .playlist:

@@ -71,7 +71,8 @@ extension HomeQuickAccess {
         let scale = HomeQuickAccessLayout.scale
         let geometry = BookFigureGeometry(coverHeight: 80 * scale)
         return BookFigure(geometry: geometry, coverWidth: bookSlotWidth * scale) {
-            ArtworkImage(source: source).scaledToFill()
+            // Как у всех книг — `SkeletonArtwork` (см. CLAUDE.md, «Грабли»: `ArtworkImage(...).scaledToFill()` растягивал обложку вширь).
+            SkeletonArtwork(source: source)
         }
     }
 }

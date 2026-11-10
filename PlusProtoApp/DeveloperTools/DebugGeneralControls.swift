@@ -20,6 +20,8 @@ struct DebugGeneralControls: View {
     @AppStorage(TaskalkaDebug.enabledKey) private var taskalkaInSearch = false
     /// Вариант рефлекса крупных обложек — ключ `coverSheenStyle` (`CoverSheenStyle`).
     @AppStorage(CoverSheenStyle.storageKey) private var sheenStyle: CoverSheenStyle = .defaultStyle
+    /// Кнопка «в коллекцию» — везде «+» или прежние сердце и закладка (`CollectionIconStyle`).
+    @AppStorage(CollectionIconStyle.storageKey) private var collectionIconStyle = CollectionIconStyle.defaultStyle
 
     private enum Layout {
         /// Подпись под островком — поля как у ячеек, сверху 8
@@ -58,10 +60,14 @@ struct DebugGeneralControls: View {
 
             title("Вид поисковой выдачи", top: Layout.sectionGap)
 
-            optionsIsland
+            choiceIsland(SearchResultsStyle.allCases, selection: $searchStyle, title: \.title)
+
+            title("Иконки коллекции", top: Layout.sectionGap)
+            choiceIsland(CollectionIconStyle.allCases, selection: $collectionIconStyle, title: \.title)
+            note("«+» вместо сердца и закладки у музыки, кино и книг, добавленное — галочка; «Не нравится» в плеере музыки — крест")
 
             title("Рефлекс обложки", top: Layout.sectionGap)
-            sheenIsland
+            choiceIsland(CoverSheenStyle.allCases, selection: $sheenStyle, title: \.title)
             note("Альбом, плейлист, книга, большой плеер. Наклоните и поверните телефон в плоскости экрана: полоса едет и поворачивается")
 
             title("Пустой поиск", top: Layout.sectionGap)
@@ -273,19 +279,27 @@ struct DebugGeneralControls: View {
     }
 
     /// Островок выбора — как ячейки профиля (`ProfileLayout`): строки с разделителями,
-    /// у выбранной — галочка справа.
-    private var optionsIsland: some View {
+    /// у выбранной — галочка справа. Один на все выборы вкладки.
+    private func choiceIsland<Option: Hashable>(
+        _ options: [Option],
+        selection: Binding<Option>,
+        title: @escaping (Option) -> String
+    ) -> some View {
         VStack(spacing: 0) {
-            ForEach(SearchResultsStyle.allCases) { style in
-                optionRow(style)
-                    .overlay(alignment: .top) {
-                        if style != SearchResultsStyle.allCases.first {
-                            Rectangle()
-                                .fill(ProfileLayout.divider)
-                                .frame(height: 0.5)
-                                .padding(.leading, ProfileLayout.dividerInset)
-                        }
+            ForEach(options, id: \.self) { option in
+                choiceRow(title(option), isSelected: option == selection.wrappedValue) {
+                    guard option != selection.wrappedValue else { return }
+                    TabBarMotion.tapHaptic()
+                    selection.wrappedValue = option
+                }
+                .overlay(alignment: .top) {
+                    if option != options.first {
+                        Rectangle()
+                            .fill(ProfileLayout.divider)
+                            .frame(height: 0.5)
+                            .padding(.leading, ProfileLayout.dividerInset)
                     }
+                }
             }
         }
         .padding(.vertical, ProfileLayout.islandPadding)
@@ -295,36 +309,10 @@ struct DebugGeneralControls: View {
         )
     }
 
-    /// Варианты рефлекса обложки — тот же островок выбора, что у вида выдачи.
-    private var sheenIsland: some View {
-        VStack(spacing: 0) {
-            ForEach(CoverSheenStyle.allCases) { style in
-                sheenRow(style)
-                    .overlay(alignment: .top) {
-                        if style != CoverSheenStyle.allCases.first {
-                            Rectangle()
-                                .fill(ProfileLayout.divider)
-                                .frame(height: 0.5)
-                                .padding(.leading, ProfileLayout.dividerInset)
-                        }
-                    }
-            }
-        }
-        .padding(.vertical, ProfileLayout.islandPadding)
-        .background(
-            RoundedRectangle(cornerRadius: ProfileLayout.islandRadius, style: .continuous)
-                .fill(Color.fillNine)
-        )
-    }
-
-    private func sheenRow(_ style: CoverSheenStyle) -> some View {
-        Button {
-            guard style != sheenStyle else { return }
-            TabBarMotion.tapHaptic()
-            sheenStyle = style
-        } label: {
+    private func choiceRow(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: ProfileLayout.cellGap) {
-                Text(style.title)
+                Text(title)
                     .plusText(.textM, .medium)
                     .foregroundStyle(Color.fillOne)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -333,40 +321,14 @@ struct DebugGeneralControls: View {
                     .resizable()
                     .frame(width: Layout.checkIcon, height: Layout.checkIcon)
                     .foregroundStyle(Color.fillOne)
-                    .opacity(style == sheenStyle ? 1 : 0)
+                    .opacity(isSelected ? 1 : 0)
             }
             .padding(.horizontal, ProfileLayout.cellHorizontal)
             .padding(.vertical, ProfileLayout.cellVertical)
             .contentShape(.rect)
         }
         .buttonStyle(CellHighlightButtonStyle())
-        .accessibilityAddTraits(style == sheenStyle ? .isSelected : [])
-    }
-
-    private func optionRow(_ style: SearchResultsStyle) -> some View {
-        Button {
-            guard style != searchStyle else { return }
-            TabBarMotion.tapHaptic()
-            searchStyle = style
-        } label: {
-            HStack(spacing: ProfileLayout.cellGap) {
-                Text(style.title)
-                    .plusText(.textM, .medium)
-                    .foregroundStyle(Color.fillOne)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Image("iconDone")
-                    .renderingMode(.template)
-                    .resizable()
-                    .frame(width: Layout.checkIcon, height: Layout.checkIcon)
-                    .foregroundStyle(Color.fillOne)
-                    .opacity(style == searchStyle ? 1 : 0)
-            }
-            .padding(.horizontal, ProfileLayout.cellHorizontal)
-            .padding(.vertical, ProfileLayout.cellVertical)
-            .contentShape(.rect)
-        }
-        .buttonStyle(CellHighlightButtonStyle())
-        .accessibilityAddTraits(style == searchStyle ? .isSelected : [])
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

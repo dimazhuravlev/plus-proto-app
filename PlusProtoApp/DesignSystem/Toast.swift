@@ -346,7 +346,8 @@ struct ToastView: View {
                 geometry: BookFigureGeometry(coverHeight: height).cornerRadius(ToastLayout.coverRadius),
                 coverWidth: width
             ) {
-                ArtworkImage(source: source).scaledToFill()
+                // Как у всех книг — `SkeletonArtwork` (см. CLAUDE.md, «Грабли»: `ArtworkImage(...).scaledToFill()` растягивал обложку вширь).
+                SkeletonArtwork(source: source)
             }
         } else {
             Color.clear

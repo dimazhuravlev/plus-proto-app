@@ -994,7 +994,7 @@ private struct MosaicCard: View {
     private var isRound: Bool {
         switch hit.kind {
         case .artist, .writer: true
-        case .track, .album, .playlist, .movie, .book, .director, .actor: false
+        case .track, .album, .playlist, .movie, .book, .director, .actor, .series, .serial, .shelf: false
         }
     }
 
@@ -1006,7 +1006,7 @@ private struct MosaicCard: View {
         case .director: "Режиссёр"
         case .writer: "Писатель"
         case .actor: "Актёр"
-        case .track, .album, .artist, .playlist, .movie, .book: ""
+        case .track, .album, .artist, .playlist, .movie, .book, .series, .serial, .shelf: ""
         }
     }
 
@@ -1050,9 +1050,13 @@ private struct MosaicCard: View {
 
     @ViewBuilder
     private var cover: some View {
-        if hit.kind == .book {
+        if hit.kind == .series {
+            // Серия — стопка обложек шириной в колонку, как книга (макет `19668:8959`).
+            SeriesStack(width: MosaicLayout.card, aspect: hit.artworkAspect, style: .grid) { artwork }
+        } else if hit.kind == .book || hit.kind == .serial {
             // Книга в проекции — общий рисунок (`BookFigure`), по ширине колонки: высоту
-            // дают пропорции обложки, снятые до показа.
+            // дают пропорции обложки, снятые до показа. Сериал — книга эпизодами, у него
+            // та же обложка.
             let book = BookFigureGeometry.fitting(width: MosaicLayout.card, aspect: hit.artworkAspect)
             BookFigure(geometry: book.geometry, coverWidth: book.coverWidth) { artwork }
         } else {
@@ -1079,10 +1083,13 @@ private struct MosaicCard: View {
     }
 
     /// Постер: картинка из памяти — в такт подписи, приехавшая из сети позже — своим
-    /// проявлением той же кривой.
+    /// проявлением той же кривой. У полки — мозаика обложек её книг (`ShelfCollage`).
     @ViewBuilder
     private var artwork: some View {
-        if let source = hit.artwork {
+        if let collage = hit.collage {
+            ShelfCollage(sources: collage, appear: MosaicMotion.contentAppear)
+                .opacity(isContentShown ? 1 : 0)
+        } else if let source = hit.artwork {
             ResolvedArtwork(source: source, appear: MosaicMotion.contentAppear) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
@@ -1095,8 +1102,8 @@ private struct MosaicCard: View {
     /// Квадрат у музыки, исполнителя и автора; постер 2:3 у кино и его персон.
     private var coverHeight: CGFloat {
         switch hit.kind {
-        case .track, .album, .artist, .playlist, .writer: MosaicLayout.card
-        case .movie, .book, .director, .actor: MosaicLayout.card / MosaicLayout.posterAspect
+        case .track, .album, .artist, .playlist, .writer, .shelf: MosaicLayout.card
+        case .movie, .book, .director, .actor, .series, .serial: MosaicLayout.card / MosaicLayout.posterAspect
         }
     }
 
