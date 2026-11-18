@@ -15,10 +15,6 @@ enum PromoCardGlowConfig {
         let width: CGFloat
         let height: CGFloat
         let radius: CGFloat
-        let station: VibePromoStation?
-        /// Пространство палитры (`PlusColorSpace`) — у лепестка станции: растр запекает его
-        /// цвет, и тумблер дебаг-меню меняет ключ, а с ним и растр. Обложкам не нужно.
-        let isP3: Bool
     }
     private static var cache = PromoResourceCache<Key, UIImage>(countLimit: 96, costLimit: 24 * 1024 * 1024)
 
@@ -37,12 +33,15 @@ enum PromoCardGlowConfig {
         typealias Layout = ShowcasePromoLayout
         let size: CGSize
         let radius: CGFloat
-        let source = item.promoArtwork
-        var station: VibePromoStation?
+        var source = item.promoArtwork
         switch item {
         case .movie, .watching:
             size = Layout.poster; radius = Layout.posterRadius
-        case .book, .reading:
+        case .book(let book):
+            let figure = Layout.book(aspect: BookCoverAspect.cached(of: book.cover) ?? nil)
+            size = figure.geometry.frameSize(coverWidth: figure.coverWidth)
+            radius = Layout.posterRadius
+        case .reading:
             size = Layout.book.geometry.frameSize(coverWidth: Layout.book.coverWidth)
             radius = Layout.posterRadius
         case .album:
@@ -52,13 +51,12 @@ enum PromoCardGlowConfig {
             size = CGSize(width: Layout.artist, height: Layout.artist)
             radius = Layout.artist / 2
         case .vibe(let vibe):
-            station = vibe.promoStation
-            size = CGSize(width: PromoStationLayout.frame.width * Layout.stationScale,
-                          height: PromoStationLayout.frame.height * Layout.stationScale)
-            radius = 16 * Layout.scale
+            let artSize = Layout.geometry.wave.artSize
+            size = CGSize(width: artSize, height: artSize)
+            radius = vibe.promoStation.artist != nil ? artSize / 2 : 0
+            source = vibe.promoStation.artwork
         }
-        return Key(source: source, width: size.width, height: size.height, radius: radius,
-                   station: station, isP3: station != nil && PlusColorSpace.shared.isP3)
+        return Key(source: source, width: size.width, height: size.height, radius: radius)
     }
 
     static func cached(_ item: ShowcaseBlock) -> UIImage? { cache[key(for: item)] }
@@ -73,23 +71,6 @@ enum PromoCardGlowConfig {
         guard !Task.isCancelled else { return }
         let key = key(for: item)
         guard cache[key] == nil else { return }
-        if let station = key.station {
-            // Render only the petal. Neither the avatar nor station captions enter
-            // this bitmap; the genre mark is also excluded from its glow.
-            let scale = PromoCardGlowConfig.rasterScale
-            let padding = PromoCardGlowConfig.padding * ShowcasePromoLayout.scale
-            let renderer = ImageRenderer(content:
-                PromoStationPetal(station: station)
-                    .frame(width: key.width, height: key.height, alignment: .topLeading)
-                    .scaleEffect(scale, anchor: .topLeading)
-                    .frame(width: key.width * scale, height: key.height * scale, alignment: .topLeading)
-                    .blur(radius: PromoCardGlowConfig.blur * ShowcasePromoLayout.scale * scale)
-                    .padding(padding * scale)
-            )
-            renderer.scale = 1
-            if let result = renderer.uiImage { store(result, for: key) }
-            return
-        }
         let image: UIImage?
         if let url = key.source.remoteURL { image = await ArtworkLoader.shared.image(for: url) }
         else { image = key.source.fallbackAsset.flatMap { UIImage(named: $0) } }

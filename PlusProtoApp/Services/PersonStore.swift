@@ -23,6 +23,7 @@ final class PersonStore {
         let album: String?
         let cover: ArtworkSource?
         let isExplicit: Bool
+        var albumID: String? = nil
     }
 
     /// Фото из API — если маршрут пришёл без своего (писатель с экрана книги,
@@ -91,7 +92,8 @@ final class PersonStore {
                 album: track.album?.title,
                 cover: (track.album?.coverXl ?? track.album?.coverBig ?? track.album?.coverMedium)?
                     .deezerUpscaled.map { .remote($0) },
-                isExplicit: track.explicitLyrics ?? false
+                isExplicit: track.explicitLyrics ?? false,
+                albumID: track.album.map { "dz-\($0.id)" }
             )
         }
 

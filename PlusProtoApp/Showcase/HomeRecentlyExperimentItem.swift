@@ -14,13 +14,13 @@ struct HomeRecentlyExperimentItem: Identifiable {
     var station: VibeStation? = nil
     var canJoinStack: Bool { kind != .station }
     var hasOutline: Bool { canJoinStack && station == nil }
-    var mediaHeight: CGFloat { kind == .movie || kind == .album ? 78 : 80 }
+    var mediaHeight: CGFloat { HomeQuickAccessLayout.mediaBaseHeight }
 
     var width: CGFloat {
         switch kind {
-        case .movie: 138
+        case .movie: HomeQuickAccessLayout.movieWidth
         case .book: 54
-        case .album: 78
+        case .album: HomeQuickAccessLayout.mediaBaseHeight
         case .artist: 80
         case .station: 70
         }

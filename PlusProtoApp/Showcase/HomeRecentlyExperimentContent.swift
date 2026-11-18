@@ -69,11 +69,15 @@ extension HomeQuickAccess {
     @ViewBuilder func experimentThumbnail(_ item: HomeRecentlyExperimentItem) -> some View {
         switch item.kind {
         case .movie:
-            movieThumbnail(item.artwork, movieID: item.movie?.id ?? item.id, progress: item.progress)
+            movieThumbnail(item.artwork, movieID: item.movie?.id ?? item.id, progress: item.progress,
+                           time: actionBar.watchHistory.entries.first { $0.id == item.movie?.id }?.movie.remainingTime ?? item.movie?.remainingTime)
         case .book:
             bookThumbnail(item.artwork)
+                .overlay(alignment: .topLeading) {
+                    if let progress = item.progress { RecentlyBookProgress(progress: progress).padding(4) }
+                }
         case .album:
-            artwork(item.artwork, width: 78, height: 78, radius: 12)
+            artwork(item.artwork, width: item.width, height: item.mediaHeight, radius: 12)
         case .artist:
             artwork(item.artwork, width: 80, height: 80, radius: 40)
         case .station:

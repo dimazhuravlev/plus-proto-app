@@ -27,7 +27,7 @@ struct RecentMovieFrame: View {
     var body: some View {
         Group {
             if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else { PlusSkeleton.fill }
+            else { Image(uiImage: RecentMovieFrameSamples.image(for: movieID)).resizable().scaledToFill() }
         }
         .task(id: Request(movieID: movieID, source: source)) {
             guard !Task.isCancelled else { return }
@@ -48,7 +48,21 @@ struct RecentMovieFrame: View {
             case .remote(let url, _): resolved = await ArtworkLoader.shared.image(for: url)
             }
             guard !Task.isCancelled else { return }
-            image = resolved.flatMap { $0.size.width > $0.size.height ? $0 : nil }
+            if let resolved, resolved.size.width > resolved.size.height { image = resolved }
         }
+    }
+}
+
+/// Local prototype stills: exact title when available, stable sample otherwise.
+/// Real horizontal artwork replaces the sample as soon as it loads.
+private enum RecentMovieFrameSamples {
+    static let ids = ["447301", "258687", "409424", "589290", "2000461", "404900", "464963", "502838", "915196", "253245"]
+
+    static func image(for movieID: String) -> UIImage {
+        let id = movieID.replacingOccurrences(of: "kp-w-", with: "")
+            .replacingOccurrences(of: "kp-", with: "")
+        let index = movieID.utf8.reduce(UInt64(5381)) { ($0 &* 33) &+ UInt64($1) }
+        let selected = ids.contains(id) ? id : ids[Int(index % UInt64(ids.count))]
+        return UIImage(named: "recentStill" + selected) ?? UIImage()
     }
 }

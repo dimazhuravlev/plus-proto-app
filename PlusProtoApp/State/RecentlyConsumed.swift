@@ -15,6 +15,7 @@ enum RecentItem: Codable, Equatable, Identifiable {
     case myVibe
     case entity(EntityRoute)
     case station(String)
+    case stationSnapshot(VibeStation)
 
     /// Повтор поднимается наверх, а не дублируется. Музыка — по альбому или плейлисту,
     /// из которого трек играл (`containerID`): разные треки одного альбома — одна плитка
@@ -22,11 +23,17 @@ enum RecentItem: Codable, Equatable, Identifiable {
     var id: String {
         switch self {
         case .movie(let movie): "movie:" + movie.id
-        case .music(let track): "music:" + (track.containerID ?? track.id)
+        case .music(let track):
+            switch track.containerRoute {
+            case .album(let ref): "music:album:" + ref.id
+            case .playlist(let ref): "music:playlist:" + ref.id
+            default: "music:" + (track.containerID ?? track.id)
+            }
         case .book(let book): "book:" + book.id
         case .artist(let artist): "artist:" + artist.id
         case .myVibe: "myVibe"
         case .station(let id): "station:" + id
+        case .stationSnapshot(let station): "station:" + station.id
         case .entity(let route):
             switch route {
             case .movie(let ref): "movie:" + ref.id
@@ -48,6 +55,7 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .artist(let artist): artist.title
         case .entity(let route): route.ref.title
         case .station(let id): VibeStation.all.first { $0.id == id }?.title ?? id
+        case .stationSnapshot(let station): station.title
         case .myVibe: "Моя волна"
         }
     }
@@ -62,6 +70,7 @@ enum RecentItem: Codable, Equatable, Identifiable {
         case .artist(let artist): artist.artwork
         case .entity(let route): route.ref.artwork
         case .station(let id): .asset(VibeStation.all.first { $0.id == id }?.agent ?? "")
+        case .stationSnapshot(let station): station.artwork
         case .myVibe: .asset("vibeRecentDrop")
         }
     }
@@ -87,8 +96,10 @@ final class RecentlyConsumed {
     private static let storageKey = "recentlyConsumed"
     private static let seededKey = "recentlyConsumedSeeded"
 
-    init() {
-        let defaults = UserDefaults.standard
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         #if DEBUG
         // `-debugResetRecently 1` — стереть ряд и посеять стартовый набор заново.
         if defaults.bool(forKey: "debugResetRecently") {
@@ -98,7 +109,8 @@ final class RecentlyConsumed {
         #endif
         if let data = defaults.data(forKey: Self.storageKey),
            let saved = try? JSONDecoder().decode([RecentItem].self, from: data) {
-            items = saved
+            items = Self.deduplicated(saved)
+            persist()
         }
         guard !defaults.bool(forKey: Self.seededKey) else { return }
         if items.isEmpty { items = RecentlySeeds.items }
@@ -122,7 +134,7 @@ final class RecentlyConsumed {
         if list.count > Self.limit {
             list.removeLast(list.count - Self.limit)
         }
-        items = list
+        items = Self.deduplicated(list)
     }
 
     /// Картинки ряда — для прогрева под заставкой.
@@ -131,33 +143,28 @@ final class RecentlyConsumed {
     }
 
     func clear() {
-        UserDefaults.standard.set(true, forKey: Self.seededKey)
+        defaults.set(true, forKey: Self.seededKey)
         items = []
     }
 
     func fillExamples() {
-        UserDefaults.standard.set(true, forKey: Self.seededKey)
+        defaults.set(true, forKey: Self.seededKey)
         var examples = RecentlySeeds.items
         examples.insert(.book(BookInProgress(id: "graeber-truth", cover: .asset("mockBookGraeberTruth"),
             title: "Главная тайная истина мира…", author: "Дэвид Гребер")), at: 2)
         examples.insert(.station("testosterone"), at: 4)
-        items = [.myVibe] + examples + VibeStation.all.filter { $0.photo == nil && $0.id != "testosterone" }.map { .station($0.id) }
+        examples.insert(.myVibe, at: min(5, examples.count))
+        items = examples + VibeStation.all.filter { $0.photo == nil && $0.id != "testosterone" }.map { .station($0.id) }
     }
 
-    func recordVisit(_ route: EntityRoute) {
-        let item: RecentItem
-        switch route {
-        case .episodes: return
-        case .artist(let ref): item = .artist(ref)
-        default: item = .entity(route)
-        }
-        // Opening a detail must not replace richer playback information.
-        record(items.first { $0.id == item.id } ?? item)
+    static func deduplicated(_ source: [RecentItem]) -> [RecentItem] {
+        var seen = Set<String>()
+        return source.filter { seen.insert($0.id).inserted }
     }
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(items) else { return }
-        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        defaults.set(data, forKey: Self.storageKey)
     }
 }
 
@@ -178,8 +185,8 @@ extension MusicNowPlaying {
                 }
             }
         }
-        if id.hasPrefix("dz-"), let range = id.range(of: "-t") {
-            let albumID = String(id[id.startIndex..<range.lowerBound])
+        if let match = id.firstMatch(of: #/^(dz-\d+)-t\d+$/#) {
+            let albumID = String(match.1)
             return .album(EntityRef(id: albumID, title: album ?? title, subtitle: artist, artwork: cover))
         }
         return nil

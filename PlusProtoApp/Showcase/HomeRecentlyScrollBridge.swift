@@ -83,12 +83,14 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
     private var active = false
     private var adjusting = false
     private var ownsPull = false
+    private var nativeReturn: HomeRecentlyNativeReturn?
 
     func attach(_ scroll: UIScrollView) {
         guard self.scroll !== scroll else { return }
         detach()
         self.scroll = scroll
         scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
+        HomeInteractionHaptics.prepareRecently()
     }
 
     func expandFromTap() {
@@ -102,6 +104,9 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
         adjusting = false
         let state = HomeRecentlyPullState.shared
         state.updateResponsiveNativePull(0)
+        state.updateResponsiveContentPull(0)
+        state.updateResponsiveScrollCompensation(0)
+        nativeReturn = nil
         state.setResponsiveExpanded(true)
         state.finishResponsivePull()
         HomeInteractionHaptics.recently(expanded: true)
@@ -110,10 +115,12 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
     private func begin(_ scroll: UIScrollView) {
         guard !active else { return }
         active = true
+        nativeReturn = nil
         let state = HomeRecentlyPullState.shared
         state.interruptResponsiveReturn()
         policy.begin(offset: scroll.contentOffset.y + scroll.adjustedContentInset.top,
-                     pullRatio: state.responsivePullRatio, expanded: state.responsiveExpanded)
+                     pullRatio: state.responsivePullRatio, expanded: state.responsiveExpanded,
+                     contentPull: state.responsiveContentPull)
         ownsPull = state.responsivePullRatio > 0 || (ownsPull && scroll.contentOffset.y + scroll.adjustedContentInset.top < 0)
         if !ownsPull { state.updateResponsiveNativePull(0) }
         HomeInteractionHaptics.prepareRecently()
@@ -141,27 +148,36 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
         let offset = scroll.contentOffset.y + scroll.adjustedContentInset.top
         // Нативный возврат наблюдаем и после отпускания, но он не меняет цель.
         if ownsPull {
-            state.updateResponsiveNativePull(max(0, -offset))
-            if !active, offset >= -0.01 { ownsPull = false }
+            let nativePull = max(0, -offset)
+            state.updateResponsiveNativePull(nativePull)
+            if !active, let nativeReturn {
+                state.updateResponsiveContentPull(nativeReturn.value(nativePull: nativePull))
+            }
+            if !active, offset >= -0.01 {
+                state.updateResponsiveContentPull(0)
+                ownsPull = false
+                nativeReturn = nil
+            }
         }
         guard scroll.isDragging else { return }
         begin(scroll)
-        guard let update = policy.move(offset: offset, translation: scroll.panGestureRecognizer.translation(in: scroll).y) else { return }
+        guard let update = policy.move(offset: offset, translation: scroll.panGestureRecognizer.translation(in: scroll).y) else {
+            return
+        }
         ownsPull = ownsPull || update.pullRatio > 0
         adjusting = true
         defer { adjusting = false }
         if ownsPull { state.updateResponsiveNativePull(max(0, -offset)) }
-        state.updateResponsivePull(update.pullRatio, overstretch: update.overstretch)
+        state.updateResponsivePull(update.pullRatio, contentPull: update.contentPull)
         if let expanded = update.expandedChanged {
             state.setResponsiveExpanded(expanded)
             HomeInteractionHaptics.recently(expanded: expanded)
             HomeInteractionHaptics.prepareRecently()
         }
-        if let corrected = update.scrollOffset,
-           abs(scroll.contentOffset.y - (corrected - scroll.adjustedContentInset.top)) > 0.01 {
-            scroll.contentOffset.y = corrected - scroll.adjustedContentInset.top
-            state.updateResponsiveNativePull(max(0, -corrected))
-        }
+        // Never write contentOffset from its own KVO callback during a pan.
+        // Keep UIKit's gesture/momentum uninterrupted; reconcile consumed travel
+        // once on release, together with removing its visual compensation.
+        state.updateResponsiveScrollCompensation(update.scrollOffset.map { offset - $0 } ?? 0)
     }
 
     private func release() {
@@ -169,14 +185,30 @@ struct HomeRecentlyScrollBridge: UIViewRepresentable {
         active = false
         let state = HomeRecentlyPullState.shared
         guard ownsPull || state.responsivePullRatio > 0 else { return }
+        let compensation = state.responsiveScrollCompensation
+        if compensation > 0, let scroll {
+            adjusting = true
+            state.updateResponsiveScrollCompensation(0)
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x,
+                                           y: scroll.contentOffset.y - compensation), animated: false)
+            adjusting = false
+        }
+        let nativePull = scroll.map { max(0, -($0.contentOffset.y + $0.adjustedContentInset.top)) } ?? 0
+        nativeReturn = HomeRecentlyNativeReturn(contentPull: state.responsiveContentPull, nativePull: nativePull)
+        state.updateResponsiveNativePull(nativePull)
+        state.updateResponsiveContentPull(nativeReturn!.value(nativePull: nativePull))
         state.finishResponsivePull()
     }
 
     func reset() {
         active = false
         ownsPull = false
+        nativeReturn = nil
         policy = HomeRecentlyResponsivePullPolicy()
         HomeRecentlyPullState.shared.stopResponsiveSettling()
+        HomeRecentlyPullState.shared.updateResponsiveContentPull(0)
+        HomeRecentlyPullState.shared.updateResponsiveNativePull(0)
+        HomeRecentlyPullState.shared.updateResponsiveScrollCompensation(0)
     }
 
     func detach() {

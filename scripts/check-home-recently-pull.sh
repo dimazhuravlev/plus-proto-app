@@ -14,3 +14,9 @@ swiftc -swift-version 5 -module-cache-path "$check_dir/module-cache" \
     "$repo_dir/Tests/HomeRecentlyResponsivePullChecks.swift" \
     -o "$check_dir/responsive-checks"
 "$check_dir/responsive-checks"
+
+swiftc -swift-version 5 -module-cache-path "$check_dir/module-cache" \
+    "$repo_dir/PlusProtoApp/State/HomeRecentlyMode.swift" \
+    "$repo_dir/Tests/HomeRecentlyModeChecks.swift" \
+    -o "$check_dir/mode-checks"
+"$check_dir/mode-checks"

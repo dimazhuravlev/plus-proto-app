@@ -10,7 +10,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUNDLE = "com.dima.PlusProtoAppTwo"
 SCENARIOS = ["petal-wave", "petal-press", "petal-breath", "swipe-flat",
-             "swipe-depth", "like", "dislike", "save", "glow", "petal-pause",
+             "swipe-depth", "like", "dislike", "save", "petal-pause",
              "neighbor", "entrance", "toast", "intro", "open"]
 
 

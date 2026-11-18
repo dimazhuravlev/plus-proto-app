@@ -520,7 +520,8 @@ struct PersonScreen: View {
             artist: track.artist,
             album: track.album,
             artistPicture: photo,
-            isExplicit: track.isExplicit
+            isExplicit: track.isExplicit,
+            containerID: track.albumID.map { "album:" + $0 }
         )))
     }
 }

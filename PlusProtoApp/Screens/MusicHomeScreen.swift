@@ -141,7 +141,9 @@ private struct MyVibeHero: View {
             titleAndPlay
             Spacer(minLength: 0)
             // Барабан — видимой частью над action bar, остальное уходит под нижний хром.
-            VibeDrum { _ in play() }
+            VibeDrum { station in
+                actionBar.openMyVibe(station: station)
+            }
                 .frame(height: VibeDrumLayout.visibleHeight + actionBarTop, alignment: .top)
         }
     }

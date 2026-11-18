@@ -5,7 +5,7 @@ import SwiftUI
 extension HomeQuickAccess {
     var bookSlotWidth: CGFloat { 54 }
 
-    func captioned<Content: View>(_ title: String, width: CGFloat, leading: CGFloat = 0, centered: Bool = false, @ViewBuilder content: () -> Content) -> some View {
+    func captioned<Content: View>(_ title: String, width: CGFloat, leading: CGFloat = 0, centered: Bool = false, subtitle: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         let baseWidth = width
         let contentWidth = width * HomeQuickAccessLayout.scale
         let width = contentWidth
@@ -14,9 +14,9 @@ extension HomeQuickAccess {
         let textScale = HomeQuickAccessLayout.scale / 1.4
         return content().frame(width: contentWidth, height: HomeQuickAccessLayout.height)
         .scaleEffect(1 + 0.025 * HomeQuickAccessLayout.mediaPulse, anchor: .bottom)
-        .offset(y: HomeQuickAccessLayout.mediaStretch * 0.2 - HomeQuickAccessLayout.mediaPulse * 2)
+        .offset(y: -HomeQuickAccessLayout.mediaPulse * 2)
         .overlay(alignment: .bottom) {
-            FadingCardCaption(title: title, width: standard ? fullWidth : width - leading, leadingAligned: standard && !centered)
+            FadingCardCaption(title: title, width: standard ? fullWidth : width - leading, leadingAligned: standard && !centered, subtitle: subtitle)
                 .scaleEffect(standard ? textScale : 1, anchor: centered ? .top : .topLeading)
                 .frame(width: width - leading, height: HomeQuickAccessLayout.captionHeight, alignment: centered ? .top : .topLeading)
                 .padding(.leading, leading)
@@ -46,13 +46,13 @@ extension HomeQuickAccess {
             .overlay { shape.strokeBorder(Color.white.opacity(0.08), lineWidth: 0.66) }
     }
 
-    func movieThumbnail(_ source: ArtworkSource, movieID: String, progress: Double?) -> some View {
+    func movieThumbnail(_ source: ArtworkSource, movieID: String, progress: Double?, time: TimeInterval? = nil) -> some View {
         let scale = HomeQuickAccessLayout.scale
-        let width = 138 * scale
+        let width = HomeQuickAccessLayout.movieWidth * scale
         let trackWidth = width - 8
         let shape = RoundedRectangle(cornerRadius: HomeQuickAccessLayout.isStandard ? HomeQuickAccessLayout.cornerRadius : 6 * scale, style: .continuous)
         return Color.clear
-            .frame(width: width, height: 78 * scale)
+            .frame(width: width, height: HomeQuickAccessLayout.height)
             .overlay { RecentMovieFrame(movieID: movieID, source: source).id(movieID) }
             .overlay(alignment: .bottomLeading) {
                 Capsule().fill(Color.white.opacity(0.1))
@@ -62,6 +62,18 @@ extension HomeQuickAccess {
                         }
                         .frame(width: trackWidth, height: 3)
                         .padding(4)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let time, time.isFinite, time >= 0 {
+                    Text(RecentlyMovieTime.label(time))
+                        .plusText(.textXS, .semibold)
+                        .foregroundStyle(Color.fillFour)
+                        .shadow(color: .black.opacity(0.7), radius: 3)
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 4 + 3 + 4)
+                        .opacity(HomeQuickAccessLayout.labelProgress)
+                        .accessibilityHidden(HomeQuickAccessLayout.labelProgress == 0)
+                }
             }
             .clipShape(shape)
             .overlay { shape.strokeBorder(Color.white.opacity(0.08), lineWidth: 0.66) }

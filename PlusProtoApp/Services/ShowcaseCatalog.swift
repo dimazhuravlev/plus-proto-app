@@ -55,9 +55,14 @@ final class ShowcaseCatalog {
     private var upcomingPromo: [String: Task<Replacement?, Never>] = [:]
     /// Убранные из промо по ✕ — новые айтемы их не возвращают.
     private var dismissedPromoIDs: Set<String> = []
+    /// Снимок на обновление: лайк не убирает карточку посреди текущего просмотра.
+    private var reactedPromoIDs = PromoReactionHistory.shared.reactedIDs
+    private var savedPromoEntityIDs = Set(CollectionStore.shared.items.filter { $0.favoritedAt != nil }.map(\.id))
     /// После первого ✕ карусель редактирует показанный круг напрямую. Повторная
     /// сборка HQ-пулов сдвигала все карточки того же вида уже после схлопывания.
     private var editedHomePromo: [ShowcaseBlock]?
+    /// Stable reserve for filling the home carousel after reaction filtering.
+    private var homePromoReserve: [ShowcaseBlock] = []
     /// Они же по произведению (`workKey`): не возвращаются и другим изданием.
     private var dismissedPromoWorks: Set<String> = []
     /// Карточки ленты, убранные ✕ целиком («Продолжить читать»): их слот схлопывается,
@@ -114,7 +119,10 @@ final class ShowcaseCatalog {
         applyMovieBlocks(featuredTint: nil, rng: &rng, preload: false)
 
         // Промо — ещё фильмы из того же запаса, не те, что в ленте.
-        let promoPool = featurable.filter { $0.id != pickedFeatured?.id && $0.id != pickedWatching?.id }
+        let promoPool = featurable.filter {
+            $0.id != pickedFeatured?.id && $0.id != pickedWatching?.id
+                && isPromoEligible(id: "movie-kp-\($0.id)", collectionID: "movie:kp-\($0.id)")
+        }
         var promoPicked = Array(withStill(promoPool).shuffled(using: &rng).prefix(ShowcaseSeeds.promoPerKind))
         for movie in promoPool.shuffled(using: &rng)
         where promoPicked.count < ShowcaseSeeds.promoPerKind && !promoPicked.contains(where: { $0.id == movie.id }) {
@@ -122,6 +130,9 @@ final class ShowcaseCatalog {
         }
         promoMovies = promoPicked.compactMap { movie in
             Self.promoMovieBlock(movie, still: snapshot.stills[String(movie.id)]?.first)
+        }
+        homePromoReserve = HomePromoReserve.local + featurable.shuffled(using: &rng).compactMap { movie in
+            Self.promoMovieBlock(movie, still: snapshot.stills[String(movie.id)]?.first).map(ShowcaseBlock.movie)
         }
         publishPromo(preload: false)
     }
@@ -134,8 +145,18 @@ final class ShowcaseCatalog {
     }
 
     func reload() async {
+        reactedPromoIDs = PromoReactionHistory.shared.reactedIDs
+        savedPromoEntityIDs = Set(CollectionStore.shared.items.filter { $0.favoritedAt != nil }.map(\.id))
+        editedHomePromo = nil
+        upcomingPromo.values.forEach { $0.cancel() }
+        upcomingPromo.removeAll()
         isLoading = true
         failures = []
+        promoMovies.removeAll { !isPromoEligible(.movie($0)) }
+        promoAlbums.removeAll { !isPromoEligible(.album($0)) }
+        promoBooks.removeAll { !isPromoEligible(.book($0)) }
+        promoArtistCards.removeAll { !isPromoEligible(.artist($0)) }
+        promoVibes.removeAll { !isPromoEligible(.vibe($0)) }
 
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "debugResetMoviePool") {
@@ -201,6 +222,10 @@ final class ShowcaseCatalog {
             // на будущие запуски. Выбор на экране при этом не трогаем: фильм уже
             // показан, и подменять его на глазах нельзя.
             await loadStills()
+        }
+
+        if promoMovies.count < ShowcaseSeeds.promoPerKind {
+            promoMovies = await pickPromoMovies(using: &rng)
         }
 
         guard let featured = pickedFeatured else {
@@ -287,9 +312,9 @@ final class ShowcaseCatalog {
     private func pickPromoMovies(using rng: inout SeededGenerator) async -> [MovieBlock] {
         let excluded = Set([pickedFeatured?.id, pickedWatching?.id].compactMap { $0 })
         let withStill = await MoviePool.shared.unseenWithStill(where: Self.isFeaturable)
-            .filter { !excluded.contains($0.id) }
+            .filter { !excluded.contains($0.id) && isPromoEligible(id: "movie-kp-\($0.id)", collectionID: "movie:kp-\($0.id)") }
         let any = await MoviePool.shared.unseen(where: Self.isFeaturable)
-            .filter { !excluded.contains($0.id) }
+            .filter { !excluded.contains($0.id) && isPromoEligible(id: "movie-kp-\($0.id)", collectionID: "movie:kp-\($0.id)") }
         var picked = Array(withStill.shuffled(using: &rng).prefix(ShowcaseSeeds.promoPerKind))
         for movie in any.shuffled(using: &rng)
         where picked.count < ShowcaseSeeds.promoPerKind && !picked.contains(where: { $0.id == movie.id }) {
@@ -478,7 +503,10 @@ final class ShowcaseCatalog {
             guard let photo = await Self.artistPhoto(id: candidate.id, known: briefs),
                   let albums = try? await DeezerService.shared.artistAlbums(id: candidate.id)
             else { continue }
-            let fitting = albums.filter { Self.isShowcaseAlbum($0) && $0.id != picked.album.id }
+            let fitting = albums.filter {
+                Self.isShowcaseAlbum($0) && $0.id != picked.album.id
+                    && isPromoEligible(id: "album-dz-\($0.id)", collectionID: "album:dz-\($0.id)")
+            }
             if let album = fitting.randomElement(using: &rng),
                let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
                 promo.append(AlbumBlock(
@@ -503,7 +531,7 @@ final class ShowcaseCatalog {
         let artists = circle.compactMap { briefs[$0.id] }
             .filter { $0.hasPhoto && !albumArtists.contains($0.id) }
             .compactMap(Self.promoArtistBlock)
-            .filter { !dismissedPromoIDs.contains(ShowcaseBlock.artist($0).id) }
+            .filter { isPromoEligible(.artist($0)) }
         promoArtistCards = Array(artists.prefix(ShowcaseSeeds.promoPerKind))
         promoArtistPool = Array(artists.dropFirst(ShowcaseSeeds.promoPerKind))
         pickPromoArtistWave()
@@ -556,7 +584,10 @@ final class ShowcaseCatalog {
                 found.append(book)
                 fitting.removeFirst()
             }
-            spare += fitting.filter { book in !spare.contains(where: { $0.id == book.id }) }
+            spare += fitting.filter { book in
+                !spare.contains(where: { $0.id == book.id })
+                    && isPromoEligible(id: "book-gb-\(book.id)", collectionID: "book:gb-\(book.id)")
+            }
         }
         // Одна книга — один раз: ни второго издания, ни книги, что уже стоит в ленте.
         var takenWorks = Set(found.map { Self.bookKey($0.title) })
@@ -725,6 +756,19 @@ final class ShowcaseCatalog {
     /// из набора и не из убранных раньше. `nil` — пополнить нечем: моковая лента без
     /// сети или сеть не ответила вовремя.
     func preparePromoAddition(for removed: ShowcaseBlock) async -> ShowcasePromoAddition? {
+        let shown = homePromo(feed.promo)
+        let shownIDs = Set(shown.map(\.id))
+        let candidates = homePromoReserve.map(PromoCuratedContent.projected).filter {
+            !shownIDs.contains($0.id) && isPromoEligible($0) && $0.id != removed.id
+        }
+        let ordered = candidates.filter { $0.homePromoKind == removed.homePromoKind }
+            + candidates.filter { $0.homePromoKind != removed.homePromoKind }
+        if let next = ordered.first(where: { candidate in
+            PromoCuratedContent.uniqueArtists(shown + [candidate]).contains { $0.id == candidate.id }
+        }) {
+            await ArtworkLoader.shared.prewarm(next.artworks)
+            return ShowcasePromoAddition(block: next, commit: {})
+        }
         // Станция сети не трогает — её замена есть и на моковой ленте.
         let isStation = if case .vibe(let vibe) = removed { vibe.station != nil } else { false }
         guard hasLoaded || isStation, removed.isReplaceable else { return nil }
@@ -736,21 +780,38 @@ final class ShowcaseCatalog {
             let fresh = Task { await self.makePromoReplacement(for: removed) }
             replacement = await PromoTaskDeadline.value(of: fresh, within: Self.replacementTimeout)
         }
-        guard let replacement, !isPromoTaken(replacement.block.id),
+        guard let replacement, !isPromoTaken(replacement.block.id), isPromoEligible(replacement.block),
               PromoCuratedContent.uniqueArtists(homePromo(feed.promo) + [replacement.block]).last?.id == replacement.block.id
         else { return nil }
         return ShowcasePromoAddition(block: replacement.block, commit: replacement.commit)
     }
 
     private func isPromoTaken(_ id: String) -> Bool {
-        dismissedPromoIDs.contains(id) || feed.promo.contains { $0.id == id }
+        dismissedPromoIDs.contains(id) || PromoReactionHistory.shared.reactedIDs.contains(id)
+            || feed.promo.contains { $0.id == id }
             || homePromo(feed.promo).contains { $0.id == id }
+    }
+
+    private func isPromoEligible(id: String, collectionID: String?) -> Bool {
+        !reactedPromoIDs.contains(id) && !dismissedPromoIDs.contains(id)
+            && !(collectionID.map { savedPromoEntityIDs.contains($0) } ?? false)
+    }
+
+    private func isPromoEligible(_ block: ShowcaseBlock) -> Bool {
+        switch block {
+        case .reading, .watching: return false
+        case .movie(let movie) where movie.resume != nil: return false
+        case .book(let book) where book.resume != nil: return false
+        default: return isPromoEligible(id: block.id, collectionID: block.recommendationCollectionItem?.id)
+        }
     }
 
     /// Подмена только промоблока: recently, полки и книги сохраняют исходные данные.
     func homePromo(_ original: [ShowcaseBlock]) -> [ShowcaseBlock] {
         if let editedHomePromo { return editedHomePromo }
-        let blocks = PromoCuratedContent.compose(original, excluding: dismissedPromoIDs)
+        let artistWaves = promoArtistPool.map { ShowcaseBlock.vibe(.promo(.artistWave($0))) }
+        let blocks = PromoCuratedContent.compose(original + homePromoReserve + artistWaves, excluding: dismissedPromoIDs.union(reactedPromoIDs),
+                                                isEligible: isPromoEligible)
         return PromoCuratedContent.uniqueArtists(blocks)
     }
 
@@ -785,6 +846,7 @@ final class ShowcaseCatalog {
         let shown = homePromo(feed.promo)
         let shownIndex = shown.firstIndex { $0.id == id }
         let shownOriginal = shownIndex.map { shown[$0] }
+        let undoReaction = PromoReactionHistory.shared.record(.dislike, for: id)
         let shownBeforeIDs = shownIndex.map { shown.prefix($0).reversed().map(\.id) } ?? []
         let shownAfterIDs = shownIndex.map { shown.dropFirst($0 + 1).map(\.id) } ?? []
         let originalIndex = feed.promo.firstIndex { $0.id == id }
@@ -809,6 +871,7 @@ final class ShowcaseCatalog {
         feed = ShowcaseFeed(promo: feed.promo.filter { $0.id != id }, blocks: feed.blocks)
         return { [weak self] in
             guard let self else { return }
+            undoReaction()
             if !wasDismissed { self.dismissedPromoIDs.remove(id) }
             if let work, !wasWorkDismissed { self.dismissedPromoWorks.remove(work) }
             if let original, !self.feed.promo.contains(where: { $0.id == id }) {
@@ -840,8 +903,6 @@ final class ShowcaseCatalog {
         case .reading, .watching: nil
         }
         if let replacement {
-            // Капля станции — растр на цвет: считается здесь, а не на первом кадре показа.
-            PromoStationPetal.prewarm([replacement.block])
             await ArtworkLoader.shared.prewarm(replacement.block.artworks)
         }
         return replacement
@@ -857,7 +918,9 @@ final class ShowcaseCatalog {
     private func pickPromoStation() {
         guard promoVibes.isEmpty else { return }
         var rng = ShowcaseRotation.generator(salt: ShowcaseRotation.Salt.promoStation)
-        let stations = VibePromoStation.all.shuffled(using: &rng).prefix(ShowcaseSeeds.promoPerKind - 1)
+        let stations = VibePromoStation.all.shuffled(using: &rng)
+            .filter { isPromoEligible(.vibe(.promo($0))) }
+            .prefix(ShowcaseSeeds.promoPerKind - 1)
         guard !stations.isEmpty else { return }
         var vibes: [VibeBlock] = stations.map { .promo($0) }
         if let wave = Self.mockArtistWave {
@@ -883,7 +946,9 @@ final class ShowcaseCatalog {
     private func pickPromoArtistWave() {
         guard let mock = Self.mockArtistWave,
               let index = promoVibes.firstIndex(where: { $0.id == mock.id }),
-              let artist = promoArtistPool.last(where: { !isPromoTaken(Self.artistWaveID($0)) })
+              let artist = promoArtistPool.last(where: {
+                  !isPromoTaken(Self.artistWaveID($0)) && isPromoEligible(.vibe(.promo(.artistWave($0))))
+              })
         else { return }
         promoArtistPool.removeAll { $0.id == artist.id }
         promoVibes[index] = .promo(.artistWave(artist))
@@ -909,6 +974,7 @@ final class ShowcaseCatalog {
         }
         guard let next = promoArtistPool.last(where: {
             !taken.contains($0.id) && !isPromoTaken(Self.artistWaveID($0))
+                && isPromoEligible(.vibe(.promo(.artistWave($0))))
         }) else { return nil }
         return Replacement(block: .vibe(.promo(.artistWave(next)))) { [weak self] in
             self?.promoArtistPool.removeAll { $0.id == next.id }
@@ -923,7 +989,7 @@ final class ShowcaseCatalog {
         let start = current.station.flatMap { all.firstIndex(of: $0) } ?? -1
         for step in 1...all.count {
             let block = ShowcaseBlock.vibe(.promo(all[(start + step) % all.count]))
-            if !isPromoTaken(block.id) { return Replacement(block: block) }
+            if !isPromoTaken(block.id), isPromoEligible(block) { return Replacement(block: block) }
         }
         return nil
     }
@@ -988,9 +1054,13 @@ final class ShowcaseCatalog {
             if let id = Int(shown.id.dropFirst("kp-".count)) { excluded.insert(id) }
         }
         let withStill = await MoviePool.shared.unseenWithStill(where: Self.isFeaturable)
-            .filter { !excluded.contains($0.id) }
+            .filter {
+                !excluded.contains($0.id) && (!forPromo || isPromoEligible(id: "movie-kp-\($0.id)", collectionID: "movie:kp-\($0.id)"))
+            }
         let any = await MoviePool.shared.unseen(where: Self.isFeaturable)
-            .filter { !excluded.contains($0.id) }
+            .filter {
+                !excluded.contains($0.id) && (!forPromo || isPromoEligible(id: "movie-kp-\($0.id)", collectionID: "movie:kp-\($0.id)"))
+            }
         guard let movie = withStill.randomElement(using: &rng) ?? any.randomElement(using: &rng),
               let poster = movie.poster?.url(size: .medium)
         else { return nil }
@@ -1030,6 +1100,7 @@ final class ShowcaseCatalog {
             let fitting = albums.filter {
                 Self.isShowcaseAlbum($0) && "dz-\($0.id)" != current.id && !shownAlbumIDs.contains("dz-\($0.id)")
                     && !works.contains(Self.albumKey(artist: seed.name, album: $0.title))
+                    && (!forPromo || isPromoEligible(id: "album-dz-\($0.id)", collectionID: "album:dz-\($0.id)"))
             }
             if let album = fitting.randomElement(using: &rng),
                let cover = (album.coverXl ?? album.coverBig)?.deezerUpscaled {
@@ -1063,7 +1134,7 @@ final class ShowcaseCatalog {
             }
         }
         guard let next = promoArtistPool.first(where: {
-            !taken.contains($0.id) && !dismissedPromoIDs.contains(ShowcaseBlock.artist($0).id)
+            !taken.contains($0.id) && isPromoEligible(.artist($0))
         }) else { return nil }
         return Replacement(block: .artist(next)) { [weak self] in
             self?.promoArtistPool.removeAll { $0.id == next.id }
@@ -1101,6 +1172,7 @@ final class ShowcaseCatalog {
             let fitting = volumes.filter {
                 Self.isShowcaseBook($0, by: seed.author) && !excluded.contains($0.id)
                     && !works.contains(Self.bookKey($0.title))
+                    && (!forPromo || isPromoEligible(id: "book-gb-\($0.id)", collectionID: "book:gb-\($0.id)"))
             }
             guard let book = fitting.randomElement(using: &rng), let cover = book.coverURL else { continue }
             if forPromo, let block = Self.promoBookBlock(book) {

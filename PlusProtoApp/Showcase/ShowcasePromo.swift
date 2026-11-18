@@ -13,7 +13,7 @@ private struct PromoSlotID: Hashable {
 /// Промо-слайдер «Главной» (макет `2532:26618`, задача пользователя 2026-10-08):
 /// фильмы, альбомы и книги по кругу, в обе стороны, по одной карточке за свайп. С задачи 64
 /// в круге и исполнители (круг с фото, имя под ним) и станция «Моей волны» (с задачи 65 —
-/// лепесток, `PromoStationCard`): тап по исполнителю — его экран, по станции — включает волну.
+/// лепесток, `PromoWaveCard`): тап по исполнителю — его экран, по станции — включает волну.
 ///
 /// Центральная крупнее соседей, у каждой карточки свой случайный наклон; масштаб, наклон
 /// и опускание соседей идут за сдвигом ленты кадр в кадр (`visualEffect`, без стейта).
@@ -31,7 +31,6 @@ private struct PromoSlotID: Hashable {
 /// в Recently и исходных витринах.
 struct ShowcasePromo: View {
     let items: [ShowcaseBlock]
-    private let fixedPreview: Bool
     let zoom: Namespace.ID
     /// Айтем на месте — на сессию (`ShowcaseCatalog.promoIndex`): экран таба
     /// размонтируется на каждом переключении, а слайдер открывается там, где оставили.
@@ -75,10 +74,11 @@ struct ShowcasePromo: View {
     @State private var petalWave = PromoPetalWave<PromoSlotID>(duration: LiftWaveConfig.duration)
     @State private var playingPetalID: String?
     @State private var hasInteracted = false
+    @State private var bookAspects: [String: CGFloat] = [:]
     @State private var swipeHaptics = PromoSwipeHapticPolicy()
 
-    init(items: [ShowcaseBlock], zoom: Namespace.ID, savedIndex: Binding<Int>, fixedPreview: Bool = false) {
-        self.fixedPreview = fixedPreview
+    init(items: [ShowcaseBlock], zoom: Namespace.ID, savedIndex: Binding<Int>) {
+        HomePromoVerification.record(items)
         self.items = items
         self.zoom = zoom
         _savedIndex = savedIndex
@@ -155,6 +155,11 @@ struct ShowcasePromo: View {
     }
     #endif
 
+    private func bookAspect(_ item: ShowcaseBlock) -> CGFloat? {
+        guard case .book(let book) = item else { return nil }
+        return bookAspects[item.id] ?? BookCoverAspect.cached(of: book.cover).flatMap { $0 }
+    }
+
     private var count: Int { items.count }
 
     /// Номер места центральной карточки в ряду копий. Хранится ключом слота (`pageID`),
@@ -185,7 +190,7 @@ struct ShowcasePromo: View {
     /// Набор как он есть сейчас — в отложенных шагах ✕ и в замыканиях задач: `items`
     /// там с того прохода, на котором их создали. Тот же состав, что у `items`
     /// (`composed`): обложки рекомендаций без карточек «Продолжить».
-    private var liveItems: [ShowcaseBlock] { fixedPreview ? items : Self.composed(catalog.homePromo(catalog.feed.promo)) }
+    private var liveItems: [ShowcaseBlock] { Self.composed(catalog.homePromo(catalog.feed.promo)) }
 
     /// Промо содержит рекомендации с обложками и описаниями.
     /// Продолженное потребление остаётся в Recently и исходной витрине.
@@ -244,9 +249,9 @@ struct ShowcasePromo: View {
         let glowItems = glowItems(around: currentPage)
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                // Ряд — не ленивый: в ленивом перескок на среднюю копию кадр рисовал позицию
-                // на шаг левее, по оценке, — мелькала прежняя карточка (кадр 2026-10-08),
-                // а ушедшие за экран слоты держали прежний айтем. Слотов не больше 18.
+                // Keep exact slots for wrap-around and scroll targets. Only nearby
+                // slots render artwork: 30 recommendations × 3 copies must not
+                // lay out 90 full cards during every vertical pull on the home feed.
                 ZStack(alignment: .topLeading) {
                     // Persistent layers share the card row's scroll geometry.
                     // Opacity is evaluated by visualEffect DURING the drag, with no
@@ -254,7 +259,12 @@ struct ShowcasePromo: View {
                     HStack(spacing: 0) {
                         ForEach(Array(slots.enumerated()), id: \.element) { index, _ in
                             let shift = removal.map { index > $0 ? collapse : 0 } ?? 0
-                            PromoSwipeGlow(item: items[index % max(count, 1)], shift: shift, rasters: scroll.rasters)
+                            if abs(CGFloat(index - scroll.nearestSlot) - shift) <= 2
+                                || abs(index - (currentPage ?? scroll.nearestSlot)) <= 2 {
+                                PromoSwipeGlow(item: items[index % max(count, 1)], shift: shift, rasters: scroll.rasters)
+                            } else {
+                                Color.clear.frame(width: Layout.step, height: Layout.height)
+                            }
                         }
                     }
                     .compositingGroup()
@@ -267,7 +277,6 @@ struct ShowcasePromo: View {
                         }
                     }
                     .scrollTargetLayout()
-                    .opacity(HomePresentationSettings.shared.promoGlowInspectionEnabled ? MixMotionCapture.glowForegroundOpacity : 1)
                 }
             }
             // По одной карточке за свайп, как бы ни бросили.
@@ -285,24 +294,31 @@ struct ShowcasePromo: View {
                 // Полоса привязана к экрану, не к наклоняемому/масштабируемому слоту.
                 ZStack(alignment: .top) {
                     ForEach(items, id: \.id) { item in
-                        if let text = item.promoSynopsis {
+                        if glowItems.contains(where: { $0.id == item.id }), let text = item.promoSynopsis {
                             let coverHeight = item.homePromoKind == .book
-                                ? Layout.book.geometry.frameSize(coverWidth: Layout.book.coverWidth).height
+                                ? Layout.book(aspect: bookAspect(item)).geometry.coverHeight
                                 : Layout.poster.height
-                            let textWidth = min(300, PlusMetrics.screenWidth - 48)
+                            let textWidth = Layout.synopsisWidth
                             PromoSynopsis(text: text, availableWidth: textWidth)
                                 .showcaseSwappable()
                                 .modifier(PromoReveal(isShown: revealed == item.id,
                                                       hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .top))
                                 .zoomSourceCaption(item.entityRoute)
-                                .offset(y: Layout.cardCenterY + coverHeight / 2 + 16)
+                                .offset(y: Layout.cardCenterY + coverHeight / 2 + Layout.synopsisGap)
                                 .environment(feedback.state(for: item.id))
                         }
                     }
                 }
                 .frame(width: PlusMetrics.screenWidth - 48, height: 48, alignment: .top)
-                .opacity(HomePresentationSettings.shared.promoGlowInspectionEnabled ? MixMotionCapture.glowForegroundOpacity : 1)
                 .allowsHitTesting(false)
+            }
+            .task(id: items.map(\.id)) {
+                for item in items {
+                    guard case .book(let book) = item else { continue }
+                    let aspect = await BookCoverAspect.load(of: book.cover)
+                    guard !Task.isCancelled else { return }
+                    bookAspects[item.id] = aspect
+                }
             }
             .onScrollGeometryChange(for: CGFloat.self) { [step = Layout.step] geometry in
                 (geometry.contentOffset.x + geometry.contentInsets.leading) / step
@@ -508,12 +524,16 @@ struct ShowcasePromo: View {
         // Доступность зависит от дискретного окна, а не от каждого дробного кадра скролла.
         let isVisible = abs(CGFloat(index - scroll.nearestSlot) - shift) <= CGFloat(visibleCount / 2)
         return ZStack(alignment: .top) {
-            card(item, slotIndex: index, currentPage: currentPage, visibleCount: visibleCount, isShown: isShown)
+            if abs(CGFloat(index - scroll.nearestSlot) - shift) <= CGFloat(visibleCount / 2 + 2)
+                || abs(index - (currentPage ?? scroll.nearestSlot)) <= visibleCount / 2 + 2 {
+                card(item, slotIndex: index, currentPage: currentPage, visibleCount: visibleCount, isShown: isShown)
+                .offset(y: item.homePromoKind == .station
+                        ? Layout.geometry.wave.centeringOffset : 0)
                 .frame(height: Layout.carouselHeight)
                 .modifier(PromoCardMotion(look: look, kind: item.homePromoKind, slotIndex: index, spacing: spacing,
                                           collapsedSpacing: collapsedSpacing, removal: removal, collapse: collapse,
                                           visibleCount: visibleCount))
-                .offset(y: item.homePromoKind == .station ? 24 : 0)
+            }
         }
         .frame(width: Layout.step, height: Layout.height, alignment: .top)
         // Центральная — поверх соседей, как в макете: в ряду правый сосед ложился
@@ -543,12 +563,12 @@ struct ShowcasePromo: View {
         let waveOrigin = pulse?.origin ?? .zero
         return Button { tap(item, slotIndex: slotIndex, isCurrent: isCurrent) } label: {
             // Смена по ✕ (`showcaseSwappable`) — внутри лица: у станции она на слоях
-            // по отдельности (`PromoStationCard`).
-            PromoCardFace(item: item, breathing: playingPetalID == item.id
+            // по отдельности (`PromoWaveCard`).
+            PromoCardFace(item: item, bookAspect: bookAspect(item), breathing: playingPetalID == item.id
                           && abs(slotIndex - (currentPage ?? slotIndex)) <= visibleCount / 2
                           && actionBar.isMusicPlaying && MyVibeTracks.isVibe(actionBar.music?.id),
                           depthEnabled: depthEnabled, waveEnabled: waveEnabled,
-                          waveTrigger: pulse?.trigger ?? 0, waveOrigin: waveOrigin)
+                          waveTrigger: pulse?.trigger ?? 0, waveOrigin: waveOrigin, showsCaption: isShown)
         }
         .buttonStyle(PressScaleButtonStyle(pressedScale: PressMotion.cardScale))
         .modifier(MixCaptureTarget(name: item.id + ":card:\(slotIndex)"))
@@ -556,13 +576,28 @@ struct ShowcasePromo: View {
             SpatialTapGesture().onEnded { tap in
                 petalWave.recordTouch(tap.location, at: slotID, time: ProcessInfo.processInfo.systemUptime)
             },
-            including: waveEnabled && petalLayout && isCurrent && !fixedPreview ? .all : .subviews
+            including: waveEnabled && petalLayout && isCurrent ? .all : .subviews
         )
         // Источник зума — у каждой копии, но адрес экрана — только у центральной:
         // повторы того же айтема источником не становятся. Без `if`: смена ветки
         // пересоздавала карточку посреди свайпа, и она моргала.
         .matchedTransitionSource(id: zoomID(item, slotIndex: slotIndex, isCurrent: isCurrent), in: zoom)
         .accessibilityLabel(item.promoAccessibilityLabel)
+        .background(alignment: .bottomLeading) {
+            if case .album(let album) = item {
+                let textLeading = album.artistPicture == nil ? 0 : Layout.albumAvatar + Layout.albumCaptionSpacing
+                let textWidth = Layout.albumCaptionWidth - textLeading - Layout.albumCaptionTrailing
+                Image("promoWaveV2Shadow").resizable()
+                    .frame(width: 240, height: 148)
+                    .offset(x: Layout.albumCaptionLeading + textLeading + textWidth / 2 - 120,
+                            y: Layout.albumCaptionGap + Layout.albumAvatar / 2 + 74)
+                    .showcaseSwappable()
+                    .modifier(PromoReveal(isShown: isShown, hiddenScale: ShowcasePromoMotion.pairHiddenScale, anchor: .center))
+                    .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.captionDepth, alignment: .bottomLeading)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay(alignment: .topLeading) {
             if case .album = item {
                 PromoAlbumBadge(feedback: feedback.state(for: item.id))
@@ -579,11 +614,10 @@ struct ShowcasePromo: View {
             // Пара — у центральной и соседей: стеклянных кнопок у всех 18 слотов не
             // держим. Сосед в окне — чтобы пара ушедшей с центра догасла, а не пропала.
             // У карточки «Продолжить» пары нет — на её месте кнопка (ниже).
-            if !petalLayout, item.promoResume == nil, abs(slotIndex - (currentPage ?? slotIndex)) <= 1 {
+            if item.promoResume == nil, abs(slotIndex - (currentPage ?? slotIndex)) <= 1 {
                 ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true,
                                      usesSaveReaction: settings.promoSaveV2Enabled, recommendation: item)
                     .zoomSourceCaption(captionRoute)
-                    .allowsHitTesting(!fixedPreview)
                     .modifier(PromoReveal(
                         isShown: isShown,
                         hiddenScale: ShowcasePromoMotion.pairHiddenScale,
@@ -594,37 +628,6 @@ struct ShowcasePromo: View {
                     .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.pairDepth, alignment: pair.alignment)
             }
         }
-        .overlay(alignment: .topLeading) {
-            if petalLayout, case .vibe(let vibe) = item {
-                VStack(spacing: 24) {
-                    PromoStationCaption(title: vibe.title, station: vibe.promoStation)
-                        .zoomSourceCaption(captionRoute)
-                        .showcaseSwappable()
-                        .allowsHitTesting(false)
-                        .modifier(LiftWave(
-                            trigger: pulse?.trigger ?? 0,
-                            origin: CGPoint(x: waveOrigin.x - Layout.stationCaptionOrigin.x,
-                                            y: waveOrigin.y - Layout.stationCaptionOrigin.y),
-                            enabled: waveEnabled,
-                            overflow: PromoStationLayout.captionWaveOverflow(scale: Layout.stationScale),
-                            scale: Layout.stationScale
-                        ))
-                    if abs(slotIndex - (currentPage ?? slotIndex)) <= 1 {
-                        ShowcaseFeedbackPair(introEligible: isShown, usesIntroDesign: true, usesPromoReactions: true,
-                                             usesSaveReaction: settings.promoSaveV2Enabled, recommendation: item)
-                            .zoomSourceCaption(captionRoute)
-                            .allowsHitTesting(!fixedPreview)
-                            .modifier(PromoReveal(isShown: isShown,
-                                                  hiddenScale: ShowcasePromoMotion.pairHiddenScale,
-                                                  anchor: .center))
-                    }
-                }
-                .frame(width: Layout.stationCaptionWidth)
-                .offset(x: Layout.stationCaptionOrigin.x, y: Layout.stationCaptionOrigin.y)
-                .promoLayer(enabled: depthEnabled, depth: PromoDepthMotion.captionDepth, alignment: .topLeading)
-            }
-        }
-
         .overlay(alignment: .bottomLeading) {
             if case .album(let album) = item {
                 // Высота подписи — ровно аватар: от низа обложки она сдвинута на зазор
@@ -668,7 +671,7 @@ struct ShowcasePromo: View {
     /// «Продолжить» фильма — экран тайтла, плеер только по кнопке (правка пользователя
     /// 2026-10-14); «Продолжить» книги — сразу читалка, как его кнопка.
     private func tap(_ item: ShowcaseBlock, slotIndex: Int, isCurrent: Bool) {
-        guard removal == nil, !(fixedPreview && isCurrent) else { return }
+        guard removal == nil else { return }
         tapHaptic()
         guard isCurrent else {
             PromoIntroSession.shared.interact()
@@ -681,10 +684,7 @@ struct ShowcasePromo: View {
         }
         if case .vibe(let vibe) = item {
             playingPetalID = item.id
-            actionBar.openMyVibe()
-            if let station = VibeStation.all.first(where: { $0.title == vibe.promoStation.name }) {
-                actionBar.recently.record(.station(station.id))
-            }
+            actionBar.openMyVibe(station: vibe.promoStation.recentlyStation)
             if HomePresentationSettings.shared.promoLiftWaveEnabled, actionBar.isMusicPlaying {
                 let slot = PromoSlotID(copy: slotIndex / max(count, 1), item: item.id)
                 // Кнопка и SpatialTapGesture могут завершиться в любом порядке.
@@ -693,8 +693,8 @@ struct ShowcasePromo: View {
                     await Task.yield()
                     guard HomePresentationSettings.shared.promoLiftWaveEnabled,
                           actionBar.isMusicPlaying, pageID == slot else { return }
-                    let size = Layout.stationSize
-                    petalWave.launch(at: slot, fallbackOrigin: CGPoint(x: size.width / 2, y: size.height / 2),
+                    let origin = Layout.geometry.wave.artCenter
+                    petalWave.launch(at: slot, fallbackOrigin: origin,
                                      time: ProcessInfo.processInfo.systemUptime)
                 }
             }
@@ -1077,14 +1077,16 @@ private struct PromoCardLook {
 
 /// Обложка айтема в своих пропорциях: постер фильма 2:3, квадрат альбома, книга
 /// в проекции (`BookFigure`, как в сетке выдачи), круг исполнителя размером с альбом,
-/// лепесток станции (`PromoStationCard`, кадр 208×249).
+/// станция с реакциями над картинкой (`PromoWaveCard`).
 private struct PromoCardFace: View {
     let item: ShowcaseBlock
+    var bookAspect: CGFloat?
     var breathing = false
     var depthEnabled = false
     var waveEnabled = false
     var waveTrigger = 0
     var waveOrigin = CGPoint.zero
+    var showsCaption = true
 
     private typealias Layout = ShowcasePromoLayout
 
@@ -1098,7 +1100,7 @@ private struct PromoCardFace: View {
             cover(album.cover, size: square, radius: Layout.albumRadius)
                 .showcaseSwappable()
         case .book(let book):
-            let figure = Layout.book
+            let figure = Layout.book(aspect: bookAspect)
             BookFigure(geometry: figure.geometry, coverWidth: figure.coverWidth) {
                 SkeletonArtwork(source: book.cover)
             }
@@ -1107,13 +1109,12 @@ private struct PromoCardFace: View {
             cover(artist.picture, size: CGSize(width: Layout.artist, height: Layout.artist), shape: Circle())
                 .showcaseSwappable()
         case .vibe(let vibe):
-            // Смена по ✕ — на слоях лепестка по отдельности, внутри него.
-            PromoStationCard(title: vibe.title, station: vibe.promoStation,
-                             showsCaption: false, breathing: breathing,
-                             artDepth: depthEnabled ? PromoDepthMotion.artDepth : 0)
+            PromoWaveCard(station: vibe.promoStation, breathing: breathing,
+                            artDepth: depthEnabled ? PromoDepthMotion.artDepth : 0,
+                            showsCaption: showsCaption)
                 .modifier(LiftWave(trigger: waveTrigger, origin: waveOrigin, enabled: waveEnabled,
-                                   overflow: PromoStationLayout.waveOverflow(scale: Layout.stationScale),
-                                   scale: Layout.stationScale))
+                                   overflow: EdgeInsets(top: 24, leading: 24, bottom: 24, trailing: 24),
+                                   scale: Layout.geometry.wave.artSize / 160))
         case .reading, .watching:
             EmptyView()
         }
@@ -1141,9 +1142,10 @@ private struct PromoCenteredCaption: View {
         Text(title)
             .plusText(.textM, .medium)
             .foregroundStyle(Color.fillOne)
-            .lineLimit(1)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
             .multilineTextAlignment(.center)
-            .frame(width: ShowcasePromoLayout.artist)
+            .frame(width: 208)
             .allowsHitTesting(false)
     }
 }
@@ -1197,6 +1199,7 @@ private struct PromoAlbumCaption: View {
                     .foregroundStyle(Color.fillSubtitle)
             }
             .lineLimit(1)
+
         }
         .padding(.trailing, Layout.albumCaptionTrailing)
     }
@@ -1205,7 +1208,7 @@ private struct PromoAlbumCaption: View {
 /// Пара и подпись альбома появляются прозрачностью и лёгким масштабом от своего края
 /// (правка пользователя 2026-10-10: подпись — как пара).
 /// С «уменьшением движения» — одной прозрачностью.
-private struct PromoReveal: ViewModifier {
+struct PromoReveal: ViewModifier {
     let isShown: Bool
     var hiddenScale: CGFloat = 1
     var anchor: UnitPoint = .center
@@ -1241,15 +1244,10 @@ private struct PromoPairPlacement {
                 anchor: .trailing
             )
         case .artist:
-            // От центра круга; проявляется от своей середины.
-            self.init(alignment: .center, offset: Layout.artistPairOffset, anchor: .center, rotation: Layout.artistPairAngle)
+            // Реакции стоят у верхнего правого края без касательного поворота.
+            self.init(alignment: .topTrailing, offset: CGSize(width: -8, height: 0), anchor: .topTrailing)
         case .vibe:
-            let origin = PromoStationLayout.pairOrigin
-            self.init(
-                alignment: .topLeading,
-                offset: CGSize(width: origin.x * Layout.stationScale, height: origin.y * Layout.stationScale),
-                anchor: .center
-            )
+            self.init(alignment: .topTrailing, offset: .zero, anchor: .trailing)
         case .movie:
             self.init(alignment: .topTrailing, offset: CGSize(width: -8, height: -PlusMetrics.circleButton / 2), anchor: .topTrailing)
         case .book:
@@ -1283,8 +1281,6 @@ private struct PromoSwipeGlow: View {
     var body: some View {
         let step = ShowcasePromoLayout.step
         let canvas = PromoCardGlowRaster.canvas(item)
-        let drop: CGFloat = item.homePromoKind == .station
-            ? 24 : 0
         ZStack {
             if let image = PromoCardGlowRaster.cached(item) {
                 Image(uiImage: image).resizable()
@@ -1292,7 +1288,7 @@ private struct PromoSwipeGlow: View {
             }
         }
         .frame(width: step, height: ShowcasePromoLayout.height, alignment: .top)
-        .offset(y: ShowcasePromoLayout.cardCenterY - canvas.height / 2 + drop)
+        .offset(y: ShowcasePromoLayout.cardCenterY - canvas.height / 2)
         .visualEffect { content, proxy in
             let position = ShowcasePromoLayout.position(of: proxy, step: step)
             let weight = max(0, 1 - abs(position - shift))

@@ -45,6 +45,8 @@ final class ShowcaseFeedbackState {
     var isDone = false
     /// Пара погасла после ✓
     var isPairHidden = false
+    /// Remove the controls only after the receipt hold and its fade have finished.
+    var isPairRemoved = false
     /// Развёрнутая подпись реакции скрывает бадж альбома на той же карточке.
     var isIntroExpanded = false
     /// Отладочные нажатия ✕ и ✓ (`-debugShowcaseDismiss`, `-debugShowcaseDone`):
@@ -183,8 +185,16 @@ struct ShowcaseFeedbackPair: View {
     private var introExpanded: Bool { state?.isIntroExpanded ?? false }
     private var savesRecommendation: Bool { usesPromoReactions && usesSaveReaction }
     private var savedItem: CollectionItem? { recommendation?.recommendationCollectionItem }
+    private var usesStationBorder: Bool {
+        recommendation?.homePromoKind == .station
+    }
     private var isSaved: Bool {
         usesPromoReactions && (savedItem.map { CollectionStore.shared.isFavorite($0.id) } ?? false)
+    }
+    private var isFeedbackHidden: Bool {
+        PromoFeedbackAppearance.isHidden(saved: isSaved, completed: state?.isDone ?? false,
+                                         pairHidden: state?.isPairHidden ?? false,
+                                         contentHidden: state?.isContentHidden ?? false)
     }
 
     private var canShowIntro: Bool {
@@ -195,7 +205,9 @@ struct ShowcaseFeedbackPair: View {
 
     var body: some View {
         Group {
-            if !isSaved { feedback }
+            if !(state?.isPairRemoved ?? false), !isSaved || (state?.isDone ?? false) {
+                feedback
+            }
         }
     }
 
@@ -205,7 +217,7 @@ struct ShowcaseFeedbackPair: View {
                 Button(action: dismiss) {
                     Image(collectionIconStyle == .plus ? "iconCross" : "promoDislike").renderingMode(.template).resizable()
                         .frame(width: 20, height: 20).foregroundStyle(Color.fillOne)
-                        .frame(width: 40, height: 40).modifier(PromoIntroSurface())
+                        .frame(width: 40, height: 40).modifier(PromoIntroSurface(showsBorder: usesStationBorder))
                 }
                 .buttonStyle(PressScaleButtonStyle())
                 .accessibilityLabel("Не рекомендовать")
@@ -218,13 +230,13 @@ struct ShowcaseFeedbackPair: View {
                 .modifier(MixCaptureTarget(name: (recommendation?.id ?? "") + ":like"))
         }
         .modifier(ShowcaseHideEffect(
-            isHidden: isSaved || (state?.isPairHidden ?? false) || (state?.isContentHidden ?? false),
+            isHidden: isFeedbackHidden,
             scale: (state?.isPairHidden ?? false)
                 ? ShowcaseFeedbackMotion.hiddenPairScale
                 : ShowcaseFeedbackMotion.hiddenContentScale
         ))
         .allowsHitTesting(!isSaved && !(state?.isSwapping ?? false) && !(state?.isDone ?? false))
-        .accessibilityHidden(isSaved || (state?.isPairHidden ?? false))
+        .accessibilityHidden(isFeedbackHidden)
         .onChange(of: state?.debugDismisses) { dismiss() }
         .onChange(of: state?.debugDones) { done() }
         .onChange(of: PromoIntroSession.shared.hasInteracted) { _, interacted in
@@ -267,11 +279,13 @@ struct ShowcaseFeedbackPair: View {
             if usesPromoReactions {
                 Button(action: done) {
                     PromoIntroDoneFace(expanded: introExpanded, isDone: isDone || isSaved,
+                                       usesPurpleSelection: HomePresentationSettings.shared.promoPurpleFeedbackEnabled,
+                                       showsSecondaryBorder: usesStationBorder,
                                        title: savesRecommendation ? "Сохранить" : "Рекомендовать",
                                        icon: collectionIconStyle == .plus ? "iconAdd" :
                                         (savesRecommendation ? (recommendation?.promoSaveIcon ?? "promoSaveMusic") : "promoLike"))
                 }
-                .buttonStyle(PressScaleButtonStyle())
+                .buttonStyle(PromoFeedbackPressStyle())
                 .accessibilityIdentifier("promo-feedback-save-" + (recommendation?.id ?? ""))
                 .accessibilityLabel(savesRecommendation ? (isSaved ? "Сохранено в «Моё»" : "Сохранить в «Моё»") : "Рекомендовать")
                 .accessibilityAddTraits(isDone || isSaved ? .isSelected : [])
@@ -319,6 +333,9 @@ struct ShowcaseFeedbackPair: View {
         state.isDone = true
         // Сущности в паре нет — вместо обложки иконка, кнопки нет.
         if usesPromoReactions {
+            if let recommendation {
+                PromoReactionHistory.shared.record(.like, for: recommendation.id)
+            }
             let duration: Duration = ProcessInfo.processInfo.arguments.contains("-debugPromoRecommendationToast") ? .seconds(30) : .seconds(4)
             if savesRecommendation, let item = savedItem {
                 ToastCenter.shared.saveRecommendation(item, title: PromoFeedbackCopy.saved(), duration: duration)
@@ -332,6 +349,8 @@ struct ShowcaseFeedbackPair: View {
         Task { @MainActor in
             try? await Task.sleep(for: ShowcaseFeedbackMotion.doneHold)
             withAnimation(ShowcaseFeedbackMotion.pairOut) { state.isPairHidden = true }
+            try? await Task.sleep(for: .milliseconds(300))
+            state.isPairRemoved = true
         }
     }
 }
