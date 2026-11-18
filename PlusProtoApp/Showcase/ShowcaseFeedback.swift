@@ -334,7 +334,7 @@ struct ShowcaseFeedbackPair: View {
         // Сущности в паре нет — вместо обложки иконка, кнопки нет.
         if usesPromoReactions {
             if let recommendation {
-                PromoReactionHistory.shared.record(.like, for: recommendation.id)
+                _ = PromoReactionHistory.shared.record(.like, for: recommendation.id)
             }
             let duration: Duration = ProcessInfo.processInfo.arguments.contains("-debugPromoRecommendationToast") ? .seconds(30) : .seconds(4)
             if savesRecommendation, let item = savedItem {
