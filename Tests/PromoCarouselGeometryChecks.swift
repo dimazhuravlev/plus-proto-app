@@ -1,34 +1,56 @@
 import Foundation
 
 @main enum PromoCarouselGeometryChecks {
+    static func close(_ actual: CGFloat, _ expected: CGFloat) {
+        precondition(abs(actual - expected) < 0.000001, "Expected \(expected), got \(actual)")
+    }
     static func main() {
         for width: CGFloat in [320, 375, 390, 402, 414, 440, 528, 744, 834, 1024, 2048] {
-            let g = PromoCarouselGeometry(viewportWidth: width, movieWidth: 240, bookWidth: 240,
-                                          albumWidth: 272, artistWidth: 272, stationWidth: 272)
-            let neighbourScale = PromoViewportSizing.scale(viewportWidth: width)
-            let mainScale = min(max(min(width, 528) / 440, 0.6), 1.2)
-            for (card, base, neighbour, ratio, cap): (PromoCarouselGeometry.Card, CGFloat, CGFloat, CGFloat, CGFloat) in [
-                (g.movie, 240, 162, 1.5, 288), (g.book, 240, 162, 1.5, 288),
-                (g.album, 272, 169, 1, 326), (g.artist, 272, 169, 1, 326),
-                (g.station, 272, 160, 249.0 / 208, 326)
-            ] {
-                precondition(card.main.width == min((base * mainScale).rounded(), cap))
-                precondition(card.main.height == (card.main.width * ratio).rounded())
-                precondition(card.neighbour.width == (neighbour * neighbourScale).rounded())
-                precondition(card.neighbour.height == (card.neighbour.width * ratio).rounded())
-                precondition(g.centerY >= card.main.height / 2)
-                precondition(g.height >= g.centerY + card.main.height / 2 + 80)
-            }
-            precondition(g.step == (180 * neighbourScale).rounded())
-            precondition(g.neighbourDrop(additionalOffset: 32) == (43 * neighbourScale).rounded())
-            if width == 440 { precondition(g.movie.main.width == 240 && g.album.main.width == 272) }
+            let g = PromoCarouselGeometry(viewportWidth: width)
+            let t = min(1, max(0, (width - 375) / 153))
+            close(g.movie.main.width, 205 + 35 * t)
+            close(g.book.main.width, g.movie.main.width)
+            close(g.album.main.width, 232 + 40 * t)
+            close(g.artist.main.width, g.album.main.width)
+            close(g.wave.artSize, g.artist.main.width)
+            precondition(g.avatar == 40 && g.captionGap == 8 && g.artistCaptionGap == 8)
+            precondition(g.cornerRadius == 18 && g.wave.captionWidth == 220)
+            close(g.wave.frame.height, g.wave.artSize + 118)
+            close(g.wave.frame.height - g.wave.captionTop, 62)
+            close(g.wave.artOrigin.y - 40, 8)
+            close(g.wave.captionTop - g.wave.artOrigin.y - g.wave.artSize, 8)
+            precondition(g.centerY >= (g.book.main.width / 0.6).rounded() / 2)
+            precondition(g.centerY + (g.book.main.width / 0.6).rounded() / 2 + 60 <= g.height)
+            close(g.wave.artSize * g.station.neighbour.width / g.station.main.width, g.artist.neighbour.width)
+            let top = g.centerY - g.station.main.height / 2 + g.wave.centeringOffset
+            close(top + g.wave.artCenter.y, g.centerY)
+            close(g.neighbourDrop(additionalOffset: 32), (43 * g.scale).rounded())
+            if width <= 375 { precondition(g.movie.main.width == 205 && g.movie.main.height == 308) }
+            if width >= 528 { precondition(g.movie.main.width == 240 && g.movie.main.height == 360) }
+            let custom = PromoCarouselGeometry(viewportWidth: width,
+                movieWidths: .init(minimum: 190, maximum: 260),
+                bookWidths: .init(minimum: 210, maximum: 250),
+                albumWidths: .init(minimum: 200, maximum: 300),
+                artistWidths: .init(minimum: 160, maximum: 240))
+            close(custom.movie.main.width, 190 + 70 * t)
+            close(custom.book.main.width, 210 + 40 * t)
+            close(custom.album.main.width, 200 + 100 * t)
+            close(custom.artist.main.width, 160 + 80 * t)
+            close(custom.wave.artSize, custom.artist.main.width)
+            precondition(custom.artist.neighbour.width <= custom.artist.main.width)
+            precondition(custom.avatar == 40 && custom.captionGap == 8)
         }
-        for width: CGFloat in [375, 440, 744, 834, 2048] {
-            let g = PromoCarouselGeometry(viewportWidth: width, movieWidth: 400, bookWidth: 400,
-                                          albumWidth: 400, artistWidth: 400, stationWidth: 400)
-            precondition(g.movie.main.width <= 288 && g.book.main.width <= 288)
-            precondition(g.album.main.width <= 326 && g.artist.main.width <= 326 && g.station.main.width <= 326)
+        let shadow = PromoWaveShadowGeometry.self
+        precondition(shadow.width == 284 && shadow.height == 148 && shadow.captionOffset == -50)
+        let smallArtist = shadow.alphas(artist: true, viewportWidth: 375)
+        let largeArtist = shadow.alphas(artist: true, viewportWidth: 528)
+        let genre = shadow.alphas(artist: false, viewportWidth: 375)
+        for i in 0..<16 {
+            close(CGFloat(smallArtist[i]), 0.4 * (1 - CGFloat(i) / 15))
+            close(CGFloat(largeArtist[i]), CGFloat(genre[i]))
         }
+        close(CGFloat(genre[0] * shadow.opacity), 0.396)
+        close(CGFloat(genre[15]), 0)
         for count in [5, 7] {
             for tick in 0...1000 {
                 let center = CGFloat(tick) / 1000
@@ -36,6 +58,6 @@ import Foundation
                 precondition(visible.count <= count)
             }
         }
-        print("PASS: widths use 440pt reference; neighbours and step preserved; bounded media and five/seven-slot visibility")
+        print("PASS: default Figma endpoints, editable ranges, fixed controls/text, wave centering, exact shadow gradients and slot visibility")
     }
 }

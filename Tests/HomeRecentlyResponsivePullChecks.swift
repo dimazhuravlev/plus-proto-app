@@ -5,6 +5,17 @@ import Foundation
         precondition(abs(actual - expected) < 0.000001, "Expected \(expected), got \(actual)")
     }
     static func main() {
+        close(HomeRecentlyResponsivePullPolicy.reservationProgress(0), 0)
+        close(HomeRecentlyResponsivePullPolicy.reservationProgress(0.72), 1)
+        close(HomeRecentlyResponsivePullPolicy.reservationProgress(1), 1)
+        for ratio: CGFloat in [0.1, 0.5, 0.68, 0.72, 1] {
+            let height = 68 + 80 * HomeRecentlyResponsivePullPolicy.reservationProgress(ratio)
+            // Even while the thumbnail spring advances, the same finger position owns the same row height.
+            for step in 0...100 {
+                let media = 68 + 44 * HomeRecentlyResponsivePullPolicy.visualProgress(pullRatio: ratio, expansion: CGFloat(step) / 100)
+                precondition(media <= height + 0.000001)
+            }
+        }
         let travel: CGFloat = 64
         let gain = HomeRecentlyResponsivePullPolicy.pullGain
         var pull = HomeRecentlyResponsivePullPolicy()
@@ -41,6 +52,19 @@ import Foundation
         precondition(boundary.move(offset: 32, translation: -32) == nil)
         precondition(boundary.move(offset: -64, translation: 200) == nil)
 
+        // Pull open and reverse before lifting the finger. UIKit can cross the
+        // activation boundary in one fast callback while the panel is still open.
+        var rapid = HomeRecentlyResponsivePullPolicy()
+        rapid.begin(offset: 0, pullRatio: 0, expanded: false)
+        precondition(rapid.move(offset: -70, translation: 140)!.expandedChanged == true)
+        guard let rapidFold = rapid.move(offset: 60, translation: -40) else {
+            fatalError("An acquired pull must keep updating across the activation boundary")
+        }
+        close(rapidFold.pullRatio, 0)
+        precondition(rapidFold.expandedChanged == false)
+        precondition(rapid.move(offset: -70, translation: 140)!.expandedChanged == true,
+                     "Repeated reversals within one gesture must not freeze the panel")
+
         var closing = HomeRecentlyResponsivePullPolicy()
         closing.begin(offset: 12, pullRatio: 1, expanded: true)
         let partial = closing.move(offset: 30, translation: -32 / gain)!
@@ -62,8 +86,39 @@ import Foundation
         over.begin(offset: 0, pullRatio: 1, expanded: true)
         let small = over.move(offset: -10, translation: 20)!
         let large = over.move(offset: -100, translation: 2000)!
-        precondition(small.overstretch > 0 && large.overstretch < 6 && small.overstretch < large.overstretch)
+        precondition(small.contentPull > 8 && large.contentPull < 120 && small.contentPull < large.contentPull)
         close(large.pullRatio, 1)
+        close(small.pullRatio, 1)
+        close(HomeRecentlyResponsivePullPolicy.visualProgress(pullRatio: large.pullRatio, expansion: 1), 1)
+        let released = HomeRecentlyNativeReturn(contentPull: large.contentPull, nativePull: 180)
+        close(released.value(nativePull: 180), large.contentPull)
+        close(released.value(nativePull: 0), 0)
+        close(released.value(nativePull: -1), 0)
+        // No timer may replace the scroll view's velocity-dependent spring.
+        for native: CGFloat in [180, 160, 115, 64, 24, 5, 0.3] {
+            close(released.value(nativePull: native) / large.contentPull, native / 180)
+        }
+        close(HomeRecentlyNativeReturn(contentPull: 20, nativePull: 0).value(nativePull: 0), 0)
+        let returning = released.value(nativePull: 115)
+        var regrab = HomeRecentlyResponsivePullPolicy()
+        regrab.begin(offset: -returning, pullRatio: 1, expanded: true, contentPull: returning)
+        let stationary = regrab.move(offset: -returning, translation: 0)!
+        close(stationary.contentPull, returning)
+        precondition(stationary.scrollOffset == nil, "Regrab must not reset native bounce mid-overpull")
+        let less = regrab.move(offset: -returning, translation: -10)!
+        precondition(less.contentPull > 0 && less.contentPull < returning)
+        close(less.pullRatio, 1)
+        let folded = regrab.move(offset: 0, translation: -1000)!
+        close(folded.contentPull, 0)
+        close(folded.pullRatio, 0)
+        precondition(folded.expandedChanged == false)
+        var continuous = HomeRecentlyResponsivePullPolicy()
+        continuous.begin(offset: 0, pullRatio: 0, expanded: false)
+        let full = continuous.move(offset: -64, translation: travel / gain)!
+        close(full.pullRatio, 1); close(full.contentPull, 0)
+        let extra = continuous.move(offset: -80, translation: travel / gain + 20)!
+        close(extra.contentPull, small.contentPull)
+        close(extra.pullRatio, 1)
         for progress: CGFloat in [0, 0.108, 0.3, 0.68, 1] {
             let alpha = HomeRecentlyResponsivePullPolicy.captionOpacity(progress)
             precondition(alpha >= 0 && alpha <= 1)

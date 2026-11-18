@@ -3,13 +3,6 @@ import SwiftUI
 /// Сценарии снимают настоящую карусель через те же обработчики, что и её кнопки.
 /// В обычном запуске ничего не выполняется; параметры съёмки не сохраняются.
 @MainActor enum MixMotionCapture {
-    static var glowForegroundOpacity: Double {
-        #if DEBUG
-        if scenario == "glow" { return 0 }
-        #endif
-        return 0.1
-    }
-
     #if DEBUG
     static func preparePreferences() {
         let defaults = UserDefaults.standard
@@ -19,7 +12,7 @@ import SwiftUI
         if ProcessInfo.processInfo.arguments.contains("-debugMixRestore") {
             if let data = try? Data(contentsOf: url),
                var saved = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] {
-                saved["localHomeDev.hideRecently"] = true
+                saved["localHomeDev.recentlyMode"] = HomeRecentlyMode.hidden.rawValue
                 defaults.setPersistentDomain(saved, forName: domain)
                 try? FileManager.default.removeItem(at: url)
             }
@@ -90,7 +83,7 @@ import SwiftUI
         MixCaptureTouches.shared.isRecording = true
         try? await Task.sleep(for: .milliseconds(650))
         switch scenario {
-        case "swipe-flat", "swipe-depth", "glow", "captions":
+        case "swipe-flat", "swipe-depth", "captions":
             for _ in 0..<3 {
                 await perform("next")
                 try? await Task.sleep(for: .milliseconds(1250))

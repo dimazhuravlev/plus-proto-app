@@ -7,7 +7,7 @@ import UIKit
     private static let recentlyGenerator = UIImpactFeedbackGenerator(style: .soft)
     static func prepareRecently() { recentlyGenerator.prepare() }
     static func recently(expanded: Bool) {
-        recentlyGenerator.impactOccurred(intensity: expanded ? 0.55 : 0.3)
+        recentlyGenerator.impactOccurred(intensity: expanded ? 0.75 : 0.5)
     }
 
     private static let carouselGenerator = UIImpactFeedbackGenerator(style: .soft)

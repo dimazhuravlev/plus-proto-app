@@ -44,7 +44,7 @@ struct LiftWave: ViewModifier {
     var enabled = true
     /// Поле под рисунок за кадром вью
     var overflow = EdgeInsets()
-    /// Масштаб чисел `LiftWaveConfig` — у лепестка промо `stationScale`
+    /// Масштаб чисел `LiftWaveConfig` — у станции промо — отношение размера картинки к 160 pt
     var scale: CGFloat = 1
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

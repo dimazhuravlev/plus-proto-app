@@ -3,6 +3,14 @@ import SwiftUI
 /// Локальные оригиналы с CDN Яндекс Музыки / Кинопоиска.
 /// Источники и фактические размеры — docs/PROMO_ARTWORK_SOURCES.md.
 enum PromoCuratedContent {
+    static let carouselCount = 30
+
+    static func projected(_ block: ShowcaseBlock) -> ShowcaseBlock {
+        if case .movie(let movie) = block, movie.title.lowercased() == "идеальные дни", movie.resume == nil {
+            return .movie(PromoEditorialContent.replacementMovie)
+        }
+        return block
+    }
     static let movies: [ShowcaseBlock] = [
         movie(4540126, "Дюна: Часть вторая", "Пол Атрейдес объединяется с фрименами и выбирает между любовью и судьбой целой вселенной."),
         movie(589290, "Бегущий по лезвию 2049", "Офицер Кей раскрывает тайну, способную изменить будущее людей и репликантов."),
@@ -27,7 +35,7 @@ enum PromoCuratedContent {
         ArtistBlock(id: 11052788, name: "Монеточка", picture: .asset("promoHQMonetochkaArtist")),
     ]
 
-    static let waveArtist = ArtistBlock(id: 173022587, name: "Musia Totibadze", picture: .asset("promoHQMusiaArtist"))
+    static let waveArtists = [artists[1], artists[2], artists[0]]
 
     private static func movie(_ id: Int, _ title: String, _ synopsis: String) -> ShowcaseBlock {
         let poster = ArtworkSource.asset("promoHQMovie\(id)")
@@ -37,37 +45,46 @@ enum PromoCuratedContent {
                                  caption: synopsis, captionTint: .clear, synopsis: synopsis))
     }
 
-    static func compose(_ original: [ShowcaseBlock], excluding dismissed: Set<String>) -> [ShowcaseBlock] {
+    static func compose(_ original: [ShowcaseBlock], excluding dismissed: Set<String>,
+                        isEligible: (ShowcaseBlock) -> Bool = { _ in true }) -> [ShowcaseBlock] {
         // Проекция применяется до фильтра исключений: дизлайк и отмена работают
         // с тем же id, который видит карусель, даже при повторной сборке каталога.
-        let original = original.map { block -> ShowcaseBlock in
-            if case .movie(let movie) = block, movie.title.lowercased() == "идеальные дни", movie.resume == nil {
-                return .movie(PromoEditorialContent.replacementMovie)
-            }
-            return block
-        }
+        let original = original.map(projected)
         func pool(_ fresh: [ShowcaseBlock], _ kind: HomePromoKind) -> [ShowcaseBlock] {
-            let remaining = fresh.filter { !dismissed.contains($0.id) }
+            let remaining = fresh.filter { !dismissed.contains($0.id) && isEligible($0) }
             let ids = Set(remaining.map(\.id))
-            let backups = original.filter { $0.homePromoKind == kind && !ids.contains($0.id) && !dismissed.contains($0.id) }
-            return Array((remaining + backups).prefix(3))
+            let backups = original.filter { $0.homePromoKind == kind && !ids.contains($0.id) && !dismissed.contains($0.id) && isEligible($0) }
+            return remaining + backups
         }
         let movies = pool(Self.movies, .movie)
         let albums = pool(Self.albums, .album)
         let artists = pool(Self.artists.map { .artist($0) }, .artist)
-        let books = original.filter { $0.homePromoKind == .book && !dismissed.contains($0.id) }
-        let vibes = original.filter { $0.homePromoKind == .station && !dismissed.contains($0.id) }.map { item in
-            if case .vibe(let vibe) = item, vibe.promoStation.artist != nil {
-                return ShowcaseBlock.vibe(.promo(.artistWave(Self.waveArtist)))
-            }
-            return item
-        }.filter { !dismissed.contains($0.id) }
+        let books = original.filter { $0.homePromoKind == .book && !dismissed.contains($0.id) && isEligible($0) }
+        let curatedWaves = Self.waveArtists.map { ShowcaseBlock.vibe(.promo(.artistWave($0))) }
+        var vibes = (curatedWaves + original.filter { item in
+            guard case .vibe(let vibe) = item else { return false }
+            return vibe.promoStation.artist?.id != 173022587
+                && vibe.promoStation.id != "medieval-emo"
+        }).filter { !dismissed.contains($0.id) && isEligible($0) }
+        // Reserve the first eligible artist wave before cross-type deduplication.
+        // Otherwise its album/artist card consumes the artist and erases this type.
+        let artistWaveIndex = vibes.firstIndex {
+            if case .vibe(let vibe) = $0 { return vibe.promoStation.artist != nil }
+            return false
+        }
+        let preferredWave = artistWaveIndex.map { vibes.remove(at: $0) }
+        if let preferredWave { vibes.insert(preferredWave, at: 0) }
         let pools = [movies, albums, books, artists, vibes]
         var result: [ShowcaseBlock] = []
         for index in 0..<(pools.map(\.count).max() ?? 0) {
             for pool in pools where index < pool.count { result.append(pool[index]) }
         }
-        return result
+        // Exclusions and cross-type artist deduplication precede the size limit.
+        // The reserve can refill slots lost to previous reactions or saved items.
+        var ids = Set<String>()
+        let distinct = result.filter { ids.insert($0.id).inserted }
+        let allowed = Set(uniqueArtists((preferredWave.map { [$0] } ?? []) + distinct).map(\.id))
+        return Array(distinct.filter { allowed.contains($0.id) }.prefix(carouselCount))
     }
 
     /// Один исполнитель на весь промоблок независимо от формы карточки:

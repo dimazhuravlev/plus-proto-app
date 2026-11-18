@@ -13,7 +13,7 @@ struct ShowcaseScreen: View {
     @Environment(\.stackZoomNamespace) private var stackZoom
     @Namespace private var ownZoom
     private var zoom: Namespace.ID { stackZoom ?? ownZoom }
-    @State private var scrollOffset: CGFloat = 0
+    @State private var scrollState = HomeScrollPresentation()
     @State private var isHomeDevShown = false
 
     #if DEBUG
@@ -24,6 +24,7 @@ struct ShowcaseScreen: View {
 
     var body: some View {
         @Bindable var catalog = catalog
+        @Bindable var scrollState = scrollState
         ZStack {
             Color.surfaceOne.ignoresSafeArea()
             ShowcaseFeedView(
@@ -31,16 +32,15 @@ struct ShowcaseScreen: View {
                 zoom: zoom,
                 prepareReplacement: catalog.prepareReplacement,
                 promoIndex: $catalog.promoIndex,
-                scrollOffset: $scrollOffset
+                scrollOffset: $scrollState.offset
             )
         }
         // Навигация «Главной» — как у сервисных табов: поверх ленты, со своей подложкой.
         .overlay(alignment: .top) {
-            HomeTopNav(scrollOffset: scrollOffset, openDevMenu: { isHomeDevShown = true })
+            HomeScrollingHeader(scrollState: scrollState, openDevMenu: { isHomeDevShown = true })
                 // Header layout must not inherit the carousel's entrance animation.
                 .transaction { $0.animation = nil }
                 .modifier(HomeHeaderAppearance())
-                .opacity(HomePresentationSettings.shared.promoGlowInspectionEnabled ? 0 : 1)
         }
         .overlay {
             if HomeRecentlyTelegramLayout.isEnabled {
@@ -110,6 +110,21 @@ struct ShowcaseScreen: View {
     }
 }
 
+
+/// Scroll geometry only invalidates the header, never the catalogue/feed builder.
+@MainActor @Observable private final class HomeScrollPresentation {
+    var offset: CGFloat = 0
+}
+
+private struct HomeScrollingHeader: View {
+    let scrollState: HomeScrollPresentation
+    let openDevMenu: () -> Void
+
+    var body: some View {
+        HomeTopNav(scrollOffset: max(0, scrollState.offset - HomeRecentlyPullState.shared.responsiveScrollCompensation),
+                   openDevMenu: openDevMenu)
+    }
+}
 
 /// A separate opacity layer keeps the header stationary during the first layout.
 private struct HomeHeaderAppearance: ViewModifier {

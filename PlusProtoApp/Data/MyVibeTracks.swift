@@ -25,8 +25,10 @@ enum MyVibeTracks {
     }
 
     /// Случайный трек волны — не тот, что уже стоит в баре.
-    static func random(excluding id: String? = nil) -> MusicNowPlaying {
-        all.filter { $0.id != id }.randomElement() ?? all[0]
+    static func random(excluding id: String? = nil, station: VibeStation? = nil) -> MusicNowPlaying {
+        var track = all.filter { $0.id != id }.randomElement() ?? all[0]
+        track.vibeStation = station
+        return track
     }
 
     /// Обложка — альбома трека на CDN Deezer, 1000 — под полноэкранный плеер.
@@ -44,20 +46,28 @@ enum MyVibeTracks {
 extension ActionBarState {
     /// Включить «Мою Волну». Волна уже в баре — тот же трек: повторный тап ставит
     /// на паузу и снимает с неё, как у любого трека; иначе — трек волны наугад.
-    func openMyVibe() {
-        recently.record(.myVibe)
-        if let current = music, MyVibeTracks.isVibe(current.id) {
+    func openMyVibe(station: VibeStation? = nil) {
+        if let current = music, MyVibeTracks.isVibe(current.id), current.vibeStation?.id == station?.id {
             open(.music(current))
         } else {
-            open(.music(MyVibeTracks.random()))
+            var track = MyVibeTracks.random(excluding: music?.id)
+            track.vibeStation = station
+            open(.music(track))
         }
     }
 
     /// Главная «Моя волна» — кнопка таба Музыки и плитка ряда ПП: волна заиграла — её плитка
     /// встаёт в начало ряда «Главной» (правка пользователя 2026-10-16). Станции, карточки
-    /// «Главной» и промо зовут `openMyVibe` и ряд не пишут; пауза тоже не пишет.
+    /// «Главной» и промо зовут тот же `openMyVibe`; пауза историю не меняет.
     func openMainVibe() {
         openMyVibe()
-        if isMusicPlaying, MyVibeTracks.isVibe(music?.id) { recently.record(.myVibe) }
+    }
+}
+
+
+extension MusicNowPlaying {
+    var recentItem: RecentItem {
+        guard MyVibeTracks.isVibe(id) else { return .music(self) }
+        return vibeStation.map { .stationSnapshot($0) } ?? .myVibe
     }
 }

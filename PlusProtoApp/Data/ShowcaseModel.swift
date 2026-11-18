@@ -48,12 +48,13 @@ enum ShowcaseBlock: Identifiable {
         case .movie(let b):
             .movie(MovieInProgress(id: b.id, still: b.still, title: b.title))
         case .album(let b):
-            .music(MusicNowPlaying(id: b.id, cover: b.cover, title: b.title, artist: b.subtitle))
+            .music(MusicNowPlaying(id: b.id, cover: b.cover, title: b.title, artist: b.subtitle,
+                                   album: b.subtitle, containerID: "album:" + b.id))
         case .book(let b):
             .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
-        case .vibe:
+        case .vibe(let b):
             // Волна — поток, а не трек: играет настоящий трек её настроения (`MyVibeTracks`).
-            .music(MyVibeTracks.random())
+            .music(MyVibeTracks.random(station: b.station?.recentlyStation))
         case .reading(let b):
             .book(BookInProgress(id: b.id, cover: b.cover, title: b.title))
         case .watching(let b):

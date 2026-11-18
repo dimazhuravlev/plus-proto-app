@@ -26,7 +26,7 @@ extension ShowcaseBlock {
     }
 
     /// Строка под кругом исполнителя. У остальных видов её нет: «Моя волна» и название
-    /// станции — внутри лепестка (`PromoStationCard`).
+    /// станции выводятся самой карточкой (`PromoWaveCard`).
     @MainActor
     var promoCaption: String? {
         switch self {
@@ -43,14 +43,7 @@ extension ShowcaseBlock {
         case .movie(let movie): movie.poster
         case .album(let album): album.cover
         case .book(let book): book.cover
-        // Волна «в стиле артиста» красит фон цветом своей капли, а не фото артиста (правка
-        // пользователя 2026-10-13): источник — растр капли из палитры.
-        case .vibe(let vibe):
-            if case .artist = vibe.promoStation.kind, let index = vibe.promoStation.paletteIndex {
-                .asset("\(PromoStationPetal.backdropPrefix)\(index)")
-            } else {
-                vibe.promoStation.artwork
-            }
+        case .vibe(let vibe): vibe.promoStation.artwork
         case .reading(let reading): reading.cover
         case .watching(let watching): watching.still
         case .artist(let artist): artist.picture

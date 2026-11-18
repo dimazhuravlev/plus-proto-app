@@ -54,9 +54,11 @@ private enum SurveyPreviewLaunch {
     static func claim() -> SurveyPreviewSource? {
         guard !wasClaimed,
               ProcessInfo.processInfo.arguments.contains("-debugSurveySheet") ||
-                ProcessInfo.processInfo.arguments.contains("-debugSurveyTiles")
+                ProcessInfo.processInfo.arguments.contains("-debugSurveyTiles") ||
+                ProcessInfo.processInfo.arguments.contains("-debugSurveyDemo")
         else { return nil }
         wasClaimed = true
+        if ProcessInfo.processInfo.arguments.contains("-debugSurveyDemo") { return .demo }
         return ProcessInfo.processInfo.arguments.contains("-debugSurveyTiles") ? .tiles : .standard
     }
 }

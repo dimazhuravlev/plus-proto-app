@@ -42,7 +42,7 @@ struct SurveyPreviewWebView: UIViewRepresentable {
         // Клавиатура, состояние загрузки и detent не должны перезапускать анкету.
         guard context.coordinator.reloadGeneration != model.reloadGeneration else { return }
         context.coordinator.reloadGeneration = model.reloadGeneration
-        webView.load(URLRequest(url: source.url))
+        webView.load(URLRequest(url: source.url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -172,7 +172,7 @@ struct SurveyPreviewWebView: UIViewRepresentable {
             style.id = styleID;
             document.head.appendChild(style);
         }
-        // Оболочка preview и согласованные Hug-размеры и центрирование плиток.
+        // Оболочка preview, Hug/центрирование плиток и общая подложка длинных шкал.
         // Цвета и состояния контролов формы настраиваются только через JSON;
         // декоративный крестик preview заменяет нативная кнопка закрытия.
         style.textContent = `
@@ -199,6 +199,36 @@ struct SurveyPreviewWebView: UIViewRepresentable {
             /* Строка текста берёт lineHeight плитки из JSON, а не markdown. */
             .tile-options.tile-options_layout_auto > .tile .markdown p {
                 line-height: inherit;
+            }
+            /* Отдельный вариант Отклика для >= 7 значений: общий фон только
+               у числового ряда, а не у подписей. Короткие шкалы остаются прежними. */
+            .scale__options.scale__options_manyOptions {
+                --scale-option-bg: transparent;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 999px;
+                box-sizing: border-box;
+                min-height: 52px;
+                padding: 8px;
+                align-items: center;
+            }
+            .scale__options.scale__options_manyOptions > .scale__option {
+                flex: 1 1 0;
+                min-width: 0;
+                height: 36px;
+            }
+            /* Пресет preview задаёт собственные размеры поверх JSON. Равные
+               доли вмещают и 1–10, и 0–10; выбранное значение сохраняет белый круг. */
+            .scale__options.scale__options_manyOptions .scale__option-label {
+                width: 100% !important;
+                max-width: 36px;
+                aspect-ratio: 1;
+                min-height: 0 !important;
+                line-height: normal !important;
+                font-size: 16px !important;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
             /* Preview фиксирует страницу на 320px. В нативной шторке шириной
                владеет host с собственными боковыми отступами. */
@@ -311,8 +341,25 @@ enum SurveyPreviewSource: String, Identifiable {
     case surveyFive
     case arabic
     case emoji
+    case demo
 
     var id: Self { self }
+
+    /// Порядок выступления; первый опрос обновляется после настройки в кабинете.
+    static let demoOrder: [Self] = [.surveyThree, .surveyFive, .surveyFour, .tiles, .emoji, .arabic]
+
+    var demoTitle: String {
+        switch self {
+        case .standard: "WebView"
+        case .tiles: "Плитки"
+        case .surveyThree: "Опрос 3"
+        case .surveyFour: "Опрос 4"
+        case .surveyFive: "Опрос 5"
+        case .arabic: "На арабском"
+        case .emoji: "С эмодзи"
+        case .demo: "Демонстрация"
+        }
+    }
 
     var url: URL {
         switch self {
@@ -320,7 +367,7 @@ enum SurveyPreviewSource: String, Identifiable {
             URL(string: "https://preview.surveys.yandex.ru/poll/feedback/SSvm9D9Qan7NJMiH3vYJ1L")!
         case .tiles:
             URL(string: "https://preview.surveys.yandex.ru/poll/feedback/2LJqQNXusqradxN9iHK6Pe")!
-        case .surveyThree:
+        case .surveyThree, .demo:
             URL(string: "https://preview.surveys.yandex.ru/poll/feedback/Qd9hwCrVuX5m4s8fyGV7SN")!
         case .surveyFour:
             URL(string: "https://preview.surveys.yandex.ru/poll/feedback/GDXGNPj8gRrPDSYcUgutg5")!

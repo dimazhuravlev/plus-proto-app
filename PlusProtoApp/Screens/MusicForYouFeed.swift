@@ -24,6 +24,7 @@ private struct MusicTile: Identifiable {
     var playable: MusicNowPlaying? = nil
     /// Станция «Моей волны» — тап включает волну.
     var isVibe = false
+    var vibeStation: VibeStation? = nil
     /// «Играет сейчас» — тап раскрывает плеер.
     var opensPlayer = false
 }
@@ -102,7 +103,7 @@ struct MusicForYouFeed: View {
                 ))
             case .artist(let ref):
                 items.append(MusicItem(id: "recent-" + recent.id, shape: .circle, title: ref.title, cover: ref.artwork, route: .artist(ref)))
-            case .movie, .book, .myVibe, .entity, .station:
+            case .movie, .book, .myVibe, .entity, .station, .stationSnapshot:
                 break
             }
         }
@@ -223,7 +224,7 @@ struct MusicForYouFeed: View {
         } else if tile.isVibe {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred(intensity: ShowcaseMotion.tapHapticIntensity)
-            actionBar.openMyVibe()
+            actionBar.openMyVibe(station: tile.vibeStation)
         } else if let route = tile.route {
             navigation.open(route)
         } else if let playable = tile.playable {
@@ -318,12 +319,16 @@ struct MusicForYouFeed: View {
     }
 
     private static func stations(_ stations: [MusicForYouMocks.Station]) -> [MusicTile] {
-        stations.map { station in
+        stations.enumerated().map { index, station in
             MusicTile(
                 id: "station-\(station.title)",
                 image: .asset(station.image),
                 content: .station(label: "Моя волна", title: station.title),
-                isVibe: true
+                isVibe: true,
+                vibeStation: VibeStation(id: "music-" + station.image, title: station.title,
+                    agent: VibePromoStation.all[index % VibePromoStation.all.count].asset ?? "vibeStationPopIndigo",
+                    fillHex: VibePromoStation.all[index % VibePromoStation.all.count].fillHex,
+                    rimHex: VibePromoStation.all[index % VibePromoStation.all.count].rimHex)
             )
         }
     }

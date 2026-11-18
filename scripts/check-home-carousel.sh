@@ -18,9 +18,15 @@ swiftc -swift-version 5 -module-cache-path "$check_dir/module-cache" \
 "$check_dir/deadline"
 swiftc -swift-version 5 -module-cache-path "$check_dir/module-cache" \
     "$repo_dir/PlusProtoApp/Data/PromoCuratedContent.swift" \
+    "$repo_dir/PlusProtoApp/State/PromoReactionHistory.swift" \
     "$repo_dir/Tests/PromoCuratedContentChecks.swift" -o "$check_dir/curated"
 "$check_dir/curated"
 swiftc -swift-version 5 -module-cache-path "$check_dir/module-cache" \
     "$repo_dir/PlusProtoApp/Showcase/PromoPetalWave.swift" \
     "$repo_dir/Tests/PromoPetalWaveChecks.swift" -o "$check_dir/petal-wave"
 "$check_dir/petal-wave"
+swiftc -swift-version 5 -module-cache-path "$check_dir/module-cache" \
+    "$repo_dir/PlusProtoApp/Showcase/PromoFeedbackAppearance.swift" \
+    "$repo_dir/PlusProtoApp/Data/PromoReserveSynopsis.swift" \
+    "$repo_dir/Tests/PromoFeedbackAppearanceChecks.swift" -o "$check_dir/feedback"
+"$check_dir/feedback"

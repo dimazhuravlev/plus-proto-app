@@ -1,7 +1,7 @@
 import Foundation
 
-/// Единственное место расчёта размеров промокарусели. Размеры и отступы округлены
-/// до целых pt; центрирование нечётного размера может дать координату0.5pt.
+/// Current State 19537:59105: между 375 и 528 pt растёт только медиа.
+/// Девменю может изменить границы ширины, не масштабируя текст и контролы.
 struct PromoCarouselGeometry {
     struct Card {
         let main: CGSize
@@ -15,47 +15,46 @@ struct PromoCarouselGeometry {
     let album: Card
     let artist: Card
     let station: Card
+    let wave: PromoWaveGeometry
     let centerY: CGFloat
     let height: CGFloat
     let cornerRadius: CGFloat
     let avatar: CGFloat
     let captionGap: CGFloat
-    let stationCaptionWidth: CGFloat
-    let stationCaptionOrigin: CGPoint
     let artistCaptionGap: CGFloat
 
-    init(viewportWidth: CGFloat, movieWidth: CGFloat, bookWidth: CGFloat,
-         albumWidth: CGFloat, artistWidth: CGFloat, stationWidth: CGFloat) {
+    init(viewportWidth: CGFloat, movieWidths: PromoMediaWidthRange = .poster,
+         bookWidths: PromoMediaWidthRange = .poster, albumWidths: PromoMediaWidthRange = .square,
+         artistWidths: PromoMediaWidthRange = .square) {
         let scale = PromoViewportSizing.scale(viewportWidth: viewportWidth)
         self.scale = scale
-        // Размеры, заданные пользователем для440pt, не являются базой402pt.
-        // Меняем только основные карточки; масштаб соседей и шаг сохраняются.
-        let mainScale = min(max(min(viewportWidth, PromoViewportSizing.maximumMediaViewportWidth) / 440,
-                                PromoViewportSizing.scaleRange.lowerBound), PromoViewportSizing.scaleRange.upperBound)
-        func size(_ width: CGFloat, ratio: CGFloat, factor: CGFloat, maximum: CGFloat) -> CGSize {
-            let width = min((width * factor).rounded(), maximum)
-            return CGSize(width: width, height: (width * ratio).rounded())
+        func card(_ widths: PromoMediaWidthRange, neighbour: CGFloat, ratio: CGFloat = 1) -> Card {
+            let width = widths.width(viewportWidth: viewportWidth)
+            let sideWidth = min(width, (neighbour * scale).rounded())
+            return Card(main: CGSize(width: width, height: (width * ratio).rounded()),
+                        neighbour: CGSize(width: sideWidth, height: (sideWidth * ratio).rounded()))
         }
-        func card(_ width: CGFloat, neighbour: CGFloat, ratio: CGFloat = 1, maximum: CGFloat = PromoViewportSizing.maximumOtherWidth) -> Card {
-            Card(main: size(width, ratio: ratio, factor: mainScale, maximum: maximum),
-                 neighbour: size(neighbour, ratio: ratio, factor: scale, maximum: maximum))
-        }
-        movie = card(movieWidth, neighbour: 162, ratio: 3.0 / 2, maximum: PromoViewportSizing.maximumPosterWidth)
-        book = card(bookWidth, neighbour: 162, ratio: 3.0 / 2, maximum: PromoViewportSizing.maximumPosterWidth)
-        album = card(albumWidth, neighbour: 169)
-        artist = card(artistWidth, neighbour: 169)
-        // Пропорции исходной иллюстрации, а не произвольный коэффициент лейаута.
-        station = card(stationWidth, neighbour: 160, ratio: 249.0 / 208)
-        let stationArtScale = station.main.width / 208
-        stationCaptionWidth = (163 * stationArtScale).rounded()
-        stationCaptionOrigin = CGPoint(x: (22.5 * stationArtScale).rounded(), y: (119 * stationArtScale).rounded())
+        movie = card(movieWidths, neighbour: 162, ratio: 1.5)
+        book = card(bookWidths, neighbour: 162, ratio: 1.5)
+        album = card(albumWidths, neighbour: 169)
+        artist = card(artistWidths, neighbour: 169)
+        wave = PromoWaveGeometry(artSize: artist.main.width)
+        let neighbourScale = artist.neighbour.width / artist.main.width
+        station = Card(main: wave.frame,
+                       neighbour: CGSize(width: wave.frame.width * neighbourScale,
+                                         height: wave.frame.height * neighbourScale))
         step = (180 * scale).rounded()
-        cornerRadius = (16 * scale).rounded()
-        avatar = (40 * scale).rounded()
-        captionGap = (7 * scale).rounded()
-        artistCaptionGap = (captionGap + (avatar - 38) / 2).rounded()
-        let tallestMedia = max(movie.main.height, book.main.height, album.main.height,
-                               artist.main.height, station.main.height)
+        cornerRadius = 18
+        avatar = 40
+        captionGap = 8
+        artistCaptionGap = 8
+        // The station frame includes controls and caption; like album captions these use
+        // the existing outer reserve, not the media height that sets the row center.
+        let stationMediaHeight = wave.artSize
+        // Reserve the tallest supported book, not one example's aspect ratio.
+        let bookHeight = (book.main.width / 0.6).rounded()
+        let tallestMedia = max(movie.main.height, bookHeight, album.main.height,
+                               artist.main.height, stationMediaHeight)
         centerY = max(175 * scale, tallestMedia / 2 + 17 * scale).rounded()
         let tallestWithCaptions = max(tallestMedia, album.main.height + 2 * avatar,
                                       artist.main.height + 2 * artistCaptionGap)
@@ -67,4 +66,63 @@ struct PromoCarouselGeometry {
     func neighbourDrop(additionalOffset: CGFloat) -> CGFloat { scaled(11 + additionalOffset) }
 
     func scaled(_ base: CGFloat) -> CGFloat { (base * scale).rounded() }
+}
+
+/// Figma spacing and captions; artwork shares the ordinary artist card sizing.
+struct PromoWaveGeometry {
+    let captionWidth: CGFloat
+    let artSize: CGFloat
+    let frame: CGSize
+    let captionTop: CGFloat
+    let artOrigin: CGPoint
+
+    var artCenter: CGPoint { CGPoint(x: frame.width / 2, y: artOrigin.y + artSize / 2) }
+    /// Align the picture with other media; controls and caption are asymmetric.
+    var centeringOffset: CGFloat { frame.height / 2 - artCenter.y }
+
+    init(artSize: CGFloat) {
+        self.artSize = artSize
+        captionWidth = 220
+        frame = CGSize(width: max(captionWidth, artSize), height: 118 + artSize)
+        captionTop = 56 + artSize
+        artOrigin = CGPoint(x: (frame.width - artSize) / 2, y: 48)
+    }
+}
+
+
+struct PromoMediaWidthRange {
+    let minimum: CGFloat
+    let maximum: CGFloat
+    static let poster = Self(minimum: 205, maximum: 240)
+    static let square = Self(minimum: 232, maximum: 272)
+
+    static func progress(viewportWidth: CGFloat) -> CGFloat {
+        min(1, max(0, (viewportWidth - 375) / (528 - 375)))
+    }
+
+    func width(viewportWidth: CGFloat) -> CGFloat {
+        minimum + (maximum - minimum) * Self.progress(viewportWidth: viewportWidth)
+    }
+}
+
+/// Exact gradient stops from Current State; the small artist instance has a linear falloff.
+enum PromoWaveShadowGeometry {
+    static let width: CGFloat = 284
+    static let height: CGFloat = 148
+    static let opacity: Double = 0.99
+    static let captionOffset: CGFloat = -50
+    static let smoothAlphas: [Double] = [
+        0.4, 0.3965411186, 0.3857960105, 0.3673360646,
+        0.3410354853, 0.3072900772, 0.2672464550, 0.2229235172,
+        0.1770764887, 0.1327535510, 0.0927099288, 0.0589645319,
+        0.0326639414, 0.0142040001, 0.0034588787, 0
+    ]
+
+    static func alphas(artist: Bool, viewportWidth: CGFloat) -> [Double] {
+        let t = artist ? Double(PromoMediaWidthRange.progress(viewportWidth: viewportWidth)) : 1
+        return smoothAlphas.enumerated().map { index, alpha in
+            let linear = 0.4 * (1 - Double(index) / 15)
+            return linear + (alpha - linear) * t
+        }
+    }
 }

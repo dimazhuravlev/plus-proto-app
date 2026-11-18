@@ -15,7 +15,16 @@ struct CompactVibePetal: View {
 
             .overlay(alignment: .topLeading) {
                 Group {
-                    if fillsContainer, station.photo == nil, let image = RecentlyStationArtwork.image(station.agent) {
+                    if station.hasArtistArtwork, station.id.hasPrefix("artist-wave-") {
+                        PromoArtistWaveArtwork(
+                            artist: ArtistBlock(id: Int(station.id.dropFirst("artist-wave-".count)) ?? 0,
+                                                name: station.title, picture: station.artwork),
+                            paletteIndex: VibePromoStation.palette.firstIndex {
+                                $0.fill == station.fillHex && $0.rim == station.rimHex
+                            } ?? 0)
+                            .scaleEffect(height / 160)
+                            .frame(width: height, height: height)
+                    } else if fillsContainer, !station.hasArtistArtwork, let image = RecentlyStationArtwork.image(station.agent) {
                         Image(uiImage: image).resizable().scaledToFit()
                             .frame(width: height, height: height)
                             .shadow(color: station.fill.opacity(0.28), radius: height * 0.09)
@@ -23,8 +32,6 @@ struct CompactVibePetal: View {
                         Color.clear.frame(width: 72 * s, height: 72 * s)
                             .overlay { ArtworkImage(source: .remote(photo)).scaledToFill() }
                             .clipShape(Circle())
-                    } else if station.agent == "vibeAgentPop" {
-                        Image("vibeAgentPop").resizable().frame(width: 78.4615 * s, height: 78.4615 * s)
                     } else {
                         Image(station.agent).resizable().scaledToFit().frame(width: 72 * s, height: 72 * s)
                     }

@@ -59,22 +59,18 @@ struct ShowcaseFeedView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                VStack(spacing: (HomeQuickAccessLayout.isVisible ? HomeQuickAccessLayout.bottom : 0) * (HomeRecentlyTelegramLayout.isEnabled ? HomeRecentlyPullState.shared.progress : 1)) {
+                VStack(spacing: 0) {
                     if HomeQuickAccessLayout.isVisible {
-                        HomeQuickAccess(feed: feed)
+                        HomeRecentlyFeedSection(feed: feed)
                             .zIndex(Double(feed.blocks.count + 1))
                     }
                     if !feed.promo.isEmpty {
-                        if HomePresentationSettings.shared.promoPairPreviewEnabled {
-                            HomePromoPairPreview(items: ShowcasePromo.composed(catalog.homePromo(feed.promo)), zoom: zoom)
-                        } else {
                         ShowcasePromo(
                             items: ShowcasePromo.composed(catalog.homePromo(feed.promo)),
                             zoom: zoom,
                             savedIndex: $promoIndex
                         )
                         .showcaseAppear()
-                        }
                     }
                 }
                 .padding(.top, ServiceTopNavLayout.topSafeArea + ServiceTopNavLayout.rowHeight + (HomeQuickAccessLayout.isVisible ? HomeQuickAccessLayout.top : 0))
@@ -94,29 +90,31 @@ struct ShowcaseFeedView: View {
                 }
             }
             .frame(width: PlusMetrics.screenWidth)
-            .offset(y: HomeQuickAccessLayout.isVisible
-                    ? -HomeRecentlyPullState.shared.responsiveNativePull : 0)
+            .modifier(HomeRecentlyContentPosition())
             // Клиренс под хромом ленте уже даёт `contentMargins` в корне — это воздух
             // сверх него, чтобы последняя карточка не притиралась к панели действий.
             .padding(.bottom, ShowcaseLayout.feedBottomPadding)
         }
+        .overlay(alignment: .bottomLeading) { HomeRecentlyPullVerification(offset: scrollOffset) }
         .scrollIndicators(.hidden)
         .scrollPosition($scrollPosition)
-        .trackNavBarScroll(into: $scrollOffset)
+        // The home header never follows overscroll. Publishing its negative offsets
+        // invalidated ShowcaseScreen and rebuilt the recommendation feed every frame.
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+        } action: { _, offset in
+            scrollOffset = offset
+        }
         .onScrollPhaseChange { _, phase, _ in
             guard HomeQuickAccessLayout.isVisible else { return }
             recentlyScroll.phaseChanged(phase)
         }
         .onChange(of: HomeRecentlyTelegramState.shared.expansionRequests) { _, _ in
-            guard HomeRecentlyTelegramLayout.isEnabled || HomeRecentlyInlineLayout.isEnabled else { return }
+            guard HomeRecentlyTelegramLayout.isEnabled else { return }
             recentlyScroll.expandFromTap()
         }
         .onDisappear { recentlyScroll.reset() }
-        .onChange(of: HomePresentationSettings.shared.recentlyInlineLabelsEnabled) { _, _ in
-            recentlyScroll.reset()
-            scrollPosition.scrollTo(edge: .top)
-        }
-        .onChange(of: HomePresentationSettings.shared.recentlyTelegramEnabled) { _, _ in
+        .onChange(of: HomePresentationSettings.shared.recentlyMode) { _, _ in
             recentlyScroll.reset()
             scrollPosition.scrollTo(edge: .top)
         }
@@ -264,5 +262,26 @@ extension View {
             let progress = (proxy.frame(in: .scrollView).midY - screen / 2) / screen
             return content.offset(y: progress * depth)
         }
+    }
+}
+
+
+/// Keep per-frame pull observations below the feed/catalog construction boundary.
+private struct HomeRecentlyContentPosition: ViewModifier {
+    func body(content: Content) -> some View {
+        content.offset(y: HomeQuickAccessLayout.isVisible
+            ? HomeRecentlyPullState.shared.responsiveContentPull
+                - HomeRecentlyPullState.shared.responsiveNativePull
+                + HomeRecentlyPullState.shared.responsiveScrollCompensation : 0)
+    }
+}
+
+private struct HomeRecentlyFeedSection: View {
+    let feed: ShowcaseFeed
+
+    var body: some View {
+        HomeQuickAccess(feed: feed)
+            .padding(.bottom, HomeQuickAccessLayout.bottom *
+                (HomeRecentlyTelegramLayout.isEnabled ? HomeQuickAccessLayout.layoutProgress : 1))
     }
 }

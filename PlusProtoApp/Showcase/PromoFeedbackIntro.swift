@@ -51,8 +51,11 @@ enum PromoIntroMotion {
 
 /// Ширина зависит от текста; одна капсула сужается до 40, глиф не масштабируется.
 struct PromoIntroDoneFace: View {
+    @Environment(\.promoFeedbackPressed) private var isPressed
     let expanded: Bool
     let isDone: Bool
+    var usesPurpleSelection = false
+    var showsSecondaryBorder = false
     var title = "Рекомендовать"
     var icon = "promoLike"
     private var expandedWidth: CGFloat {
@@ -62,34 +65,54 @@ struct PromoIntroDoneFace: View {
     }
 
     var body: some View {
+        let selected = PromoFeedbackAppearance.isSelected(completed: isDone, pressed: isPressed,
+                                                          purpleEnabled: usesPurpleSelection)
         Color.clear.frame(width: expanded ? expandedWidth : 40, height: 40)
             .overlay(alignment: .leading) {
                 Text(title).plusText(.textM, .semibold)
-                    .foregroundStyle(isDone ? Color.black : Color.fillOne).fixedSize()
+                    .foregroundStyle(selected && !usesPurpleSelection ? Color.black : Color.fillOne).fixedSize()
                     .padding(.leading, 42)
                     .opacity(expanded ? 1 : 0)
                     .animation(.easeOut(duration: 0.18), value: expanded)
                     .accessibilityHidden(true)
             }
             .overlay(alignment: .leading) {
-                Image(icon).renderingMode(.template).resizable()
+                Image(PromoFeedbackAppearance.icon(icon, selected: selected, purpleEnabled: usesPurpleSelection))
+                    .renderingMode(.template).resizable()
                     .frame(width: 20, height: 20)
-                    .foregroundStyle(isDone ? Color.black : Color.fillOne)
+                    .foregroundStyle(selected && !usesPurpleSelection ? Color.black : Color.fillOne)
                     .padding(.leading, expanded ? 16 : 10)
             }
-            .background { Capsule().fill(isDone ? Color.white : .clear) }
-            .modifier(PromoIntroSurface(isDone: isDone))
+            .background {
+                if selected && usesPurpleSelection { ActiveTabPill() }
+                else { Capsule().fill(selected ? Color.white : .clear) }
+            }
+            .modifier(PromoIntroSurface(isDone: selected, showsBorder: showsSecondaryBorder))
             .clipShape(Capsule())
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var promoFeedbackPressed = false
+}
+
+struct PromoFeedbackPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressScaleButtonStyle().makeBody(configuration: configuration)
+            .environment(\.promoFeedbackPressed, configuration.isPressed)
     }
 }
 
 struct PromoIntroSurface: ViewModifier {
     var isDone = false
+    var showsBorder = false
 
     func body(content: Content) -> some View {
         if isDone { content }
         else {
-            content.glassSurface(Capsule(), blur: 20, fill: .buttonsSecondary, border: .clear, borderWidth: 0)
+            content.glassSurface(Capsule(), blur: 20, fill: .buttonsSecondary,
+                                 border: showsBorder ? SecondaryButtonBorder.color : .clear,
+                                 borderWidth: showsBorder ? SecondaryButtonBorder.width : 0)
         }
     }
 }

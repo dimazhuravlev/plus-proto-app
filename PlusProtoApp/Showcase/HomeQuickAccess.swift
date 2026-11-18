@@ -14,7 +14,7 @@ struct HomeQuickAccess: View {
         if ProcessInfo.processInfo.arguments.contains("-debugRecentWaveShader") { return true }
         if ProcessInfo.processInfo.arguments.contains("-debugRecentWaveTransition") { return debugWaveIsPlaying }
         #endif
-        return actionBar.isMusicPlaying && actionBar.music.map { MyVibeTracks.isVibe($0.id) } == true
+        return actionBar.isMusicPlaying && actionBar.music.map { MyVibeTracks.isVibe($0.id) && $0.vibeStation == nil } == true
     }
 
     var content: HomeRecentlyContent {
@@ -38,8 +38,6 @@ struct HomeQuickAccess: View {
     var body: some View {
         if showsTelegramOverlay {
             telegramOverlay
-        } else if HomeRecentlyInlineLayout.isEnabled {
-            inlineLabelsRow
         } else if HomeRecentlyTelegramLayout.isEnabled {
             telegramRow
 
@@ -94,7 +92,7 @@ struct HomeQuickAccess: View {
         // Настоящая история приоритетнее рекомендации: прогресс не выдумывается.
         if HomePresentationSettings.shared.recentlyPreviewIndex < 0, let entry = actionBar.watchHistory.continuing.first {
             Button { actionBar.watch(entry.movie) } label: {
-                captioned(entry.movie.title, width: 138) {
+                captioned(entry.movie.title, width: HomeQuickAccessLayout.movieWidth) {
                     movieThumbnail(entry.movie.still, movieID: entry.movie.id, progress: entry.progress)
                 }
             }
@@ -102,7 +100,7 @@ struct HomeQuickAccess: View {
             .zIndex(1)
         } else if let movie {
             Button { open(.movie(movie)) } label: {
-                captioned(movie.title, width: 138) {
+                captioned(movie.title, width: HomeQuickAccessLayout.movieWidth) {
                     movieThumbnail(movie.still, movieID: movie.id, progress: HomePresentationSettings.shared.recentlyPreviewIndex >= 0 ? HomePresentationSettings.shared.recentlyPreviewProgress : movieProgress(movie.id))
                 }
             }
@@ -122,7 +120,7 @@ struct HomeQuickAccess: View {
             .accessibilityLabel(station.title)
             .id("recent-station-" + station.id)
         } else {
-            Button { actionBar.openMyVibe() } label: {
+            Button { actionBar.openMyVibe(station: station) } label: {
                 captioned(station.title, width: 80) {
                     CompactVibePetal(station: station, height: HomeQuickAccessLayout.height)
                 }
@@ -139,7 +137,9 @@ struct HomeQuickAccess: View {
             } else if case .artist = item.route {
                 captioned(item.title, width: 80) { artwork(item.artwork, width: 80, height: 80, radius: 40) }
             } else {
-                captioned(item.title, width: 78) { artwork(item.artwork, width: 78, height: 78, radius: 12) }
+                captioned(item.title, width: HomeQuickAccessLayout.mediaBaseHeight) {
+                    artwork(item.artwork, width: HomeQuickAccessLayout.mediaBaseHeight, height: HomeQuickAccessLayout.mediaBaseHeight, radius: 12)
+                }
             }
         }.accessibilityLabel(item.title)
     }
@@ -150,13 +150,10 @@ struct HomeQuickAccess: View {
 
     var vibeButton: some View {
         let scale = HomeQuickAccessLayout.scale
-        let inlineProgress = HomeRecentlyInlineLayout.isEnabled ? HomeRecentlyPullState.shared.progress : 0
-        let controlWidth = (isVibePlaying ? 43.0 : 42.0) * 0.8 + 8 * inlineProgress
-        let controlHeight = (isVibePlaying ? 47.0 : 47.5) * 0.8 + 8 * inlineProgress
-        let controlOpacity = HomeRecentlyInlineLayout.isEnabled
-            ? HomeRecentlyInlineLayout.smooth((inlineProgress - 0.25) / 0.65) : 1
+        let controlWidth = (isVibePlaying ? 43.0 : 42.0) * 0.8
+        let controlHeight = (isVibePlaying ? 47.0 : 47.5) * 0.8
         return Button {
-            if actionBar.music.map({ MyVibeTracks.isVibe($0.id) }) == true {
+            if actionBar.music.map({ MyVibeTracks.isVibe($0.id) && $0.vibeStation == nil }) == true {
                 actionBar.toggleMusicPlayback()
             } else {
                 actionBar.openMyVibe()
@@ -177,7 +174,7 @@ struct HomeQuickAccess: View {
                             .offset(x: 6 * scale, y: -0.5 * scale)
                     } else {
                         Image("quickAccessWave").resizable()
-                            .frame(width: 138 * scale, height: 137 * scale)
+                            .frame(width: HomeQuickAccessLayout.movieWidth * scale, height: 137 * scale)
                             .blur(radius: 6 * scale).opacity(0.14)
                             .offset(x: 6 * scale, y: -0.5 * scale)
                         Image("quickAccessWave").resizable()
@@ -193,7 +190,6 @@ struct HomeQuickAccess: View {
                         .frame(width: controlWidth, height: controlHeight)
                         .offset(x: 6 * scale + (isVibePlaying ? -5.5 : -7) * controlWidth / (isVibePlaying ? 43 : 42),
                                 y: -0.5 * scale + (isVibePlaying ? 7.5 : 7.75) * controlHeight / (isVibePlaying ? 47 : 47.5))
-                        .opacity(controlOpacity)
                         .allowsHitTesting(false)
                 }
                 .contentShape(Rectangle())

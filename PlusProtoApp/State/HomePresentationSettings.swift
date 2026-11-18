@@ -12,13 +12,6 @@ enum HomePromoKind: String, CaseIterable, Identifiable {
         case .station: "Моя волна"
         }
     }
-    var originalWidth: Double {
-        switch self {
-        case .movie, .book: 210.155
-        case .album, .artist: 219.8
-        case .station: 208
-        }
-    }
 
 }
 
@@ -27,9 +20,6 @@ enum HomePromoKind: String, CaseIterable, Identifiable {
 final class HomePresentationSettings {
     static let shared = HomePresentationSettings()
     private static let prefix = "localHomeDev."
-    private static let legacyDefaultWidths: [String: Double] = [
-        "movie": 240, "book": 240, "album": 272, "artist": 272, "station": 272
-    ]
     /// Базовые параметры оставшихся регуляторов. Существующие локальные значения приоритетнее.
     private static let selectedDefaults: [String: Any] = [
         "upright": true,
@@ -59,19 +49,17 @@ final class HomePresentationSettings {
     var recentlyWaveOpacity: Double { didSet { save("recentlyWaveOpacity", recentlyWaveOpacity) } }
     var recentlyWaveSaturation: Double { didSet { save("recentlyWaveSaturation", recentlyWaveSaturation) } }
     var recentlyWaveContrast: Double { didSet { save("recentlyWaveContrast", recentlyWaveContrast) } }
-    var recentlyInlineLabelsEnabled: Bool { didSet { save("recentlyInlineLabelsEnabled", recentlyInlineLabelsEnabled) } }
-    var recentlyTelegramEnabled: Bool { didSet { save("recentlyTelegramEnabled", recentlyTelegramEnabled) } }
+    var recentlyMode: HomeRecentlyMode { didSet { save("recentlyMode", recentlyMode.rawValue) } }
     var recentlyPreviewIndex = -1
     var recentlyPreviewProgress: Double = 0.82
-    var promoPairPreviewEnabled: Bool { didSet { save("promoPairPreviewEnabled", promoPairPreviewEnabled) } }
+    var promoPurpleFeedbackEnabled: Bool { didSet { save("promoPurpleFeedbackEnabled", promoPurpleFeedbackEnabled) } }
     var promoSaveV2Enabled: Bool { didSet { save("promoSaveV2Enabled", promoSaveV2Enabled) } }
     var promoDepthEnabled: Bool { didSet { save("promoDepthEnabled", promoDepthEnabled) } }
     var promoLiftWaveEnabled: Bool { didSet { save("promoLiftWaveEnabled", promoLiftWaveEnabled) } }
-    var promoGlowInspectionEnabled: Bool { didSet { save("promoGlowInspectionEnabled", promoGlowInspectionEnabled) } }
-    var hideRecently: Bool { didSet { save("hideRecently", hideRecently) } }
     var legacySideOffsetEnabled: Bool { didSet { save("legacySideOffsetEnabled", legacySideOffsetEnabled) } }
     var legacySideOffset: Double { didSet { save("legacySideOffset", legacySideOffset) } }
-    var legacyWidths: [String: Double] { didSet { save("legacyWidths", legacyWidths) } }
+    var promoMinimumWidths: [String: Double] { didSet { save("promoMinimumWidths", promoMinimumWidths) } }
+    var promoMaximumWidths: [String: Double] { didSet { save("promoMaximumWidths", promoMaximumWidths) } }
     var sideAngle: Double { didSet { save("angle", sideAngle) } }
 
 
@@ -92,11 +80,6 @@ final class HomePresentationSettings {
             HomeSettingsStorage.save(true, forKey: Self.prefix + "legacySideOffsetEnabled")
             HomeSettingsStorage.save(32.0, forKey: Self.prefix + "legacySideOffset")
             HomeSettingsStorage.save(true, forKey: legacyOffsetRevision)
-        }
-        let legacyWidthsRevision = Self.prefix + "legacyWidths240_272_on440_20261029"
-        if defaults.object(forKey: legacyWidthsRevision) as? Bool != true {
-            HomeSettingsStorage.save(Self.legacyDefaultWidths, forKey: Self.prefix + "legacyWidths")
-            HomeSettingsStorage.save(true, forKey: legacyWidthsRevision)
         }
         func flag(_ key: String) -> Bool {
             defaults.object(forKey: Self.prefix + key) as? Bool ?? true
@@ -133,34 +116,37 @@ final class HomePresentationSettings {
             recentlyPreviewIndex = 0
         }
         #endif
-        recentlyInlineLabelsEnabled = defaults.bool(forKey: Self.prefix + "recentlyInlineLabelsEnabled")
-        recentlyTelegramEnabled = defaults.bool(forKey: Self.prefix + "recentlyTelegramEnabled")
-        promoPairPreviewEnabled = defaults.object(forKey: Self.prefix + "promoPairPreviewEnabled") as? Bool ?? false
+        recentlyMode = .restored(
+            rawValue: defaults.object(forKey: Self.prefix + "recentlyMode") as? String,
+            wasHidden: defaults.bool(forKey: Self.prefix + "hideRecently"),
+            wasExperimental: defaults.bool(forKey: Self.prefix + "recentlyTelegramEnabled")
+        )
+        promoPurpleFeedbackEnabled = defaults.bool(forKey: Self.prefix + "promoPurpleFeedbackEnabled")
         promoSaveV2Enabled = defaults.bool(forKey: Self.prefix + "promoSaveV2Enabled")
         promoDepthEnabled = defaults.object(forKey: Self.prefix + "promoDepthEnabled") as? Bool ?? true
         promoLiftWaveEnabled = defaults.object(forKey: Self.prefix + "promoLiftWaveEnabled") as? Bool ?? true
-        promoGlowInspectionEnabled = defaults.bool(forKey: Self.prefix + "promoGlowInspectionEnabled")
-        legacyWidths = defaults.dictionary(forKey: Self.prefix + "legacyWidths") as? [String: Double]
-            ?? Self.legacyDefaultWidths
-        hideRecently = defaults.object(forKey: Self.prefix + "hideRecently") as? Bool ?? false
+        promoMinimumWidths = defaults.dictionary(forKey: Self.prefix + "promoMinimumWidths") as? [String: Double] ?? [:]
+        promoMaximumWidths = defaults.dictionary(forKey: Self.prefix + "promoMaximumWidths") as? [String: Double] ?? [:]
         legacySideOffsetEnabled = defaults.object(forKey: Self.prefix + "legacySideOffsetEnabled") as? Bool ?? true
         legacySideOffset = min(max(defaults.object(forKey: Self.prefix + "legacySideOffset") as? Double ?? 32, -96), 96)
         sideAngle = defaults.object(forKey: Self.prefix + "angle") as? Double ?? 5
         #if DEBUG
         if let capture = MixMotionCapture.scenario {
             // Настройки съёмки действуют только в этом процессе, без записи на диск.
-            hideRecently = true
-            promoPairPreviewEnabled = false
+            recentlyMode = .hidden
             promoDepthEnabled = capture != "swipe-flat"
             promoLiftWaveEnabled = !["petal-breath", "petal-pause", "petal-press"].contains(capture)
             promoSaveV2Enabled = capture == "save"
-            promoGlowInspectionEnabled = capture == "glow"
         }
         #endif
     }
 
-    func width(for kind: HomePromoKind) -> Double {
-        legacyWidths[kind.rawValue] ?? Self.legacyDefaultWidths[kind.rawValue] ?? kind.originalWidth
+    func widths(for kind: HomePromoKind) -> PromoMediaWidthRange {
+        let key = (kind == .station ? HomePromoKind.artist : kind).rawValue
+        let base: PromoMediaWidthRange = (kind == .movie || kind == .book) ? .poster : .square
+        let minimum = min(400, max(160, promoMinimumWidths[key] ?? Double(base.minimum)))
+        let maximum = min(400, max(minimum, promoMaximumWidths[key] ?? Double(base.maximum)))
+        return PromoMediaWidthRange(minimum: minimum, maximum: maximum)
     }
 
     private func save(_ key: String, _ value: Any) {

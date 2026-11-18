@@ -1,9 +1,12 @@
 import SwiftUI
 
 extension HomePresentationSettings {
-    func setWidth(_ width: Double, for kind: HomePromoKind) {
-        let value = (min(max(width, 160), 400) / 4).rounded() * 4
-        legacyWidths[kind.rawValue] = value
+    func setMinimumWidth(_ width: Double, for kind: HomePromoKind) {
+        promoMinimumWidths[kind.rawValue] = min(Double(widths(for: kind).maximum), max(160, width.rounded()))
+    }
+
+    func setMaximumWidth(_ width: Double, for kind: HomePromoKind) {
+        promoMaximumWidths[kind.rawValue] = max(Double(widths(for: kind).minimum), min(400, width.rounded()))
     }
 
     func resetWaveShader() {

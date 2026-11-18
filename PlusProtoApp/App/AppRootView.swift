@@ -221,9 +221,6 @@ struct AppRootView: View {
         PromoCardGlowRaster.retain(promo)
         // Prepare glows before a swipe, not while the next card becomes active.
         for item in promo { await PromoCardGlowRaster.render(item) }
-        // Капля станции промо — растр на цвет: считается под заставкой, а не на первом
-        // кадре показа. И на моках: станция в круге есть всегда.
-        PromoStationPetal.prewarm(promo)
         await holoShader
 
         // Минимальная выдержка: когда всё пришло из кэша за сотню миллисекунд,

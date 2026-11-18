@@ -3,7 +3,7 @@ import SwiftUI
 /// Figma 633:41388. Only presentation changes; the existing pull policy owns the gesture.
 @MainActor enum HomeRecentlyTelegramLayout {
     static var isEnabled: Bool {
-        HomePresentationSettings.shared.recentlyTelegramEnabled && !HomePresentationSettings.shared.recentlyInlineLabelsEnabled && !HomePresentationSettings.shared.hideRecently
+        HomePresentationSettings.shared.recentlyMode == .experiment
     }
 
     static func compactScale(_ item: HomeRecentlyExperimentItem) -> CGFloat {
@@ -45,6 +45,12 @@ extension HomeQuickAccess {
         let items = telegramItems
         let clusterItems = Array(items.filter(\.canJoinStack).prefix(3))
         let clusterIDs = Set(clusterItems.map(\.id))
+        return HomeRecentlyMovingContent {
+            telegramScrollRow(items: items, clusterIDs: clusterIDs)
+        }
+    }
+
+    private func telegramScrollRow(items: [HomeRecentlyExperimentItem], clusterIDs: Set<String>) -> some View {
         let progress = HomeRecentlyPullState.shared.progress
         return ScrollView(.horizontal) {
             HStack(spacing: HomeQuickAccessLayout.gap) {
@@ -82,20 +88,22 @@ extension HomeQuickAccess {
         let progress = HomeRecentlyPullState.shared.progress
         let reveal = cluster ? 1 : HomeRecentlyTelegramLayout.reveal(progress, index: index)
         return Button {
-            if let book = item.book {
+            if let station = item.station, item.kind == .station {
+                actionBar.openMyVibe(station: station)
+            } else if let book = item.book {
                 actionBar.read(book)
             } else if let movie = item.movie, item.progress != nil {
                 actionBar.watch(movie)
             } else if let route = item.route {
                 navigation.open(route)
             } else if item.id == "wave",
-                      actionBar.music.map({ MyVibeTracks.isVibe($0.id) }) == true {
+                      actionBar.music.map({ MyVibeTracks.isVibe($0.id) && $0.vibeStation == nil }) == true {
                 actionBar.toggleMusicPlayback()
             } else {
                 actionBar.openMyVibe()
             }
         } label: {
-            captioned(item.title, width: item.width) {
+            captioned(item.title, width: item.width, subtitle: item.movie?.episodeText) {
                 // Artwork is rendered once above the header and feed, for every item.
                 Color.clear.frame(width: item.width * HomeQuickAccessLayout.scale,
                                   height: HomeQuickAccessLayout.height)
@@ -125,8 +133,10 @@ extension HomeQuickAccess {
         let items = telegramItems
         return GeometryReader { proxy in
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                telegramFloatingThumbnail(item, index: index, items: items,
-                                          origin: proxy.frame(in: .global).origin)
+                HomeRecentlyMovingContent {
+                    telegramFloatingThumbnail(item, index: index, items: items,
+                                              origin: proxy.frame(in: .global).origin)
+                }
             }
         }
         .clipped()
@@ -172,4 +182,11 @@ extension HomeQuickAccess {
                      ? 0 : alpha * (reduceMotion ? abs(2 * p - 1) : 1))
             .zIndex(isCluster ? Double(100 + index) : Double(100 - index))
     }
+}
+
+/// Read motion inside the rendered item/row, below the recommendation selection.
+/// Progress and row-origin updates must not reconstruct the experiment's content.
+private struct HomeRecentlyMovingContent<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    var body: some View { content() }
 }

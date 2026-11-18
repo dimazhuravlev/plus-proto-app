@@ -61,6 +61,9 @@ struct HomeDevControls: View {
                     case .content: contentControls
                     case .general:
                         section("Опросы") {
+                            Button("Демо-режим опросов", systemImage: "play.rectangle") { onOpenSurvey(.demo) }
+                                .buttonStyle(.borderedProminent)
+                                .buttonBorderShape(.capsule)
                             HomeDevFlowLayout(spacing: 8) {
                                 Button("WebView") { onOpenSurvey(.standard) }
                                 Button("Плитки") { onOpenSurvey(.tiles) }

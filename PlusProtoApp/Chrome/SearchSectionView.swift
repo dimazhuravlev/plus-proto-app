@@ -278,7 +278,8 @@ extension MusicNowPlaying {
             cover: hit.artwork ?? .asset("mockAlbumCover"),
             title: hit.title,
             artist: hit.subtitle,
-            album: album
+            album: album,
+            containerID: hit.route.flatMap { if case .album(let ref) = $0 { return "album:" + ref.id }; return nil }
         )
     }
 
@@ -840,7 +841,8 @@ struct MusicWizardCard: View {
             title: pick.title,
             artist: wizard.artist.title,
             album: albumTitle,
-            artistPicture: wizard.artist.artwork
+            artistPicture: wizard.artist.artwork,
+            containerID: pick.route.flatMap { if case .album(let ref) = $0 { return "album:" + ref.id }; return nil }
         ))
     }
 }

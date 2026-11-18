@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Станция «Моей волны» в промо «Главной» (задача 65, макет `2688:26198`): лепесток —
 /// капля цвета станции, иллюстрация агента, «Моя волна» и название станции
-/// (`PromoStationCard`). Станция на выбор трека не влияет: тап включает волну.
+/// (`PromoWaveCard`). Станция на выбор трека не влияет: тап включает волну.
 ///
 /// Вид станции (задача 68): жанровая — с иллюстрацией агента, или волна «в стиле артиста»
 /// (макет `2698:27113`) — тот же лепесток с круглым фото артиста, имя артиста — название.
@@ -89,12 +89,10 @@ extension VibePromoStation {
         (0xF5007C, 0xFF99CD),
     ]
 
-    /// Восемь станций — разные иллюстрации, цвета и названия; названия — от пользователя
+    /// Семь станций — разные иллюстрации, цвета и названия; названия — от пользователя
     /// (2026-10-13). Цвета — палитра «Моя волна 2026» (файл `ggO4AevC3hbrmBYsNGXq3S`,
     /// нода `11403:7010`). Первая — станция макета и мок-промо.
     static let all: [VibePromoStation] = [
-        VibePromoStation(id: "medieval-emo", name: "Средневековое симфоническое мидвест-эмо",
-                         asset: "vibeStationPopCarmine", fillHex: 0xF5002E, rimHex: 0xFF99AC),
         VibePromoStation(id: "space-fusion", name: "Космический джаз-фьюжн",
                          asset: "vibeStationPopIndigo", fillHex: 0x160CE8, rimHex: 0xA29EFA),
         VibePromoStation(id: "dacha-shoegaze", name: "Дачный шугейз",
@@ -131,5 +129,17 @@ extension VibeBlock {
     /// публикует только станции); на этот случай — первая станция списка, как у мок-промо.
     var promoStation: VibePromoStation {
         station ?? VibePromoStation.all[0]
+    }
+}
+
+
+extension VibePromoStation {
+    var recentlyStation: VibeStation {
+        let photo: URL?
+        if let artist, case .remote(let url, _) = artist.picture { photo = url }
+        else { photo = nil }
+        return VibeStation(id: id, title: name, agent: asset ?? "vibeStationPopIndigo",
+                           fillHex: fillHex, rimHex: rimHex, photo: photo,
+                           artistArtwork: artist?.picture)
     }
 }

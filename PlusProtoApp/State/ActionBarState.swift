@@ -80,6 +80,8 @@ struct MusicNowPlaying: Equatable, Codable {
     /// и у записей на диске, сделанных до поля: для них экран узнаёт свой трек по
     /// префиксу id (`dz-<альбом>-t<трек>`).
     var containerID: String? = nil
+    /// Источник подволны сохраняется при смене трека и перезапуске приложения.
+    var vibeStation: VibeStation? = nil
 }
 
 /// Что смотрели: кадр 80×46 внутри чипа 88×54 (figma-actionbar §4.4).
@@ -217,7 +219,7 @@ final class ActionBarState {
     let watchHistory = WatchHistory()
     /// Начатые книги — «Читаю» коллекции и начатое в её карусели «Книги».
     let readingHistory = ReadingHistory()
-    /// Общая история Recently: посещения сущностей и запуски всех плееров,
+    /// Общая история Recently: запуски просмотра, чтения и прослушивания,
     /// включая переходы из веера через `watch` / `read`.
     let recently = RecentlyConsumed.shared
 
@@ -404,7 +406,7 @@ final class ActionBarState {
     /// разворачивать круг в капсулу. `playing: false` — новый трек встаёт на паузе
     /// (свайп по мини-плееру на паузе).
     private func switchTrack(_ item: MusicNowPlaying, playing: Bool = true) {
-        if playing, !MyVibeTracks.isVibe(item.id) { recently.record(.music(item)) }
+        if playing { recently.record(item.recentItem) }
         music = item
         musicProgress = 0
         isMusicAdvancing = false
@@ -467,7 +469,8 @@ final class ActionBarState {
     /// раз на трек), очередь — следующий по кругу, иначе `nil` (одиночный запуск).
     private func nextTrack() -> (item: MusicNowPlaying, index: Int)? {
         if let music, MyVibeTracks.isVibe(music.id) {
-            let next = vibeNext ?? MyVibeTracks.random(excluding: music.id)
+            var next = vibeNext ?? MyVibeTracks.random(excluding: music.id)
+            next.vibeStation = music.vibeStation
             vibeNext = next
             return (next, queueIndex)
         }
@@ -481,9 +484,10 @@ final class ActionBarState {
     /// (с первого — последний); иначе `nil`.
     private func previousTrack() -> (item: MusicNowPlaying, index: Int)? {
         if let music, MyVibeTracks.isVibe(music.id) {
-            let previous = vibePrevious
+            var previous = vibePrevious
                 ?? MyVibeTracks.all.filter { $0.id != music.id && $0.id != vibeNext?.id }.randomElement()
                 ?? MyVibeTracks.random(excluding: music.id)
+            previous.vibeStation = music.vibeStation
             vibePrevious = previous
             return (previous, queueIndex)
         }
@@ -675,7 +679,7 @@ final class ActionBarState {
         musicProgress = audioFractionNow() ?? liveMusicProgress
         isMusicPlaying.toggle()
         if isMusicPlaying, let music {
-            recently.record(MyVibeTracks.isVibe(music.id) ? .myVibe : .music(music))
+            recently.record(music.recentItem)
         }
         isMusicAdvancing = isMusicPlaying && audioFractionNow() != nil
         if isMusicPlaying {
