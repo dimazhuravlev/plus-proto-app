@@ -28,6 +28,12 @@ final class BookTextStore {
     private(set) var author: String?
     /// Год издания тома — подпись под автором на экране книги.
     private(set) var year: String?
+    /// Число страниц тома — счётчик «Страницы» на экране книги. `nil` — Google не знает.
+    private(set) var pageCount: Int?
+    /// Издательство тома — «Детали» экрана книги.
+    private(set) var publisher: String?
+    /// Рубрики тома как есть («Fiction / Classics») — теги экрана книги.
+    private(set) var categories: [String] = []
     /// Текст готов. До этого колонка пустая и проявляется целиком, а не набирается
     /// на глазах абзац за абзацем.
     private(set) var isReady = false
@@ -46,6 +52,11 @@ final class BookTextStore {
            let volume = try? await BooksService.shared.volume(id: volumeID) {
             author = volume.volumeInfo.authors?.first
             year = volume.volumeInfo.publishedDate.map { String($0.prefix(4)) }
+            pageCount = volume.volumeInfo.pageCount.flatMap { $0 > 0 ? $0 : nil }
+            publisher = volume.volumeInfo.publisher
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .flatMap { $0.isEmpty ? nil : $0 }
+            categories = volume.volumeInfo.categories ?? []
             fromAPI = Self.paragraphs(fromDescription: volume.volumeInfo.description ?? "")
                 .map(Self.bindingShortWords)
         }

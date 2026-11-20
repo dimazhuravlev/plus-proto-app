@@ -29,6 +29,8 @@ struct GoogleBookVolumeInfo: Decodable {
     let authors: [String]?
     let description: String?
     let publishedDate: String?
+    /// Издательство — строка «Детали» экрана книги.
+    let publisher: String?
     let pageCount: Int?
     let categories: [String]?
     let language: String?

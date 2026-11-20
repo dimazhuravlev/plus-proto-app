@@ -109,6 +109,10 @@ struct DeezerAlbum: Decodable, Identifiable {
     let recordType: String?
     let nbTracks: Int?
     let artist: DeezerArtistBrief?
+    /// Длительность в секундах — у аудиокниги часы на экране книги.
+    let duration: Int?
+    /// Лейбл — у аудиокниги издательство в «Деталях» экрана книги.
+    let label: String?
 }
 
 // MARK: - Playlist

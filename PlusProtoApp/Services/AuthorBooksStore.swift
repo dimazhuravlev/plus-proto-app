@@ -70,7 +70,7 @@ final class AuthorBooksStore {
 
     /// Пропорции обложек — по самим картинкам, с потолком ожидания. Заодно они уже
     /// в кэше загрузчика, и карусель встаёт с обложками, а не с пустыми книгами.
-    private static func aspects(of volumes: [GoogleBook]) async -> [String: CGFloat] {
+    static func aspects(of volumes: [GoogleBook]) async -> [String: CGFloat] {
         let urls = volumes.compactMap { volume in volume.coverURL.map { (volume.id, $0) } }
         guard !urls.isEmpty else { return [:] }
         return await withTaskGroup(of: (String, CGFloat?).self) { group in
